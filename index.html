@@ -1,0 +1,155 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StreamVerse | Unlimited Movies & TV Shows</title>
+    <meta name="description"
+        content="Watch your favorite movies and TV shows for free in high quality with multi-audio support.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="dns-prefetch" href="//image.tmdb.org">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+</head>
+
+<body>
+    <header id="main-header">
+        <div class="container container-header">
+            <div class="logo">
+                <a href="/">
+                    <span class="logo-accent">Stream</span>Verse
+                </a>
+            </div>
+            <nav class="desktop-nav">
+                <ul>
+                    <li><a href="/" class="active">Home</a></li>
+                    <li><a href="#movies" onclick="filterType('movie')">Movies</a></li>
+                    <li><a href="#tv" onclick="filterType('tv')">TV Shows</a></li>
+                    <li><a href="#dramas" onclick="fetchDramas()">K-Dramas</a></li>
+                    <li><a href="manga.html">Manga</a></li>
+                    <li><a href="#trending">Trending</a></li>
+                </ul>
+            </nav>
+            <div class="header-actions">
+                <div class="api-switcher">
+                    <button id="api-prod" onclick="toggleApi('prod')" title="Production API">Prod</button>
+                    <button id="api-local" onclick="toggleApi('local')" title="Local API">Local</button>
+                </div>
+                <div class="search-bar" id="search-container">
+                    <input type="text" id="search-input" placeholder="Search movies, TV shows...">
+                    <button id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
+                </div>
+                <button class="mobile-menu-btn" id="mobile-menu-toggle" style="display: none;">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+            </div>
+        </div>
+
+        <nav class="mobile-tabs-nav">
+            <ul>
+                <li><a href="/" class="active">Home</a></li>
+                <li><a href="#movies" onclick="filterType('movie')">Movies</a></li>
+                <li><a href="#tv" onclick="filterType('tv')">TV Shows</a></li>
+                <li><a href="#dramas" onclick="fetchDramas()">K-Dramas</a></li>
+                <li><a href="manga.html">Manga</a></li>
+                <li><a href="#trending">Trending</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Search Results Page -->
+        <section class="container" id="search-page" style="display: none; padding-top: 120px; min-height: 80vh;">
+            <h2 class="section-title" id="search-title">Search Results</h2>
+            <div class="movie-grid" id="search-page-grid"></div>
+        </section>
+
+        <!-- Hero Section -->
+        <section class="hero" id="hero-section">
+            <div class="hero-overlay"></div>
+            <div class="container hero-content" id="hero-container">
+                <div class="hero-info" id="hero-info">
+                    <!-- Dynamic Hero Content -->
+                    <div class="skeleton skeleton-hero"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dynamic Content Rows -->
+        <div id="content-rows" class="container">
+            <!-- Trending Now -->
+            <section class="row-section" id="trending-section">
+                <h2 class="section-title">Trending Now</h2>
+                <div class="movie-grid" id="trending-grid">
+                    <!-- Skeletons -->
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                </div>
+            </section>
+
+            <!-- Popular Movies -->
+            <section class="row-section" id="popular-movies-section">
+                <h2 class="section-title">Popular Movies</h2>
+                <div class="movie-grid" id="popular-movies-grid"></div>
+            </section>
+
+            <!-- K-Dramas -->
+            <section class="row-section" id="dramas-section">
+                <h2 class="section-title">Trending K-Dramas</h2>
+                <div class="movie-grid" id="dramas-grid"></div>
+            </section>
+
+            <!-- Popular TV Shows -->
+            <section class="row-section" id="popular-tv-section">
+                <h2 class="section-title">Popular TV Shows</h2>
+                <div class="movie-grid" id="popular-tv-grid"></div>
+            </section>
+
+            <!-- Top Rated -->
+            <section class="row-section" id="top-rated-section">
+                <h2 class="section-title">Top Rated Movies</h2>
+                <div class="movie-grid" id="top-rated-grid"></div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Movie Modal / Detail View Overlay -->
+    <div id="movie-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Mobile Navigation Overlay Removed -->
+
+    <footer>
+        <div class="container footer-content">
+            <div class="footer-logo">
+                <span class="logo-accent">Stream</span>Verse
+            </div>
+            <p class="footer-text">StreamVerse does not store any files on our server, we only provide links to the
+                media which is hosted on 3rd party services.</p>
+            <div class="footer-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="#">Contact</a>
+            </div>
+            <p class="copyright">&copy; 2026 StreamVerse. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="/config.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
