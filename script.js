@@ -9,7 +9,7 @@ const PROD_API = String(
     RUNTIME_CONFIG.PROD_META_API_BASE ||
     RUNTIME_CONFIG.API_BASE ||
     RUNTIME_CONFIG.META_API_BASE ||
-    'https://stream-verse-jeet.duckdns.org/meta/tmdb'
+    'https://streamverse-api.ddns.net/meta/tmdb'
 );
 const FALLBACK_API = String(
     RUNTIME_CONFIG.FALLBACK_API_BASE ||
