@@ -7,9 +7,13 @@ const LOCAL_API = String(
 );
 const PROD_API = String(
     RUNTIME_CONFIG.PROD_META_API_BASE ||
-    RUNTIME_CONFIG.PROXY_META_API_BASE ||
+    RUNTIME_CONFIG.API_BASE ||
     RUNTIME_CONFIG.META_API_BASE ||
-    'http://localhost:3000/meta/tmdb'
+    'https://streamverse-api.ddns.net/meta/tmdb'
+);
+const FALLBACK_API = String(
+    RUNTIME_CONFIG.FALLBACK_API_BASE ||
+    'https://consumet-api.vercel.app/meta/tmdb'
 );
 const IMG_BASE = 'https://image.tmdb.org/t/p/';
 const API_TIMEOUT_MS = 7000;
@@ -217,33 +221,53 @@ async function fetchDetails(id, type, provider = '') {
     if (inFlight) return inFlight;
 
     const promise = (async () => {
-        const url = getDetailsUrl(id, type, provider);
+        let url = getDetailsUrl(id, type, provider);
         const alternateType = type === 'tv' ? 'movie' : (type === 'movie' ? 'tv' : type);
         let data;
-        let isServerError = false;
-        try {
-            data = await fetchJson(url, 9000);
-        } catch (firstErr) {
-            if (firstErr.status >= 400) isServerError = true;
+        let lastError;
 
-            // If non-provider meta detail fails, try opposite type once (some lists have bad type tags).
-            if (!provider && (type === 'tv' || type === 'movie')) {
-                try {
-                    const altUrl = getDetailsUrl(id, alternateType, provider);
-                    data = await fetchJson(altUrl, 12000);
-                    const movie = normalizeDetailPayload(data, id);
-                    // Cache under both requested and resolved keys to avoid repeated bad-type fetches.
-                    writeDetailCache(id, alternateType, provider, movie);
-                    writeDetailCache(id, type, provider, movie);
-                    return movie;
-                } catch (secondErr) {
-                    if (secondErr.status >= 400) isServerError = true;
-                }
+        // Helper to try a fetch and return data or null
+        const tryFetch = async (targetUrl, timeout) => {
+            try { return await fetchJson(targetUrl, timeout); }
+            catch (e) {
+                lastError = e;
+                return null;
             }
-            // Retry same URL ONLY if it was a network timeout or abort, not a hard 4xx/5xx HTTP error
-            if (isServerError) throw firstErr;
-            data = await fetchJson(url, 16000);
+        };
+
+        // 1. Try Primary
+        data = await tryFetch(url, 9000);
+
+        // 2. If Primary fails, try alternate type on Primary (only for non-provider meta)
+        if (!data && !provider && (type === 'tv' || type === 'movie')) {
+            const altUrl = getDetailsUrl(id, alternateType, provider);
+            data = await tryFetch(altUrl, 10000);
+            if (data) {
+                const movie = normalizeDetailPayload(data, id);
+                writeDetailCache(id, alternateType, provider, movie);
+                writeDetailCache(id, type, provider, movie);
+                return movie;
+            }
         }
+
+        // 3. Fallback Mechanism (if Primary failed or returned 500)
+        if (!data && !provider && FALLBACK_API) {
+            console.warn('Primary API failed, attempting fallback...');
+            const fallbackUrl = url.replace(BASE_URL, FALLBACK_API);
+            data = await tryFetch(fallbackUrl, 15000);
+            if (!data) {
+                const altFallbackUrl = getDetailsUrl(id, alternateType, provider).replace(BASE_URL, FALLBACK_API);
+                data = await tryFetch(altFallbackUrl, 15000);
+            }
+        }
+
+        // 4. Final Retry on Primary if still no data
+        if (!data) {
+            data = await tryFetch(url, 15000);
+        }
+
+        if (!data) throw lastError || new Error('Failed to fetch details from all sources');
+
         const movie = normalizeDetailPayload(data, id);
         writeDetailCache(id, type, provider, movie);
         return movie;
