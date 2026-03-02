@@ -549,7 +549,17 @@ searchInput.addEventListener('input', e => {
 
     searchTimeout = setTimeout(async () => {
         try {
-            const data = await fetchJson(`${BASE_URL}/${encodeURIComponent(q)}`, 5000);
+            let data;
+            try {
+                data = await fetchJson(`${BASE_URL}/${encodeURIComponent(q)}`, 5000);
+            } catch (err) {
+                if (FALLBACK_API) {
+                    console.warn('Search primary failed, trying fallback...');
+                    data = await fetchJson(`${FALLBACK_API}/${encodeURIComponent(q)}`, 8000);
+                } else {
+                    throw err;
+                }
+            }
             const hits = (data.results || [])
                 .filter(r => (r.type || r.media_type || '').toLowerCase() !== 'person');
             displaySearchResults(hits, q);
