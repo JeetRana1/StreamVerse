@@ -1943,13 +1943,9 @@
         );
         const PROD_META_API = String(
             RUNTIME_CONFIG.PROD_META_API_BASE ||
-            RUNTIME_CONFIG.API_BASE ||
+            RUNTIME_CONFIG.PROXY_META_API_BASE ||
             RUNTIME_CONFIG.META_API_BASE ||
             'https://streamverse-api.ddns.net/meta/tmdb'
-        );
-        const FALLBACK_META_API = String(
-            RUNTIME_CONFIG.FALLBACK_API_BASE ||
-            'https://consumet-api.vercel.app/meta/tmdb'
         );
         const DEFAULT_META_API = PROD_META_API;
         const PARAMS_BOOT = new URLSearchParams(location.search);
@@ -1965,7 +1961,7 @@
         // Keep local/prod fully isolated (no cross-mixing).
         const API_BASE_CANDIDATES = (effectiveApiSource === 'local'
             ? [LOCAL_META_API || 'http://localhost:3000/meta/tmdb']
-            : [PROD_META_API || DEFAULT_META_API, FALLBACK_META_API]
+            : [PROD_META_API || DEFAULT_META_API]
         ).filter(b => b && String(b).startsWith('http'));
 
         const IS_LOCAL_API = /localhost|127\.0\.0\.1/i.test(API_BASE);
@@ -5723,35 +5719,24 @@
                             // For movies: use info.episodeId directly
                             if (MEDIA_TYPE === 'tv') {
                                 const seasons = info.seasons || [];
-                                const flatEpisodes = info.episodes || [];
-                                let episode = null;
-
-                                if (seasons.length > 0) {
-                                    const season =
-                                        seasons.find((s) => Number(s?.season || s?.number || 0) === selectedSeasonNo) ||
-                                        seasons[curSeason];
-                                    episode = season?.episodes?.find((e) =>
-                                        Number(e?.episode || e?.number || e?.episodeNum || 0) === selectedEpisodeNo,
-                                    ) || season?.episodes?.[curEpisode];
-                                    if (!episode) {
-                                        const targetEpNum = selectedEpisodeNo;
-                                        for (const s of seasons) {
-                                            const byNum = (s?.episodes || []).find((e) =>
-                                                Number(e?.episode || e?.number || 0) === targetEpNum
-                                            );
-                                            if (byNum) {
-                                                episode = byNum;
-                                                break;
-                                            }
+                                const season =
+                                    seasons.find((s) => Number(s?.season || s?.number || 0) === selectedSeasonNo) ||
+                                    seasons[curSeason];
+                                let episode = season?.episodes?.find((e) =>
+                                    Number(e?.episode || e?.number || e?.episodeNum || 0) === selectedEpisodeNo,
+                                ) || season?.episodes?.[curEpisode];
+                                if (!episode) {
+                                    const targetEpNum = selectedEpisodeNo;
+                                    for (const s of seasons) {
+                                        const byNum = (s?.episodes || []).find((e) =>
+                                            Number(e?.episode || e?.number || 0) === targetEpNum
+                                        );
+                                        if (byNum) {
+                                            episode = byNum;
+                                            break;
                                         }
                                     }
-                                } else if (flatEpisodes.length > 0) {
-                                    const targetEpNum = selectedEpisodeNo;
-                                    episode = flatEpisodes.find((e) =>
-                                        Number(e?.episode || e?.number || e?.episodeNum || 0) === targetEpNum
-                                    ) || flatEpisodes[curEpisode];
                                 }
-
                                 provEpisodeId = episode?.id || episode?.episodeId || episode?.url;
                             } else {
                                 provEpisodeId = info.episodeId || info.id;
