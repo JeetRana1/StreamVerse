@@ -9,7 +9,7 @@ const PROD_API = String(
     RUNTIME_CONFIG.PROD_META_API_BASE ||
     RUNTIME_CONFIG.API_BASE ||
     RUNTIME_CONFIG.META_API_BASE ||
-    'https://streamverse-api.ddns.net/meta/tmdb'
+    'https://stream-verse.duckdns.org/meta/tmdb'
 );
 const FALLBACK_API = String(
     RUNTIME_CONFIG.FALLBACK_API_BASE ||
@@ -94,7 +94,7 @@ async function fetchJsonWithFallback(urlOrPath, timeoutMs = API_TIMEOUT_MS) {
                 fallbackUrl = `${FALLBACK_API}${urlOrPath}`;
             } else {
                 // Handle provider-specific endpoints (like Dramacool)
-                fallbackUrl = urlOrPath.replace('streamverse-api.ddns.net', 'consumet-api.vercel.app');
+                fallbackUrl = urlOrPath.replace('stream-verse.duckdns.org', 'consumet-api.vercel.app');
             }
             try {
                 return await fetchJson(fallbackUrl, timeoutMs + 3000);

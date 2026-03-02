@@ -1,5 +1,5 @@
 const RUNTIME_CONFIG = window.__STREAMVERSE_CONFIG__ || {};
-const PROD_API = String(RUNTIME_CONFIG.PROD_API_BASE || 'https://streamverse-api.ddns.net/meta/tmdb');
+const PROD_API = String(RUNTIME_CONFIG.PROD_API_BASE || 'https://stream-verse.duckdns.org/meta/tmdb');
 const LOCAL_API = String(RUNTIME_CONFIG.LOCAL_API_BASE || 'http://localhost:3000/meta/tmdb');
 
 function getCurrentApiSource() {
