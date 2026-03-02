@@ -15,6 +15,12 @@ const FALLBACK_API = String(
     RUNTIME_CONFIG.FALLBACK_API_BASE ||
     'https://consumet-api.vercel.app/meta/tmdb'
 );
+const PROD_API_HOST = (() => {
+    try { return new URL(PROD_API).host; } catch (_) { return ''; }
+})();
+const FALLBACK_API_HOST = (() => {
+    try { return new URL(FALLBACK_API).host; } catch (_) { return ''; }
+})();
 const IMG_BASE = 'https://image.tmdb.org/t/p/';
 const API_TIMEOUT_MS = 7000;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -93,8 +99,10 @@ async function fetchJsonWithFallback(urlOrPath, timeoutMs = API_TIMEOUT_MS) {
             } else if (!urlOrPath.startsWith('http')) {
                 fallbackUrl = `${FALLBACK_API}${urlOrPath}`;
             } else {
-                // Handle provider-specific endpoints (like Dramacool)
-                fallbackUrl = urlOrPath.replace('stream-verse-jeet.duckdns.org', 'consumet-api.vercel.app');
+                // Handle provider-specific absolute URLs without hardcoding a single production host
+                fallbackUrl = PROD_API_HOST && FALLBACK_API_HOST
+                    ? urlOrPath.replace(PROD_API_HOST, FALLBACK_API_HOST)
+                    : urlOrPath;
             }
             try {
                 return await fetchJson(fallbackUrl, timeoutMs + 3000);

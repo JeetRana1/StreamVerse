@@ -48,7 +48,7 @@ The application can be configured via `config.js`. You can set your primary and 
 
 ```javascript
 window.__STREAMVERSE_CONFIG__ = {
-    PROD_META_API_BASE: 'https://stream-verse.duckdns.org/meta/tmdb',
+    PROD_META_API_BASE: 'https://stream-verse-jeet.duckdns.org/meta/tmdb',
     FALLBACK_API_BASE: 'https://consumet-api.vercel.app/meta/tmdb',
     // ... other settings
 };
@@ -56,7 +56,7 @@ window.__STREAMVERSE_CONFIG__ = {
 
 ## 🛡️ Resilience & Fallback Logic
 
-StreamVerse is built to be "unbreakable." If the primary metadata API (stream-verse.duckdns.org) returns an error or times out, the system automatically:
+StreamVerse is built to be "unbreakable." If the primary metadata API (stream-verse-jeet.duckdns.org) returns an error or times out, the system automatically:
 1. Retries the request with an alternate media type (TV vs Movie).
 2. Falls back to a secondary production server.
 3. Attempts a final "last-resort" fetch on the primary server with extended timeouts.
