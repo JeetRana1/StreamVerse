@@ -80,6 +80,32 @@ async function fetchJson(url, timeoutMs = API_TIMEOUT_MS) {
         clearTimeout(timer);
     }
 }
+async function fetchJsonWithFallback(urlOrPath, timeoutMs = API_TIMEOUT_MS) {
+    let fullUrl = urlOrPath.startsWith('http') ? urlOrPath : `${BASE_URL}${urlOrPath}`;
+    try {
+        return await fetchJson(fullUrl, timeoutMs);
+    } catch (err) {
+        if (getCurrentApiSource() === 'prod' && FALLBACK_API) {
+            console.warn(`Primary API failed, trying fallback: ${urlOrPath}`);
+            let fallbackUrl = urlOrPath;
+            if (urlOrPath.startsWith(BASE_URL)) {
+                fallbackUrl = urlOrPath.replace(BASE_URL, FALLBACK_API);
+            } else if (!urlOrPath.startsWith('http')) {
+                fallbackUrl = `${FALLBACK_API}${urlOrPath}`;
+            } else {
+                // Handle provider-specific endpoints (like Dramacool)
+                fallbackUrl = urlOrPath.replace('streamverse-api.ddns.net', 'consumet-api.vercel.app');
+            }
+            try {
+                return await fetchJson(fallbackUrl, timeoutMs + 3000);
+            } catch (fallbackErr) {
+                console.error('Fallback API also failed:', fallbackErr);
+                throw err; // Throw original error if fallback also fails
+            }
+        }
+        throw err;
+    }
+}
 
 // ------------------ DOM ELEMENTS ------------------------------------------
 const heroContainer = document.getElementById('hero-info');
@@ -381,7 +407,7 @@ async function fetchTrending() {
             displayGrid(cachedItems, trendingGrid);
         }
 
-        const data = await fetchJson(`${BASE_URL}/trending`);
+        const data = await fetchJsonWithFallback(`/trending`);
         writeCache(cacheKey, data);
         const items = (data.results || []).slice(0, 12);
         if (!items.length) return;
@@ -405,7 +431,7 @@ async function fetchSection(type, grid, mediaType, timePeriod = 'day') {
             displayGrid((cached.results || []).slice(0, 12), grid, mediaType);
         }
 
-        const data = await fetchJson(url);
+        const data = await fetchJsonWithFallback(url);
         writeCache(cacheKey, data);
         displayGrid((data.results || []).slice(0, 12), grid, mediaType);
     } catch (err) {
@@ -432,7 +458,7 @@ async function fetchDramas() {
             displayGrid(cachedItems, dramasGrid);
         }
 
-        const data = await fetchJson(url);
+        const data = await fetchJsonWithFallback(url);
         writeCache(cacheKey, data);
         const items = (data.results || []).slice(0, 12).map(item => ({
             ...item,
