@@ -1957,6 +1957,9 @@
                 : (storedApiSource === 'local' || storedApiSource === 'prod' ? storedApiSource : 'prod');
         const selectedMetaApi = effectiveApiSource === 'local' ? LOCAL_META_API : PROD_META_API;
         const API_BASE = selectedMetaApi || DEFAULT_META_API;
+        const IS_MOBILE_CLIENT =
+            /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(navigator.userAgent || '') ||
+            ('ontouchstart' in window);
 
         // Keep local/prod fully isolated (no cross-mixing).
         const API_BASE_CANDIDATES = (effectiveApiSource === 'local'
@@ -2268,38 +2271,41 @@
          * HLS HELPERS (Global Scope)
          */
         function svCreateHlsInstance(startTime, isThumbnail = false) {
+            const mobileMain = IS_MOBILE_CLIENT && !isThumbnail;
             return new Hls({
                 startPosition: startTime,
                 enableWorker: !isThumbnail, // Disable worker for thumbnails to avoid blob URL issues on localized dev servers
-                lowLatencyMode: false,
-                backBufferLength: isThumbnail ? 2400 : 30, // 40-minute backbuffer for thumbnails
-                maxBufferLength: isThumbnail ? 60 : 45,
-                maxMaxBufferLength: isThumbnail ? 120 : 90,
-                maxBufferSize: isThumbnail ? 80 * 1024 * 1024 : 60 * 1000 * 1000,
-                maxBufferHole: isThumbnail ? 4.0 : 0.5,
+                lowLatencyMode: isThumbnail ? true : false,
+                backBufferLength: isThumbnail ? 3 : (mobileMain ? 8 : 20),
+                maxBufferLength: isThumbnail ? 6 : (mobileMain ? 18 : 30),
+                maxMaxBufferLength: isThumbnail ? 12 : (mobileMain ? 36 : 60),
+                maxBufferSize: isThumbnail ? 8 * 1024 * 1024 : (mobileMain ? 24 * 1000 * 1000 : 40 * 1000 * 1000),
+                maxBufferHole: isThumbnail ? 0.15 : (mobileMain ? 0.2 : 0.4),
                 highBufferWatchdogPeriod: 2,
-                nudgeOffset: isThumbnail ? 0.1 : 0.3,
-                nudgeMaxRetry: isThumbnail ? 180 : 12,
+                nudgeOffset: isThumbnail ? 0.1 : (mobileMain ? 0.12 : 0.22),
+                nudgeMaxRetry: isThumbnail ? 180 : (mobileMain ? 8 : 12),
                 maxFragLookUpTolerance: isThumbnail ? 0.8 : 0.1,
-                manifestLoadingTimeOut: isThumbnail ? 10000 : 15000,
+                manifestLoadingTimeOut: isThumbnail ? 6000 : 15000,
                 manifestLoadingMaxRetry: 6,
-                manifestLoadingRetryDelay: 500,
-                levelLoadingTimeOut: isThumbnail ? 5000 : 15000,
+                manifestLoadingRetryDelay: isThumbnail ? 300 : 500,
+                levelLoadingTimeOut: isThumbnail ? 4000 : 15000,
                 levelLoadingMaxRetry: 4,
-                levelLoadingRetryDelay: 500,
-                fragLoadingTimeOut: isThumbnail ? 4000 : 20000,
-                fragLoadingMaxRetry: 6,
-                fragLoadingRetryDelay: 500,
-                fragLoadingMaxRetryTimeout: isThumbnail ? 1500 : 8000,
+                levelLoadingRetryDelay: isThumbnail ? 250 : 500,
+                fragLoadingTimeOut: isThumbnail ? 3500 : 20000,
+                fragLoadingMaxRetry: isThumbnail ? 3 : 6,
+                fragLoadingRetryDelay: isThumbnail ? 250 : 500,
+                fragLoadingMaxRetryTimeout: isThumbnail ? 1200 : 8000,
                 startLevel: isThumbnail ? 0 : -1,
-                abrEwmaDefaultEstimate: 1500000,
-                abrBandWidthFactor: 0.92,
-                abrBandWidthUpFactor: 0.7,
+                abrEwmaDefaultEstimate: mobileMain ? 1000000 : 1500000,
+                abrBandWidthFactor: mobileMain ? 0.86 : 0.92,
+                abrBandWidthUpFactor: mobileMain ? 0.55 : 0.7,
                 ignoreDevicePixelRatio: true,
                 capLevelToPlayerSize: true,
+                capLevelOnFPSDrop: true,
                 appendErrorMaxRetry: 10,
+                startFragPrefetch: !!isThumbnail,
                 xhrSetup: (xhr, url) => {
-                    xhr.timeout = 20000;
+                    xhr.timeout = isThumbnail ? 7000 : 20000;
                 },
             });
         }
@@ -2397,6 +2403,7 @@
 
             // Track media error state for double-recovery pattern
             let mediaErrorCount = 0;
+            let lastStallNudgeAt = 0;
 
             hls.on(Hls.Events.ERROR, (_, d) => {
                 console.log('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
@@ -2407,8 +2414,19 @@
                         d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
                         d.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
                     ) {
+                        const now = Date.now();
+                        if (now - lastStallNudgeAt < 1200) return;
+                        lastStallNudgeAt = now;
                         if (video && !video.paused && video.readyState >= 2) {
-                            try { video.currentTime += 0.3; } catch (_) { }
+                            try {
+                                // Smaller jump avoids audible "word repeat" loops on mobile.
+                                video.currentTime = Math.min(
+                                    (video.duration || Infinity) - 0.05,
+                                    (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.08 : 0.18),
+                                );
+                                hls.startLoad();
+                                Promise.resolve(video.play()).catch(() => { });
+                            } catch (_) { }
                         }
                     }
                     return;
@@ -3264,6 +3282,95 @@
                 '';
             const y = Number(String(yearRaw).slice(0, 4));
             return Number.isFinite(y) && y > 1900 ? y : null;
+        }
+
+        async function resolveMovieProviderEpisodeIdBySearch(provider, mediaType, mediaTitle, seasonNo, episodeNo) {
+            const normalizeLoose = (v) =>
+                String(v || '')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            const safeNo = (v, fb = 1) => {
+                const n = Number(v);
+                return Number.isFinite(n) && n > 0 ? n : fb;
+            };
+
+            const title = String(mediaTitle || '').trim();
+            if (!title) return { info: null, episodeId: null };
+
+            const movieProviderBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
+            const terms = Array.from(
+                new Set([
+                    title,
+                    title.replace(/\(\d{4}\)/g, '').trim(),
+                    title.replace(/[:\-].*$/, '').trim(),
+                ].filter(Boolean)),
+            );
+            const wanted = normalizeLoose(title);
+            const yearHint = Number(getPreferredMediaYear() || 0);
+
+            for (const term of terms) {
+                const searchUrl = `${movieProviderBase}/${encodeURIComponent(term)}?page=1`;
+                const { res: sRes } = await fetchJsonWithApiFallback(searchUrl, {
+                    signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeSearch', 8000)),
+                });
+                if (!sRes.ok) continue;
+
+                const payload = await sRes.json();
+                const rows = Array.isArray(payload?.results) ? payload.results : [];
+                if (!rows.length) continue;
+
+                const scored = rows.map((r) => {
+                    const rt = normalizeLoose(r?.title || r?.name || r?.id || '');
+                    let score = 0;
+                    if (rt === wanted) score += 100;
+                    if (rt.includes(wanted) || wanted.includes(rt)) score += 50;
+                    const releaseYear = Number(
+                        String(r?.releaseDate || '').match(/\b(19|20)\d{2}\b/)?.[0] || 0,
+                    );
+                    if (yearHint && releaseYear && yearHint === releaseYear) score += 20;
+                    return { row: r, score };
+                });
+                scored.sort((a, b) => b.score - a.score);
+                const picked = scored[0]?.row || rows[0];
+                if (!picked?.id) continue;
+
+                const infoUrl = `${movieProviderBase}/info?id=${encodeURIComponent(picked.id)}`;
+                const { res: iRes } = await fetchJsonWithApiFallback(infoUrl, {
+                    signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeInfo', 12000)),
+                });
+                if (!iRes.ok) continue;
+
+                let info = await iRes.json();
+                if (info?.data) info = info.data;
+                if (!info) continue;
+
+                if (mediaType === 'tv') {
+                    const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
+                    const sNo = safeNo(seasonNo, 1);
+                    const eNo = safeNo(episodeNo, 1);
+                    const toNo = (ep) => safeNo(ep?.number || ep?.episode || ep?.episodeNum, 0);
+                    const toSeason = (ep) => safeNo(ep?.season || ep?.seasonNo || ep?.seasonNumber, 0);
+                    const pickedEpisode =
+                        episodes.find((ep) => toSeason(ep) === sNo && toNo(ep) === eNo) ||
+                        episodes.find((ep) => toNo(ep) === eNo) ||
+                        episodes[Math.max(0, Math.min(episodes.length - 1, eNo - 1))];
+                    const episodeId = pickedEpisode?.id || pickedEpisode?.episodeId || pickedEpisode?.url || null;
+                    if (episodeId) return { info, episodeId };
+                } else {
+                    const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
+                    const episodeId =
+                        info?.episodeId ||
+                        episodes?.[0]?.id ||
+                        episodes?.[0]?.url ||
+                        info?.id ||
+                        null;
+                    if (episodeId) return { info, episodeId };
+                }
+            }
+
+            return { info: null, episodeId: null };
         }
 
         function getAnimeSearchTerms(title, preferredYear = null, seasonNo = 1) {
@@ -4945,6 +5052,35 @@
 
             const seekPreview = document.getElementById('seek-preview');
             const previewTime = document.getElementById('previewTime');
+            window.previewLastSecond = -1;
+            window.previewSeekInFlight = false;
+            window.previewNudgeTick = 0;
+
+            function warmupPreviewVideo(previewVideo) {
+                if (!previewVideo) return;
+                try {
+                    previewVideo.muted = true;
+                    previewVideo.preload = 'auto';
+                    previewVideo.playsInline = true;
+                    previewVideo.setAttribute('playsinline', 'true');
+                    previewVideo.setAttribute('webkit-playsinline', 'true');
+                    const onReady = () => {
+                        try {
+                            if (isFinite(previewVideo.duration) && previewVideo.duration > 2) {
+                                previewVideo.currentTime = 1.0;
+                            }
+                            const maybe = previewVideo.play?.();
+                            if (maybe && typeof maybe.then === 'function') {
+                                maybe.then(() => {
+                                    try { previewVideo.pause(); } catch (_) { }
+                                }).catch(() => { });
+                            }
+                        } catch (_) { }
+                    };
+                    previewVideo.addEventListener('loadedmetadata', onReady, { once: true });
+                    previewVideo.addEventListener('canplay', onReady, { once: true });
+                } catch (_) { }
+            }
 
             function handleSeekPreview(e) {
                 if (!video || !isFinite(video.duration)) return;
@@ -4966,10 +5102,14 @@
                 // Sync hidden preview video
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
-                    window.previewTargetTime = seekTime;
-                    if (isFinite(previewVideo.duration)) {
-                        window.performPreviewSeek();
-                    }
+                    // Force "second by second" progression to reduce repeated frame stalls.
+                    const wholeSecond = Math.max(0, Math.min(Math.floor(seekTime), Math.floor(video.duration)));
+                    if (wholeSecond === window.previewLastSecond) return;
+                    window.previewLastSecond = wholeSecond;
+                    // Adaptive offset improves chance of unique frame if GOP/keyframes are sparse.
+                    const nudge = (window.previewNudgeTick++ % 3 === 0) ? 0.08 : (window.previewNudgeTick % 3 === 1 ? 0.34 : 0.66);
+                    window.previewTargetTime = wholeSecond + nudge;
+                    window.performPreviewSeek();
                 }
             }
 
@@ -4977,25 +5117,50 @@
                 const previewVideo = document.getElementById('previewVideo');
                 if (!previewVideo || window.previewTargetTime === undefined || !isFinite(previewVideo.duration)) return;
                 if (previewVideo.readyState < 1) return;
+                if (window.previewSeekInFlight) return;
 
-                // Debounce slightly so we don't spam the browser network pipeline exactly on every pixel of mouse movement
+                // Throttle and execute latest second target without flooding requests.
                 if (window.previewSeekTimer) clearTimeout(window.previewSeekTimer);
                 window.previewSeekTimer = setTimeout(() => {
-                    const target = window.previewTargetTime;
-                    if (typeof previewVideo.fastSeek === 'function') {
-                        previewVideo.fastSeek(target);
-                    } else {
-                        previewVideo.currentTime = target;
+                    const maxTime = Math.max(0, Number(previewVideo.duration || 0) - 0.05);
+                    const target = Math.max(0, Math.min(Number(window.previewTargetTime || 0), maxTime));
+                    window.previewSeekInFlight = true;
+                    try {
+                        // Keep preview on lowest rendition to reduce chunk latency.
+                        if (window.previewHlsInst) {
+                            try {
+                                window.previewHlsInst.autoLevelCapping = 0;
+                                window.previewHlsInst.currentLevel = 0;
+                                window.previewHlsInst.nextLevel = 0;
+                                window.previewHlsInst.loadLevel = 0;
+                                window.previewHlsInst.startLoad(Math.max(0, target - 0.75));
+                            } catch (_) { }
+                        }
+                        if (typeof previewVideo.fastSeek === 'function') {
+                            previewVideo.fastSeek(target);
+                        } else {
+                            previewVideo.currentTime = target;
+                        }
+                    } catch (_) {
+                        // ignore
+                    } finally {
+                        window.previewSeekInFlight = false;
                     }
-                }, 40); // 40ms feels instant but prevents hundreds of duplicate rapid requests
+                }, 45);
             };
 
             seekBar.addEventListener('mousemove', handleSeekPreview);
             seekBar.addEventListener('touchstart', handleSeekPreview, { passive: true });
             seekBar.addEventListener('touchmove', handleSeekPreview, { passive: true });
 
-            seekBar.addEventListener('mouseleave', () => seekPreview.classList.remove('visible'));
-            seekBar.addEventListener('touchend', () => seekPreview.classList.remove('visible'));
+            seekBar.addEventListener('mouseleave', () => {
+                seekPreview.classList.remove('visible');
+                window.previewLastSecond = -1;
+            });
+            seekBar.addEventListener('touchend', () => {
+                seekPreview.classList.remove('visible');
+                window.previewLastSecond = -1;
+            });
 
 
             document.addEventListener('click', (e) => {
@@ -5692,6 +5857,30 @@
                                 provEpisodeId = provEpisodeId || targetEpisode?.id;
                             }
                         }
+                    }
+
+                    if (!provEpisodeId) {
+                            // Fallback 0: provider-level title search, then provider /info resolution.
+                            if (!isAnimeProvider) {
+                                try {
+                                    const resolved = await resolveMovieProviderEpisodeIdBySearch(
+                                        provider,
+                                        MEDIA_TYPE,
+                                        currentMediaInfo?.title || currentMediaInfo?.name || '',
+                                        selectedSeasonNo,
+                                        selectedEpisodeNo,
+                                    );
+                                    if (resolved?.episodeId) {
+                                        info = resolved.info || info;
+                                        provEpisodeId = resolved.episodeId;
+                                    }
+                                } catch (searchFallbackErr) {
+                                    console.warn(
+                                        `[${provider}] provider-search fallback failed`,
+                                        searchFallbackErr?.message || searchFallbackErr,
+                                    );
+                                }
+                            }
 
                         if (!provEpisodeId) {
                             // Step 1: get this provider's own info (and episodeId)
@@ -6310,6 +6499,36 @@
             return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(rawUrl)}${ref}`;
         }
 
+        function warmupPreviewVideo(previewVideo) {
+            if (!previewVideo) return;
+            try {
+                previewVideo.muted = true;
+                previewVideo.preload = 'auto';
+                previewVideo.playsInline = true;
+                previewVideo.setAttribute('playsinline', 'true');
+                previewVideo.setAttribute('webkit-playsinline', 'true');
+
+                const onReady = () => {
+                    try {
+                        if (isFinite(previewVideo.duration) && previewVideo.duration > 2) {
+                            previewVideo.currentTime = 1.0;
+                        }
+                        const maybe = previewVideo.play?.();
+                        if (maybe && typeof maybe.then === 'function') {
+                            maybe.then(() => {
+                                try { previewVideo.pause(); } catch (_) { }
+                            }).catch(() => { });
+                        }
+                    } catch (_) { }
+                };
+
+                previewVideo.addEventListener('loadedmetadata', onReady, { once: true });
+                previewVideo.addEventListener('canplay', onReady, { once: true });
+            } catch (_) {
+                // ignore preview warmup failures
+            }
+        }
+
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) {
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
             window.previewSeeking = false;
@@ -6492,10 +6711,15 @@
                 if (previewVideo) {
                     window.previewHlsInst = svCreateHlsInstance(0, true);
                     window.previewHlsInst.on(Hls.Events.MANIFEST_LOADED, () => {
-                        window.previewHlsInst.nextLevel = 0; // Force lowest quality for thumbs
+                        // Aggressively pin preview to lowest level for faster tile updates.
+                        window.previewHlsInst.autoLevelCapping = 0;
+                        window.previewHlsInst.currentLevel = 0;
+                        window.previewHlsInst.nextLevel = 0;
+                        window.previewHlsInst.loadLevel = 0;
                     });
                     window.previewHlsInst.loadSource(streamUrl);
                     window.previewHlsInst.attachMedia(previewVideo);
+                    warmupPreviewVideo(previewVideo);
                 }
 
             } else if (isM3U8 && video?.canPlayType?.('application/vnd.apple.mpegurl')) {
@@ -6512,6 +6736,7 @@
                 if (previewVideo) {
                     previewVideo.preload = 'auto';
                     previewVideo.src = proxiedUrl;
+                    warmupPreviewVideo(previewVideo);
                 }
 
                 initPlyr();
@@ -6561,6 +6786,7 @@
                             'buffer': { 'stableBufferTime': 3, 'bufferTimeAtTopQuality': 3, 'fastSwitchEnabled': true }
                         }
                     });
+                    warmupPreviewVideo(previewVideo);
                 }
 
                 if (isFirstLoad) {
@@ -6639,6 +6865,7 @@
                 if (previewVideo) {
                     previewVideo.preload = 'auto';
                     previewVideo.src = proxiedMp4Url;
+                    warmupPreviewVideo(previewVideo);
                 }
 
                 initPlyr();
