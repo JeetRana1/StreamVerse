@@ -37,6 +37,7 @@ function getCurrentApiSource() {
 }
 
 let BASE_URL = getCurrentApiSource() === 'local' ? LOCAL_API : PROD_API;
+let FALLBACK_DISABLED = false;
 
 function getCacheKey(key) {
     return `${CACHE_PREFIX}${BASE_URL}:${key}`;
@@ -815,4 +816,5 @@ async function openDetails(id, type, provider = '', seedItem = null) {
             </div>`;
     }
 }
+
 
