@@ -1,4 +1,4 @@
-﻿// ------------------ API CONFIGURATION -------------------------------------
+// ------------------ API CONFIGURATION -------------------------------------
 const RUNTIME_CONFIG = window.__STREAMVERSE_CONFIG__ || {};
 const LOCAL_API = String(
     RUNTIME_CONFIG.LOCAL_META_API_BASE ||
@@ -255,52 +255,31 @@ async function fetchDetails(id, type, provider = '') {
     if (inFlight) return inFlight;
 
     const promise = (async () => {
-        let url = getDetailsUrl(id, type, provider);
+        const url = getDetailsUrl(id, type, provider);
         const alternateType = type === 'tv' ? 'movie' : (type === 'movie' ? 'tv' : type);
         let data;
         let lastError;
 
-        // Helper to try a fetch and return data or null
-        const tryFetch = async (targetUrl, timeout) => {
-            try { return await fetchJson(targetUrl, timeout); }
-            catch (e) {
-                lastError = e;
-                return null;
-            }
-        };
+        try {
+            // Main path: one request chain (primary -> fallback) without noisy probe loops.
+            data = await fetchJsonWithFallback(url, 9000);
+        } catch (e) {
+            lastError = e;
+        }
 
-        // 1. Try Primary
-        data = await tryFetch(url, 9000);
-
-        // 2. If Primary fails, try alternate type on Primary (only for non-provider meta)
+        // Only try alternate type when primary likely failed due mismatch (404).
         if (!data && !provider && (type === 'tv' || type === 'movie')) {
-            const altUrl = getDetailsUrl(id, alternateType, provider);
-            data = await tryFetch(altUrl, 10000);
-            if (data) {
-                const movie = normalizeDetailPayload(data, id);
-                writeDetailCache(id, alternateType, provider, movie);
-                writeDetailCache(id, type, provider, movie);
-                return movie;
+            const status = Number(lastError?.status || 0);
+            if (status === 404) {
+                try {
+                    data = await fetchJsonWithFallback(getDetailsUrl(id, alternateType, provider), 10000);
+                } catch (e2) {
+                    lastError = e2;
+                }
             }
         }
 
-        // 3. Fallback Mechanism (if Primary failed or returned 500)
-        if (!data && !provider && FALLBACK_API) {
-            console.warn('Primary API failed, attempting fallback...');
-            const fallbackUrl = url.replace(BASE_URL, FALLBACK_API);
-            data = await tryFetch(fallbackUrl, 15000);
-            if (!data) {
-                const altFallbackUrl = getDetailsUrl(id, alternateType, provider).replace(BASE_URL, FALLBACK_API);
-                data = await tryFetch(altFallbackUrl, 15000);
-            }
-        }
-
-        // 4. Final Retry on Primary if still no data
-        if (!data) {
-            data = await tryFetch(url, 15000);
-        }
-
-        if (!data) throw lastError || new Error('Failed to fetch details from all sources');
+        if (!data) throw lastError || new Error('Failed to fetch details');
 
         const movie = normalizeDetailPayload(data, id);
         writeDetailCache(id, type, provider, movie);
@@ -699,7 +678,7 @@ async function openDetails(id, type, provider = '') {
                         <div style="display:flex;gap:1rem;overflow-x:auto;padding-bottom:1rem;">
                             ${cast.map(name => `
                                 <div style="flex:0 0 80px;text-align:center;">
-                                    <div style="width:70px;height:70px;border-radius:50%;background:rgba(229,9,20,.15);display:flex;align-items:center;justify-content:center;margin:0 auto .5rem;font-size:1.5rem;">ðŸ‘¤</div>
+                                    <div style="width:70px;height:70px;border-radius:50%;background:rgba(229,9,20,.15);display:flex;align-items:center;justify-content:center;margin:0 auto .5rem;font-size:1.5rem;">👤</div>
                                     <p style="font-size:.75rem;font-weight:600;white-space:normal;line-height:1.2">${name}</p>
                                 </div>
                             `).join('')}
@@ -836,3 +815,4 @@ async function openDetails(id, type, provider = '', seedItem = null) {
             </div>`;
     }
 }
+
