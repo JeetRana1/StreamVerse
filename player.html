@@ -351,7 +351,7 @@
         }
 
         .ctrl-btn:hover {
-            background: var(--primary);
+            background: rgba(20, 22, 30, .6);
             border-color: var(--primary);
         }
 
@@ -362,21 +362,33 @@
         }
 
         .control-bottom {
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(88px, auto) 1fr;
+            grid-template-areas:
+                "seek seek"
+                "time actions";
             align-items: center;
-            gap: 1rem;
+            column-gap: 1rem;
+            row-gap: .85rem;
             pointer-events: auto;
             padding: 0 .5rem;
             position: relative;
         }
 
         .time-readout {
+            grid-area: time;
             display: flex;
             align-items: baseline;
             gap: .35rem;
             font-size: .9rem;
             color: rgba(255, 255, 255, .8);
             min-width: 90px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            background: rgba(20, 22, 30, 0.52);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
         }
 
         .time-divider {
@@ -384,10 +396,12 @@
         }
 
         .seek-wrapper {
+            grid-area: seek;
             flex: 1;
             position: relative;
             display: flex;
             align-items: center;
+            width: 100%;
         }
 
         .seek-track-base {
@@ -415,8 +429,7 @@
             position: absolute;
             top: 0;
             bottom: 0;
-            background: #0ea5e9;
-            /* Light blue per screenshot */
+            background: #a855f7;
             z-index: 1;
         }
 
@@ -451,7 +464,7 @@
 
         .seek-preview {
             position: absolute;
-            bottom: 45px;
+            bottom: 72px;
             left: 0;
             display: flex;
             visibility: hidden;
@@ -460,7 +473,7 @@
             pointer-events: none;
             z-index: 1000;
             transition: opacity 0.15s ease-out, transform 0.15s ease-out, visibility 0.15s;
-            transform: translateX(-50%) translateY(5px);
+            transform: translateX(-50%) translateY(3px);
             opacity: 0;
             filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
         }
@@ -468,7 +481,7 @@
         .seek-preview.visible {
             visibility: visible;
             opacity: 1;
-            transform: translateX(-50%) translateY(0);
+            transform: translateX(-50%) translateY(-1px);
         }
 
         .seek-preview-thumb {
@@ -520,9 +533,11 @@
         }
 
         .control-actions {
+            grid-area: actions;
             display: flex;
             align-items: center;
             gap: .6rem;
+            justify-self: end;
         }
 
         .ctrl-icon {
@@ -541,8 +556,14 @@
             backdrop-filter: blur(10px);
         }
 
+        .audio-wave-icon {
+            width: 18px;
+            height: 18px;
+            display: block;
+        }
+
         .ctrl-icon:hover {
-            background: var(--primary);
+            background: rgba(20, 22, 30, .6);
             border-color: var(--primary);
         }
 
@@ -562,6 +583,13 @@
             max-height: 340px;
             overflow-y: auto;
             /* JS will handle left and bottom */
+        }
+        .sheet-dragging {
+            transition: none !important;
+            will-change: transform;
+        }
+        .sheet-animating {
+            will-change: transform, opacity;
         }
 
         #qualityMenu {
@@ -834,7 +862,7 @@
         }
 
         .menu-item.selected {
-            background: rgba(168, 85, 247, 0.18) !important;
+            background: rgba(229, 9, 20, 0.22) !important;
             border: 1px solid var(--primary) !important;
             color: #fff !important;
             font-weight: 600;
@@ -954,13 +982,7 @@
             pointer-events: none !important;
         }
 
-        body.ui-locked .skip-segment-btn {
-            display: none !important;
-        }
-
-        body.ui-locked .next-episode-btn {
-            display: none !important;
-        }
+        /* Keep skip/next buttons visible in lock mode per UX request */
 
         video::cue,
         ::cue,
@@ -1176,13 +1198,13 @@
         }
 
         .ep-item.active {
-            background: rgba(168, 85, 247, 0.18) !important;
+            background: rgba(229, 9, 20, 0.22) !important;
             color: #fff !important;
             font-weight: 700 !important;
             border: 1.5px solid var(--primary) !important;
             border-left: none !important;
             /* Remove old bar style */
-            box-shadow: 0 0 15px rgba(168, 85, 247, 0.2) !important;
+            box-shadow: 0 0 15px rgba(229, 9, 20, 0.28) !important;
             position: relative;
             overflow: hidden;
             display: flex !important;
@@ -1500,6 +1522,7 @@
             }
 
             .control-bottom {
+                display: flex;
                 padding: 1.5rem calc(1rem + var(--safe-left)) calc(1.5rem + var(--safe-bottom));
                 flex-wrap: wrap;
                 gap: 1rem;
@@ -1544,6 +1567,7 @@
                 padding: 24px 16px calc(16px + var(--safe-bottom)) !important;
                 transform: none !important;
                 animation: slideUpDrawer 0.3s cubic-bezier(0.2, 0, 0.2, 1) !important;
+                transition: transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.22s ease !important;
             }
 
             @keyframes slideUpDrawer {
@@ -1572,6 +1596,22 @@
                 height: 4px;
                 background: rgba(255, 255, 255, 0.2);
                 border-radius: 2px;
+            }
+
+            #source-panel::before,
+            #ep-panel::before,
+            #audio-panel::before,
+            .control-menu::before {
+                content: '';
+                position: absolute;
+                top: 10px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 42px;
+                height: 5px;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.25);
+                pointer-events: none;
             }
         }
 
@@ -1727,6 +1767,15 @@
             height: 100%;
         }
 
+        /* Seek buffering mode: keep video visible, show spinner only */
+        .transition-overlay.buffering-lite {
+            background-color: transparent !important;
+        }
+
+        .transition-overlay.buffering-lite canvas {
+            display: none !important;
+        }
+
         /* Spinner shown on top of frozen frame during source switch */
         .transition-spinner {
             position: relative;
@@ -1850,22 +1899,25 @@
 
             <div class="control-actions">
                 <button class="ctrl-icon" id="customServerBtn" aria-label="Servers">
-                    <i class="fa-solid fa-server"></i>
+                    <i class="fa-solid fa-layer-group"></i>
                 </button>
                 <button class="ctrl-icon" id="customEpisodeBtn" aria-label="Episodes" style="display:none;">
-                    <i class="fa-solid fa-list"></i>
+                    <i class="fa-solid fa-rectangle-list"></i>
                 </button>
                 <button class="ctrl-icon" id="custom-audio-btn" aria-label="Audio">
-                    <i class="fa-solid fa-language"></i>
+                    <svg class="audio-wave-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M4 14V10M8 17V7M12 20V4M16 16V8M20 13V11"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
                 </button>
                 <button class="ctrl-icon" id="captionsBtn" aria-label="Subtitles">
                     <i class="fa-solid fa-closed-captioning"></i>
                 </button>
                 <button class="ctrl-icon" id="qualityBtn" aria-label="Quality">
-                    <i class="fa-solid fa-signal"></i>
+                    <i class="fa-solid fa-sliders"></i>
                 </button>
                 <button class="ctrl-icon" id="settingsBtn" aria-label="Settings">
-                    <i class="fa-solid fa-gear"></i>
+                    <i class="fa-solid fa-gauge-high"></i>
                 </button>
                 <button class="ctrl-icon" id="fitBtn" aria-label="Screen Fit">
                     <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
@@ -2187,10 +2239,29 @@
         let audioCtx = null;
         let gainNode = null;
         let sourceNode = null;
+        let isSourceSwitching = false;
+        let isUserSeeking = false;
+        let bufferingUiTimer = null;
+        let bufferingRecoveryTimer = null;
+        let lastHlsKickAt = 0;
+        let lastUserSeekAt = 0;
+        let isSeekDragging = false;
+        let pendingSeekPercent = null;
+        let wasPlayingBeforeDragSeek = false;
+        let queuedSeekTime = null;
+        let seekApplyTimer = null;
+        let lastAppliedSeekAt = 0;
+        let seekBurstWindowStart = 0;
+        let seekBurstCount = 0;
+        let rapidSeekModeUntil = 0;
+        let sameSourceRecoverKey = '';
+        let sameSourceRecoverCount = 0;
+        let controlsHoldVisibleUntil = 0;
+        let seekBufferOverlayTimer = null;
         window.addEventListener('beforeunload', () => { subtitleBlobUrls = []; });
         const fitModes = [
             { value: 'contain', label: 'Contain', icon: 'fa-up-right-and-down-left-from-center' },
-            { value: 'cover', label: 'Fill', icon: 'fa-up-right-and-down-left-from-center' },
+            { value: 'cover', label: 'Fill', icon: 'fa-expand' },
             { value: 'fill', label: 'Stretch', icon: 'fa-arrows-up-down-left-right' }
         ];
 
@@ -2275,14 +2346,14 @@
             return new Hls({
                 startPosition: startTime,
                 enableWorker: !isThumbnail, // Disable worker for thumbnails to avoid blob URL issues on localized dev servers
-                lowLatencyMode: isThumbnail ? true : false,
-                backBufferLength: isThumbnail ? 3 : (mobileMain ? 8 : 20),
-                maxBufferLength: isThumbnail ? 6 : (mobileMain ? 18 : 30),
-                maxMaxBufferLength: isThumbnail ? 12 : (mobileMain ? 36 : 60),
-                maxBufferSize: isThumbnail ? 8 * 1024 * 1024 : (mobileMain ? 24 * 1000 * 1000 : 40 * 1000 * 1000),
-                maxBufferHole: isThumbnail ? 0.15 : (mobileMain ? 0.2 : 0.4),
+                lowLatencyMode: true,
+                backBufferLength: isThumbnail ? 3 : (mobileMain ? 6 : 12),
+                maxBufferLength: isThumbnail ? 6 : (mobileMain ? 14 : 24),
+                maxMaxBufferLength: isThumbnail ? 12 : (mobileMain ? 24 : 40),
+                maxBufferSize: isThumbnail ? 8 * 1024 * 1024 : (mobileMain ? 16 * 1000 * 1000 : 32 * 1000 * 1000),
+                maxBufferHole: isThumbnail ? 0.12 : (mobileMain ? 0.15 : 0.25),
                 highBufferWatchdogPeriod: 2,
-                nudgeOffset: isThumbnail ? 0.1 : (mobileMain ? 0.12 : 0.22),
+                nudgeOffset: isThumbnail ? 0.1 : (mobileMain ? 0.1 : 0.16),
                 nudgeMaxRetry: isThumbnail ? 180 : (mobileMain ? 8 : 12),
                 maxFragLookUpTolerance: isThumbnail ? 0.8 : 0.1,
                 manifestLoadingTimeOut: isThumbnail ? 6000 : 15000,
@@ -2303,11 +2374,120 @@
                 capLevelToPlayerSize: true,
                 capLevelOnFPSDrop: true,
                 appendErrorMaxRetry: 10,
-                startFragPrefetch: !!isThumbnail,
+                startFragPrefetch: true,
+                testBandwidth: true,
+                progressive: true,
                 xhrSetup: (xhr, url) => {
                     xhr.timeout = isThumbnail ? 7000 : 20000;
                 },
             });
+        }
+
+        function showBufferingOverlay() {
+            if (isFirstLoad) return;
+            if (isSourceSwitching) return;
+            const overlay = document.getElementById('transition-overlay');
+            if (!overlay) return;
+            if (!overlay.classList.contains('active')) {
+                // During seek buffering, keep video visible and show spinner only.
+                overlay.classList.add('buffering-lite');
+                overlay.classList.add('active');
+            }
+        }
+
+        function hideBufferingOverlaySoon(delay = 180) {
+            if (bufferingUiTimer) clearTimeout(bufferingUiTimer);
+            if (seekBufferOverlayTimer) {
+                clearTimeout(seekBufferOverlayTimer);
+                seekBufferOverlayTimer = null;
+            }
+            bufferingUiTimer = setTimeout(() => {
+                if (isSourceSwitching) return;
+                if (isUserSeeking) return;
+                if (!video) return;
+                if (!video.paused && video.readyState >= 3) hideTransitionOverlay();
+            }, delay);
+        }
+
+        function maybeShowSeekBufferingOverlay(delay = 260) {
+            if (seekBufferOverlayTimer) clearTimeout(seekBufferOverlayTimer);
+            seekBufferOverlayTimer = setTimeout(() => {
+                seekBufferOverlayTimer = null;
+                if (!video) return;
+                // Only show overlay if seek is still not ready.
+                if (video.readyState < 3) showBufferingOverlay();
+            }, delay);
+        }
+
+        function kickHlsLoadNearCurrentTime() {
+            if (!hlsInst || !video) return;
+            const now = Date.now();
+            if (now - lastHlsKickAt < 550) return;
+            lastHlsKickAt = now;
+            const target = Math.max(0, Number(video.currentTime || 0) - 0.75);
+            try {
+                hlsInst.startLoad(target);
+            } catch (_) { }
+        }
+
+        function performResponsiveSeek(percent) {
+            if (!video || !isFinite(video.duration)) return;
+            const clamped = Math.max(0, Math.min(100, Number(percent || 0)));
+            const targetTime = (clamped / 100) * video.duration;
+            const prevTime = Number(video.currentTime || 0);
+            const jumpDistance = Math.abs(targetTime - prevTime);
+            lastUserSeekAt = Date.now();
+
+            maybeShowSeekBufferingOverlay(260);
+            if (typeof video.fastSeek === 'function') {
+                try { video.fastSeek(targetTime); } catch (_) { video.currentTime = targetTime; }
+            } else {
+                video.currentTime = targetTime;
+            }
+
+            if (hlsInst) {
+                try {
+                    // On long jumps, temporarily bias to lower level for faster first frame.
+                    if (jumpDistance > 25 && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) {
+                        hlsInst.nextLevel = 0;
+                        hlsInst.loadLevel = 0;
+                        setTimeout(() => {
+                            try { hlsInst.nextLevel = -1; } catch (_) { }
+                        }, 1800);
+                    }
+                } catch (_) { }
+                kickHlsLoadNearCurrentTime();
+            }
+        }
+
+        function requestSeekToTime(targetTime, keepPlaying = true) {
+            if (!video || !isFinite(video.duration)) return;
+            const clampedTime = Math.max(0, Math.min(video.duration, Number(targetTime || 0)));
+            queuedSeekTime = clampedTime;
+
+            if (seekApplyTimer) clearTimeout(seekApplyTimer);
+            const now = Date.now();
+            if (now - seekBurstWindowStart > 2000) {
+                seekBurstWindowStart = now;
+                seekBurstCount = 0;
+            }
+            seekBurstCount += 1;
+            if (seekBurstCount >= 6) rapidSeekModeUntil = now + 9000;
+            const elapsed = now - lastAppliedSeekAt;
+            const minGap = seekBurstCount >= 8 ? 320 : 140;
+            const delay = elapsed >= minGap ? 0 : (minGap - elapsed);
+
+            seekApplyTimer = setTimeout(() => {
+                if (!video || !isFinite(video.duration) || queuedSeekTime == null) return;
+                const wasPaused = video.paused;
+                const pct = (queuedSeekTime / Math.max(0.001, video.duration)) * 100;
+                performResponsiveSeek(pct);
+                lastAppliedSeekAt = Date.now();
+                queuedSeekTime = null;
+                if (keepPlaying && !wasPaused) {
+                    Promise.resolve(video.play()).catch(() => { });
+                }
+            }, delay);
         }
 
         function svApplyPreferredAudioToHls(hls) {
@@ -2366,12 +2546,39 @@
         }
 
         function svAttachHlsListeners(hls, startTime, onParsedAction, onErrorFallback) {
+            let fatalRecoveryTimer = null;
+            let fragParseBurstCount = 0;
+            let fragParseBurstStartAt = 0;
+            let lastFragBypassAt = 0;
+            const clearFatalRecoveryTimer = () => {
+                if (fatalRecoveryTimer) {
+                    clearTimeout(fatalRecoveryTimer);
+                    fatalRecoveryTimer = null;
+                }
+            };
+            const armFatalRecoveryTimer = () => {
+                clearFatalRecoveryTimer();
+                const t0 = Number(video?.currentTime || 0);
+                fatalRecoveryTimer = setTimeout(() => {
+                    if (!video) return;
+                    // If playback time is not progressing after recovery attempts, force fallback.
+                    const t1 = Number(video.currentTime || 0);
+                    const progressed = Math.abs(t1 - t0) > 0.25;
+                    if (!progressed && video.readyState < 3) {
+                        console.warn('[hls] Recovery timed out after fatal media error, forcing same-source recovery.');
+                        if (typeof onErrorFallback === 'function') onErrorFallback('fatal_media_timeout');
+                    }
+                }, 6500);
+            };
+
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 console.log('MANIFEST_PARSED - audio tracks:', hls.audioTracks?.length || 0);
                 if (startTime > 0 && video) video.currentTime = startTime;
                 svApplyPreferredAudioToHls(hls);
                 if (onParsedAction) onParsedAction();
                 updateAudioTracks();
+                hideBufferingOverlaySoon(60);
+                clearFatalRecoveryTimer();
             });
 
             hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
@@ -2407,9 +2614,62 @@
 
             hls.on(Hls.Events.ERROR, (_, d) => {
                 console.log('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
+                const detailText = String(d?.details || '').toLowerCase();
+                const isFragParsing = detailText.includes('fragparsingerror') || d?.details === Hls.ErrorDetails.FRAG_PARSING_ERROR;
+                const isBufferAppend =
+                    detailText.includes('bufferappend') ||
+                    d?.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR ||
+                    d?.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR;
+                const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 9000;
+                const applyRapidSeekHeal = () => {
+                    if (!video) return;
+                    showBufferingOverlay();
+                    try {
+                        const jump = isFragParsing ? 2.2 : 0.9;
+                        const near = Math.max(0, Math.min((video.duration || Infinity) - 0.2, (video.currentTime || 0) + jump));
+                        if (isFinite(near) && near > 0) video.currentTime = near;
+                        try {
+                            hls.autoLevelCapping = 0;
+                            hls.nextLevel = 0;
+                            hls.loadLevel = 0;
+                        } catch (_) { }
+                        hls.stopLoad();
+                        hls.startLoad(Math.max(0, near - 1.0));
+                        if (isBufferAppend || d.fatal) hls.recoverMediaError();
+                        setTimeout(() => {
+                            try {
+                                hls.autoLevelCapping = -1;
+                                hls.nextLevel = -1;
+                            } catch (_) { }
+                        }, 2000);
+                    } catch (_) { }
+                };
 
                 // Non-fatal stall: nudge playback manually
                 if (!d.fatal) {
+                    if (inRapidSeekMode && (isFragParsing || isBufferAppend)) {
+                        applyRapidSeekHeal();
+                        return;
+                    }
+                    if (isFragParsing && video) {
+                        const now = Date.now();
+                        if (now - fragParseBurstStartAt > 4500) {
+                            fragParseBurstStartAt = now;
+                            fragParseBurstCount = 0;
+                        }
+                        fragParseBurstCount += 1;
+                        if (fragParseBurstCount >= 3 && now - lastFragBypassAt > 2500) {
+                            lastFragBypassAt = now;
+                            const bypassTo = Math.min((video.duration || Infinity) - 0.25, (video.currentTime || 0) + 1.6);
+                            console.warn('[hls] Repeated frag parsing errors, bypassing ahead to', bypassTo);
+                            try {
+                                if (isFinite(bypassTo) && bypassTo > 0) video.currentTime = bypassTo;
+                                hls.startLoad(Math.max(0, bypassTo - 0.8));
+                            } catch (_) { }
+                            showBufferingOverlay();
+                            return;
+                        }
+                    }
                     if (
                         d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
                         d.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
@@ -2419,6 +2679,7 @@
                         lastStallNudgeAt = now;
                         if (video && !video.paused && video.readyState >= 2) {
                             try {
+                                showBufferingOverlay();
                                 // Smaller jump avoids audible "word repeat" loops on mobile.
                                 video.currentTime = Math.min(
                                     (video.duration || Infinity) - 0.05,
@@ -2436,29 +2697,60 @@
                 if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
                     const code = d.response ? d.response.code : 0;
                     if (code === 404 || code === 403 || code >= 500) {
-                        if (typeof onErrorFallback === 'function') onErrorFallback();
+                        if (typeof onErrorFallback === 'function') onErrorFallback('fatal_network_error');
                         return;
                     }
                     // Retry network load
                     console.warn('[hls] Fatal network error, retrying startLoad...');
+                    showBufferingOverlay();
                     hls.startLoad();
                 } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
                     mediaErrorCount++;
+                    const recentlySeeked = (Date.now() - lastUserSeekAt) < 7000;
+
+                    if (inRapidSeekMode) {
+                        // During seek bursts, keep healing in-place instead of escalating.
+                        applyRapidSeekHeal();
+                        return;
+                    }
+
+                    // Rapid skip bursts can trigger decoder faults on some streams.
+                    // Recover by reloading close to current time before abandoning source.
+                    if (recentlySeeked && mediaErrorCount <= 2) {
+                        console.warn('[hls] Fatal media error after rapid seek, reloading near current time...');
+                        showBufferingOverlay();
+                        try {
+                            let near = Math.max(0, Number(video?.currentTime || 0) - 0.8);
+                            if (isFragParsing && video) {
+                                near = Math.max(0, Number(video.currentTime || 0) + 1.8);
+                                video.currentTime = near;
+                            }
+                            hls.stopLoad();
+                            hls.startLoad(near);
+                            hls.recoverMediaError();
+                        } catch (_) { }
+                        armFatalRecoveryTimer();
+                        return;
+                    }
+
                     if (mediaErrorCount === 1) {
                         console.warn('[hls] Fatal media error, attempting recoverMediaError...');
+                        showBufferingOverlay();
                         hls.recoverMediaError();
+                        armFatalRecoveryTimer();
                     } else if (mediaErrorCount === 2) {
                         // Second attempt: swap source and re-attach
                         console.warn('[hls] Second media error, swapping codec...');
                         hls.swapAudioCodec();
                         hls.recoverMediaError();
+                        armFatalRecoveryTimer();
                     } else {
-                        // Give up and try next source
-                        console.warn('[hls] Unrecoverable media error, trying next source...');
-                        if (typeof onErrorFallback === 'function') onErrorFallback();
+                        console.warn('[hls] Unrecoverable media error, requesting same-source recovery...');
+                        clearFatalRecoveryTimer();
+                        if (typeof onErrorFallback === 'function') onErrorFallback('fatal_media_error');
                     }
                 } else {
-                    if (typeof onErrorFallback === 'function') onErrorFallback();
+                    if (typeof onErrorFallback === 'function') onErrorFallback('fatal_unknown');
                 }
             });
 
@@ -2479,9 +2771,9 @@
                         console.warn('[hls-watchdog] Stall detected, nudging startLoad...');
                         try { hls.startLoad(); } catch (_) { }
                     } else if (watchdogStallCount >= 4) {
-                        console.warn('[hls-watchdog] Persistent stall, attempting source fallback...');
+                        console.warn('[hls-watchdog] Persistent stall, attempting same-source recovery...');
                         watchdogStallCount = 0;
-                        if (typeof onErrorFallback === 'function') onErrorFallback();
+                        if (typeof onErrorFallback === 'function') onErrorFallback('watchdog_stall');
                     }
                 } else {
                     watchdogStallCount = 0;
@@ -2490,7 +2782,10 @@
             }, 3000);
 
             // Clean up watchdog when hls is destroyed
-            hls.on(Hls.Events.DESTROYING, () => clearInterval(watchdogInterval));
+            hls.on(Hls.Events.DESTROYING, () => {
+                clearInterval(watchdogInterval);
+                clearFatalRecoveryTimer();
+            });
         }
 
         function svSwitchHlsSourceSilent(url, referer, onReady) {
@@ -3177,21 +3472,27 @@
             goBackToHome();
         });
 
-        function getMediaInfoCacheKey() {
-            return `${MEDIA_INFO_CACHE_PREFIX}:${apiSrc}:${FORCED_PROVIDER || 'auto'}:${MEDIA_TYPE}:${TMDB_ID}`;
+        function getMediaInfoCacheKey(includeProvider = true) {
+            const providerPart = includeProvider ? (FORCED_PROVIDER || 'auto') : 'shared';
+            return `${MEDIA_INFO_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_TYPE}:${TMDB_ID}`;
         }
 
-        function readCachedMediaInfo() {
+        function readCachedMediaInfo(allowStale = false) {
             try {
-                const raw = localStorage.getItem(getMediaInfoCacheKey());
-                if (!raw) return null;
-                const parsed = JSON.parse(raw);
-                const expiresAt = Number(parsed?.expiresAt || 0);
-                const info = parsed?.info;
-                const hasEps = Array.isArray(info?.episodes) && info.episodes.length > 0;
-                const hasSeasons = Array.isArray(info?.seasons) && info.seasons.length > 0;
-                if (!info || (!hasEps && !hasSeasons) || !Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
-                return info;
+                const keys = [getMediaInfoCacheKey(true), getMediaInfoCacheKey(false)];
+                for (const key of keys) {
+                    const raw = localStorage.getItem(key);
+                    if (!raw) continue;
+                    const parsed = JSON.parse(raw);
+                    const expiresAt = Number(parsed?.expiresAt || 0);
+                    const info = parsed?.info;
+                    const hasEps = Array.isArray(info?.episodes) && info.episodes.length > 0;
+                    const hasSeasons = Array.isArray(info?.seasons) && info.seasons.length > 0;
+                    if (!info || (!hasEps && !hasSeasons)) continue;
+                    if (!allowStale && (!Number.isFinite(expiresAt) || Date.now() > expiresAt)) continue;
+                    return info;
+                }
+                return null;
             } catch (_) {
                 return null;
             }
@@ -3199,10 +3500,21 @@
 
         function writeCachedMediaInfo(info) {
             try {
-                localStorage.setItem(getMediaInfoCacheKey(), JSON.stringify({
+                const mediaKind = String(MEDIA_TYPE || '').toLowerCase();
+                if (mediaKind === 'tv') {
+                    const hasEps = Array.isArray(info?.episodes) && info.episodes.length > 0;
+                    const hasSeasons = Array.isArray(info?.seasons) && info.seasons.length > 0;
+                    // Avoid poisoning cache with partial TV payloads that cannot build episode lists.
+                    if (!hasEps && !hasSeasons) return;
+                }
+                const payload = JSON.stringify({
                     info,
                     expiresAt: Date.now() + MEDIA_INFO_CACHE_TTL_MS,
-                }));
+                });
+                // Provider-scoped key
+                localStorage.setItem(getMediaInfoCacheKey(true), payload);
+                // Shared key across providers (helps forced provider paths survive API 500s)
+                localStorage.setItem(getMediaInfoCacheKey(false), payload);
             } catch (_) { }
         }
 
@@ -4223,8 +4535,15 @@
 
         function syncTimeUI() {
             if (!video) return;
-            currentTimeEl.textContent = formatTime(video.currentTime);
             durationTimeEl.textContent = formatTime(video.duration);
+            if (isSeekDragging && Number.isFinite(pendingSeekPercent) && isFinite(video.duration) && video.duration > 0) {
+                const previewTimeSec = (pendingSeekPercent / 100) * video.duration;
+                currentTimeEl.textContent = formatTime(previewTimeSec);
+                seekBar.style.setProperty('--seek-percent', `${pendingSeekPercent}%`);
+                return;
+            }
+
+            currentTimeEl.textContent = formatTime(video.currentTime);
             if (isFinite(video.duration) && video.duration > 0) {
                 // Update slider UI color fill percentage AND native thumb position
                 const p = (video.currentTime / video.duration) * 100;
@@ -4481,7 +4800,7 @@
 
         function updateSkipSegmentButton() {
             if (!skipSegmentBtn) return;
-            if (isUiLocked || !video || !currentIsLikelyAnime) {
+            if (!video || !currentIsLikelyAnime) {
                 skipSegmentBtn.style.display = 'none';
                 return;
             }
@@ -4508,12 +4827,21 @@
             clearTimeout(headerTimer);
 
             controlsHideTimer = setTimeout(() => {
+                if (Date.now() < controlsHoldVisibleUntil) {
+                    showControlSurface();
+                    return;
+                }
                 if (video && !video.paused) {
                     controlSurface.classList.remove('visible');
                     playerHeader.classList.add('hidden');
                     closeCustomMenus();
                 }
             }, 3000);
+        }
+
+        function holdControlsVisible(ms = 900) {
+            controlsHoldVisibleUntil = Math.max(controlsHoldVisibleUntil, Date.now() + ms);
+            showControlSurface();
         }
 
         function hideControlSurfaceNow() {
@@ -4539,6 +4867,7 @@
                 ? '<i class="fa-solid fa-lock"></i>'
                 : '<i class="fa-solid fa-lock-open"></i>';
             if (isUiLocked) hideControlSurfaceNow();
+            updateSkipSegmentButton();
             updateNextEpisodeButton(false);
         }
 
@@ -4611,6 +4940,7 @@
                 updateNextEpisodeButton(false);
             });
             video.addEventListener('loadedmetadata', () => {
+                isSourceSwitching = false;
                 syncTimeUI();
                 detectAnimeSkipSegments();
                 updateSkipSegmentButton();
@@ -4657,6 +4987,33 @@
             });
             video.addEventListener('playing', () => {
                 setPlayIcon(true); // Chrome sometimes only fires 'playing' on autostart
+                isSourceSwitching = false;
+                isUserSeeking = false;
+                if (bufferingRecoveryTimer) clearTimeout(bufferingRecoveryTimer);
+                hideBufferingOverlaySoon(120);
+            });
+            video.addEventListener('seeking', () => {
+                isUserSeeking = true;
+                lastUserSeekAt = Date.now();
+                maybeShowSeekBufferingOverlay(240);
+                kickHlsLoadNearCurrentTime();
+            });
+            video.addEventListener('seeked', () => {
+                isUserSeeking = false;
+                kickHlsLoadNearCurrentTime();
+                if (bufferingRecoveryTimer) clearTimeout(bufferingRecoveryTimer);
+                bufferingRecoveryTimer = setTimeout(() => hideBufferingOverlaySoon(80), 120);
+            });
+            video.addEventListener('waiting', () => {
+                showBufferingOverlay();
+                kickHlsLoadNearCurrentTime();
+            });
+            video.addEventListener('stalled', () => {
+                showBufferingOverlay();
+                kickHlsLoadNearCurrentTime();
+            });
+            video.addEventListener('canplay', () => {
+                hideBufferingOverlaySoon(80);
             });
             video.addEventListener('pause', () => {
                 setPlayIcon(false);
@@ -4768,6 +5125,87 @@
             epPanel.classList.remove('open');
             audioPanel.classList.remove('open');
             closeCustomMenus();
+        }
+        function closeMenuElement(menuEl) {
+            if (!menuEl) return;
+            if (menuEl.classList.contains('control-menu')) {
+                menuEl.classList.remove('active');
+                return;
+            }
+            if (menuEl.id === 'source-panel' || menuEl.id === 'ep-panel' || menuEl.id === 'audio-panel') {
+                menuEl.classList.remove('open');
+            }
+        }
+        function animateCloseMenuElement(menuEl) {
+            if (!menuEl) return;
+            menuEl.classList.add('sheet-animating');
+            menuEl.style.transform = 'translateY(110%)';
+            menuEl.style.opacity = '0.85';
+            setTimeout(() => {
+                closeMenuElement(menuEl);
+                menuEl.style.transform = '';
+                menuEl.style.opacity = '';
+                menuEl.classList.remove('sheet-animating');
+            }, 210);
+        }
+
+        function initMobileSheetDragToClose() {
+            const sheets = [sourcePanel, epPanel, audioPanel, qualityMenu, captionsMenu, settingsMenu, volumeMenu].filter(Boolean);
+            const state = new WeakMap();
+            const isSheetOpen = (el) => el.classList.contains('active') || el.classList.contains('open');
+
+            sheets.forEach((sheet) => {
+                state.set(sheet, { dragging: false, startY: 0, startAt: 0, dy: 0 });
+
+                const onStart = (e) => {
+                    if (!IS_MOBILE_CLIENT || !isSheetOpen(sheet)) return;
+                    const touch = e.touches?.[0];
+                    if (!touch) return;
+                    const rect = sheet.getBoundingClientRect();
+                    const yInSheet = touch.clientY - rect.top;
+                    // Start drag only from top grab area to avoid fighting list scroll.
+                    if (yInSheet > 54) return;
+                    const s = state.get(sheet);
+                    s.dragging = true;
+                    s.startY = touch.clientY;
+                    s.startAt = Date.now();
+                    s.dy = 0;
+                    sheet.classList.add('sheet-dragging');
+                };
+
+                const onMove = (e) => {
+                    const s = state.get(sheet);
+                    if (!s.dragging) return;
+                    const touch = e.touches?.[0];
+                    if (!touch) return;
+                    s.dy = Math.max(0, touch.clientY - s.startY);
+                    sheet.style.transform = `translateY(${s.dy}px)`;
+                    if (s.dy > 0) e.preventDefault();
+                };
+
+                const onEnd = () => {
+                    const s = state.get(sheet);
+                    if (!s.dragging) return;
+                    s.dragging = false;
+                    const elapsed = Math.max(1, Date.now() - s.startAt);
+                    const velocity = s.dy / elapsed; // px/ms
+                    const shouldClose = s.dy > 90 || velocity > 0.75;
+                    sheet.classList.remove('sheet-dragging');
+                    sheet.classList.add('sheet-animating');
+                    if (shouldClose) {
+                        animateCloseMenuElement(sheet);
+                    } else {
+                        sheet.style.transform = '';
+                        sheet.style.opacity = '';
+                        setTimeout(() => sheet.classList.remove('sheet-animating'), 220);
+                    }
+                };
+
+                sheet.addEventListener('touchstart', onStart, { passive: true });
+                sheet.addEventListener('touchmove', onMove, { passive: false });
+                sheet.addEventListener('touchend', onEnd, { passive: true });
+                sheet.addEventListener('touchcancel', onEnd, { passive: true });
+            });
         }
         document.addEventListener('click', e => {
             if (!sourcePanel.contains(e.target) && e.target !== sourceBtn && e.target !== customServerBtn && !customServerBtn?.contains(e.target)) sourcePanel.classList.remove('open');
@@ -4887,6 +5325,10 @@
             setPlayIcon(false);
             updateMuteIcon();
             captionsBtn.style.display = 'none';
+            initMobileSheetDragToClose();
+            if (customAudioBtn) {
+                customAudioBtn.innerHTML = '<svg class="audio-wave-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 14V10M8 17V7M12 20V4M16 16V8M20 13V11" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>';
+            }
 
             backBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -4911,14 +5353,23 @@
             skipBackBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
-                video.currentTime = Math.max(0, video.currentTime - 10);
+                holdControlsVisible(1200);
+                requestSeekToTime(Math.max(0, (video.currentTime || 0) - 10), true);
             });
 
             skipFwdBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
-                if (isFinite(video.duration)) video.currentTime = Math.min(video.duration, video.currentTime + 10);
-                else video.currentTime += 10;
+                holdControlsVisible(1200);
+                if (isFinite(video.duration)) requestSeekToTime(Math.min(video.duration, (video.currentTime || 0) + 10), true);
+                else requestSeekToTime((video.currentTime || 0) + 10, true);
+            });
+
+            // Desktop hover/press stabilization for rapid click bursts on skip buttons.
+            [skipBackBtn, skipFwdBtn].forEach((btn) => {
+                if (!btn) return;
+                btn.addEventListener('mouseenter', () => holdControlsVisible(1000));
+                btn.addEventListener('mousedown', () => holdControlsVisible(1200));
             });
 
             customAudioBtn.addEventListener('click', (e) => {
@@ -5025,7 +5476,7 @@
                 const active = getActiveSkipSegment(Number(video.currentTime || 0));
                 if (!active) return;
                 const wasPaused = video.paused;
-                video.currentTime = Math.max(0, active.end + 0.2);
+                requestSeekToTime(Math.max(0, active.end + 0.2), true);
                 if (!wasPaused) {
                     Promise.resolve(video.play()).catch(() => { });
                 }
@@ -5040,13 +5491,48 @@
                 await goToNextEpisode();
             });
 
+            seekBar.addEventListener('pointerdown', (e) => {
+                isSeekDragging = true;
+                seekBar.setPointerCapture?.(e.pointerId);
+                pendingSeekPercent = parseFloat(seekBar.value || '0');
+                wasPlayingBeforeDragSeek = !!video && !video.paused;
+            });
+
             seekBar.addEventListener('input', (e) => {
-                if (!video || !isFinite(video.duration)) return;
                 const percent = parseFloat(e.target.value || '0');
-                const wasPaused = video.paused;
-                video.currentTime = (percent / 100) * video.duration;
-                if (!wasPaused) {
+                seekBar.style.setProperty('--seek-percent', `${percent}%`);
+                // Do not spam network seeks while dragging.
+                if (isSeekDragging) {
+                    pendingSeekPercent = percent;
+                    if (video && isFinite(video.duration) && video.duration > 0) {
+                        currentTimeEl.textContent = formatTime((percent / 100) * video.duration);
+                    }
+                    return;
+                }
+                requestSeekToTime((percent / 100) * (video?.duration || 0), true);
+            });
+
+            const commitSeekFromDrag = (e) => {
+                if (!isSeekDragging) return;
+                if (e && typeof e.pointerId === 'number' && seekBar.hasPointerCapture?.(e.pointerId)) {
+                    seekBar.releasePointerCapture?.(e.pointerId);
+                }
+                const percent = Number.isFinite(pendingSeekPercent) ? pendingSeekPercent : parseFloat(seekBar.value || '0');
+                isSeekDragging = false;
+                pendingSeekPercent = null;
+                requestSeekToTime((percent / 100) * (video?.duration || 0), true);
+                if (wasPlayingBeforeDragSeek && video) {
                     Promise.resolve(video.play()).catch(() => { });
+                }
+            };
+
+            seekBar.addEventListener('pointerup', commitSeekFromDrag);
+            seekBar.addEventListener('pointercancel', commitSeekFromDrag);
+            seekBar.addEventListener('change', () => {
+                // Keyboard/click commits (non-drag path)
+                if (!isSeekDragging) {
+                    const percent = parseFloat(seekBar.value || '0');
+                    requestSeekToTime((percent / 100) * (video?.duration || 0), true);
                 }
             });
 
@@ -5091,11 +5577,18 @@
                 const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
                 const seekTime = (percent / 100) * video.duration;
 
-                // Position preview box relative to its container
-                const parent = seekPreview.offsetParent;
-                if (!parent) return;
-                const containerRect = parent.getBoundingClientRect();
-                seekPreview.style.left = `${clientX - containerRect.left}px`;
+                // Position preview in its own offset-parent coordinate space (control-bottom),
+                // then clamp against viewport so it never gets cut off at 0:00 or near the end.
+                const parentEl = seekPreview.offsetParent || seekBar.closest('.control-bottom') || document.body;
+                const parentRect = parentEl.getBoundingClientRect();
+                const anchorClientX = rect.left + (percent / 100) * rect.width;
+                const leftInParent = anchorClientX - parentRect.left;
+                // Keep alignment to hovered time; only tiny edge padding to avoid hard clipping.
+                const edgePad = 8;
+                const minLeft = edgePad;
+                const maxLeft = Math.max(minLeft, parentRect.width - edgePad);
+                const clampedLeft = Math.max(minLeft, Math.min(maxLeft, leftInParent));
+                seekPreview.style.left = `${clampedLeft}px`;
                 seekPreview.classList.add('visible');
                 previewTime.textContent = formatTime(seekTime);
 
@@ -5244,6 +5737,7 @@
 
             function handleSurfaceInteraction(e) {
                 if (isUiLocked && e.target !== uiLockBtn && !uiLockBtn.contains(e.target)) return;
+                if (Date.now() < controlsHoldVisibleUntil) return;
 
                 // Ignore interactive controls
                 if (e.target.closest('button, .control-menu, .panel, .seek-bar, .ep-item, .source-item')) return;
@@ -5353,23 +5847,50 @@
 
             try {
                 const isAnimeOnlyProvider = ['satoru', 'justanime', 'hianime', 'animesaturn'].includes(FORCED_PROVIDER);
-                const infoUrl = (FORCED_PROVIDER && !isAnimeOnlyProvider)
-                    ? `${API_BASE.replace('/meta/tmdb', '/movies/' + FORCED_PROVIDER)}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`
-                    : `${API_BASE}/info/${TMDB_ID}?type=${MEDIA_TYPE}`;
+                const infoUrls = (FORCED_PROVIDER && !isAnimeOnlyProvider)
+                    ? [
+                        `${API_BASE.replace('/meta/tmdb', '/movies/' + FORCED_PROVIDER)}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`,
+                    ]
+                    : [
+                        `${API_BASE}/info/${TMDB_ID}?type=${MEDIA_TYPE}`,
+                        `${API_BASE}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`,
+                    ];
 
                 let info = readCachedMediaInfo();
                 if (info) {
                     setLoader('Fetching media info...', 'Loaded from local cache');
-                    fetchJsonWithRetry(infoUrl, 10000, 18000)
-                        .then((fresh) => {
-                            const payload = fresh?.data || fresh;
-                            if (payload && typeof payload === 'object') writeCachedMediaInfo(payload);
-                        })
-                        .catch(() => { });
+                    for (const infoUrl of infoUrls) {
+                        fetchJsonWithRetry(infoUrl, 10000, 18000)
+                            .then((fresh) => {
+                                const payload = fresh?.data || fresh;
+                                if (payload && typeof payload === 'object') writeCachedMediaInfo(payload);
+                            })
+                            .catch(() => { });
+                    }
                 } else {
-                    const parsed = await fetchJsonWithRetry(infoUrl, 12000, 30000);
+                    let parsed = null;
+                    let lastErr = null;
+                    for (const infoUrl of infoUrls) {
+                        try {
+                            parsed = await fetchJsonWithRetry(infoUrl, 12000, 30000);
+                            if (parsed) break;
+                        } catch (e) {
+                            lastErr = e;
+                        }
+                    }
                     info = parsed?.data || parsed;
-                    writeCachedMediaInfo(info);
+                    if (!info) {
+                        // Final rescue: allow stale cache when API is down with 500s/timeouts.
+                        const stale = readCachedMediaInfo(true);
+                        if (stale) {
+                            info = stale;
+                            setLoader('Fetching media info...', 'Loaded stale cache (API unavailable)');
+                        } else {
+                            throw lastErr || new Error('Failed to load media info');
+                        }
+                    } else {
+                        writeCachedMediaInfo(info);
+                    }
                 }
                 currentMediaInfo = info;
                 clearTimeout(safetyTimer);
@@ -5440,7 +5961,29 @@
             episodeFillerStatus = new Map();
             fillerLookupState = 'loading';
             if (!tvSeasons.length) {
-                throw new Error('No episodes found for this series');
+                // API can return partial TV info during transient backend failures.
+                // Build a minimal placeholder so playback can continue via provider search.
+                const safeSeasonNo = (Number.isFinite(URL_SEASON) && URL_SEASON > 0) ? URL_SEASON : 1;
+                const safeEpisodeNo = (Number.isFinite(URL_EPISODE) && URL_EPISODE > 0) ? URL_EPISODE : 1;
+                const fallbackTitle = String(
+                    info?.title ||
+                    info?.name ||
+                    currentMediaInfo?.title ||
+                    currentMediaInfo?.name ||
+                    `Episode ${safeEpisodeNo}`
+                ).trim();
+                tvSeasons = [{
+                    seasonNo: safeSeasonNo,
+                    name: `Season ${safeSeasonNo}`,
+                    episodes: [{
+                        episode: safeEpisodeNo,
+                        number: safeEpisodeNo,
+                        episodeNum: safeEpisodeNo,
+                        title: fallbackTitle,
+                        id: null,
+                    }],
+                }];
+                console.warn('[initTv] No episodes in info payload. Using URL-based fallback season/episode map.');
             }
 
             buildEpPanel();
@@ -5554,7 +6097,7 @@
         function updateNextEpisodeButton(forceShow = false) {
             if (!nextEpisodeBtn) return;
             const next = getNextEpisodeRef();
-            if (!next || isUiLocked || !video) {
+            if (!next || !video) {
                 nextEpisodeBtn.style.display = 'none';
                 return;
             }
@@ -6306,14 +6849,14 @@
             return /streameeeeee\.site\/embed-1\/v3\/e-1\/[^?]+\?z=$/i.test(url.trim());
         }
 
-        function captureVideoFrameToOverlay() {
+        function captureVideoFrameToOverlay(allowBlackFallback = true) {
             const overlay = document.getElementById('transition-overlay');
-            if (!overlay) return;
+            if (!overlay) return false;
             const canvas = overlay.querySelector('canvas');
-            if (!canvas) return;
+            if (!canvas) return false;
 
             // Activate overlay immediately — spinner will show regardless of canvas success
-            overlay.classList.add('active');
+            let drewFrame = false;
 
             // Dimensions from the actual player wrap
             const wrap = document.querySelector('.player-wrap');
@@ -6357,10 +6900,12 @@
             }
 
             // 1. Try main video first
-            if (!drawVideoToCanvas(video)) {
+            drewFrame = drawVideoToCanvas(video);
+            if (!drewFrame) {
                 // 2. Try the hidden preview video
                 const previewVideo = document.getElementById('previewVideo');
-                if (!drawVideoToCanvas(previewVideo)) {
+                drewFrame = drawVideoToCanvas(previewVideo);
+                if (!drewFrame && allowBlackFallback) {
                     // 3. No live frame — draw the cover/poster image instead of plain black
                     if (currentCoverUrl) {
                         const img = new Image();
@@ -6400,11 +6945,17 @@
                     }
                 }
             }
+            if (drewFrame || allowBlackFallback) {
+                overlay.classList.add('active');
+            }
+            return drewFrame;
         }
 
         function hideTransitionOverlay() {
             const overlay = document.getElementById('transition-overlay');
-            if (overlay) overlay.classList.remove('active');
+            if (!overlay) return;
+            overlay.classList.remove('active');
+            overlay.classList.remove('buffering-lite');
         }
 
 
@@ -6532,6 +7083,13 @@
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) {
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
             window.previewSeeking = false;
+            isSourceSwitching = true;
+            let sameSourceRecoveryLock = false;
+            const recoveryKey = `${srcIdx}|${String(url || '')}`;
+            if (sameSourceRecoverKey !== recoveryKey) {
+                sameSourceRecoverKey = recoveryKey;
+                sameSourceRecoverCount = 0;
+            }
             const previewVideo = document.getElementById('previewVideo');
             if (previewVideo) previewVideo.muted = true;
 
@@ -6656,18 +7214,57 @@
                 });
             };
 
-            const tryNextSource = () => {
-                const next = srcIdx + 1;
+            const recoverSameSource = (reason = 'unknown') => {
+                if (sameSourceRecoveryLock) return;
+                sameSourceRecoveryLock = true;
                 const currentTime = (video && video.currentTime > 0) ? video.currentTime : startTime;
-                if (next < allSources.length) {
-                    console.log(`Falling back to source ${next}`);
-                    updateSourceUI(next);
-                    currentIdx = next;
-                    const s = allSources[next];
-                    loadStream(s.url, s.isM3U8, s.isEmbed, s.referer, next, currentTime);
-                } else {
-                    showError('All Sources Failed', 'Every available stream source failed to load.');
+                sameSourceRecoverCount += 1;
+                console.warn(`[hls] Recovering same source (attempt ${sameSourceRecoverCount}) reason=${reason}`);
+
+                // Soft in-place recovery first (no full player rebuild/restart)
+                if (hlsInst && isM3U8 && sameSourceRecoverCount <= 40) {
+                    try {
+                        const jump = sameSourceRecoverCount > 12 ? 2.6 : (sameSourceRecoverCount > 5 ? 1.4 : 0.25);
+                        const near = Math.max(0, Number(currentTime || 0) + jump);
+                        showBufferingOverlay();
+                        if (video && isFinite(video.duration) && near < video.duration) {
+                            video.currentTime = near;
+                        }
+                        try {
+                            hlsInst.autoLevelCapping = 0;
+                            hlsInst.nextLevel = 0;
+                            hlsInst.loadLevel = 0;
+                        } catch (_) { }
+                        hlsInst.stopLoad();
+                        hlsInst.startLoad(Math.max(0, near - 0.8));
+                        hlsInst.recoverMediaError();
+                        setTimeout(() => {
+                            try { hlsInst.nextLevel = -1; } catch (_) { }
+                            try { hlsInst.autoLevelCapping = -1; } catch (_) { }
+                        }, 2200);
+
+                        // Every few failed heals, hot-rebuild HLS in-place (no UI/player restart).
+                        if (sameSourceRecoverCount % 8 === 0) {
+                            try {
+                                const resumeAt = Math.max(0, Number(video?.currentTime || near));
+                                hlsInst.destroy();
+                                hlsInst = svCreateHlsInstance(resumeAt);
+                                svAttachHlsListeners(hlsInst, resumeAt, null, recoverSameSource);
+                                hlsInst.loadSource(proxiedStreamUrl(url, referer));
+                                hlsInst.attachMedia(video);
+                            } catch (_) { }
+                        }
+                    } catch (_) { }
+                    setTimeout(() => { sameSourceRecoveryLock = false; }, 420);
+                    return;
                 }
+
+                // No hard reloads/restarts: keep it in-place only.
+                sameSourceRecoveryLock = false;
+                showError(
+                    'Stream Decode Error',
+                    'Playback could not recover in-place from repeated broken fragments. Please choose another server manually.'
+                );
             };
 
             const isMPD = String(url || '').toLowerCase().includes('.mpd');
@@ -6701,7 +7298,7 @@
                     }).then(() => {
                         if (video && !video.paused) setPlayIcon(true);
                     });
-                }, tryNextSource);
+                }, recoverSameSource);
 
                 hlsInst.loadSource(streamUrl);
                 hlsInst.attachMedia(video);
@@ -6769,8 +7366,8 @@
                     }
                     if (!dashTriedNext && dashErrCount >= 2) {
                         dashTriedNext = true;
-                        console.warn('DASH source appears blocked (403), trying next source');
-                        tryNextSource();
+                        console.warn('DASH source appears blocked (403), recovering same source');
+                        recoverSameSource('dash_403');
                     }
                 });
                 initPlyr();
@@ -6813,8 +7410,8 @@
                 // Auto-rotate to next source if playback does not visibly start soon.
                 setTimeout(() => {
                     if (currentIdx === srcIdx) {
-                        console.warn('Embed source timeout, trying next source');
-                        tryNextSource();
+                        console.warn('Embed source timeout, recovering same source');
+                        recoverSameSource('embed_timeout');
                     }
                 }, 9000);
 
@@ -6846,8 +7443,8 @@
                 video.addEventListener('error', () => {
                     const switched = tryDirectMp4Fallback();
                     if (!switched) {
-                        console.warn('Direct MP4 failed, trying next source');
-                        tryNextSource();
+                        console.warn('Direct MP4 failed, recovering same source');
+                        recoverSameSource('mp4_error');
                     }
                 });
 
@@ -6903,3 +7500,4 @@
 </body>
 
 </html>
+
