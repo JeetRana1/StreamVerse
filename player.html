@@ -421,25 +421,49 @@
             height: 5px;
             pointer-events: none;
             z-index: 1;
-            border-radius: 999px;
-            overflow: hidden;
         }
 
         .skip-marker {
             position: absolute;
             top: 0;
             bottom: 0;
-            background: repeating-linear-gradient(
-                to right,
-                rgba(168, 85, 247, 0.86) 0px,
-                rgba(168, 85, 247, 0.86) 18px,
-                rgba(196, 120, 255, 0.92) 18px,
-                rgba(196, 120, 255, 0.92) 20px
-            );
-            border-left: 1px solid rgba(255, 255, 255, 0.55);
-            border-right: 1px solid rgba(255, 255, 255, 0.55);
-            box-shadow: inset 0 0 0 1px rgba(88, 28, 135, 0.28);
+            background: rgba(168, 85, 247, 0.22);
+            transition: background 0.2s ease, box-shadow 0.2s ease;
             z-index: 3;
+        }
+
+        /* Left edge tick */
+        .skip-marker::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: -2px;
+            bottom: -2px;
+            width: 2px;
+            background: rgba(200, 150, 255, 0.9);
+            border-radius: 2px;
+        }
+
+        /* Right edge tick */
+        .skip-marker::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: -2px;
+            bottom: -2px;
+            width: 2px;
+            background: rgba(200, 150, 255, 0.9);
+            border-radius: 2px;
+        }
+
+        .skip-marker.active {
+            background: rgba(138, 48, 228, 0.82);
+            box-shadow: 0 0 8px rgba(168, 85, 247, 0.55);
+        }
+
+        .skip-marker.active::before,
+        .skip-marker.active::after {
+            background: rgba(235, 198, 255, 1);
         }
 
         .seek-bar {
@@ -447,7 +471,7 @@
             appearance: none;
             height: 5px;
             border-radius: 999px;
-            background: linear-gradient(to right, rgba(229, 9, 20, 0.78) 0%, rgba(229, 9, 20, 0.78) var(--seek-percent, 0%), transparent var(--seek-percent, 0%), transparent 100%);
+            background: linear-gradient(to right, rgba(229, 9, 20, 0.58) 0%, rgba(229, 9, 20, 0.58) var(--seek-percent, 0%), transparent var(--seek-percent, 0%), transparent 100%);
             outline: none;
             cursor: pointer;
             z-index: 2;
@@ -864,6 +888,7 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
             font-size: 0.88rem;
             font-weight: 500;
+            box-sizing: border-box !important;
         }
 
         .menu-item:hover {
@@ -879,7 +904,6 @@
             font-weight: 600;
             position: relative;
             overflow: hidden;
-            padding: 16px 14px;
         }
 
         .menu-item.selected::before {
@@ -892,6 +916,96 @@
             background: var(--primary);
             border-radius: 0 4px 4px 0;
             box-shadow: 0 0 10px var(--primary);
+        }
+
+        /* ---- Settings menu extras ---- */
+        .menu-section-label {
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.35);
+            padding: 4px 6px 2px;
+        }
+
+        .menu-divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.08);
+            margin: 6px 0;
+            border-radius: 1px;
+        }
+
+        /* Toggle row (label + switch) */
+        .menu-toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 11px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.04);
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease;
+            gap: 12px;
+            user-select: none;
+        }
+
+        .menu-toggle-row:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .menu-toggle-label {
+            font-size: 0.88rem;
+            font-weight: 500;
+            color: #ddd;
+        }
+
+        /* The pill switch */
+        .menu-toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+
+        .menu-toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+
+        .menu-toggle-track {
+            position: absolute;
+            inset: 0;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: background 0.25s ease, border-color 0.25s ease;
+        }
+
+        .menu-toggle-thumb {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.6);
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                background 0.25s ease;
+        }
+
+        /* Checked state */
+        .menu-toggle-switch input:checked~.menu-toggle-track {
+            background: rgba(229, 9, 20, 0.75);
+            border-color: var(--primary);
+        }
+
+        .menu-toggle-switch input:checked~.menu-toggle-thumb {
+            transform: translateX(18px);
+            background: #fff;
         }
 
         .ui-lock-btn {
@@ -913,7 +1027,6 @@
         }
 
         .ui-lock-btn:hover {
-            background: var(--primary);
             border-color: var(--primary);
         }
 
@@ -941,10 +1054,54 @@
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
             letter-spacing: 0.5px;
             white-space: nowrap;
+            overflow: hidden;
+            isolation: isolate;
+        }
+
+        .skip-segment-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: #fff;
+            transform: scaleX(0);
+            transform-origin: left center;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .skip-segment-btn.counting::before {
+            animation: skip-fill-progress 5s linear forwards;
+        }
+
+        .skip-segment-btn:not(.counting)::before {
+            transform: scaleX(0);
+            animation: none;
+        }
+
+        .skip-segment-btn.countdown-paused::before {
+            animation-play-state: paused;
+        }
+
+        @keyframes skip-fill-progress {
+            from {
+                transform: scaleX(0);
+            }
+
+            to {
+                transform: scaleX(1);
+            }
+        }
+
+        .skip-segment-btn>* {
+            position: relative;
+            z-index: 1;
+            mix-blend-mode: difference;
+            color: #fff;
         }
 
         .skip-segment-btn:hover {
-            background: var(--primary);
+            background: rgba(45, 45, 45, 0.95);
             border-color: var(--primary);
             box-shadow: 0 0 25px var(--primary-glow);
             transform: translateY(-2px);
@@ -972,10 +1129,54 @@
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
             letter-spacing: 0.5px;
             white-space: nowrap;
+            overflow: hidden;
+            /* Scope mix-blend-mode to THIS button only, not video beneath */
+            isolation: isolate;
+        }
+
+        /* Progress fill sweep */
+        .next-episode-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: #fff;
+            transform: scaleX(0);
+            transform-origin: left center;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .next-episode-btn.counting::before {
+            animation: ep-fill-progress 8s linear forwards;
+        }
+
+        /* Freeze the sweep in-place while video is paused */
+        .next-episode-btn.countdown-paused::before {
+            animation-play-state: paused;
+        }
+
+        @keyframes ep-fill-progress {
+            from {
+                transform: scaleX(0);
+            }
+
+            to {
+                transform: scaleX(1);
+            }
+        }
+
+        /* Text/icon sit above fill; difference blend = black only when white fill is behind them */
+        .next-episode-btn>* {
+            position: relative;
+            z-index: 1;
+            mix-blend-mode: difference;
+            color: #fff;
         }
 
         .next-episode-btn:hover {
-            background: rgba(255, 255, 255, 0.12);
+            /* Keep background dark — light hover + difference = invisible white text */
+            background: rgba(45, 45, 45, 0.95);
             border-color: var(--primary);
             box-shadow: 0 0 25px var(--primary-glow);
             transform: translateY(-2px);
@@ -1927,8 +2128,11 @@
                 <button class="ctrl-icon" id="qualityBtn" aria-label="Quality">
                     <i class="fa-solid fa-sliders"></i>
                 </button>
-                <button class="ctrl-icon" id="settingsBtn" aria-label="Settings">
+                <button class="ctrl-icon" id="playbackBtn" aria-label="Playback Speed">
                     <i class="fa-solid fa-gauge-high"></i>
+                </button>
+                <button class="ctrl-icon" id="preferencesBtn" aria-label="Preferences">
+                    <i class="fa-solid fa-gears"></i>
                 </button>
                 <button class="ctrl-icon" id="fitBtn" aria-label="Screen Fit">
                     <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
@@ -1958,7 +2162,8 @@
     </div>
     <div class="control-menu" id="qualityMenu"></div>
     <div class="control-menu" id="captionsMenu"></div>
-    <div class="control-menu" id="settingsMenu"></div>
+    <div class="control-menu" id="playbackMenu"></div>
+    <div class="control-menu" id="preferencesMenu"></div>
     <div class="control-menu" id="volumeMenu"></div>
     <button class="ui-lock-btn" id="uiLockBtn" aria-label="Lock controls">
         <i class="fa-solid fa-lock-open"></i>
@@ -2157,7 +2362,8 @@
         const customAudioBtn = document.getElementById('custom-audio-btn');
         const captionsBtn = document.getElementById('captionsBtn');
         const qualityBtn = document.getElementById('qualityBtn');
-        const settingsBtn = document.getElementById('settingsBtn');
+        const playbackBtn = document.getElementById('playbackBtn');
+        const preferencesBtn = document.getElementById('preferencesBtn');
         const fitBtn = document.getElementById('fitBtn');
         const muteBtn = document.getElementById('muteBtn');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
@@ -2169,7 +2375,8 @@
         const durationTimeEl = document.getElementById('durationTime');
         const qualityMenu = document.getElementById('qualityMenu');
         const captionsMenu = document.getElementById('captionsMenu');
-        const settingsMenu = document.getElementById('settingsMenu');
+        const playbackMenu = document.getElementById('playbackMenu');
+        const preferencesMenu = document.getElementById('preferencesMenu');
         const volumeMenu = document.getElementById('volumeMenu');
 
         // -----------------------------------------------------------------------
@@ -2267,8 +2474,18 @@
         let seekBurstWindowStart = 0;
         let seekBurstCount = 0;
         let rapidSeekModeUntil = 0;
+        let jumpCooldownUntil = 0;
+        let pendingJumpTarget = null;
+        let jumpRecoveryTimer = null;
+        let jumpInFlightUntil = 0;
+        let recoveryQualityTimer = null;
+        let lastRequestedPlaybackTarget = 0;
         let sameSourceRecoverKey = '';
         let sameSourceRecoverCount = 0;
+        let currentStreamUrl = '';
+        let currentStreamReferer = null;
+        let hlsFragErrorBurst = 0;
+        let hlsSessionIsFragile = false;
         let controlsHoldVisibleUntil = 0;
         let seekBufferOverlayTimer = null;
         window.addEventListener('beforeunload', () => { subtitleBlobUrls = []; });
@@ -2365,15 +2582,15 @@
             return new Hls({
                 startPosition: startTime,
                 enableWorker: !isThumbnail, // Disable worker for thumbnails to avoid blob URL issues on localized dev servers
-                lowLatencyMode: true,
-                backBufferLength: isThumbnail ? 3 : (mobileMain ? 6 : 12),
-                maxBufferLength: isThumbnail ? 6 : (mobileMain ? 14 : 24),
-                maxMaxBufferLength: isThumbnail ? 12 : (mobileMain ? 24 : 40),
-                maxBufferSize: isThumbnail ? 8 * 1024 * 1024 : (mobileMain ? 16 * 1000 * 1000 : 32 * 1000 * 1000),
-                maxBufferHole: isThumbnail ? 0.12 : (mobileMain ? 0.15 : 0.25),
-                highBufferWatchdogPeriod: 2,
-                nudgeOffset: isThumbnail ? 0.1 : (mobileMain ? 0.1 : 0.16),
-                nudgeMaxRetry: isThumbnail ? 180 : (mobileMain ? 8 : 12),
+                lowLatencyMode: isThumbnail,
+                backBufferLength: isThumbnail ? 3 : (mobileMain ? 12 : 20),
+                maxBufferLength: isThumbnail ? 6 : (mobileMain ? 24 : 36),
+                maxMaxBufferLength: isThumbnail ? 12 : (mobileMain ? 48 : 72),
+                maxBufferSize: isThumbnail ? 8 * 1024 * 1024 : (mobileMain ? 28 * 1000 * 1000 : 48 * 1000 * 1000),
+                maxBufferHole: isThumbnail ? 0.12 : (mobileMain ? 0.35 : 0.5),
+                highBufferWatchdogPeriod: isThumbnail ? 2 : 3,
+                nudgeOffset: isThumbnail ? 0.1 : (mobileMain ? 0.12 : 0.2),
+                nudgeMaxRetry: isThumbnail ? 180 : (mobileMain ? 10 : 14),
                 maxFragLookUpTolerance: isThumbnail ? 0.8 : 0.1,
                 manifestLoadingTimeOut: isThumbnail ? 6000 : 15000,
                 manifestLoadingMaxRetry: 6,
@@ -2386,16 +2603,18 @@
                 fragLoadingRetryDelay: isThumbnail ? 250 : 500,
                 fragLoadingMaxRetryTimeout: isThumbnail ? 1200 : 8000,
                 startLevel: isThumbnail ? 0 : -1,
-                abrEwmaDefaultEstimate: mobileMain ? 1000000 : 1500000,
-                abrBandWidthFactor: mobileMain ? 0.86 : 0.92,
-                abrBandWidthUpFactor: mobileMain ? 0.55 : 0.7,
+                abrEwmaDefaultEstimate: mobileMain ? 1400000 : 2200000,
+                abrBandWidthFactor: mobileMain ? 0.8 : 0.88,
+                abrBandWidthUpFactor: mobileMain ? 0.45 : 0.6,
                 ignoreDevicePixelRatio: true,
                 capLevelToPlayerSize: true,
                 capLevelOnFPSDrop: true,
                 appendErrorMaxRetry: 10,
-                startFragPrefetch: true,
+                startFragPrefetch: !isThumbnail,
                 testBandwidth: true,
                 progressive: true,
+                maxStarvationDelay: isThumbnail ? 2 : 4,
+                maxLoadingDelay: isThumbnail ? 2 : 4,
                 xhrSetup: (xhr, url) => {
                     xhr.timeout = isThumbnail ? 7000 : 20000;
                 },
@@ -2438,51 +2657,155 @@
             }, delay);
         }
 
-        function kickHlsLoadNearCurrentTime() {
+        function kickHlsLoadNearCurrentTime(targetTime = null, aggressive = false) {
             if (!hlsInst || !video) return;
             const now = Date.now();
-            if (now - lastHlsKickAt < 550) return;
+            if (!aggressive && now - lastHlsKickAt < 550) return;
             lastHlsKickAt = now;
-            const target = Math.max(0, Number(video.currentTime || 0) - 0.75);
+            const anchor = Number.isFinite(targetTime) ? Number(targetTime) : Number(video.currentTime || 0);
+            const target = Math.max(0, anchor - (aggressive ? 1.4 : 0.75));
             try {
+                if (aggressive) {
+                    hlsInst.stopLoad();
+                }
                 hlsInst.startLoad(target);
             } catch (_) { }
+        }
+
+        function tuneHlsForJump(targetTime, jumpDistance = 0, reason = 'seek') {
+            if (!hlsInst || !video) return;
+
+            const clampedTarget = Math.max(0, Number(targetTime || 0));
+            const isLargeJump = jumpDistance > 18;
+            const isMediumJump = jumpDistance > 8;
+
+            try {
+                if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && (isLargeJump || isMediumJump)) {
+                    const fallbackLevel = isLargeJump ? 0 : Math.min(1, hlsInst.levels.length - 1);
+                    hlsInst.autoLevelCapping = fallbackLevel;
+                    hlsInst.nextLevel = fallbackLevel;
+                    hlsInst.loadLevel = fallbackLevel;
+                    setTimeout(() => {
+                        try { hlsInst.nextLevel = -1; } catch (_) { }
+                        try { hlsInst.autoLevelCapping = -1; } catch (_) { }
+                    }, reason === 'skip' ? 2600 : 2200);
+                }
+            } catch (_) { }
+
+            kickHlsLoadNearCurrentTime(clampedTarget, isLargeJump || reason === 'skip');
+        }
+
+        function setTemporaryRecoveryQuality(ms = 4500) {
+            if (!hlsInst || !Array.isArray(hlsInst.levels) || hlsInst.levels.length === 0) return;
+            try {
+                hlsInst.autoLevelCapping = 0;
+                hlsInst.loadLevel = 0;
+                hlsInst.nextLevel = 0;
+            } catch (_) { }
+
+            if (recoveryQualityTimer) clearTimeout(recoveryQualityTimer);
+            recoveryQualityTimer = setTimeout(() => {
+                if (!hlsInst) return;
+                try {
+                    hlsInst.nextLevel = -1;
+                    hlsInst.autoLevelCapping = -1;
+                } catch (_) { }
+                recoveryQualityTimer = null;
+            }, ms);
+        }
+
+        function schedulePendingJump(targetTime, reason = 'seek') {
+            const normalizedTarget = Math.max(0, Number(targetTime || 0));
+            pendingJumpTarget = { time: normalizedTarget, reason };
+            lastRequestedPlaybackTarget = normalizedTarget;
+            if (jumpRecoveryTimer) clearTimeout(jumpRecoveryTimer);
+            jumpRecoveryTimer = setTimeout(() => {
+                if (!pendingJumpTarget || !video) return;
+                const next = pendingJumpTarget;
+                jumpCooldownUntil = Date.now() + 650;
+                jumpInFlightUntil = Date.now() + 1400;
+                tuneHlsForJump(next.time, Math.abs(next.time - Number(video.currentTime || 0)), next.reason);
+                forceVideoSeek(next.time);
+                if (!video.paused) {
+                    Promise.resolve(video.play()).catch(() => { });
+                }
+                pendingJumpTarget = null;
+            }, 220);
+        }
+
+        function applyGuardedJump(targetTime, reason = 'seek') {
+            if (!video || !Number.isFinite(targetTime)) return;
+
+            const clampedTarget = Math.max(0, Number(targetTime));
+            const now = Date.now();
+            const jumpDistance = Math.abs(clampedTarget - Number(video.currentTime || 0));
+            pendingJumpTarget = { time: clampedTarget, reason };
+            lastRequestedPlaybackTarget = clampedTarget;
+
+            if (hlsInst && hlsSessionIsFragile && jumpDistance > 12) {
+                performHotReloadJump(clampedTarget, reason);
+                return;
+            }
+
+            if (now < jumpCooldownUntil || seekBurstCount >= 7) {
+                schedulePendingJump(clampedTarget, reason);
+                return;
+            }
+
+            jumpCooldownUntil = now + (jumpDistance > 20 ? 900 : 500);
+            jumpInFlightUntil = now + (jumpDistance > 20 ? 1800 : 1200);
+            if (jumpRecoveryTimer) {
+                clearTimeout(jumpRecoveryTimer);
+                jumpRecoveryTimer = null;
+            }
+
+            tuneHlsForJump(clampedTarget, jumpDistance, reason);
+            forceVideoSeek(clampedTarget);
+            pendingJumpTarget = null;
+        }
+
+        function performHotReloadJump(targetTime, reason = 'seek') {
+            if (!video || !currentStreamUrl || !hlsInst) return false;
+
+            const clampedTarget = Math.max(0, Number(targetTime || 0));
+            pendingJumpTarget = { time: clampedTarget, reason };
+            lastRequestedPlaybackTarget = clampedTarget;
+            jumpCooldownUntil = Date.now() + 1200;
+            jumpInFlightUntil = Date.now() + 2200;
+            showBufferingOverlay();
+            setTemporaryRecoveryQuality(reason === 'skip' ? 6500 : 5000);
+
+            svSwitchHlsSourceSilent(currentStreamUrl, currentStreamReferer, () => {
+                hlsFragErrorBurst = 0;
+                hlsSessionIsFragile = false;
+                setTemporaryRecoveryQuality(reason === 'skip' ? 6500 : 5000);
+                if (pendingJumpTarget && video) {
+                    const next = pendingJumpTarget;
+                    pendingJumpTarget = null;
+                    forceVideoSeek(next.time);
+                    if (!video.paused) {
+                        Promise.resolve(video.play()).catch(() => { });
+                    }
+                }
+            });
+            return true;
         }
 
         function performResponsiveSeek(percent) {
             if (!video || !isFinite(video.duration)) return;
             const clamped = Math.max(0, Math.min(100, Number(percent || 0)));
             const targetTime = (clamped / 100) * video.duration;
-            const prevTime = Number(video.currentTime || 0);
-            const jumpDistance = Math.abs(targetTime - prevTime);
             lastUserSeekAt = Date.now();
 
             maybeShowSeekBufferingOverlay(260);
-            if (typeof video.fastSeek === 'function') {
-                try { video.fastSeek(targetTime); } catch (_) { video.currentTime = targetTime; }
-            } else {
-                video.currentTime = targetTime;
-            }
-
-            if (hlsInst) {
-                try {
-                    // On long jumps, temporarily bias to lower level for faster first frame.
-                    if (jumpDistance > 25 && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) {
-                        hlsInst.nextLevel = 0;
-                        hlsInst.loadLevel = 0;
-                        setTimeout(() => {
-                            try { hlsInst.nextLevel = -1; } catch (_) { }
-                        }, 1800);
-                    }
-                } catch (_) { }
-                kickHlsLoadNearCurrentTime();
-            }
+            applyGuardedJump(targetTime, 'seek');
         }
 
         function requestSeekToTime(targetTime, keepPlaying = true) {
             if (!video || !isFinite(video.duration)) return;
             const clampedTime = Math.max(0, Math.min(video.duration, Number(targetTime || 0)));
             queuedSeekTime = clampedTime;
+            lastRequestedPlaybackTarget = clampedTime;
 
             if (seekApplyTimer) clearTimeout(seekApplyTimer);
             const now = Date.now();
@@ -2592,6 +2915,8 @@
 
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 console.log('MANIFEST_PARSED - audio tracks:', hls.audioTracks?.length || 0);
+                hlsFragErrorBurst = 0;
+                hlsSessionIsFragile = false;
                 if (startTime > 0 && video) video.currentTime = startTime;
                 svApplyPreferredAudioToHls(hls);
                 if (onParsedAction) onParsedAction();
@@ -2644,33 +2969,28 @@
                     if (!video) return;
                     showBufferingOverlay();
                     try {
-                        const jump = isFragParsing ? 2.2 : 0.9;
+                        const jump = isFragParsing ? 1.1 : 0.45;
                         const near = Math.max(0, Math.min((video.duration || Infinity) - 0.2, (video.currentTime || 0) + jump));
                         if (isFinite(near) && near > 0) video.currentTime = near;
-                        try {
-                            hls.autoLevelCapping = 0;
-                            hls.nextLevel = 0;
-                            hls.loadLevel = 0;
-                        } catch (_) { }
-                        hls.stopLoad();
-                        hls.startLoad(Math.max(0, near - 1.0));
+                        setTemporaryRecoveryQuality(5500);
+                        tuneHlsForJump(near, jump, 'seek');
                         if (isBufferAppend || d.fatal) hls.recoverMediaError();
-                        setTimeout(() => {
-                            try {
-                                hls.autoLevelCapping = -1;
-                                hls.nextLevel = -1;
-                            } catch (_) { }
-                        }, 2000);
                     } catch (_) { }
                 };
 
                 // Non-fatal stall: nudge playback manually
                 if (!d.fatal) {
                     if (inRapidSeekMode && (isFragParsing || isBufferAppend)) {
+                        if (isFragParsing) {
+                            hlsFragErrorBurst += 1;
+                            if (hlsFragErrorBurst >= 3) hlsSessionIsFragile = true;
+                        }
                         applyRapidSeekHeal();
                         return;
                     }
                     if (isFragParsing && video) {
+                        hlsFragErrorBurst += 1;
+                        if (hlsFragErrorBurst >= 3) hlsSessionIsFragile = true;
                         const now = Date.now();
                         if (now - fragParseBurstStartAt > 4500) {
                             fragParseBurstStartAt = now;
@@ -2679,11 +2999,12 @@
                         fragParseBurstCount += 1;
                         if (fragParseBurstCount >= 3 && now - lastFragBypassAt > 2500) {
                             lastFragBypassAt = now;
-                            const bypassTo = Math.min((video.duration || Infinity) - 0.25, (video.currentTime || 0) + 1.6);
+                            const bypassTo = Math.min((video.duration || Infinity) - 0.25, (video.currentTime || 0) + 0.9);
                             console.warn('[hls] Repeated frag parsing errors, bypassing ahead to', bypassTo);
                             try {
                                 if (isFinite(bypassTo) && bypassTo > 0) video.currentTime = bypassTo;
-                                hls.startLoad(Math.max(0, bypassTo - 0.8));
+                                setTemporaryRecoveryQuality(6500);
+                                tuneHlsForJump(bypassTo, 0.9, 'seek');
                             } catch (_) { }
                             showBufferingOverlay();
                             return;
@@ -2702,12 +3023,15 @@
                                 // Smaller jump avoids audible "word repeat" loops on mobile.
                                 video.currentTime = Math.min(
                                     (video.duration || Infinity) - 0.05,
-                                    (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.08 : 0.18),
+                                    (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.04 : 0.1),
                                 );
-                                hls.startLoad();
+                                kickHlsLoadNearCurrentTime(video.currentTime, false);
                                 Promise.resolve(video.play()).catch(() => { });
                             } catch (_) { }
                         }
+                    }
+                    if (!isFragParsing && !isBufferAppend) {
+                        hlsFragErrorBurst = 0;
                     }
                     return;
                 }
@@ -2725,10 +3049,20 @@
                     hls.startLoad();
                 } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
                     mediaErrorCount++;
+                    if (isFragParsing) hlsSessionIsFragile = true;
                     const recentlySeeked = (Date.now() - lastUserSeekAt) < 7000;
+                    const preferredRecoveryTarget = pendingJumpTarget?.time ?? Number(video?.currentTime || 0);
+                    const durableRecoveryTarget = Math.max(0, Number(lastRequestedPlaybackTarget ?? preferredRecoveryTarget ?? 0));
 
                     if (inRapidSeekMode) {
                         // During seek bursts, keep healing in-place instead of escalating.
+                        if (isFragParsing && typeof onErrorFallback === 'function') {
+                            pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
+                            setTemporaryRecoveryQuality(7000);
+                            onErrorFallback('fatal_frag_parse_jump');
+                            return;
+                        }
+                        setTemporaryRecoveryQuality(6500);
                         applyRapidSeekHeal();
                         return;
                     }
@@ -2741,9 +3075,17 @@
                         try {
                             let near = Math.max(0, Number(video?.currentTime || 0) - 0.8);
                             if (isFragParsing && video) {
-                                near = Math.max(0, Number(video.currentTime || 0) + 1.8);
-                                video.currentTime = near;
+                                near = Math.max(0, Number(video.currentTime || 0) + 0.9);
                             }
+                            if (isFragParsing) {
+                                if (typeof onErrorFallback === 'function') {
+                                    pendingJumpTarget = pendingJumpTarget || { time: (durableRecoveryTarget || near), reason: 'seek' };
+                                    setTemporaryRecoveryQuality(7000);
+                                    onErrorFallback('fatal_frag_parse_jump');
+                                    return;
+                                }
+                            }
+                            setTemporaryRecoveryQuality(6500);
                             hls.stopLoad();
                             hls.startLoad(near);
                             hls.recoverMediaError();
@@ -2753,6 +3095,14 @@
                     }
 
                     if (mediaErrorCount === 1) {
+                        if ((isFragParsing || hlsSessionIsFragile) && typeof onErrorFallback === 'function') {
+                            pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
+                            setTemporaryRecoveryQuality(7000);
+                            console.warn('[hls] Fatal frag parse detected, rebuilding at target instead of recoverMediaError.');
+                            clearFatalRecoveryTimer();
+                            onErrorFallback('fatal_frag_parse_jump');
+                            return;
+                        }
                         console.warn('[hls] Fatal media error, attempting recoverMediaError...');
                         showBufferingOverlay();
                         hls.recoverMediaError();
@@ -2783,6 +3133,11 @@
                     lastWatchdogTime = video ? video.currentTime : -1;
                     return;
                 }
+                if (Date.now() < jumpInFlightUntil) {
+                    watchdogStallCount = 0;
+                    lastWatchdogTime = video ? video.currentTime : -1;
+                    return;
+                }
                 const now = video.currentTime;
                 if (Math.abs(now - lastWatchdogTime) < 0.05) {
                     watchdogStallCount++;
@@ -2807,10 +3162,21 @@
             });
         }
 
-        function svSwitchHlsSourceSilent(url, referer, onReady) {
+        function svSwitchHlsSourceSilent(url, referer, onReady, explicitTargetTime = null) {
             if (!video) return;
             const savedTime = video.currentTime;
+            const targetTime = Math.max(0, Number(
+                explicitTargetTime ?? pendingJumpTarget?.time ?? lastRequestedPlaybackTarget ?? savedTime ?? 0
+            ));
             const wasPlaying = !video.paused;
+            let escalatedToHardReload = false;
+
+            const forceRecoveredPlay = () => {
+                if (!video) return;
+                isSourceSwitching = false;
+                setPlayIcon(true);
+                Promise.resolve(video.play()).catch(() => { });
+            };
 
             captureVideoFrameToOverlay();
 
@@ -2822,27 +3188,71 @@
                 } catch (_) { }
             }
 
-            hlsInst = svCreateHlsInstance(savedTime);
-            svAttachHlsListeners(hlsInst, savedTime, onReady);
+            hlsInst = svCreateHlsInstance(targetTime);
+            svAttachHlsListeners(hlsInst, targetTime, onReady);
 
             hlsInst.loadSource(proxiedStreamUrl(url, referer));
             hlsInst.attachMedia(video);
+            try {
+                hlsInst.startLoad(Math.max(0, targetTime - 0.8));
+            } catch (_) { }
 
             let lastTime = -1;
             const cleanup = () => {
                 if (video && video.currentTime !== lastTime && video.currentTime > 0) {
+                    isSourceSwitching = false;
                     hideTransitionOverlay();
                     video.removeEventListener('timeupdate', cleanup);
                     video.removeEventListener('playing', cleanup);
                 }
                 if (video) lastTime = video.currentTime;
             };
+            const resumeRecoveredPlayback = () => {
+                if (!video) return;
+                isSourceSwitching = false;
+                forceVideoSeek(targetTime);
+                hideBufferingOverlaySoon(60);
+                if (wasPlaying || video.paused) {
+                    forceRecoveredPlay();
+                }
+                video.removeEventListener('canplay', resumeRecoveredPlayback);
+                video.removeEventListener('playing', resumeRecoveredPlayback);
+            };
+            video.addEventListener('canplay', resumeRecoveredPlayback);
+            video.addEventListener('playing', resumeRecoveredPlayback);
             video.addEventListener('playing', cleanup);
             video.addEventListener('timeupdate', cleanup);
+            setTimeout(() => {
+                if (!video) return;
+                if (Math.abs((video.currentTime || 0) - targetTime) > 1.0 || video.readyState < 2) {
+                    resumeRecoveredPlayback();
+                    try {
+                        hlsInst && hlsInst.startLoad(Math.max(0, targetTime - 0.8));
+                    } catch (_) { }
+                }
+            }, 900);
+            setTimeout(() => {
+                if (!video) return;
+                if (video.paused || video.readyState < 3) {
+                    forceVideoSeek(targetTime);
+                    forceRecoveredPlay();
+                    hideBufferingOverlaySoon(40);
+                }
+            }, 1400);
+            setTimeout(() => {
+                if (!video || escalatedToHardReload) return;
+                const stillBroken = !isFinite(video.duration) || video.duration <= 0 || (video.readyState < 2 && Math.abs(video.currentTime || 0) < 0.5);
+                if (stillBroken) {
+                    escalatedToHardReload = true;
+                    console.warn('[hls] Silent recovery still unhealthy, escalating to hard reload at target time.');
+                    pendingJumpTarget = { time: targetTime, reason: pendingJumpTarget?.reason || 'seek' };
+                    loadStream(url, true, false, referer, currentIdx, targetTime);
+                }
+            }, 2200);
             setTimeout(hideTransitionOverlay, 8000);
 
             if (wasPlaying) {
-                video.play().catch(() => { });
+                forceRecoveredPlay();
             }
         }
 
@@ -4250,7 +4660,8 @@
         function closeCustomMenus() {
             qualityMenu.classList.remove('active');
             captionsMenu.classList.remove('active');
-            settingsMenu.classList.remove('active');
+            playbackMenu.classList.remove('active');
+            preferencesMenu.classList.remove('active');
             volumeMenu.classList.remove('active');
         }
 
@@ -4657,6 +5068,7 @@
             animeSkipSegments = { intro: null, outro: null };
             skippedSegments = { intro: false, outro: false };
             hasApiSkipSegments = false;
+            _lastSkipUiTime = 0;
             if (skipSegmentBtn) {
                 skipSegmentBtn.style.display = 'none';
                 skipSegmentBtn.textContent = '';
@@ -4710,8 +5122,8 @@
 
             const dur = video.duration;
             const segments = [];
-            if (animeSkipSegments.intro) segments.push(animeSkipSegments.intro);
-            if (animeSkipSegments.outro) segments.push(animeSkipSegments.outro);
+            if (animeSkipSegments.intro) segments.push({ ...animeSkipSegments.intro, type: 'intro' });
+            if (animeSkipSegments.outro) segments.push({ ...animeSkipSegments.outro, type: 'outro' });
 
             segments.forEach(seg => {
                 if (seg.start >= 0 && seg.end <= dur && seg.end > seg.start) {
@@ -4721,6 +5133,7 @@
 
                     const marker = document.createElement('div');
                     marker.className = 'skip-marker';
+                    if (seg.type) marker.dataset.type = seg.type;
                     marker.style.left = startPct + '%';
                     marker.style.width = widthPct + '%';
                     container.appendChild(marker);
@@ -4881,6 +5294,7 @@
 
             animeSkipSegments.intro = { start: 0, end: introEnd };
             animeSkipSegments.outro = { start: outroStart, end: outroEnd };
+            updateSkipMarkers();
         }
 
         function getActiveSkipSegment(nowSec) {
@@ -4897,19 +5311,90 @@
         }
 
         function updateSkipSegmentButton() {
-            if (!skipSegmentBtn) return;
             if (!video || !currentIsLikelyAnime) {
-                skipSegmentBtn.style.display = 'none';
+                if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+                _clearSkipCountdown();
+                _skipBtnWasVisible = false;
                 return;
             }
-            const active = getActiveSkipSegment(Number(video.currentTime || 0));
+
+            const nowSec = Number(video.currentTime || 0);
+            if (nowSec < (_lastSkipUiTime - 1)) {
+                rearmSkippedSegmentsForTime(nowSec);
+            }
+            _lastSkipUiTime = nowSec;
+            const active = getActiveSkipSegment(nowSec);
+
+            // Countdown state is sticky: once auto-skip starts, keep it pinned to the captured segment.
+            if (_skipActiveType && _skipActiveSegment && skipSegmentBtn && skipSegmentBtn.classList.contains('counting')) {
+                const seg = _skipActiveSegment;
+                if (skippedSegments[_skipActiveType]) {
+                    _clearSkipCountdown();
+                    _skipBtnWasVisible = false;
+                    if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+                    return;
+                }
+
+                // Only cancel if the user actually seeks away from the captured segment window.
+                if (nowSec < seg.start - 5 || nowSec > seg.end + 5) {
+                    console.log(`[Skip] User moved far from ${_skipActiveType} segment. Resetting.`);
+                    _clearSkipCountdown();
+                    _skipBtnWasVisible = false;
+                } else {
+                    const icon = _skipActiveType === 'intro' ? 'fa-forward' : 'fa-forward-step';
+                    skipSegmentBtn.innerHTML = `<i class="fa-solid ${icon}"></i><span>${_skipActiveType === 'intro' ? 'Skip Intro' : 'Skip Outro'}</span>`;
+                    skipSegmentBtn.dataset.segmentType = _skipActiveType;
+                    skipSegmentBtn.style.display = 'inline-flex';
+                    return;
+                }
+            }
+
+            if (!active || skippedSegments[active.type]) {
+                _skipBtnWasVisible = false;
+                if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+                _clearSkipCountdown();
+                return;
+            }
+
+            // Sync UI markers
+            const markers = document.querySelectorAll('.skip-marker');
+            markers.forEach(m => {
+                if (active && m.dataset.type === active.type) {
+                    m.classList.add('active');
+                } else {
+                    m.classList.remove('active');
+                }
+            });
+
             if (!active) {
-                skipSegmentBtn.style.display = 'none';
+                if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+                _clearSkipCountdown();
+                _skipBtnWasVisible = false;
                 return;
             }
-            skipSegmentBtn.textContent = active.type === 'intro' ? 'Skip Intro' : 'Skip Outro';
-            skipSegmentBtn.dataset.segmentType = active.type;
-            skipSegmentBtn.style.display = 'inline-flex';
+
+            const alreadySkipped = (active.type === 'intro' && skippedSegments.intro) ||
+                (active.type === 'outro' && skippedSegments.outro);
+
+            if (alreadySkipped) {
+                if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+                _clearSkipCountdown();
+                _skipBtnWasVisible = false;
+                return;
+            }
+
+            // Detect NEW segment detection to start countdown
+            if (!_skipBtnWasVisible) {
+                _skipBtnWasVisible = true;
+                _startSkipCountdown();
+            }
+
+            if (skipSegmentBtn) {
+                const icon = active.type === 'intro' ? 'fa-forward' : 'fa-forward-step';
+                skipSegmentBtn.innerHTML = `<i class="fa-solid ${icon}"></i><span>${active.type === 'intro' ? 'Skip Intro' : 'Skip Outro'}</span>`;
+                skipSegmentBtn.dataset.segmentType = active.type;
+                skipSegmentBtn.style.display = 'inline-flex';
+            }
         }
 
         function showControlSurface() {
@@ -5014,19 +5499,126 @@
             });
         }
 
-        function buildSettingsMenu() {
-            settingsMenu.innerHTML = '';
+        // User preferences — persisted across sessions
+        let autoEpisodeEnabled = localStorage.getItem('pref_autoEpisode') !== 'false';
+        let autoSkipIntroEnabled = localStorage.getItem('pref_autoSkipIntro') !== 'false';
+        let autoSkipOutroEnabled = localStorage.getItem('pref_autoSkipOutro') !== 'false';
+
+        function buildPlaybackMenu() {
+            if (!playbackMenu) return;
+            playbackMenu.innerHTML = '';
+
+            const speedLabel = document.createElement('div');
+            speedLabel.className = 'menu-section-label';
+            speedLabel.textContent = 'Playback Speed';
+            playbackMenu.appendChild(speedLabel);
+
             const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+            const speedRow = document.createElement('div');
+            speedRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;';
             speeds.forEach((rate) => {
                 const item = document.createElement('div');
                 item.className = `menu-item ${(video && video.playbackRate === rate) ? 'selected' : ''}`;
+                item.style.flex = '1 0 calc(25% - 6px)';
                 item.textContent = `${rate}x`;
                 item.onclick = () => {
                     if (video) video.playbackRate = rate;
-                    buildSettingsMenu();
+                    buildPlaybackMenu();
                 };
-                settingsMenu.appendChild(item);
+                speedRow.appendChild(item);
             });
+            playbackMenu.appendChild(speedRow);
+        }
+
+        function buildPreferencesMenu() {
+            if (!preferencesMenu) return;
+            preferencesMenu.innerHTML = '';
+
+            const prefLabel = document.createElement('div');
+            prefLabel.className = 'menu-section-label';
+            prefLabel.textContent = 'Preferences';
+            preferencesMenu.appendChild(prefLabel);
+
+            // Auto Episode toggle row
+            const toggleRow = document.createElement('label');
+            toggleRow.className = 'menu-toggle-row';
+            toggleRow.style.display = 'flex';
+
+            const toggleLabel = document.createElement('span');
+            toggleLabel.className = 'menu-toggle-label';
+            toggleLabel.textContent = 'Auto Episode';
+
+            const switchWrap = document.createElement('div');
+            switchWrap.className = 'menu-toggle-switch';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = autoEpisodeEnabled;
+            checkbox.addEventListener('change', () => {
+                autoEpisodeEnabled = checkbox.checked;
+                localStorage.setItem('pref_autoEpisode', autoEpisodeEnabled ? 'true' : 'false');
+                if (!autoEpisodeEnabled) {
+                    _clearNextEpCountdown();
+                } else {
+                    if (video && isFinite(video.duration) && video.duration > 0) {
+                        const remaining = video.duration - video.currentTime;
+                        if (remaining <= 30) {
+                            _startNextEpCountdown();
+                        }
+                    }
+                }
+            });
+
+            const track = document.createElement('span');
+            track.className = 'menu-toggle-track';
+            const thumb = document.createElement('span');
+            thumb.className = 'menu-toggle-thumb';
+
+            switchWrap.appendChild(checkbox);
+            switchWrap.appendChild(track);
+            switchWrap.appendChild(thumb);
+
+            toggleRow.appendChild(toggleLabel);
+            toggleRow.appendChild(switchWrap);
+            preferencesMenu.appendChild(toggleRow);
+
+            // Auto Skip Intro toggle row
+            const introRow = document.createElement('label');
+            introRow.className = 'menu-toggle-row';
+            introRow.style.display = 'flex';
+            introRow.innerHTML = `
+                <span class="menu-toggle-label">Auto Skip Intro</span>
+                <div class="menu-toggle-switch">
+                    <input type="checkbox" ${autoSkipIntroEnabled ? 'checked' : ''}>
+                    <span class="menu-toggle-track"></span>
+                    <span class="menu-toggle-thumb"></span>
+                </div>
+            `;
+            introRow.querySelector('input').addEventListener('change', (e) => {
+                autoSkipIntroEnabled = e.target.checked;
+                localStorage.setItem('pref_autoSkipIntro', autoSkipIntroEnabled ? 'true' : 'false');
+                updateSkipSegmentButton();
+            });
+            preferencesMenu.appendChild(introRow);
+
+            // Auto Skip Outro toggle row
+            const outroRow = document.createElement('label');
+            outroRow.className = 'menu-toggle-row';
+            outroRow.style.display = 'flex';
+            outroRow.innerHTML = `
+                <span class="menu-toggle-label">Auto Skip Outro</span>
+                <div class="menu-toggle-switch">
+                    <input type="checkbox" ${autoSkipOutroEnabled ? 'checked' : ''}>
+                    <span class="menu-toggle-track"></span>
+                    <span class="menu-toggle-thumb"></span>
+                </div>
+            `;
+            outroRow.querySelector('input').addEventListener('change', (e) => {
+                autoSkipOutroEnabled = e.target.checked;
+                localStorage.setItem('pref_autoSkipOutro', autoSkipOutroEnabled ? 'true' : 'false');
+                updateSkipSegmentButton();
+            });
+            preferencesMenu.appendChild(outroRow);
         }
 
         function bindVideoEvents() {
@@ -5037,10 +5629,15 @@
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(false);
             });
+            video.addEventListener('seeked', () => {
+                // Immediately re-evaluate after any seek so the countdown
+                // resets if the user jumps back past the 30-second threshold.
+                updateNextEpisodeButton(false);
+            });
             video.addEventListener('loadedmetadata', () => {
                 isSourceSwitching = false;
-                syncTimeUI();
                 detectAnimeSkipSegments();
+                syncTimeUI();
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(false);
                 updateCaptionsButtonVisibility();
@@ -5248,7 +5845,7 @@
         }
 
         function initMobileSheetDragToClose() {
-            const sheets = [sourcePanel, epPanel, audioPanel, qualityMenu, captionsMenu, settingsMenu, volumeMenu].filter(Boolean);
+            const sheets = [sourcePanel, epPanel, audioPanel, qualityMenu, captionsMenu, playbackMenu, preferencesMenu, volumeMenu].filter(Boolean);
             const state = new WeakMap();
             const isSheetOpen = (el) => el.classList.contains('active') || el.classList.contains('open');
 
@@ -5373,10 +5970,11 @@
                 addItem('Japanese', false, () => {
                     const jaSource = allSources.find((s) => s.provider === 'justanime');
                     if (!jaSource) return;
+                    const resumeAt = Math.max(0, Number(video?.currentTime || 0));
                     currentAudioSource = 'justanime';
                     activeSatoruTrackIndex = -1;
                     rememberProviderPreference(null);
-                    svSwitchHlsSourceSilent(jaSource.url, jaSource.referer, () => updateAudioTracks());
+                    svSwitchHlsSourceSilent(jaSource.url, jaSource.referer, () => updateAudioTracks(), resumeAt);
                 });
             }
 
@@ -5400,6 +5998,7 @@
                         // syncUrlState() is called inside rememberProviderPreference
 
                         updateAudioTracks(); // Render optimistic UI
+                        const resumeAt = Math.max(0, Number(video?.currentTime || 0));
 
                         if (!isOnSatoru) {
                             svSwitchHlsSourceSilent(src.url, src.referer, () => {
@@ -5407,7 +6006,7 @@
                                 svApplyPreferredAudioToHls(hlsInst);
                                 setTimeout(() => svApplyPreferredAudioToHls(hlsInst), 150);
                                 updateAudioTracks();
-                            });
+                            }, resumeAt);
                         } else {
                             svApplyPreferredAudioToHls(hlsInst);
                             updateAudioTracks();
@@ -5452,6 +6051,7 @@
                 e.stopPropagation();
                 if (!video) return;
                 holdControlsVisible(1200);
+                registerSkipPulse('left', 10);
                 requestSeekToTime(Math.max(0, (video.currentTime || 0) - 10), true);
             });
 
@@ -5459,6 +6059,7 @@
                 e.stopPropagation();
                 if (!video) return;
                 holdControlsVisible(1200);
+                registerSkipPulse('right', 10);
                 if (isFinite(video.duration)) requestSeekToTime(Math.min(video.duration, (video.currentTime || 0) + 10), true);
                 else requestSeekToTime((video.currentTime || 0) + 10, true);
             });
@@ -5507,14 +6108,24 @@
                 qualityMenu.classList.add('active');
             });
 
-            settingsBtn.addEventListener('click', (e) => {
+            playbackBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const wasOpen = settingsMenu.classList.contains('active');
+                const wasOpen = playbackMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
-                buildSettingsMenu();
-                positionMenuAbove(settingsMenu, settingsBtn);
-                settingsMenu.classList.add('active');
+                buildPlaybackMenu();
+                positionMenuAbove(playbackMenu, playbackBtn);
+                playbackMenu.classList.add('active');
+            });
+
+            preferencesBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const wasOpen = preferencesMenu.classList.contains('active');
+                closeAllPopups();
+                if (wasOpen) return;
+                buildPreferencesMenu();
+                positionMenuAbove(preferencesMenu, preferencesBtn);
+                preferencesMenu.classList.add('active');
             });
 
             fitBtn.addEventListener('click', (e) => {
@@ -5568,24 +6179,17 @@
                 updateSkipSegmentButton();
             });
 
-            skipSegmentBtn?.addEventListener('click', (e) => {
+            skipSegmentBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (!video) return;
-                const active = getActiveSkipSegment(Number(video.currentTime || 0));
-                if (!active) return;
-                const wasPaused = video.paused;
-                requestSeekToTime(Math.max(0, active.end + 0.2), true);
-                if (!wasPaused) {
-                    Promise.resolve(video.play()).catch(() => { });
+                const type = skipSegmentBtn.dataset.segmentType || (getActiveSkipSegment(video.currentTime)?.type);
+                if (type) {
+                    performSkipJump(type, true); // true = forced/manual
                 }
-                if (active.type === 'intro') skippedSegments.intro = true;
-                if (active.type === 'outro') skippedSegments.outro = true;
-                updateSkipSegmentButton();
-                showControlSurface();
             });
 
             nextEpisodeBtn?.addEventListener('click', async (e) => {
                 e.stopPropagation();
+                _clearNextEpCountdown();
                 await goToNextEpisode();
             });
 
@@ -5757,7 +6361,8 @@
             document.addEventListener('click', (e) => {
                 if (!qualityMenu.contains(e.target) && !qualityBtn.contains(e.target)) qualityMenu.classList.remove('active');
                 if (!captionsMenu.contains(e.target) && !captionsBtn.contains(e.target)) captionsMenu.classList.remove('active');
-                if (!settingsMenu.contains(e.target) && !settingsBtn.contains(e.target)) settingsMenu.classList.remove('active');
+                if (!playbackMenu.contains(e.target) && !playbackBtn.contains(e.target)) playbackMenu.classList.remove('active');
+                if (!preferencesMenu.contains(e.target) && !preferencesBtn.contains(e.target)) preferencesMenu.classList.remove('active');
                 if (!volumeMenu.contains(e.target) && !muteBtn.contains(e.target)) volumeMenu.classList.remove('active');
             });
 
@@ -5779,6 +6384,19 @@
             let skipAccumulator = 0;
             let skipAccumulatorSide = null;
             let skipAccumulationTimer = null;
+
+            function registerSkipPulse(side, step = 10) {
+                if (skipAccumulatorSide !== side) skipAccumulator = 0;
+                skipAccumulatorSide = side;
+                skipAccumulator += step;
+                playRipple(side, skipAccumulator);
+
+                clearTimeout(skipAccumulationTimer);
+                skipAccumulationTimer = setTimeout(() => {
+                    skipAccumulator = 0;
+                    skipAccumulatorSide = null;
+                }, tapThreshold + 150);
+            }
 
             controlSurface.addEventListener('touchstart', (e) => {
                 if (e.touches.length > 1) return;
@@ -5866,30 +6484,17 @@
                     const third = rect.width / 3;
 
                     if (x < third) {
-                        if (skipAccumulatorSide !== 'left') skipAccumulator = 0;
-                        skipAccumulatorSide = 'left';
-                        skipAccumulator += 10;
-                        video.currentTime = Math.max(0, video.currentTime - 10);
-                        playRipple('left', skipAccumulator);
+                        registerSkipPulse('left', 10);
+                        requestSeekToTime(Math.max(0, (video.currentTime || 0) - 10), true);
                     } else if (x > 2 * third) {
-                        if (skipAccumulatorSide !== 'right') skipAccumulator = 0;
-                        skipAccumulatorSide = 'right';
-                        skipAccumulator += 10;
-                        if (isFinite(video.duration)) video.currentTime = Math.min(video.duration, video.currentTime + 10);
-                        playRipple('right', skipAccumulator);
+                        registerSkipPulse('right', 10);
+                        if (isFinite(video.duration)) requestSeekToTime(Math.min(video.duration, (video.currentTime || 0) + 10), true);
+                        else requestSeekToTime((video.currentTime || 0) + 10, true);
                     } else {
                         skipAccumulator = 0;
                         skipAccumulatorSide = null;
                         lastTap = 0; // kill chain
                         if (video.paused) video.play(); else video.pause();
-                    }
-
-                    if (skipAccumulator > 0) {
-                        clearTimeout(skipAccumulationTimer);
-                        skipAccumulationTimer = setTimeout(() => {
-                            skipAccumulator = 0;
-                            skipAccumulatorSide = null;
-                        }, tapThreshold + 150);
                     }
                 } else {
                     lastTap = now;
@@ -6104,9 +6709,9 @@
                                         providerAnimeId: entryId || null,
                                         episodes: (Array.isArray(entry?.episodes) ? entry.episodes : []).map((ep, epIndex) => ({
                                             id: ep?.id || null,
-                                            episode: epIndex + 1,
-                                            number: epIndex + 1,
-                                            episodeNum: epIndex + 1,
+                                            episode: ep?.number || epIndex + 1,
+                                            number: ep?.number || epIndex + 1,
+                                            episodeNum: ep?.number || epIndex + 1,
                                             title: String(ep?.title || `Episode ${epIndex + 1}`),
                                         })),
                                     };
@@ -6283,24 +6888,290 @@
             return null;
         }
 
+        let _nextEpCountdownTimer = null;
+        const NEXT_EP_DURATION_MS = 8000;
+        let _nextEpElapsed = 0; // total non-paused ms elapsed
+        let _nextEpLastTick = 0; // Date.now() at last tick
+
+        function _clearNextEpCountdown() {
+            if (_nextEpCountdownTimer) {
+                clearTimeout(_nextEpCountdownTimer);
+                _nextEpCountdownTimer = null;
+            }
+            _nextEpElapsed = 0;
+            _nextEpLastTick = 0;
+            if (nextEpisodeBtn) {
+                nextEpisodeBtn.classList.remove('counting', 'countdown-paused');
+                void nextEpisodeBtn.offsetWidth; // reset CSS animation
+            }
+        }
+
+        function _tickNextEpCountdown() {
+            // Stop if button hidden or countdown was cancelled
+            if (!nextEpisodeBtn || nextEpisodeBtn.style.display === 'none') return;
+            if (!nextEpisodeBtn.classList.contains('counting')) return;
+
+            const now = Date.now();
+            const paused = !video || video.paused;
+
+            // Accumulate time only while playing
+            if (!paused) {
+                _nextEpElapsed += now - _nextEpLastTick;
+            }
+            _nextEpLastTick = now;
+
+            // Keep CSS animation in sync with playback state
+            if (paused) {
+                nextEpisodeBtn.classList.add('countdown-paused');
+            } else {
+                nextEpisodeBtn.classList.remove('countdown-paused');
+            }
+
+            if (_nextEpElapsed >= NEXT_EP_DURATION_MS) {
+                _clearNextEpCountdown();
+                // FINAL GATE: Never switch automatically if the user preference is disabled.
+                if (autoEpisodeEnabled === true) {
+                    console.log('[AutoEp] Preferred: ON. Advancing to next episode.');
+                    goToNextEpisode();
+                } else {
+                    console.log('[AutoEp] Preferred: OFF. Staying on current page.');
+                }
+                return;
+            }
+
+            _nextEpCountdownTimer = setTimeout(_tickNextEpCountdown, 100);
+        }
+
+        function _startNextEpCountdown() {
+            // Respect user preference globally: if disabled, don't even start the countdown sweep.
+            if (!autoEpisodeEnabled) return;
+
+            _clearNextEpCountdown();
+            void nextEpisodeBtn.offsetWidth; // restart CSS animation
+            nextEpisodeBtn.classList.add('counting');
+            _nextEpElapsed = 0;
+            _nextEpLastTick = Date.now();
+            _tickNextEpCountdown();
+        }
+
+        // --- Skip Countdown logic ---
+        let _skipCountdownTimer = null; // now using requestAnimationFrame
+        const SKIP_COUNTDOWN_DURATION_MS = 5000;
+        let _skipElapsed = 0;
+        let _skipLastTick = 0;
+        let _skipBtnWasVisible = false;
+        let _skipActiveType = null; // intro or outro
+        let _skipActiveSegment = null;
+        let _lastSkipUiTime = 0;
+
+        function _clearSkipCountdown() {
+            if (_skipCountdownTimer) {
+                clearTimeout(_skipCountdownTimer);
+                _skipCountdownTimer = null;
+            }
+            _skipElapsed = 0;
+            _skipLastTick = 0;
+            _skipActiveType = null;
+            _skipActiveSegment = null;
+            if (skipSegmentBtn) {
+                skipSegmentBtn.classList.remove('counting', 'countdown-paused');
+            }
+        }
+
+        function rearmSkippedSegmentsForTime(nowSec) {
+            if (!Number.isFinite(nowSec)) return;
+
+            const segments = {
+                intro: animeSkipSegments.intro,
+                outro: animeSkipSegments.outro
+            };
+
+            for (const [type, seg] of Object.entries(segments)) {
+                if (!seg || !skippedSegments[type]) continue;
+                if (nowSec < seg.start + 0.25) {
+                    skippedSegments[type] = false;
+                }
+            }
+
+            if (!skippedSegments.intro && !skippedSegments.outro) {
+                _skipBtnWasVisible = false;
+            }
+        }
+
+        function forceVideoSeek(target, attempt = 0) {
+            if (!video || !Number.isFinite(target)) return;
+
+            const clampedTarget = Math.max(0, target);
+            video.currentTime = clampedTarget;
+
+            const pct = video.duration > 0 ? (clampedTarget / video.duration) * 100 : 0;
+            if (seekBar) {
+                seekBar.value = pct;
+                seekBar.style.setProperty('--seek-percent', pct + '%');
+            }
+
+            const reachedTarget = Math.abs((video.currentTime || 0) - clampedTarget) <= 0.75;
+            if (reachedTarget || attempt >= 4) return;
+
+            setTimeout(() => {
+                if (!video) return;
+                const stillOffTarget = Math.abs((video.currentTime || 0) - clampedTarget) > 0.75;
+                if (stillOffTarget) {
+                    forceVideoSeek(clampedTarget, attempt + 1);
+                }
+            }, 120 + (attempt * 80));
+        }
+
+        function performSkipJump(type, manual = false) {
+            if (!video || !type || !isFinite(video.duration)) return;
+
+            const preservedSegment = _skipActiveSegment && _skipActiveType === type ? { ..._skipActiveSegment } : null;
+            _clearSkipCountdown();
+            const active = getActiveSkipSegment(video.currentTime);
+            const segment = preservedSegment || active || (type === 'intro' ? animeSkipSegments.intro : animeSkipSegments.outro);
+
+            if (!segment) {
+                console.log(`[Skip] Cannot skip ${type}: segment metadata missing.`);
+                return;
+            }
+
+            console.log(`[Skip] Executing ${type} skip to ${segment.end} (Manual: ${manual})`);
+
+            if (type === 'intro') skippedSegments.intro = true;
+            if (type === 'outro') skippedSegments.outro = true;
+
+            const target = Math.max(0, segment.end + 0.3);
+
+            if (hlsInst && hlsSessionIsFragile) {
+                console.log(`[Skip] HLS session is fragile, hot-reloading stream for ${type} skip.`);
+                performHotReloadJump(target, 'skip');
+                _skipBtnWasVisible = false;
+                if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+                syncTimeUI();
+                return;
+            }
+
+            // Force the media element to settle on the skip target even if the stream briefly resists seeks.
+            applyGuardedJump(target, 'skip');
+
+            // Inform HLS to refresh loading buffer at the new point
+            if (hlsInst) {
+                try {
+                    hlsInst.startLoad(Math.max(0, target - 0.8));
+                } catch (_) { }
+            }
+
+            if (!video.paused) {
+                video.play().catch(() => { });
+            }
+
+            _skipBtnWasVisible = false;
+            if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+
+            // Ensure UI updates to reflect the new position
+            syncTimeUI();
+        }
+
+        function _tickSkipCountdown() {
+            if (!_skipActiveType || !_skipActiveSegment || !skipSegmentBtn) return;
+            if (!skipSegmentBtn.classList.contains('counting')) return;
+
+            const now = Date.now();
+            const videoPaused = !video || video.paused;
+
+            // Accumulate time only while playing
+            if (!videoPaused) {
+                _skipElapsed += now - _skipLastTick;
+            }
+            _skipLastTick = now;
+
+            // Handle visual pause state
+            if (videoPaused) {
+                skipSegmentBtn.classList.add('countdown-paused');
+            } else {
+                skipSegmentBtn.classList.remove('countdown-paused');
+            }
+
+            if (_skipElapsed >= SKIP_COUNTDOWN_DURATION_MS) {
+                const finalType = _skipActiveType;
+                const finalSegment = _skipActiveSegment ? { ..._skipActiveSegment } : null;
+                console.log(`[AutoSkip] COMPLETED countdown for: ${finalType}`);
+
+                _clearSkipCountdown();
+
+                if (finalType && finalSegment) {
+                    const shouldAuto = (finalType === 'intro' && autoSkipIntroEnabled) || (finalType === 'outro' && autoSkipOutroEnabled);
+                    if (shouldAuto) {
+                        _skipActiveType = finalType;
+                        _skipActiveSegment = finalSegment;
+                        performSkipJump(finalType, false);
+                    }
+                }
+                return;
+            }
+            _skipCountdownTimer = setTimeout(_tickSkipCountdown, 100);
+        }
+
+        function _startSkipCountdown() {
+            const active = getActiveSkipSegment(video.currentTime);
+            if (!active) return;
+            const shouldAuto = (active.type === 'intro' && autoSkipIntroEnabled) ||
+                (active.type === 'outro' && autoSkipOutroEnabled);
+
+            if (!shouldAuto) return;
+
+            _clearSkipCountdown();
+            _skipActiveType = active.type;
+            _skipActiveSegment = { ...active };
+            void skipSegmentBtn.offsetWidth;
+            skipSegmentBtn.classList.add('counting');
+            _skipElapsed = 0;
+            _skipLastTick = Date.now();
+            _tickSkipCountdown();
+        }
+
+        let _nextEpBtnWasVisible = false; // tracks previous visibility state
+
         function updateNextEpisodeButton(forceShow = false) {
             if (!nextEpisodeBtn) return;
             const next = getNextEpisodeRef();
             if (!next || !video) {
                 nextEpisodeBtn.style.display = 'none';
+                _clearNextEpCountdown();
+                _nextEpBtnWasVisible = false;
                 return;
             }
             if (forceShow) {
                 nextEpisodeBtn.style.display = 'inline-flex';
+                if (!_nextEpBtnWasVisible) {
+                    _nextEpBtnWasVisible = true;
+                    _startNextEpCountdown();
+                }
                 return;
             }
             if (!isFinite(video.duration) || video.duration <= 0) {
                 nextEpisodeBtn.style.display = 'none';
+                _clearNextEpCountdown();
+                _nextEpBtnWasVisible = false;
                 return;
             }
             const remaining = video.duration - (video.currentTime || 0);
-            nextEpisodeBtn.style.display = remaining <= 30 ? 'inline-flex' : 'none';
+            const shouldShow = remaining <= 30;
+
+            nextEpisodeBtn.style.display = shouldShow ? 'inline-flex' : 'none';
+
+            if (shouldShow && !_nextEpBtnWasVisible) {
+                // Just entered the last-30s window — start the countdown
+                _nextEpBtnWasVisible = true;
+                _startNextEpCountdown();
+            } else if (!shouldShow && _nextEpBtnWasVisible) {
+                // Seeked back out — cancel the countdown
+                _nextEpBtnWasVisible = false;
+                _clearNextEpCountdown();
+            }
         }
+
+
 
         async function goToNextEpisode() {
             const next = getNextEpisodeRef();
@@ -7438,6 +8309,18 @@
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
             window.previewSeeking = false;
             isSourceSwitching = true;
+            currentStreamUrl = String(url || '');
+            currentStreamReferer = referer || null;
+            hlsFragErrorBurst = 0;
+            hlsSessionIsFragile = false;
+            lastRequestedPlaybackTarget = Math.max(0, Number(startTime || 0));
+            jumpCooldownUntil = 0;
+            jumpInFlightUntil = 0;
+            pendingJumpTarget = null;
+            if (jumpRecoveryTimer) {
+                clearTimeout(jumpRecoveryTimer);
+                jumpRecoveryTimer = null;
+            }
             let sameSourceRecoveryLock = false;
             const recoveryKey = `${srcIdx}|${String(url || '')}`;
             if (sameSourceRecoverKey !== recoveryKey) {
@@ -7574,38 +8457,43 @@
                 const currentTime = (video && video.currentTime > 0) ? video.currentTime : startTime;
                 sameSourceRecoverCount += 1;
                 console.warn(`[hls] Recovering same source (attempt ${sameSourceRecoverCount}) reason=${reason}`);
+                const forceHotRebuild = reason === 'fatal_frag_parse_jump';
 
                 // Soft in-place recovery first (no full player rebuild/restart)
                 if (hlsInst && isM3U8 && sameSourceRecoverCount <= 40) {
                     try {
                         const jump = sameSourceRecoverCount > 12 ? 2.6 : (sameSourceRecoverCount > 5 ? 1.4 : 0.25);
-                        const near = Math.max(0, Number(currentTime || 0) + jump);
+                        const pendingTargetTime = pendingJumpTarget?.time;
+                        const near = Math.max(0, Number.isFinite(pendingTargetTime) ? pendingTargetTime : Number(currentTime || 0) + jump);
                         showBufferingOverlay();
-                        if (video && isFinite(video.duration) && near < video.duration) {
+                        if (!forceHotRebuild && video && isFinite(video.duration) && near < video.duration) {
                             video.currentTime = near;
                         }
-                        try {
-                            hlsInst.autoLevelCapping = 0;
-                            hlsInst.nextLevel = 0;
-                            hlsInst.loadLevel = 0;
-                        } catch (_) { }
-                        hlsInst.stopLoad();
-                        hlsInst.startLoad(Math.max(0, near - 0.8));
-                        hlsInst.recoverMediaError();
-                        setTimeout(() => {
-                            try { hlsInst.nextLevel = -1; } catch (_) { }
-                            try { hlsInst.autoLevelCapping = -1; } catch (_) { }
-                        }, 2200);
-
-                        // Every few failed heals, hot-rebuild HLS in-place (no UI/player restart).
-                        if (sameSourceRecoverCount % 8 === 0) {
+                        if (!forceHotRebuild) {
                             try {
-                                const resumeAt = Math.max(0, Number(video?.currentTime || near));
-                                hlsInst.destroy();
-                                hlsInst = svCreateHlsInstance(resumeAt);
-                                svAttachHlsListeners(hlsInst, resumeAt, null, recoverSameSource);
-                                hlsInst.loadSource(proxiedStreamUrl(url, referer));
-                                hlsInst.attachMedia(video);
+                                hlsInst.autoLevelCapping = 0;
+                                hlsInst.nextLevel = 0;
+                                hlsInst.loadLevel = 0;
+                            } catch (_) { }
+                            hlsInst.stopLoad();
+                            hlsInst.startLoad(Math.max(0, near - 0.8));
+                            hlsInst.recoverMediaError();
+                            setTimeout(() => {
+                                try { hlsInst.nextLevel = -1; } catch (_) { }
+                                try { hlsInst.autoLevelCapping = -1; } catch (_) { }
+                            }, 2200);
+                        }
+
+                        // Every few failed heals, or a fatal frag-parse jump, hot-rebuild HLS in-place.
+                        if (forceHotRebuild || sameSourceRecoverCount % 8 === 0) {
+                            try {
+                                const resumeAt = Math.max(0, Number.isFinite(pendingTargetTime) ? pendingTargetTime : Number(video?.currentTime || near));
+                                pendingJumpTarget = { time: resumeAt, reason: pendingJumpTarget?.reason || 'seek' };
+                                setTemporaryRecoveryQuality(forceHotRebuild ? 7000 : 5000);
+                                svSwitchHlsSourceSilent(url, referer, () => {
+                                    hlsFragErrorBurst = 0;
+                                    hlsSessionIsFragile = false;
+                                });
                             } catch (_) { }
                         }
                     } catch (_) { }
@@ -7854,4 +8742,3 @@
 </body>
 
 </html>
-
