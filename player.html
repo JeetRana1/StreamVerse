@@ -1717,22 +1717,24 @@
             .next-episode-btn,
             .skip-segment-btn {
                 right: calc(15px + var(--safe-right)) !important;
-                bottom: calc(140px + var(--safe-bottom)) !important;
+                bottom: calc(240px + var(--safe-bottom)) !important;
                 width: auto !important;
                 padding: 14px 20px !important;
                 border-radius: 12px !important;
             }
 
             .next-episode-btn {
-                bottom: calc(200px + var(--safe-bottom)) !important;
+                bottom: calc(300px + var(--safe-bottom)) !important;
             }
 
             .play-btn {
                 width: 76px;
                 height: 76px;
                 font-size: 24px;
-                background: var(--primary) !important;
-                box-shadow: 0 0 30px var(--primary-glow);
+                background: rgba(255, 255, 255, 0.05) !important;
+                border: 2px solid var(--primary) !important;
+                box-shadow: 0 0 20px var(--primary-glow);
+                color: var(--primary) !important;
             }
 
             .control-bottom {
@@ -1759,6 +1761,10 @@
                     display: none !important;
                 }
 
+                .control-center {
+                    transform: translateY(8vh);
+                }
+
                 .control-actions {
                     justify-content: flex-end;
                     gap: 1rem;
@@ -1775,13 +1781,37 @@
                 bottom: 0 !important;
                 width: 100% !important;
                 max-width: 100% !important;
-                max-height: 60vh !important;
-                border-radius: 24px 24px 0 0 !important;
+                max-height: 75vh !important;
+                border-radius: 28px 28px 0 0 !important;
                 border-bottom: none !important;
-                padding: 24px 16px calc(16px + var(--safe-bottom)) !important;
-                transform: none !important;
-                animation: slideUpDrawer 0.3s cubic-bezier(0.2, 0, 0.2, 1) !important;
-                transition: transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.22s ease !important;
+                padding: 28px 16px calc(20px + var(--safe-bottom)) !important;
+                transform: translateY(100%);
+                transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease !important;
+                opacity: 0;
+                pointer-events: none;
+                visibility: hidden;
+            }
+
+            #source-panel.open,
+            #ep-panel.open,
+            #audio-panel.open,
+            .control-menu.active {
+                transform: translateY(0);
+                opacity: 1;
+                pointer-events: auto;
+                visibility: visible;
+            }
+
+            .sheet-dragging {
+                transition: none !important;
+                animation: none !important;
+                will-change: transform, opacity;
+                filter: brightness(1.05);
+                box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5) !important;
+            }
+
+            .sheet-animating {
+                transition: transform 0.35s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.3s ease !important;
             }
 
             @keyframes slideUpDrawer {
@@ -2488,6 +2518,7 @@
         let currentStreamReferer = null;
         let hlsFragErrorBurst = 0;
         let hlsSessionIsFragile = false;
+        let audioSwitchInFlightUntil = 0;
         let controlsHoldVisibleUntil = 0;
         let seekBufferOverlayTimer = null;
         window.addEventListener('beforeunload', () => { subtitleBlobUrls = []; });
@@ -2837,6 +2868,10 @@
         function svApplyPreferredAudioToHls(hls) {
             if (!hls || !Array.isArray(hls.audioTracks) || hls.audioTracks.length === 0) return;
             const tracks = hls.audioTracks;
+            const activeSourceProvider = String(allSources?.[currentIdx]?.provider || '').toLowerCase();
+            const shouldForceOriginalTrack =
+                currentAudioSource !== 'satoru' &&
+                activeSourceProvider === 'justanime';
 
             // Normalize our current preference
             let searchToken = (preferredAudioToken || '').toLowerCase();
@@ -2846,7 +2881,7 @@
 
             let targetIdx = -1;
 
-            if (normPref) {
+            if (normPref && !shouldForceOriginalTrack) {
                 // 1. Try exact normalized match
                 targetIdx = tracks.findIndex(t => {
                     return getTrackAudioTokens(t).some(tok => normalizeAudioToken(tok) === normPref);
@@ -3135,6 +3170,11 @@
                     lastWatchdogTime = video ? video.currentTime : -1;
                     return;
                 }
+                if (Date.now() < audioSwitchInFlightUntil) {
+                    watchdogStallCount = 0;
+                    lastWatchdogTime = video ? video.currentTime : -1;
+                    return;
+                }
                 if (Date.now() < jumpInFlightUntil) {
                     watchdogStallCount = 0;
                     lastWatchdogTime = video ? video.currentTime : -1;
@@ -3243,6 +3283,7 @@
             }, 1400);
             setTimeout(() => {
                 if (!video || escalatedToHardReload) return;
+                if (Date.now() < audioSwitchInFlightUntil) return;
                 const stillBroken = !isFinite(video.duration) || video.duration <= 0 || (video.readyState < 2 && Math.abs(video.currentTime || 0) < 0.5);
                 if (stillBroken) {
                     escalatedToHardReload = true;
@@ -3905,19 +3946,7 @@
         }
 
         function goBackToHome() {
-            const home = 'index.html';
-            try {
-                if (document.referrer) {
-                    const ref = new URL(document.referrer);
-                    const sameOrigin = ref.origin === location.origin;
-                    const samePage = ref.pathname.toLowerCase().endsWith('/player.html');
-                    if (sameOrigin && !samePage) {
-                        location.href = ref.href;
-                        return;
-                    }
-                }
-            } catch (_) { }
-            location.href = home;
+            location.href = 'index.html';
         }
 
         backBtn?.addEventListener('click', (e) => {
@@ -4041,6 +4070,33 @@
             url.searchParams.set('title', String(title || ''));
             if (preferredYear) url.searchParams.set('year', String(preferredYear));
             return url.toString();
+        }
+
+        async function resolveExactSatoruEpisode(mediaTitle, seasonNo, episodeNo, seasonLabel = '', preferredYear = null) {
+            try {
+                const resolveUrl = buildSatoruResolveUrl(
+                    mediaTitle,
+                    seasonNo,
+                    episodeNo,
+                    seasonLabel,
+                    preferredYear,
+                );
+                const { res } = await fetchJsonWithApiFallback(resolveUrl, {
+                    signal: AbortSignal.timeout(getProviderTimeout('satoru', 'animeInfo', ANIME_INFO_TIMEOUT_MS)),
+                });
+                if (!res.ok) return null;
+                const resolved = await res.json();
+                const animeId = String(resolved?.anime?.id || '').trim();
+                const episodeId = String(resolved?.episode?.id || '').trim();
+                if (!animeId || !episodeId) return null;
+                return {
+                    animeId,
+                    episodeId,
+                    animeTitle: String(resolved?.anime?.title || '').trim(),
+                };
+            } catch (_) {
+                return null;
+            }
         }
 
         function buildAnimeWatchUrl(provider, episodeId) {
@@ -4197,6 +4253,29 @@
                 terms.push(normalizedSeasonLabel);
             }
 
+            if (base.toLowerCase().includes('demon slayer') || base.toLowerCase().includes('kimetsu no yaiba')) {
+                if (normalizedSeasonLabel.includes('mugen train')) {
+                    terms.push(`${base} mugen train arc`);
+                    terms.push('demon slayer mugen train arc');
+                    terms.push('kimetsu no yaiba mugen train arc');
+                }
+                if (normalizedSeasonLabel.includes('entertainment district')) {
+                    terms.push(`${base} entertainment district arc`);
+                    terms.push('demon slayer entertainment district arc');
+                    terms.push('kimetsu no yaiba entertainment district arc');
+                }
+                if (normalizedSeasonLabel.includes('swordsmith village')) {
+                    terms.push(`${base} swordsmith village arc`);
+                    terms.push('demon slayer swordsmith village arc');
+                    terms.push('kimetsu no yaiba swordsmith village arc');
+                }
+                if (normalizedSeasonLabel.includes('hashira training')) {
+                    terms.push(`${base} hashira training arc`);
+                    terms.push('demon slayer hashira training arc');
+                    terms.push('kimetsu no yaiba hashira training arc');
+                }
+            }
+
             if (preferredYear) terms.push(`${base} ${preferredYear}`);
             terms.push(base);
             return Array.from(new Set(terms.filter(Boolean)));
@@ -4237,6 +4316,121 @@
             return null;
         }
 
+        function getSpecificSeasonLabelTokens(seasonLabel, baseTitle = '') {
+            const stopWords = new Set([
+                'season', 'part', 'arc', 'tv', 'the', 'and', 'of', 'no', 'to', 'a', 'an'
+            ]);
+            const labelTokens = normalizeAnimeSearchQuery(seasonLabel)
+                .toLowerCase()
+                .split(' ')
+                .filter(Boolean);
+            const baseTokens = new Set(
+                normalizeAnimeSearchQuery(baseTitle)
+                    .toLowerCase()
+                    .split(' ')
+                    .filter(Boolean),
+            );
+            return [...new Set(
+                labelTokens.filter((token) =>
+                    token.length > 2 &&
+                    !stopWords.has(token) &&
+                    !baseTokens.has(token),
+                ),
+            )];
+        }
+
+        function getProviderAnimeResolutionContext(provider, mediaTitle, seasonNo, episodeNo, seasonLabel) {
+            const resolved = {
+                mediaTitle: normalizeAnimeSearchQuery(mediaTitle),
+                seasonNo: Number(seasonNo || 1),
+                episodeNo: Number(episodeNo || 1),
+                seasonLabel: normalizeSeasonSearchLabel(seasonLabel),
+                animeIdOverride: '',
+            };
+
+            if (provider !== 'justanime') return resolved;
+
+            const base = resolved.mediaTitle.toLowerCase();
+            const label = resolved.seasonLabel.toLowerCase();
+            const isDemonSlayer = base.includes('demon slayer') || base.includes('kimetsu no yaiba');
+
+            if (!isDemonSlayer) return resolved;
+
+            if (label.includes('entertainment district')) {
+                resolved.seasonLabel = 'Kimetsu no Yaiba Entertainment District Arc';
+                if (resolved.episodeNo >= 8) {
+                    resolved.episodeNo = resolved.episodeNo - 7;
+                }
+                resolved.animeIdOverride = '142329';
+            } else if (label.includes('mugen train')) {
+                resolved.seasonLabel = 'Kimetsu no Yaiba Entertainment District Arc';
+                resolved.episodeNo = resolved.episodeNo + 4;
+                resolved.animeIdOverride = '142329';
+            } else if (label.includes('swordsmith village')) {
+                resolved.seasonLabel = 'Kimetsu no Yaiba Swordsmith Village Arc';
+                resolved.animeIdOverride = '145139';
+            } else if (label.includes('hashira training')) {
+                resolved.seasonLabel = 'Kimetsu no Yaiba Hashira Training Arc';
+                resolved.animeIdOverride = '166240';
+            }
+
+            return resolved;
+        }
+
+        function getProviderAnimeCacheScope(provider, mediaTitle, preferredYear, seasonLabel = '') {
+            const baseKey = `${normalizeAnimeSearchQuery(mediaTitle).toLowerCase()}::${preferredYear || ''}`;
+            if (provider !== 'justanime') return `${provider}::v2::${baseKey}`;
+            const scopedLabel = normalizeSeasonSearchLabel(seasonLabel).toLowerCase();
+            return `${provider}::v3::${baseKey}::${scopedLabel}`;
+        }
+
+        async function resolveJustAnimeOverrideEpisodeId(animeId, episodeNo, timeoutMs) {
+            const safeAnimeId = String(animeId || '').trim();
+            const safeEpisodeNo = Math.max(1, Number(episodeNo || 1));
+            if (!safeAnimeId) return '';
+
+            try {
+                const { res: infoRes } = await fetchJsonWithApiFallback(
+                    buildAnimeInfoUrl('justanime', safeAnimeId),
+                    { signal: AbortSignal.timeout(timeoutMs) },
+                );
+                if (!infoRes.ok) return `${safeAnimeId}$episode$${safeEpisodeNo}`;
+                let info = await infoRes.json();
+                if (info?.data) info = info.data;
+                const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
+                const target =
+                    episodes.find((ep) => Number(ep?.number || ep?.episodeNum || ep?.episode || 0) === safeEpisodeNo) ||
+                    episodes[safeEpisodeNo - 1] ||
+                    null;
+                return String(target?.id || `${safeAnimeId}$episode$${safeEpisodeNo}`);
+            } catch (_) {
+                return `${safeAnimeId}$episode$${safeEpisodeNo}`;
+            }
+        }
+
+        function findExactProviderSeasonMatch(provider, results, seasonLabel = '') {
+            if (provider !== 'justanime' || !Array.isArray(results) || results.length === 0) return null;
+            const normalizedSeasonLabel = normalizeSeasonSearchLabel(seasonLabel).toLowerCase();
+            if (!normalizedSeasonLabel) return null;
+
+            const seasonTokens = normalizedSeasonLabel.split(' ').filter(Boolean);
+            if (!seasonTokens.length) return null;
+
+            const exact = results.find((row) => {
+                let rawTitle = row?.title || row?.name || '';
+                if (typeof rawTitle === 'object') {
+                    rawTitle = rawTitle.english || rawTitle.romaji || rawTitle.native || String(rawTitle);
+                }
+                const itemTitle = normalizeAnimeSearchQuery(rawTitle).toLowerCase();
+                if (!itemTitle) return false;
+                if (itemTitle.includes(normalizedSeasonLabel)) return true;
+                const matches = seasonTokens.filter((token) => itemTitle.includes(token)).length;
+                return matches >= Math.min(2, seasonTokens.length);
+            });
+
+            return exact || null;
+        }
+
         function pickAnimeResultByTitle(results, title, preferredYear = null, targetSeason = 1, seasonLabel = '') {
             if (!Array.isArray(results) || results.length === 0) return null;
             if (!title) return results[0];
@@ -4245,6 +4439,7 @@
             const qWords = normTitle.split(' ').filter(Boolean);
             const normalizedSeasonLabel = normalizeSeasonSearchLabel(seasonLabel).toLowerCase();
             const seasonWords = normalizedSeasonLabel.split(' ').filter(Boolean);
+            const specificSeasonTokens = getSpecificSeasonLabelTokens(seasonLabel, title);
             let best = null;
             let bestScore = -Infinity;
 
@@ -4291,6 +4486,11 @@
                     const seasonCommon = seasonWords.filter((w) => tWords.includes(w)).length;
                     score += seasonCommon * 28;
                     if (normalizedSeasonLabel && itemTitle.includes(normalizedSeasonLabel)) score += 140;
+                }
+                if (specificSeasonTokens.length) {
+                    const specificMatches = specificSeasonTokens.filter((w) => tWords.includes(w)).length;
+                    if (specificMatches > 0) score += specificMatches * 95;
+                    else score -= 220;
                 }
 
                 // Specific Arc / Part Support for anime
@@ -4563,27 +4763,51 @@
                 return animeSubtitleCache.get(subtitleCacheKey) || [];
             }
 
-            // Show-level cache key (same across all episodes of a show)
-            const showCacheKey = `${mediaTitle.toLowerCase()}::${preferredYear || ''}`;
-
             for (const provider of ANIME_SUBTITLE_FALLBACK_PROVIDERS) {
                 try {
                     const base = getAnimeProviderBase(provider);
                     const selectedSeason = tvSeasons?.[curSeason];
                     const sNoRaw = Number(selectedSeason?.seasonNo);
                     const selectedSeasonNo = Number.isFinite(sNoRaw) && sNoRaw > 0 ? sNoRaw : (curSeason + 1);
+                    const providerResolution = getProviderAnimeResolutionContext(
+                        provider,
+                        mediaTitle,
+                        selectedSeasonNo,
+                        absoluteEpisodeNo,
+                        selectedSeason?.name || '',
+                    );
 
-                    const terms = getAnimeSearchTerms(mediaTitle, preferredYear, selectedSeasonNo);
+                    const terms = getAnimeSearchTerms(
+                        providerResolution.mediaTitle,
+                        preferredYear,
+                        providerResolution.seasonNo,
+                        providerResolution.seasonLabel,
+                    );
+                    const providerEpisodeNo = Math.max(1, Number(providerResolution.episodeNo || absoluteEpisodeNo || 1));
+                    const providerAnimeIdOverride = String(providerResolution.animeIdOverride || '').trim();
+                    if (provider === 'justanime' && providerAnimeIdOverride) {
+                        providerEpisodeId = await resolveJustAnimeOverrideEpisodeId(
+                            providerAnimeIdOverride,
+                            MEDIA_TYPE === 'tv' ? providerEpisodeNo : 1,
+                            getProviderTimeout(provider, 'subtitleFallback', REQ_TIMEOUT.subtitleFallback),
+                        );
+                    }
+                    const providerCacheScope = getProviderAnimeCacheScope(
+                        provider,
+                        providerResolution.mediaTitle,
+                        preferredYear,
+                        providerResolution.seasonLabel,
+                    );
                     const subtitleTimeoutMs = getProviderTimeout(provider, 'subtitleFallback', REQ_TIMEOUT.subtitleFallback);
                     let providerEpisodeId = null;
 
                     // Check show-level cache to skip search+info on subsequent episodes
-                    const cachedAnimeId = justanimeAnimeIdCache.get(`${provider}::${showCacheKey}`);
+                    const cachedAnimeId = providerAnimeIdOverride || justanimeAnimeIdCache.get(providerCacheScope);
 
                     if (cachedAnimeId) {
                         // Fast path: already know the anime ID, build episode ID directly
                         if (provider === 'justanime') {
-                            providerEpisodeId = `${cachedAnimeId}$episode$${MEDIA_TYPE === 'tv' ? absoluteEpisodeNo : 1}`;
+                            providerEpisodeId = `${cachedAnimeId}$episode$${MEDIA_TYPE === 'tv' ? providerEpisodeNo : 1}`;
                         } else {
                             // For other providers we still need the episode list, but we skip the search
                             const { res: infoRes } = await fetchJsonWithApiFallback(
@@ -4616,10 +4840,11 @@
                         if (!isValidAnimeInfoId(animeId)) continue;
 
                         // Cache the anime ID so future episodes skip this step
-                        justanimeAnimeIdCache.set(`${provider}::${showCacheKey}`, animeId);
+                        justanimeAnimeIdCache.set(providerCacheScope, providerAnimeIdOverride || animeId);
 
+                        const resolvedAnimeId = providerAnimeIdOverride || animeId;
                         const { res: infoRes } = await fetchJsonWithApiFallback(
-                            buildAnimeInfoUrl(provider, animeId),
+                            buildAnimeInfoUrl(provider, resolvedAnimeId),
                             { signal: AbortSignal.timeout(subtitleTimeoutMs) },
                         );
                         if (!infoRes.ok) continue;
@@ -4627,7 +4852,7 @@
                         if (info?.data) info = info.data;
 
                         if (provider === 'justanime' && info?.id) {
-                            providerEpisodeId = `${info.id}$episode$${MEDIA_TYPE === 'tv' ? absoluteEpisodeNo : 1}`;
+                            providerEpisodeId = `${info.id}$episode$${MEDIA_TYPE === 'tv' ? providerEpisodeNo : 1}`;
                         } else {
                             const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
                             const target = episodes.find((ep) => Number(ep?.number || ep?.episodeNum || ep?.episode) === absoluteEpisodeNo)
@@ -5835,15 +6060,16 @@
         }
         function animateCloseMenuElement(menuEl) {
             if (!menuEl) return;
+            menuEl.classList.remove('sheet-dragging');
             menuEl.classList.add('sheet-animating');
-            menuEl.style.transform = 'translateY(110%)';
-            menuEl.style.opacity = '0.85';
+            menuEl.style.transform = 'translateY(100%)';
+            menuEl.style.opacity = '0';
             setTimeout(() => {
                 closeMenuElement(menuEl);
                 menuEl.style.transform = '';
                 menuEl.style.opacity = '';
                 menuEl.classList.remove('sheet-animating');
-            }, 210);
+            }, 300);
         }
 
         function initMobileSheetDragToClose() {
@@ -5860,8 +6086,8 @@
                     if (!touch) return;
                     const rect = sheet.getBoundingClientRect();
                     const yInSheet = touch.clientY - rect.top;
-                    // Start drag only from top grab area to avoid fighting list scroll.
-                    if (yInSheet > 54) return;
+                    // Start drag from top grab area (80px)
+                    if (yInSheet > 80) return;
                     const s = state.get(sheet);
                     s.dragging = true;
                     s.startY = touch.clientY;
@@ -5875,26 +6101,51 @@
                     if (!s.dragging) return;
                     const touch = e.touches?.[0];
                     if (!touch) return;
-                    s.dy = Math.max(0, touch.clientY - s.startY);
+
+                    const deltaY = touch.clientY - s.startY;
+
+                    // Responsive dragging with rubber-band effect
+                    if (deltaY < 0) {
+                        // Dragging upwards: apply resistance
+                        s.dy = deltaY * 0.25;
+                    } else {
+                        // Dragging downwards: 1:1 movement
+                        s.dy = deltaY;
+                    }
+
                     sheet.style.transform = `translateY(${s.dy}px)`;
-                    if (s.dy > 0) e.preventDefault();
+
+                    // Adjust opacity based on downward drag distance
+                    if (s.dy > 0) {
+                        sheet.style.opacity = Math.max(0.6, 1 - (s.dy / sheet.offsetHeight));
+                    } else {
+                        sheet.style.opacity = "1";
+                    }
+
+                    if (e.cancelable) e.preventDefault();
                 };
 
                 const onEnd = () => {
                     const s = state.get(sheet);
                     if (!s.dragging) return;
                     s.dragging = false;
-                    const elapsed = Math.max(1, Date.now() - s.startAt);
-                    const velocity = s.dy / elapsed; // px/ms
-                    const shouldClose = s.dy > 90 || velocity > 0.75;
+
+                    const elapsed = Date.now() - s.startAt;
+                    const velocity = s.dy / (elapsed || 1);
+
+                    // Close if dragged down far enough (120px) or swiped down fast
+                    const shouldClose = s.dy > 120 || (velocity > 0.6 && s.dy > 30);
+
                     sheet.classList.remove('sheet-dragging');
-                    sheet.classList.add('sheet-animating');
+
                     if (shouldClose) {
                         animateCloseMenuElement(sheet);
                     } else {
+                        // Spring back animation
+                        sheet.classList.add('sheet-animating');
                         sheet.style.transform = '';
                         sheet.style.opacity = '';
-                        setTimeout(() => sheet.classList.remove('sheet-animating'), 220);
+                        setTimeout(() => sheet.classList.remove('sheet-animating'), 300);
                     }
                 };
 
@@ -5973,10 +6224,14 @@
                     const jaSource = allSources.find((s) => s.provider === 'justanime');
                     if (!jaSource) return;
                     const resumeAt = Math.max(0, Number(video?.currentTime || 0));
+                    audioSwitchInFlightUntil = Date.now() + 9000;
+                    hlsFragErrorBurst = 0;
+                    hlsSessionIsFragile = false;
+                    pendingJumpTarget = null;
                     currentAudioSource = 'justanime';
                     activeSatoruTrackIndex = -1;
-                    rememberProviderPreference(null);
-                    svSwitchHlsSourceSilent(jaSource.url, jaSource.referer, () => updateAudioTracks(), resumeAt);
+                    syncUrlState();
+                    loadStream(jaSource.url, !!jaSource.isM3U8, !!jaSource.isEmbed, jaSource.referer, currentIdx, resumeAt);
                 });
             }
 
@@ -5996,19 +6251,17 @@
                         preferredAudioToken = rawToken.replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase();
 
                         if (preferredSourceLabelMatch) preferredSourceLabelMatch = preferredAudioToken;
-                        rememberProviderPreference('satoru');
-                        // syncUrlState() is called inside rememberProviderPreference
+                        syncUrlState();
 
                         updateAudioTracks(); // Render optimistic UI
                         const resumeAt = Math.max(0, Number(video?.currentTime || 0));
+                        audioSwitchInFlightUntil = Date.now() + 9000;
+                        hlsFragErrorBurst = 0;
+                        hlsSessionIsFragile = false;
+                        pendingJumpTarget = null;
 
                         if (!isOnSatoru) {
-                            svSwitchHlsSourceSilent(src.url, src.referer, () => {
-                                // Double apply to be sure HLS catches it after stream swap
-                                svApplyPreferredAudioToHls(hlsInst);
-                                setTimeout(() => svApplyPreferredAudioToHls(hlsInst), 150);
-                                updateAudioTracks();
-                            }, resumeAt);
+                            loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt);
                         } else {
                             svApplyPreferredAudioToHls(hlsInst);
                             updateAudioTracks();
@@ -6035,11 +6288,7 @@
                     if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
                     else if (document.webkitExitFullscreen) document.webkitExitFullscreen().catch(() => { });
                 }
-                if (window.history.length > 1) {
-                    window.history.back();
-                } else {
-                    window.location.href = 'index.html';
-                }
+                goBackToHome();
             });
 
             playPauseBtn.addEventListener('click', (e) => {
@@ -7337,12 +7586,31 @@
                                     selectedSeasonMeta?.seasonName ||
                                     '',
                                 );
-                            const seasonAwareTitle = MEDIA_TYPE === 'tv' && selectedSeasonNo > 1
+                            const providerResolution = getProviderAnimeResolutionContext(
+                                provider,
+                                mediaTitle,
+                                selectedSeasonNo,
+                                selectedEpisodeNo,
+                                seasonLabel,
+                            );
+                            const providerMediaTitle = providerResolution.mediaTitle || mediaTitle;
+                            const providerSeasonLabel = providerResolution.seasonLabel || seasonLabel;
+                            const providerSeasonNo = providerResolution.seasonNo || selectedSeasonNo;
+                            const providerEpisodeNo = Math.max(1, Number(providerResolution.episodeNo || selectedEpisodeNo || 1));
+                            const providerAnimeIdOverride = String(providerResolution.animeIdOverride || '').trim();
+                            if (provider === 'justanime' && providerAnimeIdOverride) {
+                                provEpisodeId = await resolveJustAnimeOverrideEpisodeId(
+                                    providerAnimeIdOverride,
+                                    MEDIA_TYPE === 'tv' ? providerEpisodeNo : 1,
+                                    getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS),
+                                );
+                            }
+                            const seasonAwareTitle = MEDIA_TYPE === 'tv' && providerSeasonNo > 1
 
-                                ? `${mediaTitle} season ${selectedSeasonNo}`
-                                : mediaTitle;
+                                ? `${providerMediaTitle} season ${providerSeasonNo}`
+                                : providerMediaTitle;
                             const preferredYear = getPreferredMediaYear();
-                            const cacheKey = `${provider}::${mediaTitle.toLowerCase()}::${preferredYear || ''}::s${selectedSeasonNo}::${seasonLabel.toLowerCase()}`;
+                            const cacheKey = `${provider}::v3::${providerMediaTitle.toLowerCase()}::${preferredYear || ''}::s${providerSeasonNo}::${providerSeasonLabel.toLowerCase()}`;
                             const cached =
                                 (provider === 'satoru' && MEDIA_TYPE === 'tv')
                                     ? null
@@ -7359,12 +7627,27 @@
                             ) {
                                 info = cached.info;
                                 aggregatedSearchResults = hasReusableSearchResults ? cached.searchResults : [];
+                            } else if (providerAnimeIdOverride && provider === 'justanime' && !provEpisodeId) {
+                                const animeInfoTimeoutMs = getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS);
+                                const { res: infoRes } = await fetchJsonWithApiFallback(
+                                    buildAnimeInfoUrl(provider, providerAnimeIdOverride),
+                                    { signal: AbortSignal.timeout(animeInfoTimeoutMs) },
+                                );
+                                if (infoRes.ok) {
+                                    info = await infoRes.json();
+                                    if (info?.data) info = info.data;
+                                    animeProviderInfoCache.set(cacheKey, {
+                                        ts: Date.now(),
+                                        info,
+                                        searchResults: [],
+                                    });
+                                }
                             } else if (provider === 'satoru' && MEDIA_TYPE === 'tv' && !provEpisodeId) {
                                 const resolveUrl = buildSatoruResolveUrl(
-                                    mediaTitle,
+                                    providerMediaTitle,
                                     selectedSeasonNo,
                                     selectedEpisodeNo,
-                                    seasonLabel,
+                                    providerSeasonLabel,
                                     preferredYear,
                                 );
                                 const animeInfoTimeoutMs = getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS);
@@ -7381,8 +7664,8 @@
                                         animeTitle: resolved?.anime?.title || null,
                                         episodeId: provEpisodeId,
                                         season: selectedSeasonNo,
-                                        episode: selectedEpisodeNo,
-                                        seasonLabel,
+                                        episode: providerEpisodeNo,
+                                        seasonLabel: providerSeasonLabel,
                                     });
                                     if (resolved?.anime?.id) {
                                         const { res: infoRes } = await fetchJsonWithApiFallback(
@@ -7403,9 +7686,9 @@
                                 if (!satoruResolvedExactly) {
                                     console.warn('[satoru] exact resolve failed', {
                                         season: selectedSeasonNo,
-                                        episode: selectedEpisodeNo,
-                                        seasonLabel,
-                                        mediaTitle,
+                                        episode: providerEpisodeNo,
+                                        seasonLabel: providerSeasonLabel,
+                                        mediaTitle: providerMediaTitle,
                                     });
                                     failReasons.push(`${providerLabel(provider)} exact season match failed`);
                                     chipState(provider, 'failed');
@@ -7426,9 +7709,9 @@
                                     new Set(
                                         [
                                             seasonAwareTitle,
-                                            seasonLabel ? `${mediaTitle} ${seasonLabel}` : '',
-                                            seasonLabel,
-                                            ...getAnimeSearchTerms(mediaTitle, preferredYear, selectedSeasonNo, seasonLabel),
+                                            providerSeasonLabel ? `${providerMediaTitle} ${providerSeasonLabel}` : '',
+                                            providerSeasonLabel,
+                                            ...getAnimeSearchTerms(providerMediaTitle, preferredYear, providerSeasonNo, providerSeasonLabel),
                                         ].filter(Boolean),
                                     ),
                                 );
@@ -7445,8 +7728,9 @@
                                     if (Array.isArray(searchResults) && searchResults.length) {
                                         aggregatedSearchResults.push(...searchResults);
                                     }
-                                    bestAnime = pickAnimeResultByTitle(searchResults, seasonAwareTitle, preferredYear, selectedSeasonNo, seasonLabel)
-                                        || pickAnimeResultByTitle(searchResults, mediaTitle, preferredYear, selectedSeasonNo, seasonLabel);
+                                    bestAnime = findExactProviderSeasonMatch(provider, searchResults, providerSeasonLabel)
+                                        || pickAnimeResultByTitle(searchResults, seasonAwareTitle, preferredYear, providerSeasonNo, providerSeasonLabel)
+                                        || pickAnimeResultByTitle(searchResults, providerMediaTitle, preferredYear, providerSeasonNo, providerSeasonLabel);
                                     if (bestAnime?.id) break;
                                 }
                                 if (!bestAnime) {
@@ -7485,7 +7769,7 @@
                             let episodes = info.episodes || [];
                             const toEpisodeNo = (ep) => Number(ep?.number || ep?.episodeNum || ep?.episode || 0);
                             const toSeasonNo = (ep) => Number(ep?.season || ep?.seasonNumber || ep?.seasonNum || 0);
-                            let selectedEpisodeNoForProvider = selectedEpisodeNo;
+                            let selectedEpisodeNoForProvider = providerEpisodeNo;
                             let hasSeasonMarkers = episodes.some((ep) => toSeasonNo(ep) > 0);
 
                             // Satoru splits many long shows into separate season pages (e.g. "...season-2+").
@@ -7602,7 +7886,7 @@
                                         if (pickedSeasonRow) {
                                             info = pickedSeasonRow.info;
                                             episodes = pickedSeasonRow.episodes;
-                                            selectedEpisodeNoForProvider = Math.max(1, selectedEpisodeNo);
+                                            selectedEpisodeNoForProvider = Math.max(1, providerEpisodeNo);
                                             hasSeasonMarkers = episodes.some((ep) => toSeasonNo(ep) > 0);
                                         }
                                     }
@@ -7623,7 +7907,7 @@
                                 episodes.find((ep) => toEpisodeNo(ep) === selectedEpisodeNo) ||
                                 episodes[Math.min(curEpisode, Math.max(0, episodes.length - 1))];
                             if (provider === 'justanime' && info?.id) {
-                                provEpisodeId = provEpisodeId || `${info.id}$episode$${MEDIA_TYPE === 'tv' ? selectedEpisodeNo : 1}`;
+                                provEpisodeId = provEpisodeId || `${info.id}$episode$${MEDIA_TYPE === 'tv' ? providerEpisodeNo : 1}`;
                             } else {
                                 provEpisodeId = provEpisodeId || targetEpisode?.id;
                             }
@@ -7846,12 +8130,64 @@
                         (async () => {
                             try {
                                 satoruAudioSources = [];
+                                const addSatoruWatchSources = async (watch, fallbackLabel = 'Default', animeId = '') => {
+                                    if (!watch?.sources?.length) return false;
+                                    const m3u8 = watch.sources.find(s => String(s.url).includes('.m3u8')) || watch.sources[0];
+                                    const referer = watch.headers?.Referer || watch.headers?.referer || null;
+
+                                    let subTracks = [fallbackLabel];
+                                    try {
+                                        const mText = await (await fetch(m3u8.url, { signal: AbortSignal.timeout(10000) })).text();
+                                        const matches = mText.matchAll(/#EXT-X-MEDIA:TYPE=AUDIO.*?NAME="([^"]+)"/g);
+                                        const internal = Array.from(matches).map(m => m[1]);
+                                        if (internal.length) subTracks = internal;
+                                    } catch (_) { }
+
+                                    subTracks.forEach(tName => {
+                                        satoruAudioSources.push({
+                                            url: m3u8.url,
+                                            isM3U8: true,
+                                            referer: referer,
+                                            label: subTracks.length > 1 ? `${tName} (Satoru)` : `${fallbackLabel} (Satoru)`,
+                                            hlsTrackName: tName,
+                                            animeId,
+                                        });
+                                    });
+                                    updateAudioTracks();
+                                    return true;
+                                };
+
+                                if (selectedSeason?.providerAnimeId && selectedEpisode?.id) {
+                                    try {
+                                        const watch = await fetchJsonWithRetry(buildAnimeWatchUrl('satoru', String(selectedEpisode.id)), 12000, 20000);
+                                        if (await addSatoruWatchSources(watch, 'Default', String(selectedSeason.providerAnimeId))) {
+                                            return;
+                                        }
+                                    } catch (_) { }
+                                }
+
                                 const metaTitle = currentMediaInfo?.title || currentMediaInfo?.name || '';
                                 if (!metaTitle) return;
+                                const year = getPreferredMediaYear();
+
+                                const exactResolved = await resolveExactSatoruEpisode(
+                                    metaTitle,
+                                    selectedSeasonNo,
+                                    selectedEpisodeNo,
+                                    selectedSeason?.name || '',
+                                    year,
+                                );
+                                if (exactResolved?.episodeId) {
+                                    try {
+                                        const watch = await fetchJsonWithRetry(buildAnimeWatchUrl('satoru', exactResolved.episodeId), 12000, 20000);
+                                        if (await addSatoruWatchSources(watch, 'Default', exactResolved.animeId)) {
+                                            return;
+                                        }
+                                    } catch (_) { }
+                                }
 
                                 const satoruBase = `${API_BASE.replace('/meta/tmdb', '/anime/satoru')}`;
-                                const year = getPreferredMediaYear();
-                                const terms = getAnimeSearchTerms(metaTitle, year, selectedSeasonNo);
+                                const terms = getAnimeSearchTerms(metaTitle, year, selectedSeasonNo, selectedSeason?.name || '');
 
                                 let searchResults = [];
                                 for (const q of terms) {
@@ -7920,31 +8256,7 @@
                                         const target = eps.find(ep => Number(ep?.number || ep?.episode || 0) === selectedEpisodeNo) || eps[selectedEpisodeNo - 1] || eps[0];
                                         if (target?.id) {
                                             const watch = await fetchJsonWithRetry(buildAnimeWatchUrl('satoru', target.id), 12000, 20000);
-                                            if (watch?.sources?.length) {
-                                                const m3u8 = watch.sources.find(s => String(s.url).includes('.m3u8')) || watch.sources[0];
-                                                const referer = watch.headers?.Referer || watch.headers?.referer || null;
-
-                                                // Check for internal tracks
-                                                let subTracks = [cand.dubType];
-                                                try {
-                                                    const mText = await (await fetch(m3u8.url, { signal: AbortSignal.timeout(10000) })).text();
-                                                    const matches = mText.matchAll(/#EXT-X-MEDIA:TYPE=AUDIO.*?NAME="([^"]+)"/g);
-                                                    const internal = Array.from(matches).map(m => m[1]);
-                                                    if (internal.length) subTracks = internal;
-                                                } catch (_) { }
-
-                                                subTracks.forEach(tName => {
-                                                    satoruAudioSources.push({
-                                                        url: m3u8.url,
-                                                        isM3U8: true,
-                                                        referer: referer,
-                                                        label: subTracks.length > 1 ? `${tName} (Satoru)` : `${cand.dubType} (Satoru)`,
-                                                        hlsTrackName: tName,
-                                                        animeId: cand.item.id
-                                                    });
-                                                });
-                                                updateAudioTracks();
-                                            }
+                                            await addSatoruWatchSources(watch, cand.dubType, cand.item.id);
                                         }
                                     } catch (_) { }
                                 }
@@ -8136,6 +8448,7 @@
                     // 3. No live frame — draw the cover/poster image instead of plain black
                     if (currentCoverUrl) {
                         const img = new Image();
+                        const coverSrc = getProxiedUrl(currentCoverUrl);
                         img.crossOrigin = 'anonymous';
                         img.onload = () => {
                             try {
@@ -8165,7 +8478,7 @@
                         img.onerror = () => {
                             canvas.width = 1; canvas.height = 1;
                         };
-                        img.src = currentCoverUrl;
+                        img.src = coverSrc || currentCoverUrl;
                     } else {
                         canvas.width = 1;
                         canvas.height = 1;
@@ -8744,3 +9057,14 @@
 </body>
 
 </html>
+<style>
+    .sheet-dragging {
+        transition: none !important;
+        background: rgba(26, 28, 36, 0.98) !important;
+        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6) !important;
+    }
+
+    .sheet-animating {
+        transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.12), opacity 0.25s ease !important;
+    }
+</style>

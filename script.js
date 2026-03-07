@@ -164,20 +164,58 @@ document.addEventListener('DOMContentLoaded', () => {
 // ------------------ HELPERS -----------------------------------------------
 // Consumet returns full URLs for images already, but sometimes relative paths.
 function imgUrl(path, size = 'w500') {
-    if (!path) return 'https://placehold.co/300x450/1a1a2e/e50914?text=No+Image';
-    if (path.startsWith('http')) return path;
-    return `${IMG_BASE}${size}${path}`;
+    const isBad = !path || typeof path !== 'string' || path.length < 5 ||
+        path.includes('placehold.co') || path.includes('dramaool.png') ||
+        path.includes('no-image') || path.includes('default-poster') ||
+        path.includes('originalnull') || path.includes('originalundefined');
+
+    if (isBad) {
+        return 'https://placehold.co/300x450/1a1a2e/e50914?text=No+Image';
+    }
+
+    // Handle full URLs and protocol-relative URLs
+    if (path.startsWith('http') || path.startsWith('//')) {
+        let url = path.startsWith('//') ? 'https:' + path : path;
+        // Force HTTPS to avoid mixed content blocks from external providers (Dramacool, etc)
+        return url.replace('http:', 'https:');
+    }
+
+    // TMDB relative paths always start with /
+    if (path.startsWith('/')) {
+        return `${IMG_BASE}${size}${path}`;
+    }
+
+    // If it looks like a relative path but without the leading slash (rare)
+    if (path.length > 0 && !path.includes('/') && !path.includes('.')) {
+        return `${IMG_BASE}${size}/${path}`;
+    }
+
+    return path;
 }
 
 function coverUrl(path) {
     return imgUrl(path, 'w1280');
 }
 
-function getTitle(item) { return item.name || item.title || 'Unknown'; }
+function getTitle(item) {
+    let t = item.name || item.title || 'Unknown';
+    // Clean up Dramacool specific titles (remove episode info for the grid)
+    if (item.provider === 'dramacool') {
+        t = t.replace(/\s*\(.*?\)\s*/g, ' ').replace(/Episode\s+\d+.*/i, '').trim();
+    }
+    return t;
+}
 function getYear(item) { return String(item.releaseDate || item.release_date || item.first_air_date || '').slice(0, 4) || 'N/A'; }
 function getRating(item) { return parseFloat(item.rating || item.vote_average || 0).toFixed(1); }
-function getPoster(item) { return imgUrl(item.image || item.poster_path); }
-function getCover(item) { return coverUrl(item.cover || item.backdrop_path || item.image || item.poster_path); }
+function getPoster(item) {
+    // Aggregate all possible poster fields across different providers
+    const p = item.image || item.poster || item.img || item.thumbnail || item.poster_path;
+    return imgUrl(p);
+}
+function getCover(item) {
+    const c = item.cover || item.backdrop_path || item.image || item.poster || item.img || item.poster_path;
+    return imgUrl(c, 'w1280');
+}
 function getType(item) {
     const t = (item.type || item.media_type || 'movie').toLowerCase();
     if (t === 'tv series' || t === 'tv') return 'tv';
@@ -386,7 +424,7 @@ async function fetchTrending() {
     try {
         const cached = readCache(cacheKey);
         if (cached?.results?.length) {
-            const cachedItems = cached.results.slice(0, 12);
+            const cachedItems = (cached.results || []).slice(0, 12);
             heroItems = cachedItems.slice(0, 5);
             if (heroItems.length) {
                 displayHero(heroItems[0]);
@@ -395,10 +433,12 @@ async function fetchTrending() {
             displayGrid(cachedItems, trendingGrid);
         }
 
-        const data = await fetchJsonWithFallback(`/trending`);
+        // Explicitly using the full path to ensure we hit the meta/tmdb trending
+        const data = await fetchJsonWithFallback('/trending');
         writeCache(cacheKey, data);
         const items = (data.results || []).slice(0, 12);
         if (!items.length) return;
+
         heroItems = items.slice(0, 5);
         displayHero(heroItems[0]);
         startHeroRotation();
@@ -412,7 +452,8 @@ async function fetchTrending() {
 async function fetchSection(type, grid, mediaType, timePeriod = 'day') {
     if (!grid) return;
     const cacheKey = `trending:${type}:${timePeriod}`;
-    const url = `${BASE_URL}/trending?type=${type}&timePeriod=${timePeriod}`;
+    // Explicitly using the full trending path for categories
+    const url = `/trending?type=${type}&timePeriod=${timePeriod}`;
     try {
         const cached = readCache(cacheKey);
         if (cached?.results?.length) {
@@ -432,31 +473,105 @@ async function fetchDramas() {
     if (!dramasGrid) return;
     const cacheKey = 'dramacool:popular';
     try {
-        // We use DramaCool's popular list directly for this section
         const dcBase = BASE_URL.replace('/meta/tmdb', '/movies/dramacool');
         const url = `${dcBase}/popular`;
 
         const cached = readCache(cacheKey);
-        if (cached?.results?.length) {
-            const cachedItems = cached.results.slice(0, 12).map(item => ({
+        if (cached) {
+            const results = cached.results || (Array.isArray(cached) ? cached : []);
+            const cachedItems = results.slice(0, 12).map(item => ({
                 ...item,
+                title: item.title || item.name || 'Untitled Drama',
+                image: item.image || item.poster || item.img || item.thumbnail || item.poster_path || '',
                 media_type: 'tv',
                 provider: 'dramacool'
             }));
-            displayGrid(cachedItems, dramasGrid);
+            if (cachedItems.length) {
+                displayGrid(cachedItems, dramasGrid);
+                // Trigger hydration for cached items too
+                setTimeout(() => {
+                    const cards = dramasGrid.querySelectorAll('.movie-card');
+                    cachedItems.forEach((item, idx) => {
+                        if (cards[idx]) hydrateGridCard(item, cards[idx]);
+                    });
+                }, 100);
+            }
         }
 
         const data = await fetchJsonWithFallback(url);
         writeCache(cacheKey, data);
-        const items = (data.results || []).slice(0, 12).map(item => ({
+
+        const results = data.results || (Array.isArray(data) ? data : []);
+        const items = results.slice(0, 12).map(item => ({
             ...item,
+            title: item.title || item.name || 'Untitled Drama',
+            image: item.image || item.poster || item.img || item.thumbnail || item.poster_path || '',
             media_type: 'tv',
             provider: 'dramacool'
         }));
         displayGrid(items, dramasGrid);
+
+        // Hydrate items background
+        setTimeout(() => {
+            const cards = dramasGrid.querySelectorAll('.movie-card');
+            items.forEach((item, idx) => {
+                if (cards[idx]) hydrateGridCard(item, cards[idx]);
+            });
+        }, 200);
+
     } catch (err) {
         console.error('Error fetching dramas:', err?.message || err);
     }
+}
+
+async function hydrateGridCard(item, card) {
+    try {
+        const img = card.querySelector('img');
+        const isBad = (s) => !s || s.includes('placehold.co') || s.includes('No+Image') || s.includes('dramaool.png');
+
+        // 1. Fetch details from original provider
+        const details = await fetchDetails(item.id, item.media_type, item.provider);
+        let poster = details ? getPoster(details) : '';
+
+        // 2. If image is still bad, attempt TMDB lookup by title
+        if (isBad(poster)) {
+            const cleanTitle = getTitle(item);
+            try {
+                // Hits /meta/tmdb/Title - Consumet uses path as query if no command matches
+                const tmdbResults = await fetchJsonWithFallback(`/${encodeURIComponent(cleanTitle)}`, 5000);
+                if (tmdbResults?.results?.length) {
+                    const topMatch = tmdbResults.results[0];
+                    const tmdbPoster = getPoster(topMatch);
+                    if (!isBad(tmdbPoster)) {
+                        poster = tmdbPoster;
+                    }
+                }
+            } catch (tmdbErr) {
+                // Ignore TMDB lookup errors
+            }
+        }
+
+        if (img && poster && !isBad(poster)) {
+            img.src = poster;
+            img.style.opacity = '1';
+        }
+
+        // Hydrate other metadata
+        if (details) {
+            const ratingVal = getRating(details);
+            if (ratingVal !== '0.0') {
+                const ratingLabel = card.querySelector('.rating');
+                if (ratingLabel && ratingLabel.nextSibling) {
+                    ratingLabel.nextSibling.textContent = ' ' + ratingVal;
+                }
+            }
+            const yearVal = getYear(details);
+            if (yearVal !== 'N/A') {
+                const metaSpan = card.querySelector('.movie-card-meta span:first-child');
+                if (metaSpan) metaSpan.textContent = yearVal;
+            }
+        }
+    } catch (e) { }
 }
 
 // ------------------ HERO ---------------------------------------------------
@@ -598,118 +713,7 @@ function displaySearchResults(results, query) {
     displayGrid(results, searchPageGrid);
 }
 
-// ------------------ DETAILS MODAL -----------------------------------------
-async function openDetails(id, type, provider = '') {
-    movieModal.style.display = 'block';
-    document.body.style.overflow = 'hidden';
-    modalBody.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:center;min-height:400px;">
-            <div style="width:50px;height:50px;border:3px solid rgba(255,255,255,.1);border-top-color:#e50914;border-radius:50%;animation:spin 1s linear infinite;"></div>
-        </div>
-        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
-
-    try {
-        let movie = readDetailCache(id, type, provider);
-        if (!movie) {
-            try {
-                movie = await fetchDetails(id, type, provider);
-            } catch (err) {
-                const stale = readStaleDetailCache(id, type, provider);
-                if (stale) {
-                    movie = stale;
-                } else {
-                    throw err;
-                }
-            }
-        }
-
-        const title = getTitle(movie);
-        const cover = getCover(movie);
-        const poster = getPoster(movie);
-        const year = getYear(movie);
-        const rating = getRating(movie);
-        const runtime = type === 'movie'
-            ? `${movie.duration || 0} min`
-            : `${(movie.totalEpisodes || 0)} Episodes`;
-        const genres = Array.isArray(movie.genres)
-            ? movie.genres.join(', ')
-            : (movie.genres || 'N/A');
-        const director = Array.isArray(movie.directors) && movie.directors.length
-            ? movie.directors[0]
-            : (movie.directors || 'N/A');
-        const desc = movie.description || movie.overview || 'No overview available.';
-        const cast = Array.isArray(movie.actors) ? movie.actors.slice(0, 8) : [];
-        const status = movie.status || 'N/A';
-
-        modalBody.innerHTML = `
-            <div class="modal-header" style="background-image:url('${cover}')">
-                <div class="modal-header-overlay"></div>
-            </div>
-            <div class="modal-details">
-                <div style="display:flex;gap:2rem;margin-top:-130px;position:relative;z-index:5;flex-wrap:wrap;">
-                    <img src="${poster}" alt="${title}"
-                         onerror="this.src='https://placehold.co/200x300/1a1a2e/e50914?text=No+Poster'"
-                         style="width:200px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.7);flex-shrink:0;">
-                    <div style="padding-top:80px;min-width:0;">
-                        <h2 style="font-size:2rem;margin-bottom:.5rem;font-family:'Outfit',sans-serif">${title}</h2>
-                        <div class="hero-meta" style="margin-bottom:1rem;">
-                            <span><i class="fa-solid fa-star rating"></i> ${rating}</span>
-                            <span>${runtime}</span>
-                            <span>${year}</span>
-                        </div>
-                        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;">
-                            ${genres.split(', ').map(g => `<span style="background:rgba(229,9,20,.15);border:1px solid rgba(229,9,20,.3);color:#e50914;padding:.2rem .7rem;border-radius:50px;font-size:.8rem;font-weight:600">${g}</span>`).join('')}
-                        </div>
-                        <p style="color:var(--text-muted);margin-bottom:1.5rem;max-width:600px;line-height:1.7">${desc}</p>
-                        <div class="hero-btns">
-                            <button class="btn btn-primary" onclick="watchNow('${id}','${type}', '${provider}')">
-                                <i class="fa-solid fa-play"></i> Watch Now
-                            </button>
-                            <button class="btn btn-secondary">
-                                <i class="fa-solid fa-plus"></i> Add to List
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="margin-top:3rem;display:grid;grid-template-columns:1fr 260px;gap:3rem;">
-                    <div>
-                        ${cast.length ? `
-                        <h3 class="section-title" style="font-size:1.3rem">Cast</h3>
-                        <div style="display:flex;gap:1rem;overflow-x:auto;padding-bottom:1rem;">
-                            ${cast.map(name => `
-                                <div style="flex:0 0 80px;text-align:center;">
-                                    <div style="width:70px;height:70px;border-radius:50%;background:rgba(229,9,20,.15);display:flex;align-items:center;justify-content:center;margin:0 auto .5rem;font-size:1.5rem;">👤</div>
-                                    <p style="font-size:.75rem;font-weight:600;white-space:normal;line-height:1.2">${name}</p>
-                                </div>
-                            `).join('')}
-                        </div>` : ''}
-                    </div>
-                    <div>
-                        <h3 class="section-title" style="font-size:1.3rem">Details</h3>
-                        <p style="margin-bottom:.6rem;font-size:.9rem"><span style="color:var(--text-muted)">Director:</span> ${director}</p>
-                        <p style="margin-bottom:.6rem;font-size:.9rem"><span style="color:var(--text-muted)">Genres:</span> ${genres}</p>
-                        <p style="margin-bottom:.6rem;font-size:.9rem"><span style="color:var(--text-muted)">Status:</span> ${status}</p>
-                        <p style="margin-bottom:.6rem;font-size:.9rem"><span style="color:var(--text-muted)">Type:</span> ${type === 'tv' ? 'TV Series' : 'Movie'}</p>
-                    </div>
-                </div>
-            </div>
-        `;
-    } catch (err) {
-        console.error('Details error:', err);
-        const userMessage =
-            String(err?.message || '').toLowerCase().includes('timed out')
-                ? 'Request timed out. Try again in a moment.'
-                : (err?.message || 'Failed to fetch details');
-        modalBody.innerHTML = `
-            <div style="padding:4rem;text-align:center;">
-                <i class="fa-solid fa-circle-exclamation" style="font-size:3rem;color:#e50914;margin-bottom:1rem;display:block"></i>
-                <h3>Couldn't load details</h3>
-                <p style="color:var(--text-muted);margin-top:.5rem">${userMessage}</p>
-            </div>`;
-    }
-}
-
+// ------------------ DETAILS MODAL HANDLERS --------------------------------
 closeModal.onclick = () => {
     movieModal.style.display = 'none';
     document.body.style.overflow = 'auto';
@@ -735,20 +739,84 @@ function prefetchDetails(id, type, provider = '') {
     if (readDetailCache(id, type, provider)) return;
     fetchDetails(id, type, provider).catch(() => { });
 }
+// ------------------ MOBILE DROPDOWN ---------------------------------------
+const mobileDropdown = document.getElementById('mobile-dropdown-menu');
 
-// ------------------ MOBILE MENU (Replaced by horizontal tabs) --------------
-// mobileMenuToggle.onclick = () => { ... };
+function toggleMobileMenu() {
+    if (!mobileDropdown) return;
+    mobileDropdown.classList.toggle('active');
 
-// ------------------ FILTER ------------------------------------------------
+    const icon = mobileMenuToggle?.querySelector('i');
+    if (icon) {
+        if (mobileDropdown.classList.contains('active')) {
+            icon.classList.replace('fa-bars', 'fa-xmark');
+        } else {
+            icon.classList.replace('fa-xmark', 'fa-bars');
+        }
+    }
+}
+
+if (mobileMenuToggle) {
+    mobileMenuToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleMobileMenu();
+    });
+}
+
+document.addEventListener('click', (e) => {
+    if (mobileDropdown && mobileDropdown.classList.contains('active')) {
+        if (!mobileDropdown.contains(e.target) && !mobileMenuToggle?.contains(e.target)) {
+            mobileDropdown.classList.remove('active');
+            const icon = mobileMenuToggle?.querySelector('i');
+            if (icon) icon.classList.replace('fa-xmark', 'fa-bars');
+        }
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && mobileDropdown && mobileDropdown.classList.contains('active')) {
+        mobileDropdown.classList.remove('active');
+        const icon = mobileMenuToggle?.querySelector('i');
+        if (icon) icon.classList.replace('fa-xmark', 'fa-bars');
+    }
+});
+// ------------------ FILTER & NAVIGATION -----------------------------------
 function filterType(type) {
     if (searchInput.value.length >= 2) {
         searchInput.value = '';
         searchInput.dispatchEvent(new Event('input'));
     }
-    document.querySelectorAll('.desktop-nav a, .mobile-tabs-nav a').forEach(a => a.classList.remove('active'));
-    document.querySelectorAll(`.desktop-nav a[onclick*="${type}"], .mobile-tabs-nav a[onclick*="${type}"]`).forEach(el => el.classList.add('active'));
-    const section = document.getElementById(type === 'movie' ? 'popular-movies-section' : 'popular-tv-section');
-    if (section) setTimeout(() => section.scrollIntoView({ behavior: 'smooth' }), 50);
+    document.querySelectorAll('.desktop-nav a, .mobile-tabs-nav a, .mobile-dropdown a').forEach(a => a.classList.remove('active'));
+    document.querySelectorAll(`.desktop-nav a[onclick*="${type}"], .mobile-tabs-nav a[onclick*="${type}"], .mobile-dropdown a[onclick*="${type}"]`).forEach(el => el.classList.add('active'));
+
+    // Close mobile dropdown if open
+    const dropdown = document.getElementById('mobile-dropdown-menu');
+    if (dropdown && dropdown.classList.contains('active')) {
+        toggleMobileMenu();
+    }
+
+    let sectionId = '';
+    if (type === 'movie') sectionId = 'popular-movies-section';
+    else if (type === 'tv') sectionId = 'popular-tv-section';
+    else if (type === 'dramas') {
+        sectionId = 'dramas-section';
+        fetchDramas();
+    }
+    else if (type === 'trending') sectionId = 'trending-section';
+
+    const section = document.getElementById(sectionId);
+    if (section) {
+        setTimeout(() => {
+            const offset = 80;
+            const elementPosition = section.getBoundingClientRect().top;
+            const offsetPosition = elementPosition + window.pageYOffset - offset;
+
+            window.scrollTo({
+                top: offsetPosition,
+                behavior: 'smooth'
+            });
+        }, 100);
+    }
 }
 
 // ------------------ API SWITCHER ------------------------------------------
@@ -798,6 +866,27 @@ async function openDetails(id, type, provider = '', seedItem = null) {
                 else throw err;
             }
         }
+
+        if (requestId !== activeModalRequestId) return;
+
+        // --- ENRICHMENT LOGIC ---
+        // Catch bad images or K-Dramas and search TMDB for real posters.
+        const isBad = (s) => !s || s.includes('placehold.co') || s.includes('No Image') || s.includes('dramaool.png') || s.includes('No+Image') || s.includes('originalnull');
+        if (provider === 'dramacool' || isBad(getPoster(movie))) {
+            const cleanTitle = getTitle(movie);
+            try {
+                const tmdbResults = await fetchJsonWithFallback(`/${encodeURIComponent(cleanTitle)}`, 5000);
+                if (tmdbResults?.results?.length && requestId === activeModalRequestId) {
+                    const tmdb = tmdbResults.results[0];
+                    if (isBad(movie.image)) movie.image = tmdb.image || tmdb.poster_path;
+                    if (isBad(movie.cover)) movie.cover = tmdb.cover || tmdb.backdrop_path;
+                    if (!movie.rating || movie.rating == 0) movie.rating = tmdb.rating || tmdb.vote_average;
+                    if (!movie.description || movie.description.includes('Dramacool lovers')) movie.description = tmdb.description || tmdb.overview;
+                    if (!movie.releaseDate || movie.releaseDate === 'NaN') movie.releaseDate = tmdb.releaseDate || tmdb.release_date;
+                }
+            } catch (e) { }
+        }
+        // -------------------------
 
         if (requestId !== activeModalRequestId) return;
         renderDetailsModal(movie, id, type, provider);

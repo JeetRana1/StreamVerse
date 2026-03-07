@@ -31,9 +31,9 @@
                     <li><a href="/" class="active">Home</a></li>
                     <li><a href="#movies" onclick="filterType('movie')">Movies</a></li>
                     <li><a href="#tv" onclick="filterType('tv')">TV Shows</a></li>
-                    <li><a href="#dramas" onclick="fetchDramas()">K-Dramas</a></li>
+                    <li><a href="#dramas" onclick="filterType('dramas')">K-Dramas</a></li>
                     <li><a href="manga.html">Manga</a></li>
-                    <li><a href="#trending">Trending</a></li>
+                    <li><a href="#trending" onclick="filterType('trending')">Trending</a></li>
                 </ul>
             </nav>
             <div class="header-actions">
@@ -45,10 +45,23 @@
                     <input type="text" id="search-input" placeholder="Search movies, TV shows...">
                     <button id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
                 </div>
-                <button class="mobile-menu-btn" id="mobile-menu-toggle" style="display: none;">
+                <button class="mobile-menu-btn" id="mobile-menu-toggle">
                     <i class="fa-solid fa-bars"></i>
                 </button>
             </div>
+        </div>
+
+        <div class="mobile-dropdown" id="mobile-dropdown-menu">
+            <ul>
+                <li><a href="/" class="active"><i class="fa-solid fa-house"></i> Home</a></li>
+                <li><a href="#movies" onclick="filterType('movie')"><i class="fa-solid fa-film"></i> Movies</a></li>
+                <li><a href="#tv" onclick="filterType('tv')"><i class="fa-solid fa-tv"></i> TV Shows</a></li>
+                <li><a href="#dramas" onclick="filterType('dramas')"><i class="fa-solid fa-masks-theater"></i>
+                        K-Dramas</a></li>
+                <li><a href="manga.html"><i class="fa-solid fa-book-open"></i> Manga</a></li>
+                <li><a href="#trending" onclick="filterType('trending')"><i class="fa-solid fa-fire"></i> Trending</a>
+                </li>
+            </ul>
         </div>
 
         <nav class="mobile-tabs-nav">
@@ -56,9 +69,9 @@
                 <li><a href="/" class="active">Home</a></li>
                 <li><a href="#movies" onclick="filterType('movie')">Movies</a></li>
                 <li><a href="#tv" onclick="filterType('tv')">TV Shows</a></li>
-                <li><a href="#dramas" onclick="fetchDramas()">K-Dramas</a></li>
+                <li><a href="#dramas" onclick="filterType('dramas')">K-Dramas</a></li>
                 <li><a href="manga.html">Manga</a></li>
-                <li><a href="#trending">Trending</a></li>
+                <li><a href="#trending" onclick="filterType('trending')">Trending</a></li>
             </ul>
         </nav>
     </header>
