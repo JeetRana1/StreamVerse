@@ -6231,7 +6231,11 @@
                     currentAudioSource = 'justanime';
                     activeSatoruTrackIndex = -1;
                     syncUrlState();
-                    loadStream(jaSource.url, !!jaSource.isM3U8, !!jaSource.isEmbed, jaSource.referer, currentIdx, resumeAt);
+                    if (jaSource.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
+                        svSwitchHlsSourceSilent(jaSource.url, jaSource.referer, () => { }, resumeAt);
+                    } else {
+                        loadStream(jaSource.url, !!jaSource.isM3U8, !!jaSource.isEmbed, jaSource.referer, currentIdx, resumeAt);
+                    }
                 });
             }
 
@@ -6261,7 +6265,11 @@
                         pendingJumpTarget = null;
 
                         if (!isOnSatoru) {
-                            loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt);
+                            if (src.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
+                                svSwitchHlsSourceSilent(src.url, src.referer, () => { }, resumeAt);
+                            } else {
+                                loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt);
+                            }
                         } else {
                             svApplyPreferredAudioToHls(hlsInst);
                             updateAudioTracks();
@@ -8153,6 +8161,27 @@
                                             animeId,
                                         });
                                     });
+
+                                    // Check if user prefers this Satoru track (e.g. from previous episode or URL)
+                                    if (preferredAudioToken && currentAudioSource !== 'satoru') {
+                                        const matchingIdx = satoruAudioSources.findIndex(src => {
+                                            const rawToken = src.hlsTrackName || src.label || '';
+                                            return rawToken.replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase() === preferredAudioToken;
+                                        });
+                                        if (matchingIdx !== -1) {
+                                            currentAudioSource = 'satoru';
+                                            activeSatoruTrackIndex = matchingIdx;
+                                            const sSrc = satoruAudioSources[matchingIdx];
+                                            const resumeAt = Math.max(0, document.getElementById('player-video')?.currentTime || 0);
+                                            // Silently hot-swap HLS over the currently playing JustAnime stream
+                                            if (sSrc.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
+                                                svSwitchHlsSourceSilent(sSrc.url, sSrc.referer, () => { }, resumeAt);
+                                            } else {
+                                                loadStream(sSrc.url, !!sSrc.isM3U8, false, sSrc.referer, currentIdx, resumeAt);
+                                            }
+                                        }
+                                    }
+
                                     updateAudioTracks();
                                     return true;
                                 };
