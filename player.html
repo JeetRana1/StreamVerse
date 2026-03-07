@@ -2780,19 +2780,22 @@
                 return;
             }
 
-            if (now < jumpCooldownUntil || seekBurstCount >= 7) {
+            if (now < jumpCooldownUntil && seekBurstCount >= 10) {
                 schedulePendingJump(clampedTarget, reason);
                 return;
             }
 
-            jumpCooldownUntil = now + (jumpDistance > 20 ? 900 : 500);
-            jumpInFlightUntil = now + (jumpDistance > 20 ? 1800 : 1200);
+            jumpCooldownUntil = now + 150;
+            jumpInFlightUntil = now + 750;
             if (jumpRecoveryTimer) {
                 clearTimeout(jumpRecoveryTimer);
                 jumpRecoveryTimer = null;
             }
 
-            tuneHlsForJump(clampedTarget, jumpDistance, reason);
+            // We do not aggressively force level drops or jump hls during standard seeks
+            if (reason === 'skip' || jumpDistance > 30) {
+                tuneHlsForJump(clampedTarget, jumpDistance, reason);
+            }
             forceVideoSeek(clampedTarget);
             pendingJumpTarget = null;
         }
@@ -2849,7 +2852,7 @@
             seekBurstCount += 1;
             if (seekBurstCount >= 6) rapidSeekModeUntil = now + 9000;
             const elapsed = now - lastAppliedSeekAt;
-            const minGap = seekBurstCount >= 8 ? 320 : 140;
+            const minGap = seekBurstCount >= 8 ? 100 : 40;
             const delay = elapsed >= minGap ? 0 : (minGap - elapsed);
 
             seekApplyTimer = setTimeout(() => {
@@ -6230,6 +6233,7 @@
                     pendingJumpTarget = null;
                     currentAudioSource = 'justanime';
                     activeSatoruTrackIndex = -1;
+                    rememberProviderPreference('justanime');
                     syncUrlState();
                     if (jaSource.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
                         svSwitchHlsSourceSilent(jaSource.url, jaSource.referer, () => { }, resumeAt);
@@ -6255,6 +6259,7 @@
                         preferredAudioToken = rawToken.replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase();
 
                         if (preferredSourceLabelMatch) preferredSourceLabelMatch = preferredAudioToken;
+                        rememberProviderPreference('satoru');
                         syncUrlState();
 
                         updateAudioTracks(); // Render optimistic UI
@@ -7312,13 +7317,6 @@
 
             // Force the media element to settle on the skip target even if the stream briefly resists seeks.
             applyGuardedJump(target, 'skip');
-
-            // Inform HLS to refresh loading buffer at the new point
-            if (hlsInst) {
-                try {
-                    hlsInst.startLoad(Math.max(0, target - 0.8));
-                } catch (_) { }
-            }
 
             if (!video.paused) {
                 video.play().catch(() => { });
