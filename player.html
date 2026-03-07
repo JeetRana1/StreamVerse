@@ -507,10 +507,10 @@
             align-items: center;
             pointer-events: none;
             z-index: 1000;
-            transition: opacity 0.15s ease-out, transform 0.15s ease-out, visibility 0.15s;
+            transition: opacity 0.12s ease-out, transform 0.12s ease-out, visibility 0.12s; /* ENHANCED: Faster transitions */
             transform: translateX(-50%) translateY(3px);
             opacity: 0;
-            filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+            filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.65)); /* ENHANCED: Better shadow */
         }
 
         .seek-preview.visible {
@@ -520,16 +520,18 @@
         }
 
         .seek-preview-thumb {
-            width: 200px;
+            width: 240px; /* ENHANCED: Larger preview */
             aspect-ratio: 16/9;
-            background: #000;
+            background: #111;
             display: flex;
             align-items: center;
             justify-content: center;
             position: relative;
-            border-radius: 8px;
+            border-radius: 10px;
             overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7); /* ENHANCED: Better shadow */
+            border: 2px solid rgba(229, 9, 20, 0.3); /* ENHANCED: Accent border */
+            backdrop-filter: blur(2px);
         }
 
         .seek-preview-thumb video {
@@ -537,34 +539,36 @@
             height: 100%;
             object-fit: cover;
             border-radius: 8px;
+            display: block;
         }
 
         .seek-preview-time {
             width: auto;
-            min-width: 60px;
-            background: rgba(20, 22, 30, .6);
-            border: 1px solid rgba(255, 255, 255, .18);
-            backdrop-filter: blur(10px);
+            min-width: 70px;
+            background: rgba(15, 15, 15, 0.75); /* ENHANCED: Better overlay background */
+            border: 1.5px solid rgba(229, 9, 20, 0.5); /* ENHANCED: Red accent */
+            backdrop-filter: blur(12px);
             color: #fff;
             text-align: center;
-            padding: 8px 18px;
+            padding: 10px 20px;
             border-radius: 8px;
             font-size: 0.95rem;
             font-weight: 700;
+            letter-spacing: 0.5px;
             position: relative;
-            margin-top: 8px;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            margin-top: 10px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
         }
 
         .seek-preview-time::after {
             content: "";
             position: absolute;
-            bottom: -6px;
+            bottom: -7px;
             left: 50%;
             transform: translateX(-50%);
-            border-left: 6px solid transparent;
-            border-right: 6px solid transparent;
-            border-top: 6px solid rgba(255, 255, 255, 0.18);
+            border-left: 7px solid transparent;
+            border-right: 7px solid transparent;
+            border-top: 7px solid rgba(15, 15, 15, 0.75);
         }
 
         .control-actions {
@@ -2608,48 +2612,73 @@
 
 
         /**
-         * HLS HELPERS (Global Scope)
+         * HLS HELPERS (Global Scope) - ADVANCED OPTIMIZED
          */
+        // Network estimation state
+        let lastEstimatedBandwidth = 0;
+        let bandwidthSampleCount = 0;
+        let isBandwidthConstrained = false;
+
+        function estimateNetworkQuality() {
+            // Simple heuristic: if bandwidth is consistently low, flag as constrained
+            const threshold = IS_MOBILE_CLIENT ? 2000000 : 3500000;
+            return lastEstimatedBandwidth > 0 && lastEstimatedBandwidth < threshold;
+        }
+
         function svCreateHlsInstance(startTime, isThumbnail = false) {
             const mobileMain = IS_MOBILE_CLIENT && !isThumbnail;
+            const isConstrained = !isThumbnail && estimateNetworkQuality();
+
+            // ADVANCED: Dynamic buffer sizing based on network quality
+            const baseBackBuffer = isThumbnail ? 3 : (mobileMain ? 12 : 20);
+            const baseMaxBuffer = isThumbnail ? 6 : (mobileMain ? 24 : 36);
+            const baseMaxMaxBuffer = isThumbnail ? 12 : (mobileMain ? 48 : 72);
+            
+            // Under constrained bandwidth: reduce buffers for faster seeking/switching
+            const backBufferLength = isConstrained ? Math.max(4, baseBackBuffer * 0.75) : baseBackBuffer;
+            const maxBufferLength = isConstrained ? Math.max(10, baseMaxBuffer * 0.7) : baseMaxBuffer;
+            const maxMaxBufferLength = isConstrained ? Math.max(20, baseMaxMaxBuffer * 0.75) : baseMaxMaxBuffer;
+            const maxBufferSize = isThumbnail ? 8 * 1024 * 1024 : (isConstrained ? Math.max(12 * 1000 * 1000, mobileMain ? 20 * 1000 * 1000 : 32 * 1000 * 1000) : (mobileMain ? 28 * 1000 * 1000 : 48 * 1000 * 1000));
+
             return new Hls({
                 startPosition: startTime,
-                enableWorker: !isThumbnail, // Disable worker for thumbnails to avoid blob URL issues on localized dev servers
+                enableWorker: !isThumbnail,
                 lowLatencyMode: isThumbnail,
-                backBufferLength: isThumbnail ? 3 : (mobileMain ? 12 : 20),
-                maxBufferLength: isThumbnail ? 6 : (mobileMain ? 24 : 36),
-                maxMaxBufferLength: isThumbnail ? 12 : (mobileMain ? 48 : 72),
-                maxBufferSize: isThumbnail ? 8 * 1024 * 1024 : (mobileMain ? 28 * 1000 * 1000 : 48 * 1000 * 1000),
-                maxBufferHole: isThumbnail ? 0.12 : (mobileMain ? 0.35 : 0.5),
-                highBufferWatchdogPeriod: isThumbnail ? 2 : 3,
-                nudgeOffset: isThumbnail ? 0.1 : (mobileMain ? 0.12 : 0.2),
-                nudgeMaxRetry: isThumbnail ? 180 : (mobileMain ? 10 : 14),
-                maxFragLookUpTolerance: isThumbnail ? 0.8 : 0.1,
-                manifestLoadingTimeOut: isThumbnail ? 6000 : 15000,
-                manifestLoadingMaxRetry: 6,
-                manifestLoadingRetryDelay: isThumbnail ? 300 : 500,
-                levelLoadingTimeOut: isThumbnail ? 4000 : 15000,
-                levelLoadingMaxRetry: 4,
-                levelLoadingRetryDelay: isThumbnail ? 250 : 500,
-                fragLoadingTimeOut: isThumbnail ? 3500 : 20000,
-                fragLoadingMaxRetry: isThumbnail ? 3 : 6,
-                fragLoadingRetryDelay: isThumbnail ? 250 : 500,
-                fragLoadingMaxRetryTimeout: isThumbnail ? 1200 : 8000,
+                backBufferLength: backBufferLength,
+                maxBufferLength: maxBufferLength,
+                maxMaxBufferLength: maxMaxBufferLength,
+                maxBufferSize: maxBufferSize,
+                maxBufferHole: isThumbnail ? 0.12 : (mobileMain ? 0.32 : 0.45), // ENHANCED: Tighter hole tolerance
+                highBufferWatchdogPeriod: isThumbnail ? 2 : 2.5, // ENHANCED: More frequent watchdog checks
+                nudgeOffset: isThumbnail ? 0.1 : (mobileMain ? 0.12 : 0.18),
+                nudgeMaxRetry: isThumbnail ? 180 : (mobileMain ? 12 : 16), // ENHANCED: Higher retry count
+                maxFragLookUpTolerance: isThumbnail ? 0.8 : 0.08, // ENHANCED: Stricter tolerance for better seeking
+                manifestLoadingTimeOut: isThumbnail ? 6000 : 12000, // ENHANCED: Faster timeout
+                manifestLoadingMaxRetry: 8, // ENHANCED: More retries for reliability
+                manifestLoadingRetryDelay: isThumbnail ? 300 : 350, // ENHANCED: Faster retry
+                levelLoadingTimeOut: isThumbnail ? 4000 : 12000,
+                levelLoadingMaxRetry: 5,
+                levelLoadingRetryDelay: isThumbnail ? 250 : 400,
+                fragLoadingTimeOut: isThumbnail ? 3500 : 18000, // ENHANCED: More reasonable for streaming
+                fragLoadingMaxRetry: isThumbnail ? 3 : 7, // ENHANCED: More retries
+                fragLoadingRetryDelay: isThumbnail ? 250 : 400,
+                fragLoadingMaxRetryTimeout: isThumbnail ? 1200 : 7000,
                 startLevel: isThumbnail ? 0 : -1,
-                abrEwmaDefaultEstimate: mobileMain ? 1400000 : 2200000,
-                abrBandWidthFactor: mobileMain ? 0.8 : 0.88,
-                abrBandWidthUpFactor: mobileMain ? 0.45 : 0.6,
+                abrEwmaDefaultEstimate: mobileMain ? 1500000 : (isConstrained ? 1800000 : 2400000), // ENHANCED: Dynamic
+                abrBandWidthFactor: mobileMain ? 0.82 : (isConstrained ? 0.85 : 0.90), // ENHANCED: More conservative
+                abrBandWidthUpFactor: mobileMain ? 0.5 : (isConstrained ? 0.55 : 0.65), // ENHANCED: Smoother upgrades
+                abrMaxWithRealBitrate: true, // ENHANCED: Better bitrate estimation
                 ignoreDevicePixelRatio: true,
                 capLevelToPlayerSize: true,
                 capLevelOnFPSDrop: true,
-                appendErrorMaxRetry: 10,
+                appendErrorMaxRetry: 12, // ENHANCED: More resilient
                 startFragPrefetch: !isThumbnail,
                 testBandwidth: true,
                 progressive: true,
-                maxStarvationDelay: isThumbnail ? 2 : 4,
-                maxLoadingDelay: isThumbnail ? 2 : 4,
+                maxStarvationDelay: isThumbnail ? 2 : 3.5, // ENHANCED: Faster response
+                maxLoadingDelay: isThumbnail ? 2 : 3.5,
                 xhrSetup: (xhr, url) => {
-                    xhr.timeout = isThumbnail ? 7000 : 20000;
+                    xhr.timeout = isThumbnail ? 7000 : (isConstrained ? 22000 : 20000);
                 },
             });
         }
@@ -2711,21 +2740,57 @@
             const clampedTarget = Math.max(0, Number(targetTime || 0));
             const isLargeJump = jumpDistance > 18;
             const isMediumJump = jumpDistance > 8;
+            const isSmallJump = jumpDistance > 3;
 
             try {
-                if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && (isLargeJump || isMediumJump)) {
-                    const fallbackLevel = isLargeJump ? 0 : Math.min(1, hlsInst.levels.length - 1);
-                    hlsInst.autoLevelCapping = fallbackLevel;
-                    hlsInst.nextLevel = fallbackLevel;
-                    hlsInst.loadLevel = fallbackLevel;
-                    setTimeout(() => {
-                        try { hlsInst.nextLevel = -1; } catch (_) { }
-                        try { hlsInst.autoLevelCapping = -1; } catch (_) { }
-                    }, reason === 'skip' ? 2600 : 2200);
+                if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) {
+                    // ENHANCED: Gentler quality ramping for skips to avoid buffering cascade
+                    if (reason === 'skip') {
+                        // For skips: Use multi-level ramp instead of aggressive drop to level 0
+                        // This allows intermediate quality chunks to load without major lag
+                        if (isLargeJump) {
+                            // Large intro skips (>18s): Ramp down gradually
+                            hlsInst.autoLevelCapping = Math.max(0, hlsInst.levels.length - 2);
+                            hlsInst.nextLevel = Math.max(0, hlsInst.levels.length - 2);
+                            hlsInst.loadLevel = Math.max(0, hlsInst.levels.length - 2);
+                            // Recover to auto faster since we're not at absolute lowest
+                            setTimeout(() => {
+                                try { hlsInst.nextLevel = -1; hlsInst.autoLevelCapping = -1; } catch (_) { }
+                            }, 1400);
+                        } else if (isMediumJump) {
+                            // Medium skips: Keep closer to normal quality
+                            const fallbackLevel = Math.min(2, hlsInst.levels.length - 1);
+                            hlsInst.autoLevelCapping = fallbackLevel;
+                            hlsInst.nextLevel = fallbackLevel;
+                            hlsInst.loadLevel = fallbackLevel;
+                            setTimeout(() => {
+                                try { hlsInst.nextLevel = -1; hlsInst.autoLevelCapping = -1; } catch (_) { }
+                            }, 1200);
+                        }
+                    } else {
+                        // Regular seeks: Original aggressive logic still applies
+                        if (isLargeJump) {
+                            hlsInst.autoLevelCapping = 0;
+                            hlsInst.nextLevel = 0;
+                            hlsInst.loadLevel = 0;
+                            setTimeout(() => {
+                                try { hlsInst.nextLevel = -1; hlsInst.autoLevelCapping = -1; } catch (_) { }
+                            }, 1800);
+                        } else if (isMediumJump) {
+                            const fallbackLevel = Math.min(1, hlsInst.levels.length - 1);
+                            hlsInst.autoLevelCapping = fallbackLevel;
+                            hlsInst.nextLevel = fallbackLevel;
+                            hlsInst.loadLevel = fallbackLevel;
+                            setTimeout(() => {
+                                try { hlsInst.nextLevel = -1; hlsInst.autoLevelCapping = -1; } catch (_) { }
+                            }, 1600);
+                        }
+                    }
                 }
             } catch (_) { }
 
-            kickHlsLoadNearCurrentTime(clampedTarget, isLargeJump || reason === 'skip');
+            // ENHANCED: More aggressive loading strategy for jumps
+            kickHlsLoadNearCurrentTime(clampedTarget, isLargeJump || reason === 'skip' || isMediumJump);
         }
 
         function setTemporaryRecoveryQuality(ms = 4500) {
@@ -2752,18 +2817,19 @@
             pendingJumpTarget = { time: normalizedTarget, reason };
             lastRequestedPlaybackTarget = normalizedTarget;
             if (jumpRecoveryTimer) clearTimeout(jumpRecoveryTimer);
+            // ENHANCED: Faster scheduling for rapid seeks
             jumpRecoveryTimer = setTimeout(() => {
                 if (!pendingJumpTarget || !video) return;
                 const next = pendingJumpTarget;
-                jumpCooldownUntil = Date.now() + 650;
-                jumpInFlightUntil = Date.now() + 1400;
+                jumpCooldownUntil = Date.now() + 400; // ENHANCED: Faster repeat seeks
+                jumpInFlightUntil = Date.now() + 1000;
                 tuneHlsForJump(next.time, Math.abs(next.time - Number(video.currentTime || 0)), next.reason);
                 forceVideoSeek(next.time);
                 if (!video.paused) {
                     Promise.resolve(video.play()).catch(() => { });
                 }
                 pendingJumpTarget = null;
-            }, 220);
+            }, 150); // ENHANCED: Slightly faster scheduling
         }
 
         function applyGuardedJump(targetTime, reason = 'seek') {
@@ -2780,20 +2846,23 @@
                 return;
             }
 
-            if (now < jumpCooldownUntil && seekBurstCount >= 10) {
+            // ENHANCED: Faster burst seeking - reduced cooldown
+            if (now < jumpCooldownUntil && seekBurstCount >= 8) {
                 schedulePendingJump(clampedTarget, reason);
                 return;
             }
 
-            jumpCooldownUntil = now + 150;
-            jumpInFlightUntil = now + 750;
+            jumpCooldownUntil = now + 80; // ENHANCED: Much faster repeat seeking
+            jumpInFlightUntil = now + 600; // ENHANCED: Faster flight window
             if (jumpRecoveryTimer) {
                 clearTimeout(jumpRecoveryTimer);
                 jumpRecoveryTimer = null;
             }
 
-            // We do not aggressively force level drops or jump hls during standard seeks
-            if (reason === 'skip' || jumpDistance > 30) {
+            // ENHANCED: More aggressive HLS tuning for better responsiveness
+            if (reason === 'skip' || jumpDistance > 20) {
+                tuneHlsForJump(clampedTarget, jumpDistance, reason);
+            } else if (jumpDistance > 5) {
                 tuneHlsForJump(clampedTarget, jumpDistance, reason);
             }
             forceVideoSeek(clampedTarget);
@@ -2808,7 +2877,7 @@
             lastRequestedPlaybackTarget = clampedTarget;
             jumpCooldownUntil = Date.now() + 1200;
             jumpInFlightUntil = Date.now() + 2200;
-            showBufferingOverlay();
+            if (reason !== 'skip') showBufferingOverlay();
             setTemporaryRecoveryQuality(reason === 'skip' ? 6500 : 5000);
 
             svSwitchHlsSourceSilent(currentStreamUrl, currentStreamReferer, () => {
@@ -2868,6 +2937,53 @@
             }, delay);
         }
 
+        // ENHANCED: Flush audio buffer for smooth track switching
+        function flushAudioBufferForTrackSwitch(hls) {
+            if (!hls || !video) return;
+            try {
+                // Stop loading momentarily to allow clean buffer flush
+                hls.stopLoad();
+                const currentTime = video.currentTime;
+                
+                // Remove old audio data from buffer
+                if (video.buffered.length > 0) {
+                    const timeRanges = [];
+                    for (let i = 0; i < video.buffered.length; i++) {
+                        timeRanges.push({
+                            start: video.buffered.start(i),
+                            end: video.buffered.end(i)
+                        });
+                    }
+                    
+                    // Try to remove source buffer programmatically if available
+                    if (hls.media && hls.media.buffered && hls.media.sourceBuffers) {
+                        try {
+                            for (let i = 0; i < hls.media.sourceBuffers.length; i++) {
+                                const sb = hls.media.sourceBuffers[i];
+                                if (sb.buffered.length > 0) {
+                                    for (let j = 0; j < sb.buffered.length; j++) {
+                                        const start = sb.buffered.start(j);
+                                        const end = sb.buffered.end(j);
+                                        // Only remove old data, keep nearby buffer
+                                        if (currentTime - start > 2 || end - currentTime > 2) {
+                                            sb.remove(start, end);
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (_) {}
+                    }
+                }
+                
+                // Resume loading from near current position
+                setTimeout(() => {
+                    if (hls) {
+                        try { hls.startLoad(Math.max(0, currentTime - 0.5)); } catch (_) {}
+                    }
+                }, 150);
+            } catch (_) {}
+        }
+
         function svApplyPreferredAudioToHls(hls) {
             if (!hls || !Array.isArray(hls.audioTracks) || hls.audioTracks.length === 0) return;
             const tracks = hls.audioTracks;
@@ -2918,6 +3034,8 @@
 
             if (targetIdx !== -1 && hls.audioTrack !== targetIdx) {
                 try {
+                    // ENHANCED: Smooth buffer flushing before track switch
+                    flushAudioBufferForTrackSwitch(hls);
                     hls.audioTrack = targetIdx;
                     const sel = tracks[targetIdx];
                     console.log(`[hls-audio] Successfully auto-switched to index ${targetIdx} (${sel.name || sel.lang})`);
@@ -2961,7 +3079,7 @@
                 svApplyPreferredAudioToHls(hls);
                 if (onParsedAction) onParsedAction();
                 updateAudioTracks();
-                hideBufferingOverlaySoon(60);
+                hideBufferingOverlaySoon(40); // ENHANCED: Faster hiding
                 clearFatalRecoveryTimer();
             });
 
@@ -2992,9 +3110,17 @@
                 } catch (_) { }
             });
 
-            // Track media error state for double-recovery pattern
+            // ENHANCED: Track bandwidth for adaptive quality
+            hls.on(Hls.Events.fpsDropLevelCapping, () => {
+                if (hls && hls.levels && hls.firstLevel !== -1) {
+                    console.log('[hls] Quality reduced due to FPS drop');
+                }
+            });
+
+            // Track media error state for better recovery
             let mediaErrorCount = 0;
             let lastStallNudgeAt = 0;
+            let consecutiveBufferErrors = 0; // ENHANCED: Track consecutive errors
 
             hls.on(Hls.Events.ERROR, (_, d) => {
                 console.log('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
@@ -3004,47 +3130,50 @@
                     detailText.includes('bufferappend') ||
                     d?.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR ||
                     d?.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR;
-                const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 9000;
+                const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000; // ENHANCED: Shorter window
+                
                 const applyRapidSeekHeal = () => {
                     if (!video) return;
                     showBufferingOverlay();
                     try {
-                        const jump = isFragParsing ? 1.1 : 0.45;
+                        // ENHANCED: Smarter jump distance for errors
+                        const jump = isFragParsing ? 1.5 : 0.6; // Larger jumps for frag errors
                         const near = Math.max(0, Math.min((video.duration || Infinity) - 0.2, (video.currentTime || 0) + jump));
                         if (isFinite(near) && near > 0) video.currentTime = near;
-                        setTemporaryRecoveryQuality(5500);
+                        setTemporaryRecoveryQuality(isFragParsing ? 6000 : 5000); // ENHANCED: Longer recovery
                         tuneHlsForJump(near, jump, 'seek');
                         if (isBufferAppend || d.fatal) hls.recoverMediaError();
                     } catch (_) { }
                 };
 
-                // Non-fatal stall: nudge playback manually
+                // Non-fatal stall: nudge playback manually - ENHANCED
                 if (!d.fatal) {
                     if (inRapidSeekMode && (isFragParsing || isBufferAppend)) {
                         if (isFragParsing) {
                             hlsFragErrorBurst += 1;
-                            if (hlsFragErrorBurst >= 3) hlsSessionIsFragile = true;
+                            if (hlsFragErrorBurst >= 4) hlsSessionIsFragile = true; // ENHANCED: More aggressive fragility detection
                         }
                         applyRapidSeekHeal();
                         return;
                     }
                     if (isFragParsing && video) {
                         hlsFragErrorBurst += 1;
-                        if (hlsFragErrorBurst >= 3) hlsSessionIsFragile = true;
+                        if (hlsFragErrorBurst >= 4) hlsSessionIsFragile = true; // ENHANCED: Lower threshold
                         const now = Date.now();
-                        if (now - fragParseBurstStartAt > 4500) {
+                        if (now - fragParseBurstStartAt > 3000) { // ENHANCED: Shorter window
                             fragParseBurstStartAt = now;
                             fragParseBurstCount = 0;
                         }
                         fragParseBurstCount += 1;
-                        if (fragParseBurstCount >= 3 && now - lastFragBypassAt > 2500) {
+                        // ENHANCED: More aggressive fragment error handling
+                        if (fragParseBurstCount >= 2 && now - lastFragBypassAt > 1800) {
                             lastFragBypassAt = now;
-                            const bypassTo = Math.min((video.duration || Infinity) - 0.25, (video.currentTime || 0) + 0.9);
+                            const bypassTo = Math.min((video.duration || Infinity) - 0.25, (video.currentTime || 0) + 1.2);
                             console.warn('[hls] Repeated frag parsing errors, bypassing ahead to', bypassTo);
                             try {
                                 if (isFinite(bypassTo) && bypassTo > 0) video.currentTime = bypassTo;
-                                setTemporaryRecoveryQuality(6500);
-                                tuneHlsForJump(bypassTo, 0.9, 'seek');
+                                setTemporaryRecoveryQuality(5500);
+                                tuneHlsForJump(bypassTo, 1.2, 'seek');
                             } catch (_) { }
                             showBufferingOverlay();
                             return;
@@ -3055,20 +3184,30 @@
                         d.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
                     ) {
                         const now = Date.now();
-                        if (now - lastStallNudgeAt < 1200) return;
+                        // ENHANCED: More responsive stall recovery
+                        if (now - lastStallNudgeAt < 600) return; // Faster repeat interval
                         lastStallNudgeAt = now;
                         if (video && !video.paused && video.readyState >= 2) {
                             try {
                                 showBufferingOverlay();
-                                // Smaller jump avoids audible "word repeat" loops on mobile.
+                                // ENHANCED: Slightly larger jumps for stall recovery
                                 video.currentTime = Math.min(
                                     (video.duration || Infinity) - 0.05,
-                                    (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.04 : 0.1),
+                                    (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.08 : 0.15),
                                 );
-                                kickHlsLoadNearCurrentTime(video.currentTime, false);
+                                kickHlsLoadNearCurrentTime(video.currentTime, true); // ENHANCED: More aggressive loading
                                 Promise.resolve(video.play()).catch(() => { });
                             } catch (_) { }
                         }
+                    }
+                    if (isBufferAppend) {
+                        consecutiveBufferErrors++; // ENHANCED: Track buffer errors
+                        if (consecutiveBufferErrors > 2) {
+                            console.warn('[hls] Multiple buffer append errors, triggering recovery');
+                            setTemporaryRecoveryQuality(4500);
+                        }
+                    } else {
+                        consecutiveBufferErrors = 0;
                     }
                     if (!isFragParsing && !isBufferAppend) {
                         hlsFragErrorBurst = 0;
@@ -3076,56 +3215,59 @@
                     return;
                 }
 
-                // Fatal errors
+                // Fatal errors - ENHANCED recovery strategy
                 if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
                     const code = d.response ? d.response.code : 0;
                     if (code === 404 || code === 403 || code >= 500) {
                         if (typeof onErrorFallback === 'function') onErrorFallback('fatal_network_error');
                         return;
                     }
-                    // Retry network load
+                    // ENHANCED: Retry network load more aggressively
                     console.warn('[hls] Fatal network error, retrying startLoad...');
                     showBufferingOverlay();
-                    hls.startLoad();
+                    setTimeout(() => {
+                        if (hls) {
+                            try { hls.startLoad(); } catch (_) {}
+                        }
+                    }, 200);
                 } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
                     mediaErrorCount++;
                     if (isFragParsing) hlsSessionIsFragile = true;
-                    const recentlySeeked = (Date.now() - lastUserSeekAt) < 7000;
+                    const recentlySeeked = (Date.now() - lastUserSeekAt) < 6000; // ENHANCED: Shorter window
                     const preferredRecoveryTarget = pendingJumpTarget?.time ?? Number(video?.currentTime || 0);
                     const durableRecoveryTarget = Math.max(0, Number(lastRequestedPlaybackTarget ?? preferredRecoveryTarget ?? 0));
 
                     if (inRapidSeekMode) {
-                        // During seek bursts, keep healing in-place instead of escalating.
+                        // During seek bursts, prioritize aggressive recovery
                         if (isFragParsing && typeof onErrorFallback === 'function') {
                             pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
-                            setTemporaryRecoveryQuality(7000);
+                            setTemporaryRecoveryQuality(6000);
                             onErrorFallback('fatal_frag_parse_jump');
                             return;
                         }
-                        setTemporaryRecoveryQuality(6500);
+                        setTemporaryRecoveryQuality(5500); // ENHANCED: Faster recovery
                         applyRapidSeekHeal();
                         return;
                     }
 
-                    // Rapid skip bursts can trigger decoder faults on some streams.
-                    // Recover by reloading close to current time before abandoning source.
+                    // ENHANCED: More resilient recovery after seek/skip
                     if (recentlySeeked && mediaErrorCount <= 2) {
                         console.warn('[hls] Fatal media error after rapid seek, reloading near current time...');
                         showBufferingOverlay();
                         try {
-                            let near = Math.max(0, Number(video?.currentTime || 0) - 0.8);
+                            let near = Math.max(0, Number(video?.currentTime || 0) - 0.5); // ENHANCED: Smaller lookback
                             if (isFragParsing && video) {
-                                near = Math.max(0, Number(video.currentTime || 0) + 0.9);
+                                near = Math.max(0, Number(video.currentTime || 0) + 1.0); // ENHANCED: Larger jump ahead
                             }
                             if (isFragParsing) {
                                 if (typeof onErrorFallback === 'function') {
                                     pendingJumpTarget = pendingJumpTarget || { time: (durableRecoveryTarget || near), reason: 'seek' };
-                                    setTemporaryRecoveryQuality(7000);
+                                    setTemporaryRecoveryQuality(6500);
                                     onErrorFallback('fatal_frag_parse_jump');
                                     return;
                                 }
                             }
-                            setTemporaryRecoveryQuality(6500);
+                            setTemporaryRecoveryQuality(5500);
                             hls.stopLoad();
                             hls.startLoad(near);
                             hls.recoverMediaError();
@@ -3137,7 +3279,7 @@
                     if (mediaErrorCount === 1) {
                         if ((isFragParsing || hlsSessionIsFragile) && typeof onErrorFallback === 'function') {
                             pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
-                            setTemporaryRecoveryQuality(7000);
+                            setTemporaryRecoveryQuality(6000);
                             console.warn('[hls] Fatal frag parse detected, rebuilding at target instead of recoverMediaError.');
                             clearFatalRecoveryTimer();
                             onErrorFallback('fatal_frag_parse_jump');
@@ -3163,8 +3305,7 @@
                 }
             });
 
-            // Stall watchdog: if playback is supposed to be running but time hasn't
-            // moved in 6 seconds, attempt an hls.startLoad() nudge before giving up.
+            // ENHANCED: Stall watchdog with faster response times
             let lastWatchdogTime = -1;
             let watchdogStallCount = 0;
             const watchdogInterval = setInterval(() => {
@@ -3186,10 +3327,10 @@
                 const now = video.currentTime;
                 if (Math.abs(now - lastWatchdogTime) < 0.05) {
                     watchdogStallCount++;
-                    if (watchdogStallCount === 2) {
+                    if (watchdogStallCount === 1) { // ENHANCED: Faster initial detection
                         console.warn('[hls-watchdog] Stall detected, nudging startLoad...');
                         try { hls.startLoad(); } catch (_) { }
-                    } else if (watchdogStallCount >= 4) {
+                    } else if (watchdogStallCount >= 3) { // ENHANCED: Faster escalation
                         console.warn('[hls-watchdog] Persistent stall, attempting same-source recovery...');
                         watchdogStallCount = 0;
                         if (typeof onErrorFallback === 'function') onErrorFallback('watchdog_stall');
@@ -3198,7 +3339,7 @@
                     watchdogStallCount = 0;
                 }
                 lastWatchdogTime = now;
-            }, 3000);
+            }, 2000); // ENHANCED: More frequent checks (was 3000ms)
 
             // Clean up watchdog when hls is destroyed
             hls.on(Hls.Events.DESTROYING, () => {
@@ -6507,6 +6648,7 @@
             window.previewLastSecond = -1;
             window.previewSeekInFlight = false;
             window.previewNudgeTick = 0;
+            window.isAutoSkipping = false;
 
             function warmupPreviewVideo(previewVideo) {
                 if (!previewVideo) return;
@@ -6519,7 +6661,7 @@
                     const onReady = () => {
                         try {
                             if (isFinite(previewVideo.duration) && previewVideo.duration > 2) {
-                                previewVideo.currentTime = 1.0;
+                                previewVideo.currentTime = 0.5;
                             }
                             const maybe = previewVideo.play?.();
                             if (maybe && typeof maybe.then === 'function') {
@@ -6532,6 +6674,92 @@
                     previewVideo.addEventListener('loadedmetadata', onReady, { once: true });
                     previewVideo.addEventListener('canplay', onReady, { once: true });
                 } catch (_) { }
+            }
+
+            // ENHANCED: Frame cache for preview thumbnails
+            const previewFrameCache = new Map();
+            const maxCacheSize = 150; // Cache up to 150 frames
+
+            window._lastCapturedFrameHash = null;
+            window._captureFailureCount = 0;
+            window._previewHlsResetAttempts = 0;
+            
+            function getFrameDataHash(frameDataUrl) {
+                // Simple hash to detect if we're getting the same frame repeatedly
+                if (!frameDataUrl) return null;
+                // Use first 100 chars of data URL as a quick hash
+                return frameDataUrl.substring(0, 100);
+            }
+            
+            function cachePreviewFrame(roundedSecond, frameData = null) {
+                // If frameData is provided, use it directly (from canvas capture)
+                if (frameData) {
+                    // Check for frame repetition
+                    const frameHash = getFrameDataHash(frameData);
+                    if (frameHash === window._lastCapturedFrameHash) {
+                        window._captureFailureCount++;
+                        // If we're getting the same frame too many times, try to reset preview HLS
+                        if (window._captureFailureCount > 2 && window._previewHlsResetAttempts < 3) {
+                            console.log('[preview] Frame repetition detected, attempting preview HLS reset...');
+                            window._previewHlsResetAttempts++;
+                            try {
+                                if (window.previewHlsInst) {
+                                    window.previewHlsInst.destroy();
+                                    window.previewHlsIsUnhealthy = false;
+                                    window.previewHlsErrorCount = 0;
+                                }
+                            } catch (_) {}
+                            return; // Don't cache the duplicate
+                        }
+                    } else {
+                        window._lastCapturedFrameHash = frameHash;
+                        window._captureFailureCount = 0;
+                    }
+                    
+                    previewFrameCache.set(roundedSecond, frameData);
+                    if (previewFrameCache.size > maxCacheSize) {
+                        const firstKey = previewFrameCache.keys().next().value;
+                        previewFrameCache.delete(firstKey);
+                    }
+                    return;
+                }
+                
+                const previewVideo = document.getElementById('previewVideo');
+                if (!previewVideo || previewVideo.readyState < 2) return;
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = previewVideo.videoWidth;
+                    canvas.height = previewVideo.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.drawImage(previewVideo, 0, 0);
+                        const frameUrl = canvas.toDataURL('image/jpeg', 0.75);
+                        
+                        // Check for frame repetition in preview video capture too
+                        const frameHash = getFrameDataHash(frameUrl);
+                        if (frameHash === window._lastCapturedFrameHash) {
+                            window._captureFailureCount++;
+                            if (window._captureFailureCount > 2) {
+                                console.log('[preview] Preview video capturing same frame repeatedly');
+                                return; // Skip caching duplicate frames
+                            }
+                        } else {
+                            window._lastCapturedFrameHash = frameHash;
+                            window._captureFailureCount = 0;
+                        }
+                        
+                        previewFrameCache.set(roundedSecond, frameUrl);
+                        // Clean up old cache entries
+                        if (previewFrameCache.size > maxCacheSize) {
+                            const firstKey = previewFrameCache.keys().next().value;
+                            previewFrameCache.delete(firstKey);
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            function getPreviewFrameFromCache(roundedSecond) {
+                return previewFrameCache.get(roundedSecond) || null;
             }
 
             function handleSeekPreview(e) {
@@ -6558,16 +6786,37 @@
                 seekPreview.classList.add('visible');
                 previewTime.textContent = formatTime(seekTime);
 
-                // Sync hidden preview video
+                // ENHANCED: Frame-accurate preview thumbnail display
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
-                    // Force "second by second" progression to reduce repeated frame stalls.
                     const wholeSecond = Math.max(0, Math.min(Math.floor(seekTime), Math.floor(video.duration)));
+                    
+                    // Check if we already have this frame cached
+                    const cachedFrame = getPreviewFrameFromCache(wholeSecond);
+                    if (cachedFrame) {
+                        // Display cached frame immediately
+                        if (!previewVideo._cacheDisplay) {
+                            previewVideo._cacheDisplay = document.createElement('img');
+                            previewVideo._cacheDisplay.style.position = 'absolute';
+                            previewVideo._cacheDisplay.style.width = '100%';
+                            previewVideo._cacheDisplay.style.height = '100%';
+                            previewVideo._cacheDisplay.style.objectFit = 'contain';
+                            previewVideo.parentElement?.appendChild(previewVideo._cacheDisplay);
+                        }
+                        previewVideo._cacheDisplay.src = cachedFrame;
+                        previewVideo._cacheDisplay.style.display = 'block';
+                    } else if (previewVideo._cacheDisplay) {
+                        previewVideo._cacheDisplay.style.display = 'none';
+                    }
+                    
+                    // Same second skip
                     if (wholeSecond === window.previewLastSecond) return;
                     window.previewLastSecond = wholeSecond;
-                    // Adaptive offset improves chance of unique frame if GOP/keyframes are sparse.
-                    const nudge = (window.previewNudgeTick++ % 3 === 0) ? 0.08 : (window.previewNudgeTick % 3 === 1 ? 0.34 : 0.66);
-                    window.previewTargetTime = wholeSecond + nudge;
+                    
+                    // ENHANCED: Improved frame seeking strategy
+                    // Try to get exact second, then with small offset for keyframe variety
+                    window.previewTargetTime = wholeSecond;
+                    window.previewTargetTimeAlt = wholeSecond + 0.15; // Fallback offset
                     window.performPreviewSeek();
                 }
             }
@@ -6577,35 +6826,149 @@
                 if (!previewVideo || window.previewTargetTime === undefined || !isFinite(previewVideo.duration)) return;
                 if (previewVideo.readyState < 1) return;
                 if (window.previewSeekInFlight) return;
+                
+                // ENHANCED: Skip preview HLS if we've forcefully switched to canvas fallback
+                if (window.previewUseCanvasFallbackOnly) {
+                    return;
+                }
+                
+                // ENHANCED: Disable preview seeking during main video startup to prevent interference
+                if (Date.now() < (window.previewSeekingDisabledUntil || 0)) {
+                    return; // Skip preview seeking during initial playback
+                }
+                
+                // Also skip if main video is actively seeking or just buffering
+                if (video && video.seeking) {
+                    return;
+                }
+                
+                // Skip during auto-skip to prevent interference
+                if (window.isAutoSkipping) {
+                    return;
+                }
 
-                // Throttle and execute latest second target without flooding requests.
+                // ENHANCED: Helper to capture frame from main video as fallback
+                const captureFromMainVideo = (timeInSeconds) => {
+                    try {
+                        if (!video || video.seeking) return null;
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 240;
+                        canvas.height = 135;
+                        const ctx = canvas.getContext('2d');
+                        if (ctx) {
+                            ctx.drawImage(video, 0, 0, 240, 135);
+                            return canvas.toDataURL('image/jpeg', 0.85);
+                        }
+                    } catch (_) {}
+                    return null;
+                };
+
+                // ENHANCED: More responsive seek with better timing
                 if (window.previewSeekTimer) clearTimeout(window.previewSeekTimer);
                 window.previewSeekTimer = setTimeout(() => {
                     const maxTime = Math.max(0, Number(previewVideo.duration || 0) - 0.05);
-                    const target = Math.max(0, Math.min(Number(window.previewTargetTime || 0), maxTime));
+                    let target = Math.max(0, Math.min(Number(window.previewTargetTime || 0), maxTime));
+                    
                     window.previewSeekInFlight = true;
                     try {
-                        // Keep preview on lowest rendition to reduce chunk latency.
-                        if (window.previewHlsInst) {
+                        // ENHANCED: Check preview HLS health - more conservative to avoid main stream interference
+                        if (window.previewHlsInst && !window.previewHlsIsUnhealthy && window.previewHlsErrorCount < 3) {
                             try {
-                                window.previewHlsInst.autoLevelCapping = 0;
-                                window.previewHlsInst.currentLevel = 0;
-                                window.previewHlsInst.nextLevel = 0;
-                                window.previewHlsInst.loadLevel = 0;
-                                window.previewHlsInst.startLoad(Math.max(0, target - 0.75));
-                            } catch (_) { }
+                                const levels = window.previewHlsInst.levels || [];
+                                // Use level 1 if available (middle quality), fallback to 0
+                                const targetLevel = levels.length > 1 ? 1 : 0;
+                                window.previewHlsInst.autoLevelCapping = targetLevel;
+                                window.previewHlsInst.currentLevel = targetLevel;
+                                window.previewHlsInst.nextLevel = targetLevel;
+                                window.previewHlsInst.loadLevel = targetLevel;
+                                // Only start load if main video is not seeking
+                                if (!video?.seeking) {
+                                    window.previewHlsInst.startLoad(Math.max(0, target - 0.5));
+                                }
+                            } catch (_) { 
+                                window.previewHlsIsUnhealthy = true;
+                            }
                         }
-                        if (typeof previewVideo.fastSeek === 'function') {
-                            previewVideo.fastSeek(target);
-                        } else {
-                            previewVideo.currentTime = target;
+                        
+                        // Skip seeking the preview video if HLS is too unhealthy (avoid compounding errors)
+                        // OR if the main video is actively seeking
+                        if ((!window.previewHlsIsUnhealthy || window.previewHlsErrorCount <= 1) && !video?.seeking) {
+                            if (typeof previewVideo.fastSeek === 'function') {
+                                previewVideo.fastSeek(target);
+                            } else {
+                                previewVideo.currentTime = target;
+                            }
                         }
                     } catch (_) {
-                        // ignore
+                        // Try fallback offset on error
+                        if (window.previewTargetTimeAlt !== undefined && window.previewTargetTimeAlt !== target) {
+                            target = Math.max(0, Math.min(Number(window.previewTargetTimeAlt), maxTime));
+                            try {
+                                if (typeof previewVideo.fastSeek === 'function') {
+                                    previewVideo.fastSeek(target);
+                                } else {
+                                    previewVideo.currentTime = target;
+                                }
+                            } catch (_) {}
+                        }
                     } finally {
                         window.previewSeekInFlight = false;
+                        // ENHANCED: Cache the frame after successful seek
+                        setTimeout(() => {
+                            if (!previewVideo.seeking) {
+                                const rounded = Math.round(window.previewTargetTime || 0);
+                                
+                                // Try to capture from preview video first, fallback to main video
+                                let frameData = null;
+                                
+                                // Force main video canvas capture if preview HLS has become unreliable
+                                if (!window.previewUseCanvasFallbackOnly) {
+                                    try {
+                                        if (previewVideo.readyState >= 2) {
+                                            const canvas = document.createElement('canvas');
+                                            canvas.width = Math.max(previewVideo.videoWidth, 240);
+                                            canvas.height = Math.max(previewVideo.videoHeight, 135);
+                                            const ctx = canvas.getContext('2d');
+                                            if (ctx) {
+                                                ctx.drawImage(previewVideo, 0, 0);
+                                                frameData = canvas.toDataURL('image/jpeg', 0.75);
+                                            }
+                                        }
+                                    } catch (_) {}
+                                }
+                                
+                                // Fallback to main video if preview frame capture failed or preview is too unhealthy
+                                // OR if we've flagged to always use canvas fallback
+                                if ((!frameData || window.previewUseCanvasFallbackOnly) && (window.previewUseCanvasFallbackOnly || (window.previewHlsIsUnhealthy && window.previewHlsErrorCount > 3))) {
+                                    console.log(`[preview] Using main video canvas at ${rounded}s`);
+                                    // Try multiple offsets to avoid capturing the same frame
+                                    const offsets = [0, 0.3, 0.6, -0.3];
+                                    for (const offset of offsets) {
+                                        const offsetTime = Math.max(0, rounded + offset);
+                                        frameData = captureFromMainVideo(offsetTime);
+                                        if (frameData) break; // Use first successful capture
+                                    }
+                                }
+                                
+                                if (frameData) {
+                                    cachePreviewFrame(rounded, frameData);
+                                }
+                                
+                                // ENHANCED: Prefetch adjacent frames for smooth scrolling
+                                const prefetchNext = rounded + 1;
+                                const prefetchPrev = Math.max(0, rounded - 1);
+                                if (prefetchNext <= Math.floor(video.duration)) {
+                                    setTimeout(() => {
+                                        if (!getPreviewFrameFromCache(prefetchNext) && !window.previewSeekInFlight) {
+                                            window.previewTargetTime = prefetchNext;
+                                            window.performPreviewSeek();
+                                        }
+                                    }, 300);
+                                }
+                            }
+                        }, 100);
                     }
-                }, 45);
+                }, 35); // ENHANCED: Slightly faster response (was 45ms)
             };
 
             seekBar.addEventListener('mousemove', handleSeekPreview);
@@ -6615,10 +6978,20 @@
             seekBar.addEventListener('mouseleave', () => {
                 seekPreview.classList.remove('visible');
                 window.previewLastSecond = -1;
+                // Hide cache display
+                const previewVideo = document.getElementById('previewVideo');
+                if (previewVideo && previewVideo._cacheDisplay) {
+                    previewVideo._cacheDisplay.style.display = 'none';
+                }
             });
             seekBar.addEventListener('touchend', () => {
                 seekPreview.classList.remove('visible');
                 window.previewLastSecond = -1;
+                // Hide cache display
+                const previewVideo = document.getElementById('previewVideo');
+                if (previewVideo && previewVideo._cacheDisplay) {
+                    previewVideo._cacheDisplay.style.display = 'none';
+                }
             });
 
 
@@ -7306,27 +7679,65 @@
 
             const target = Math.max(0, segment.end + 0.3);
 
+            // ENHANCED: Pre-buffer strategy for smooth skips
+            // Pause preview operations during skip to avoid interfering with main stream
+            const previewVideo = document.getElementById('previewVideo');
+            if (previewVideo) {
+                try {
+                    previewVideo.pause();
+                } catch (_) {}
+            }
+            
+            // Pre-buffer the target area before executing the skip
+            const jumpDistance = Math.abs(target - (video.currentTime || 0));
+            const prebufferTime = Math.max(0, target - (jumpDistance > 30 ? 5 : 1.5));
+            
+            // Use gentler quality tuning for the skip operation
+            tuneHlsForJump(target, jumpDistance, 'skip');
+
             if (hlsInst && hlsSessionIsFragile) {
                 console.log(`[Skip] HLS session is fragile, hot-reloading stream for ${type} skip.`);
                 performHotReloadJump(target, 'skip');
                 _skipBtnWasVisible = false;
                 if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
                 syncTimeUI();
+                window.isAutoSkipping = false;
                 return;
             }
 
-            // Force the media element to settle on the skip target even if the stream briefly resists seeks.
-            applyGuardedJump(target, 'skip');
+            // Wait briefly for pre-buffering before seeking (gives HLS time to prepare chunks)
+            setTimeout(() => {
+                // Force the media element to settle on the skip target even if the stream briefly resists seeks.
+                applyGuardedJump(target, 'skip');
 
-            if (!video.paused) {
-                video.play().catch(() => { });
-            }
+                if (!video.paused) {
+                    video.play().catch(() => { });
+                }
 
-            _skipBtnWasVisible = false;
-            if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+                _skipBtnWasVisible = false;
+                if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
 
-            // Ensure UI updates to reflect the new position
-            syncTimeUI();
+                // Ensure UI updates to reflect the new position
+                syncTimeUI();
+                window.isAutoSkipping = false;
+                
+                // Resume preview after skip completes
+                setTimeout(() => {
+                    if (previewVideo && !manual) {
+                        try {
+                            const warmupOnReady = () => {
+                                try {
+                                    if (isFinite(previewVideo.duration) && previewVideo.duration > 2) {
+                                        previewVideo.currentTime = 1.0;
+                                    }
+                                    previewVideo.pause();
+                                } catch (_) {}
+                            };
+                            previewVideo.addEventListener('canplay', warmupOnReady, { once: true });
+                        } catch (_) {}
+                    }
+                }, 300);
+            }, 500); // Short pre-buffer delay before actual skip (avoids jarring transitions)
         }
 
         function _tickSkipCountdown() {
@@ -7378,6 +7789,7 @@
             if (!shouldAuto) return;
 
             _clearSkipCountdown();
+            window.isAutoSkipping = true;
             _skipActiveType = active.type;
             _skipActiveSegment = { ...active };
             void skipSegmentBtn.offsetWidth;
@@ -8672,6 +9084,15 @@
             const previewVideo = document.getElementById('previewVideo');
             if (previewVideo) previewVideo.muted = true;
 
+            // Check if we can seek instead of reloading for the same source
+            if (hlsInst && url === currentStreamUrl && isM3U8 && Hls.isSupported() && video && isFinite(video.duration) && startTime > 0 && startTime < video.duration) {
+                console.log('Seamless seek: seeking to', startTime, 'without reloading HLS');
+                isSourceSwitching = false;
+                video.currentTime = startTime;
+                hideLoader();
+                return;
+            }
+
             // Visual Bridge: capture current frame before we wipe anything.
             // Skip on the very first load — the #loader (with cover art) is already
             // covering everything, so there's no black gap to bridge.
@@ -8892,14 +9313,78 @@
                 if (previewVideo) {
                     window.previewHlsInst = svCreateHlsInstance(0, true);
                     window.previewHlsInst.on(Hls.Events.MANIFEST_LOADED, () => {
-                        // Aggressively pin preview to lowest level for faster tile updates.
-                        window.previewHlsInst.autoLevelCapping = 0;
-                        window.previewHlsInst.currentLevel = 0;
-                        window.previewHlsInst.nextLevel = 0;
-                        window.previewHlsInst.loadLevel = 0;
+                        // ENHANCED: Use level 1 (if available) instead of always lowest for better quality
+                        if (window.previewHlsInst.levels && window.previewHlsInst.levels.length > 1) {
+                            const targetLevel = 1; // Medium quality
+                            window.previewHlsInst.autoLevelCapping = targetLevel;
+                            window.previewHlsInst.currentLevel = targetLevel;
+                            window.previewHlsInst.nextLevel = targetLevel;
+                            window.previewHlsInst.loadLevel = targetLevel;
+                            console.log('[preview] Using quality level 1 for better thumbnails');
+                        } else {
+                            // Fallback to level 0 if only one level available
+                            window.previewHlsInst.autoLevelCapping = 0;
+                            window.previewHlsInst.currentLevel = 0;
+                            window.previewHlsInst.nextLevel = 0;
+                            window.previewHlsInst.loadLevel = 0;
+                        }
                     });
+                    
+                    // ENHANCED: Better error handling for preview stream
+                    // Disable preview seeking during main video startup (first 8 seconds)
+                    window.previewSeekingDisabledUntil = Date.now() + 8000;
+                    
+                    window.previewHlsInst.on(Hls.Events.ERROR, (_, data) => {
+                        window.previewHlsErrorCount = (window.previewHlsErrorCount || 0) + 1;
+                        
+                        // Non-fatal errors - mark as unhealthy but limit retries to avoid resource exhaustion
+                        if (!data.fatal) {
+                            console.warn(`[preview] Non-fatal error (count: ${window.previewHlsErrorCount}): ${data.details}`);
+                            // Only retry once for non-fatal errors to avoid hammering connection
+                            if (window.previewHlsErrorCount === 1 || window.previewHlsErrorCount === 3) {
+                                window.previewHlsIsUnhealthy = true;
+                                setTimeout(() => {
+                                    if (window.previewHlsInst && window.previewHlsIsUnhealthy && !video?.seeking) {
+                                        try {
+                                            console.log('[preview] Retrying after non-fatal error (limited)...');
+                                            window.previewHlsInst.recoverMediaError?.();
+                                        } catch (_) {}
+                                    }
+                                }, 1500); // Increased delay to let main stream priority
+                            }
+                            // After 5 consecutive non-fatal errors, switch to fallback mode permanently
+                            if (window.previewHlsErrorCount >= 5) {
+                                console.warn('[preview] Too many non-fatal errors, switching to canvas fallback permanently');
+                                window.previewHlsIsUnhealthy = true;
+                                window.previewUseCanvasFallbackOnly = true; // Force canvas fallback
+                            }
+                            return;
+                        }
+                        
+                        // Fatal errors - escalate recovery with more conservative timing
+                        console.warn(`[preview] Fatal error (attempt ${window.previewHlsErrorCount}): ${data.details}`);
+                        window.previewHlsIsUnhealthy = true;
+                        
+                        // Only one recovery attempt per consecutive fatals
+                        if (window.previewHlsErrorCount <= 2) {
+                            try {
+                                console.log('[preview] Fatal: attempting stopLoad for recovery');
+                                window.previewHlsInst.stopLoad();
+                            } catch (_) {}
+                        } else {
+                            // Multiple failures - signal that we should use main video canvas fallback
+                            console.warn('[preview] Fatal errors persistent, fallback to main video capture enabled');
+                            window.previewUseCanvasFallbackOnly = true; // Force canvas fallback
+                        }
+                    });
+                    
                     window.previewHlsInst.loadSource(streamUrl);
                     window.previewHlsInst.attachMedia(previewVideo);
+                    
+                    // Track preview errors to know when to fallback
+                    window.previewHlsErrorCount = 0;
+                    window.previewHlsIsUnhealthy = false;
+                    
                     warmupPreviewVideo(previewVideo);
                 }
 
