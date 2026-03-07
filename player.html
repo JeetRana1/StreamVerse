@@ -429,8 +429,17 @@
             position: absolute;
             top: 0;
             bottom: 0;
-            background: #a855f7;
-            z-index: 1;
+            background: repeating-linear-gradient(
+                to right,
+                rgba(168, 85, 247, 0.86) 0px,
+                rgba(168, 85, 247, 0.86) 18px,
+                rgba(196, 120, 255, 0.92) 18px,
+                rgba(196, 120, 255, 0.92) 20px
+            );
+            border-left: 1px solid rgba(255, 255, 255, 0.55);
+            border-right: 1px solid rgba(255, 255, 255, 0.55);
+            box-shadow: inset 0 0 0 1px rgba(88, 28, 135, 0.28);
+            z-index: 3;
         }
 
         .seek-bar {
@@ -438,7 +447,7 @@
             appearance: none;
             height: 5px;
             border-radius: 999px;
-            background: linear-gradient(to right, var(--primary) 0%, var(--primary) var(--seek-percent, 0%), transparent var(--seek-percent, 0%), transparent 100%);
+            background: linear-gradient(to right, rgba(229, 9, 20, 0.78) 0%, rgba(229, 9, 20, 0.78) var(--seek-percent, 0%), transparent var(--seek-percent, 0%), transparent 100%);
             outline: none;
             cursor: pointer;
             z-index: 2;
@@ -584,10 +593,12 @@
             overflow-y: auto;
             /* JS will handle left and bottom */
         }
+
         .sheet-dragging {
             transition: none !important;
             will-change: transform;
         }
+
         .sheet-animating {
             will-change: transform, opacity;
         }
@@ -1906,8 +1917,8 @@
                 </button>
                 <button class="ctrl-icon" id="custom-audio-btn" aria-label="Audio">
                     <svg class="audio-wave-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M4 14V10M8 17V7M12 20V4M16 16V8M20 13V11"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M4 14V10M8 17V7M12 20V4M16 16V8M20 13V11" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" />
                     </svg>
                 </button>
                 <button class="ctrl-icon" id="captionsBtn" aria-label="Subtitles">
@@ -2117,6 +2128,8 @@
         let FORCED_PROVIDER = params.get('provider') || '';
         const DIRECT_ONLY = (params.get('directOnly') || 'true').toLowerCase() !== 'false';
         const URL_SEASON = Number(params.get('season') || 0);
+        const URL_SEASON_TITLE = String(params.get('seasonTitle') || '').trim();
+        const URL_SEASON_KEY = String(params.get('seasonKey') || '').trim().toLowerCase();
         const URL_EPISODE = Number(params.get('episode') || params.get('ep') || 0);
         const URL_AUDIO = String(params.get('audio') || '').trim().toLowerCase();
 
@@ -2321,6 +2334,12 @@
                 const epNo = Number.isFinite(epNoRaw) && epNoRaw > 0 ? epNoRaw : (curEpisode + 1);
                 u.searchParams.set('season', String(seasonNo));
                 u.searchParams.set('episode', String(epNo));
+                const seasonTitle = String(seasonRef?.name || '').trim();
+                if (seasonTitle) u.searchParams.set('seasonTitle', seasonTitle);
+                else u.searchParams.delete('seasonTitle');
+                const seasonKey = String(seasonRef?.providerAnimeId || '').trim().toLowerCase();
+                if (seasonKey) u.searchParams.set('seasonKey', seasonKey);
+                else u.searchParams.delete('seasonKey');
             }
             if (FORCED_PROVIDER) u.searchParams.set('provider', FORCED_PROVIDER);
             else u.searchParams.delete('provider');
@@ -2836,8 +2855,30 @@
             const safeSeasons = Array.isArray(seasons) ? seasons : [];
             let si = 0;
             let ei = 0;
-            if (Number.isFinite(URL_SEASON) && URL_SEASON > 0) {
-                const bySeasonNo = safeSeasons.findIndex((s) => Number(s?.seasonNo || 0) === URL_SEASON);
+            let matchedExplicitSeasonRef = false;
+            if (URL_SEASON_KEY) {
+                const bySeasonKey = safeSeasons.findIndex((s) =>
+                    String(s?.providerAnimeId || '').trim().toLowerCase() === URL_SEASON_KEY
+                );
+                if (bySeasonKey >= 0) {
+                    si = bySeasonKey;
+                    matchedExplicitSeasonRef = true;
+                }
+            }
+            if (URL_SEASON_TITLE) {
+                const wantedSeasonTitle = normalizeSeasonSearchLabel(URL_SEASON_TITLE).toLowerCase();
+                const bySeasonTitle = safeSeasons.findIndex((s) =>
+                    normalizeSeasonSearchLabel(String(s?.name || '')).toLowerCase() === wantedSeasonTitle
+                );
+                if (bySeasonTitle >= 0) {
+                    si = bySeasonTitle;
+                    matchedExplicitSeasonRef = true;
+                }
+            }
+            if (Number.isFinite(URL_SEASON) && URL_SEASON > 0 && !matchedExplicitSeasonRef) {
+                const bySeasonNo = safeSeasons.findIndex((s) => {
+                    return Number(s?.seasonNo || 0) === URL_SEASON;
+                });
                 if (bySeasonNo >= 0) {
                     si = bySeasonNo;
                 } else {
@@ -3571,6 +3612,25 @@
             return url.toString();
         }
 
+        function buildSatoruResolveUrl(title, seasonNo, episodeNo, seasonLabel = '', preferredYear = null) {
+            const base = getAnimeProviderBase('satoru');
+            const url = new URL(`${base}/resolve`);
+            url.searchParams.set('title', String(title || ''));
+            url.searchParams.set('season', String(seasonNo || 1));
+            url.searchParams.set('episode', String(episodeNo || 1));
+            if (seasonLabel) url.searchParams.set('seasonTitle', seasonLabel);
+            if (preferredYear) url.searchParams.set('year', String(preferredYear));
+            return url.toString();
+        }
+
+        function buildSatoruSeriesUrl(title, preferredYear = null) {
+            const base = getAnimeProviderBase('satoru');
+            const url = new URL(`${base}/series`);
+            url.searchParams.set('title', String(title || ''));
+            if (preferredYear) url.searchParams.set('year', String(preferredYear));
+            return url.toString();
+        }
+
         function buildAnimeWatchUrl(provider, episodeId) {
             const base = getAnimeProviderBase(provider);
             const url = new URL(`${base}/watch/${encodeURIComponent(episodeId)}`);
@@ -3685,10 +3745,22 @@
             return { info: null, episodeId: null };
         }
 
-        function getAnimeSearchTerms(title, preferredYear = null, seasonNo = 1) {
+        function normalizeSeasonSearchLabel(label) {
+            const raw = String(label || '').trim();
+            if (!raw) return '';
+            const cleaned = raw
+                .replace(/\bseason\s*\d+\b/ig, ' ')
+                .replace(/\bbook\s*\d+\b/ig, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            return cleaned;
+        }
+
+        function getAnimeSearchTerms(title, preferredYear = null, seasonNo = 1, seasonLabel = '') {
             const base = normalizeAnimeSearchQuery(title);
             if (!base) return [];
             const terms = [];
+            const normalizedSeasonLabel = normalizeSeasonSearchLabel(seasonLabel);
 
             // Priority: Search with preferred language first if specifically set (e.g. "Naruto Hindi")
             if (preferredAudioToken && !['sub', 'subbed', 'dub', 'dubbed', 'original', 'jp', 'japanese', 'en', 'english'].includes(preferredAudioToken)) {
@@ -3708,6 +3780,11 @@
                 terms.push(`${base} S${seasonNo}`);
             }
 
+            if (normalizedSeasonLabel) {
+                terms.push(`${base} ${normalizedSeasonLabel}`);
+                terms.push(normalizedSeasonLabel);
+            }
+
             if (preferredYear) terms.push(`${base} ${preferredYear}`);
             terms.push(base);
             return Array.from(new Set(terms.filter(Boolean)));
@@ -3718,7 +3795,8 @@
             const t = String(title).toLowerCase();
             const m = t.match(/\bseason\s*(\d+)\b/i)
                 || t.match(/\b(\d+)(st|nd|rd|th)\s*season\b/i)
-                || t.match(/\bseason\b\s*([ivx]+)\b/i);
+                || t.match(/\bseason\b\s*([ivx]+)\b/i)
+                || t.match(/\bs\s*(\d+)\b/i);
             if (m) {
                 if (m[1].match(/^[ivx]+$/)) {
                     const romanMap = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
@@ -3739,12 +3817,22 @@
             return null;
         }
 
-        function pickAnimeResultByTitle(results, title, preferredYear = null, targetSeason = 1) {
+        function extractPartNumberFromTitle(title) {
+            if (!title) return null;
+            const t = String(title).toLowerCase();
+            const m = t.match(/\bpart\s*(\d+)\b/i) || t.match(/\b(\d+)(st|nd|rd|th)\s*part\b/i);
+            if (m) return Number(m[1]);
+            return null;
+        }
+
+        function pickAnimeResultByTitle(results, title, preferredYear = null, targetSeason = 1, seasonLabel = '') {
             if (!Array.isArray(results) || results.length === 0) return null;
             if (!title) return results[0];
 
             const normTitle = normalizeAnimeSearchQuery(title).toLowerCase();
             const qWords = normTitle.split(' ').filter(Boolean);
+            const normalizedSeasonLabel = normalizeSeasonSearchLabel(seasonLabel).toLowerCase();
+            const seasonWords = normalizedSeasonLabel.split(' ').filter(Boolean);
             let best = null;
             let bestScore = -Infinity;
 
@@ -3787,12 +3875,22 @@
                 score += common * 10;
                 score -= Math.abs(itemTitle.length - normTitle.length) * 0.2;
 
+                if (seasonWords.length) {
+                    const seasonCommon = seasonWords.filter((w) => tWords.includes(w)).length;
+                    score += seasonCommon * 28;
+                    if (normalizedSeasonLabel && itemTitle.includes(normalizedSeasonLabel)) score += 140;
+                }
+
                 // Specific Arc / Part Support for anime
                 if (normTitle.includes('culling game') && itemTitle.includes('culling game')) score += 180;
                 if (normTitle.includes('shibuya incident') && itemTitle.includes('shibuya incident')) score += 180;
                 if (normTitle.includes('part 2') && itemTitle.includes('part 2')) score += 140;
                 if (normTitle.includes('part 3') && itemTitle.includes('part 3')) score += 140;
                 if (normTitle.includes('cour 2') && itemTitle.includes('cour 2')) score += 140;
+                if (normalizedSeasonLabel.includes('mugen train') && itemTitle.includes('mugen train')) score += 220;
+                if (normalizedSeasonLabel.includes('entertainment district') && itemTitle.includes('entertainment district')) score += 220;
+                if (normalizedSeasonLabel.includes('swordsmith village') && itemTitle.includes('swordsmith village')) score += 220;
+                if (normalizedSeasonLabel.includes('hashira training') && itemTitle.includes('hashira training')) score += 220;
 
                 const itemYear = parseYear(r);
                 if (preferredYear && itemYear) {
@@ -5846,7 +5944,7 @@
             }, 60000);
 
             try {
-                const isAnimeOnlyProvider = ['satoru', 'justanime', 'hianime', 'animesaturn'].includes(FORCED_PROVIDER);
+                const isAnimeOnlyProvider = ['satoru', 'justanime', 'hianime'].includes(FORCED_PROVIDER);
                 const infoUrls = (FORCED_PROVIDER && !isAnimeOnlyProvider)
                     ? [
                         `${API_BASE.replace('/meta/tmdb', '/movies/' + FORCED_PROVIDER)}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`,
@@ -5958,6 +6056,92 @@
         async function initTv(info) {
             setLoader('Loading series...', 'Building episode list');
             tvSeasons = buildTvSeasonsFromInfo(info);
+            const preferredYear = getPreferredMediaYear();
+            const animeSeriesTitle = normalizeAnimeSearchQuery(
+                info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || '',
+            );
+            if (currentIsLikelyAnime && animeSeriesTitle) {
+                try {
+                    const { res: seriesRes } = await fetchJsonWithApiFallback(
+                        buildSatoruSeriesUrl(animeSeriesTitle, preferredYear),
+                        { signal: AbortSignal.timeout(12000) },
+                    );
+                    if (seriesRes.ok) {
+                        const seriesData = await seriesRes.json();
+                        const entries = Array.isArray(seriesData?.entries) ? seriesData.entries : [];
+                        const mapped = Array.from(
+                            entries
+                                .map((entry, index) => {
+                                    const entryTitle = String(entry?.title || Season);
+                                    const entryId = String(entry?.id || '').trim();
+                                    const inferredSeasonNo = Number(
+                                        extractSeasonNumberFromTitle(entryTitle)
+                                        || extractSeasonNumberFromTitle(entryId)
+                                        || 0,
+                                    );
+                                    const rawSeasonNo = Number(entry?.season || 0);
+                                    const seasonNo = Number.isFinite(inferredSeasonNo) && inferredSeasonNo > 0
+                                        ? inferredSeasonNo
+                                        : (Number.isFinite(rawSeasonNo) && rawSeasonNo > 0 ? rawSeasonNo : index + 1);
+                                    const seasonPartNo = Number(
+                                        extractPartNumberFromTitle(entryTitle)
+                                        || extractPartNumberFromTitle(entryId)
+                                        || 0,
+                                    ) || 0;
+                                    const normalizedNameKey = String(entryTitle)
+                                        .toLowerCase()
+                                        .replace(/[^a-z0-9]+/g, ' ')
+                                        .replace(/\bseason\s+\d+\b/g, ' ')
+                                        .replace(/\bpart\s+\d+\b/g, ' ')
+                                        .replace(/\s+/g, ' ')
+                                        .trim();
+                                    return {
+                                        seasonNo,
+                                        seasonPartNo,
+                                        sourceOrder: index,
+                                        dedupeKey: `${seasonNo}::${seasonPartNo || 0}`,
+                                        name: entryTitle,
+                                        providerAnimeId: entryId || null,
+                                        episodes: (Array.isArray(entry?.episodes) ? entry.episodes : []).map((ep, epIndex) => ({
+                                            id: ep?.id || null,
+                                            episode: epIndex + 1,
+                                            number: epIndex + 1,
+                                            episodeNum: epIndex + 1,
+                                            title: String(ep?.title || `Episode ${epIndex + 1}`),
+                                        })),
+                                    };
+                                })
+                                .filter((season) => season.episodes.length > 0)
+                                .sort((a, b) => {
+                                    const seasonDiff = Number(a?.seasonNo || 0) - Number(b?.seasonNo || 0);
+                                    if (seasonDiff !== 0) return seasonDiff;
+                                    const partDiff = Number(a?.seasonPartNo || 0) - Number(b?.seasonPartNo || 0);
+                                    if (partDiff !== 0) return partDiff;
+                                    return Number(a?.sourceOrder || 0) - Number(b?.sourceOrder || 0);
+                                })
+                                .reduce((acc, season) => {
+                                    const existing = acc.find((row) => row.dedupeKey === season.dedupeKey);
+                                    if (!existing) {
+                                        acc.push(season);
+                                        return acc;
+                                    }
+                                    if ((season?.episodes?.length || 0) > (existing?.episodes?.length || 0)) {
+                                        existing.episodes = season.episodes;
+                                    }
+                                    if (!existing.providerAnimeId && season.providerAnimeId) {
+                                        existing.providerAnimeId = season.providerAnimeId;
+                                    }
+                                    return acc;
+                                }, [])
+                        );
+                        if (mapped.length) {
+                            tvSeasons = mapped;
+                        }
+                    }
+                } catch (_) {
+                    // Keep TMDB-derived season buckets if Satoru season metadata is unavailable.
+                }
+            }
             episodeFillerStatus = new Map();
             fillerLookupState = 'loading';
             if (!tvSeasons.length) {
@@ -6026,7 +6210,15 @@
                 const lbl = document.createElement('div');
                 lbl.className = 'ep-season';
                 const seasonNo = Number(s?.seasonNo || si + 1);
-                lbl.textContent = Number.isFinite(seasonNo) && seasonNo > 0 ? `Season ${seasonNo}` : String(s.name || `Season ${si + 1}`);
+                const rawSeasonName = String(s?.name || '').trim();
+                const genericSeasonName = /^season\s+\d+$/i.test(rawSeasonName);
+                if (rawSeasonName && !genericSeasonName) {
+                    lbl.textContent = rawSeasonName;
+                } else {
+                    lbl.textContent = Number.isFinite(seasonNo) && seasonNo > 0
+                        ? `Season ${seasonNo}`
+                        : String(rawSeasonName || `Season ${si + 1}`);
+                }
                 epPanel.appendChild(lbl);
 
                 (s.episodes || []).forEach((ep, ei) => {
@@ -6035,10 +6227,7 @@
                     const epNo = Number(ep.episode || ep.number || ep.episodeNum || (ei + 1));
                     const epTitle = ep.title || `Episode ${epNo}`;
 
-                    let displayEpNo = epNo;
-                    if (currentIsLikelyAnime && si > 0 && epNo > 20) {
-                        displayEpNo = ei + 1;
-                    }
+                    const displayEpNo = currentIsLikelyAnime ? (ei + 1) : epNo;
 
                     const fillerStatus = episodeFillerStatus.get(epNo);
                     let fillerBadge = '';
@@ -6129,11 +6318,14 @@
             updateNextEpisodeButton(false);
 
             updateEpUI(si, ei);
-            const epNo = Number(ep.episode || ep.number || ep.episodeNum || (ei + 1));
+            const epNo = currentIsLikelyAnime
+                ? (ei + 1)
+                : Number(ep.episode || ep.number || ep.episodeNum || (ei + 1));
             const epTitle = String(ep.title || '').trim();
+            const seasonTitle = String(season?.name || `Season ${si + 1}`).trim();
             const metaText = epTitle
-                ? `${season.name} - Episode ${epNo}: ${epTitle}`
-                : `${season.name} - Episode ${epNo}`;
+                ? `${seasonTitle} - Episode ${epNo}: ${epTitle}`
+                : `${seasonTitle} - Episode ${epNo}`;
             document.getElementById('media-meta').textContent = metaText;
 
             // Store current season/episode indices for the per-provider fetch
@@ -6202,7 +6394,7 @@
                 providers = ['dramacool', ...providers.filter((p) => p !== 'dramacool')];
             }
             if (MEDIA_TYPE === 'tv' && currentIsLikelyAnime) {
-                const animeTvPriority = ['justanime', 'satoru', 'hianime', 'animesaturn'];
+                const animeTvPriority = ['justanime', 'satoru', 'hianime'];
                 providers = [
                     ...animeTvPriority.filter((p) => providers.includes(p)),
                     ...providers.filter((p) => !animeTvPriority.includes(p)),
@@ -6225,38 +6417,146 @@
                     // For anime providers, we need to get the episode list from the anime provider directly
                     // because TMDB episode IDs don't match anime provider episode IDs
                     let info, provEpisodeId;
-                    const isAnimeProvider = ['satoru', 'animesaturn', 'hianime', 'justanime'].includes(provider);
+                    let satoruResolvedExactly = false;
+                    const isAnimeProvider = ['satoru', 'hianime', 'justanime'].includes(provider);
 
                     if (isAnimeProvider) {
                         // For JustAnime, always resolve via search/info to avoid bad ID mappings.
 
                         if (!provEpisodeId) {
+                            if (
+                                provider === 'satoru' &&
+                                MEDIA_TYPE === 'tv' &&
+                                selectedSeason?.providerAnimeId &&
+                                selectedEpisode?.id
+                            ) {
+                                provEpisodeId = String(selectedEpisode.id).trim();
+                                satoruResolvedExactly = !!provEpisodeId;
+                                console.log('[satoru] using panel mapping', {
+                                    animeId: String(selectedSeason.providerAnimeId),
+                                    episodeId: provEpisodeId,
+                                    season: selectedSeasonNo,
+                                    episode: selectedEpisodeNo,
+                                    seasonLabel: String(selectedSeason?.name || ''),
+                                });
+                                const animeInfoTimeoutMs = getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS);
+                                const { res: infoRes } = await fetchJsonWithApiFallback(
+                                    buildAnimeInfoUrl(provider, String(selectedSeason.providerAnimeId)),
+                                    { signal: AbortSignal.timeout(animeInfoTimeoutMs) },
+                                );
+                                if (infoRes.ok) {
+                                    info = await infoRes.json();
+                                    if (info?.data) info = info.data;
+                                }
+                            }
+
                             // For anime: get anime info directly from the anime provider
                             // First, search for the anime to get the anime's ID using the title
                             const mediaTitle = normalizeAnimeSearchQuery(currentMediaInfo?.title || currentMediaInfo?.name || TMDB_ID);
+                            const selectedSeasonMeta =
+                                tvSeasons?.[Math.max(0, Number(curSeason || 0))] ||
+                                currentMediaInfo?.seasons?.find?.((s) => Number(s?.season || s?.seasonNumber || s?.number || 0) === selectedSeasonNo) ||
+                                null;
+                            const seasonLabel =
+                                normalizeSeasonSearchLabel(
+                                    selectedSeasonMeta?.name ||
+                                    selectedSeasonMeta?.title ||
+                                    selectedSeasonMeta?.seasonName ||
+                                    '',
+                                );
                             const seasonAwareTitle = MEDIA_TYPE === 'tv' && selectedSeasonNo > 1
 
                                 ? `${mediaTitle} season ${selectedSeasonNo}`
                                 : mediaTitle;
                             const preferredYear = getPreferredMediaYear();
-                            const cacheKey = `${provider}::${mediaTitle.toLowerCase()}::${preferredYear || ''}::s${selectedSeasonNo}`;
-                            const cached = animeProviderInfoCache.get(cacheKey);
+                            const cacheKey = `${provider}::${mediaTitle.toLowerCase()}::${preferredYear || ''}::s${selectedSeasonNo}::${seasonLabel.toLowerCase()}`;
+                            const cached =
+                                (provider === 'satoru' && MEDIA_TYPE === 'tv')
+                                    ? null
+                                    : animeProviderInfoCache.get(cacheKey);
                             let aggregatedSearchResults = [];
                             const hasReusableSearchResults =
                                 Array.isArray(cached?.searchResults) && cached.searchResults.length > 0;
-                            const shouldBypassCacheForSatoruTv =
-                                (provider === 'satoru') && MEDIA_TYPE === 'tv' && !hasReusableSearchResults;
+                            const shouldBypassCacheForSatoruTv = (provider === 'satoru') && MEDIA_TYPE === 'tv';
                             if (
                                 cached &&
                                 (Date.now() - cached.ts) < ANIME_PROVIDER_INFO_CACHE_TTL_MS &&
-                                !shouldBypassCacheForSatoruTv
+                                !shouldBypassCacheForSatoruTv &&
+                                !provEpisodeId
                             ) {
                                 info = cached.info;
                                 aggregatedSearchResults = hasReusableSearchResults ? cached.searchResults : [];
-                            } else {
+                            } else if (provider === 'satoru' && MEDIA_TYPE === 'tv' && !provEpisodeId) {
+                                const resolveUrl = buildSatoruResolveUrl(
+                                    mediaTitle,
+                                    selectedSeasonNo,
+                                    selectedEpisodeNo,
+                                    seasonLabel,
+                                    preferredYear,
+                                );
+                                const animeInfoTimeoutMs = getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS);
+                                const { res: resolveRes } = await fetchJsonWithApiFallback(
+                                    resolveUrl,
+                                    { signal: AbortSignal.timeout(animeInfoTimeoutMs) },
+                                );
+                                if (resolveRes.ok) {
+                                    const resolved = await resolveRes.json();
+                                    provEpisodeId = String(resolved?.episode?.id || '').trim() || null;
+                                    satoruResolvedExactly = !!provEpisodeId;
+                                    console.log('[satoru] exact resolve', {
+                                        animeId: resolved?.anime?.id || null,
+                                        animeTitle: resolved?.anime?.title || null,
+                                        episodeId: provEpisodeId,
+                                        season: selectedSeasonNo,
+                                        episode: selectedEpisodeNo,
+                                        seasonLabel,
+                                    });
+                                    if (resolved?.anime?.id) {
+                                        const { res: infoRes } = await fetchJsonWithApiFallback(
+                                            buildAnimeInfoUrl(provider, String(resolved.anime.id)),
+                                            { signal: AbortSignal.timeout(animeInfoTimeoutMs) },
+                                        );
+                                        if (infoRes.ok) {
+                                            info = await infoRes.json();
+                                            if (info?.data) info = info.data;
+                                            animeProviderInfoCache.set(cacheKey, {
+                                                ts: Date.now(),
+                                                info,
+                                                searchResults: [],
+                                            });
+                                        }
+                                    }
+                                }
+                                if (!satoruResolvedExactly) {
+                                    console.warn('[satoru] exact resolve failed', {
+                                        season: selectedSeasonNo,
+                                        episode: selectedEpisodeNo,
+                                        seasonLabel,
+                                        mediaTitle,
+                                    });
+                                    failReasons.push(`${providerLabel(provider)} exact season match failed`);
+                                    chipState(provider, 'failed');
+                                    continue;
+                                }
+                            }
+
+                            if (
+                                !info &&
+                                !provEpisodeId &&
+                                (
+                                    !cached ||
+                                    shouldBypassCacheForSatoruTv ||
+                                    !((Date.now() - cached.ts) < ANIME_PROVIDER_INFO_CACHE_TTL_MS)
+                                )
+                            ) {
                                 const searchTerms = Array.from(
                                     new Set(
-                                        [seasonAwareTitle, ...getAnimeSearchTerms(mediaTitle, preferredYear, selectedSeasonNo)].filter(Boolean),
+                                        [
+                                            seasonAwareTitle,
+                                            seasonLabel ? `${mediaTitle} ${seasonLabel}` : '',
+                                            seasonLabel,
+                                            ...getAnimeSearchTerms(mediaTitle, preferredYear, selectedSeasonNo, seasonLabel),
+                                        ].filter(Boolean),
                                     ),
                                 );
                                 let bestAnime = null;
@@ -6272,8 +6572,8 @@
                                     if (Array.isArray(searchResults) && searchResults.length) {
                                         aggregatedSearchResults.push(...searchResults);
                                     }
-                                    bestAnime = pickAnimeResultByTitle(searchResults, seasonAwareTitle, preferredYear, selectedSeasonNo)
-                                        || pickAnimeResultByTitle(searchResults, mediaTitle, preferredYear, selectedSeasonNo);
+                                    bestAnime = pickAnimeResultByTitle(searchResults, seasonAwareTitle, preferredYear, selectedSeasonNo, seasonLabel)
+                                        || pickAnimeResultByTitle(searchResults, mediaTitle, preferredYear, selectedSeasonNo, seasonLabel);
                                     if (bestAnime?.id) break;
                                 }
                                 if (!bestAnime) {
@@ -6302,18 +6602,78 @@
                                     info,
                                     searchResults: aggregatedSearchResults,
                                 });
+                            } else {
+                                info = cached?.info;
+                                aggregatedSearchResults = hasReusableSearchResults ? cached.searchResults : [];
                             }
 
                             // Find the episode by season/episode number.
+                            info = info || {};
                             let episodes = info.episodes || [];
                             const toEpisodeNo = (ep) => Number(ep?.number || ep?.episodeNum || ep?.episode || 0);
                             const toSeasonNo = (ep) => Number(ep?.season || ep?.seasonNumber || ep?.seasonNum || 0);
                             let selectedEpisodeNoForProvider = selectedEpisodeNo;
-                            const hasSeasonMarkers = episodes.some((ep) => toSeasonNo(ep) > 0);
+                            let hasSeasonMarkers = episodes.some((ep) => toSeasonNo(ep) > 0);
 
                             // Satoru splits many long shows into separate season pages (e.g. "...season-2+").
                             // Resolve against that season chain so S2E1 does not get mistaken as episode 1 of season 1.
-                            if ((provider === 'satoru') && MEDIA_TYPE === 'tv') {
+                            if ((provider === 'satoru') && MEDIA_TYPE === 'tv' && !satoruResolvedExactly) {
+                                const relatedRows = Array.isArray(info?.related) ? info.related : [];
+                                const normalizeLoose = (v) =>
+                                    String(v || '')
+                                        .toLowerCase()
+                                        .replace(/[^a-z0-9]+/g, ' ')
+                                        .replace(/\s+/g, ' ')
+                                        .trim();
+                                const requestedSeasonNo = Number(selectedSeasonNo || 1);
+                                const requestedPartNo = extractPartNumberFromTitle(seasonLabel) || null;
+                                const rankedRelated = relatedRows
+                                    .map((row) => {
+                                        const rowTitle = String(row?.title || row?.id || '');
+                                        const rowNorm = normalizeLoose(rowTitle);
+                                        const rowSeason = extractSeasonNumberFromTitle(rowTitle) || 1;
+                                        const rowPart = extractPartNumberFromTitle(rowTitle);
+                                        let score = 0;
+
+                                        if (rowSeason === requestedSeasonNo) score += 260;
+                                        else score -= Math.abs(rowSeason - requestedSeasonNo) * 120;
+
+                                        if (requestedPartNo !== null && rowPart !== null) {
+                                            if (requestedPartNo === rowPart) score += 180;
+                                            else score -= Math.abs(requestedPartNo - rowPart) * 120;
+                                        }
+
+                                        if (seasonLabel) {
+                                            const wantedLabel = normalizeLoose(seasonLabel);
+                                            if (wantedLabel && rowNorm.includes(wantedLabel)) score += 240;
+                                            const common = wantedLabel.split(' ').filter(Boolean).filter((w) => rowNorm.split(' ').includes(w)).length;
+                                            score += common * 35;
+                                        }
+
+                                        return { row, score };
+                                    })
+                                    .sort((a, b) => b.score - a.score);
+
+                                const preferredRelated = rankedRelated[0]?.row;
+                                if (preferredRelated?.id && String(preferredRelated.id) !== String(info?.id || '')) {
+                                    try {
+                                        const { res: relatedInfoRes } = await fetchJsonWithApiFallback(
+                                            buildAnimeInfoUrl(provider, String(preferredRelated.id)),
+                                            { signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS)) },
+                                        );
+                                        if (relatedInfoRes.ok) {
+                                            let relatedInfo = await relatedInfoRes.json();
+                                            if (relatedInfo?.data) relatedInfo = relatedInfo.data;
+                                            if (Array.isArray(relatedInfo?.episodes) && relatedInfo.episodes.length) {
+                                                info = relatedInfo;
+                                                episodes = relatedInfo.episodes;
+                                            }
+                                        }
+                                    } catch (_) {
+                                        // fall back to the existing search-result season chain below
+                                    }
+                                }
+
                                 const parseFromTitle = (title) => extractSeasonNumberFromTitle(title) || 1;
                                 const normalize = (v) =>
                                     String(v || '')
@@ -6357,25 +6717,20 @@
                                     }
 
                                     if (ordered.length) {
-                                        let globalTarget = selectedAbsoluteEpisodeNo;
-                                        if (selectedSeasonNo > 1) {
-                                            let prefix = 0;
-                                            for (const row of ordered) {
-                                                if (row.seasonNo >= selectedSeasonNo) break;
-                                                prefix += row.episodes.length;
-                                            }
-                                            if (prefix > 0) globalTarget = prefix + Math.max(1, selectedEpisodeNo);
-                                        }
+                                        const exactSeason =
+                                            ordered.find((row) => Number(row.seasonNo || 0) === Number(selectedSeasonNo || 0)) ||
+                                            null;
+                                        const inferredSeason =
+                                            (!exactSeason && selectedSeasonNo > 1)
+                                                ? ordered[Math.max(0, Math.min(ordered.length - 1, selectedSeasonNo - 1))]
+                                                : null;
+                                        const pickedSeasonRow = exactSeason || inferredSeason || ordered[0];
 
-                                        let remaining = Math.max(1, globalTarget);
-                                        for (const row of ordered) {
-                                            if (remaining <= row.episodes.length) {
-                                                info = row.info;
-                                                episodes = row.episodes;
-                                                selectedEpisodeNoForProvider = remaining;
-                                                break;
-                                            }
-                                            remaining -= row.episodes.length;
+                                        if (pickedSeasonRow) {
+                                            info = pickedSeasonRow.info;
+                                            episodes = pickedSeasonRow.episodes;
+                                            selectedEpisodeNoForProvider = Math.max(1, selectedEpisodeNo);
+                                            hasSeasonMarkers = episodes.some((ep) => toSeasonNo(ep) > 0);
                                         }
                                     }
                                 }
@@ -6403,27 +6758,27 @@
                     }
 
                     if (!provEpisodeId) {
-                            // Fallback 0: provider-level title search, then provider /info resolution.
-                            if (!isAnimeProvider) {
-                                try {
-                                    const resolved = await resolveMovieProviderEpisodeIdBySearch(
-                                        provider,
-                                        MEDIA_TYPE,
-                                        currentMediaInfo?.title || currentMediaInfo?.name || '',
-                                        selectedSeasonNo,
-                                        selectedEpisodeNo,
-                                    );
-                                    if (resolved?.episodeId) {
-                                        info = resolved.info || info;
-                                        provEpisodeId = resolved.episodeId;
-                                    }
-                                } catch (searchFallbackErr) {
-                                    console.warn(
-                                        `[${provider}] provider-search fallback failed`,
-                                        searchFallbackErr?.message || searchFallbackErr,
-                                    );
+                        // Fallback 0: provider-level title search, then provider /info resolution.
+                        if (!isAnimeProvider) {
+                            try {
+                                const resolved = await resolveMovieProviderEpisodeIdBySearch(
+                                    provider,
+                                    MEDIA_TYPE,
+                                    currentMediaInfo?.title || currentMediaInfo?.name || '',
+                                    selectedSeasonNo,
+                                    selectedEpisodeNo,
+                                );
+                                if (resolved?.episodeId) {
+                                    info = resolved.info || info;
+                                    provEpisodeId = resolved.episodeId;
                                 }
+                            } catch (searchFallbackErr) {
+                                console.warn(
+                                    `[${provider}] provider-search fallback failed`,
+                                    searchFallbackErr?.message || searchFallbackErr,
+                                );
                             }
+                        }
 
                         if (!provEpisodeId) {
                             // Step 1: get this provider's own info (and episodeId)
@@ -6838,7 +7193,6 @@
                 dramacool: 'DramaCool',
                 satoru: 'Satoru',
                 hianime: 'HiAnime',
-                animesaturn: 'AnimeSaturn',
                 justanime: 'JustAnime',
             };
             return map[p] || p;
