@@ -26,6 +26,93 @@
             --safe-right: env(safe-area-inset-right, 0px);
         }
 
+        /* Pseudo-fullscreen for iOS iPhones */
+        body.pseudo-fullscreen {
+            overflow: hidden !important;
+            position: fixed;
+            width: 100%;
+            height: 100dvh;
+            inset: 0;
+            z-index: 99999;
+        }
+
+        body.pseudo-fullscreen .player-wrap {
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 100000 !important;
+            background: #000 !important;
+            width: 100vw !important;
+            height: 100dvh !important;
+        }
+
+        #rotation-hint {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 100001;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem;
+            pointer-events: auto;
+        }
+
+        #rotation-hint i {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            color: var(--primary);
+            animation: rotateDevice 2.5s infinite ease-in-out;
+        }
+
+        #rotation-hint p {
+            font-size: 1.2rem;
+            font-weight: 600;
+            max-width: 250px;
+            line-height: 1.5;
+        }
+
+        #rotation-hint .close-hint {
+            margin-top: 2rem;
+            padding: 10px 24px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 50px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        @keyframes rotateDevice {
+            0% { transform: rotate(0deg); }
+            40% { transform: rotate(-90deg); }
+            60% { transform: rotate(-90deg); }
+            100% { transform: rotate(0deg); }
+        }
+
+        @media (orientation: portrait) {
+            body.pseudo-fullscreen #rotation-hint {
+                display: flex;
+            }
+        }
+
+        /* Ensure UI elements stay on top of pseudo-fullscreen video */
+        body.pseudo-fullscreen .player-header,
+        body.pseudo-fullscreen .control-surface,
+        body.pseudo-fullscreen .control-menu,
+        body.pseudo-fullscreen .gesture-overlay,
+        body.pseudo-fullscreen #source-panel,
+        body.pseudo-fullscreen #ep-panel,
+        body.pseudo-fullscreen #audio-panel,
+        body.pseudo-fullscreen .ui-lock-btn,
+        body.pseudo-fullscreen .skip-segment-btn,
+        body.pseudo-fullscreen .next-episode-btn,
+        body.pseudo-fullscreen .ripple-container,
+        body.pseudo-fullscreen .transition-overlay,
+        body.pseudo-fullscreen #error-box {
+            z-index: 100005 !important;
+        }
+
         *,
         *::before,
         *::after {
@@ -2231,6 +2318,13 @@
             Again</button>
     </div>
 
+    <!-- ROTATION HINT FOR IOS -->
+    <div id="rotation-hint">
+        <i class="fa-solid fa-mobile-screen-button"></i>
+        <p>Please rotate your device for the best viewing experience.</p>
+        <div class="close-hint" onclick="togglePseudoFullscreen(false)">Exit</div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js"></script>
     <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
@@ -2270,6 +2364,24 @@
             ? [LOCAL_META_API || 'http://localhost:3000/meta/tmdb']
             : [PROD_META_API || DEFAULT_META_API]
         ).filter(b => b && String(b).startsWith('http'));
+
+        const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const IS_IPHONE = /iPhone/.test(navigator.userAgent) && !window.MSStream;
+
+        function togglePseudoFullscreen(state) {
+            if (state) {
+                document.body.classList.add('pseudo-fullscreen');
+                window.scrollTo(0, 0);
+            } else {
+                document.body.classList.remove('pseudo-fullscreen');
+            }
+            // Trigger a resize event to ensure Plyr and other components update
+            window.dispatchEvent(new Event('resize'));
+        }
+
+        function isCurrentlyFullscreen() {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement || document.body.classList.contains('pseudo-fullscreen'));
+        }
 
         const IS_LOCAL_API = /localhost|127\.0\.0\.1/i.test(API_BASE);
         let activeApiBase = API_BASE;
@@ -6541,9 +6653,14 @@
 
             backBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (document.fullscreenElement) {
-                    if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
-                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen().catch(() => { });
+                if (isCurrentlyFullscreen()) {
+                    if (document.body.classList.contains('pseudo-fullscreen')) {
+                        togglePseudoFullscreen(false);
+                    } else {
+                        if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
+                        else if (document.webkitExitFullscreen) document.webkitExitFullscreen().catch(() => { });
+                    }
+                    return;
                 }
                 goBackToHome();
             });
@@ -6656,18 +6773,35 @@
 
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
+
+                // For iPhones (Safari/Chrome), use pseudo-fullscreen to preserve custom UI
+                if (IS_IPHONE) {
+                    const isPseudo = document.body.classList.contains('pseudo-fullscreen');
+                    togglePseudoFullscreen(!isPseudo);
+
+                    // Attempt orientation lock if available
+                    if (!isPseudo && window.innerHeight > window.innerWidth && screen.orientation && screen.orientation.lock) {
+                        screen.orientation.lock('landscape').catch(() => { });
+                    }
+                    showControlSurface();
+                    return;
+                }
+
                 const target = document.documentElement;
-                if (!document.fullscreenElement) {
+                if (!isCurrentlyFullscreen()) {
                     try {
                         if (target.requestFullscreen) await target.requestFullscreen();
                         else if (target.webkitRequestFullscreen) await target.webkitRequestFullscreen();
+                        else if (target.mozRequestFullScreen) await target.mozRequestFullScreen();
+                        else if (target.msRequestFullscreen) await target.msRequestFullscreen();
 
-                        // If entering from portrait, automatically lock to landscape
                         if (window.innerHeight > window.innerWidth && screen.orientation && screen.orientation.lock) {
                             await screen.orientation.lock('landscape').catch(() => { });
                         }
                     } catch (err) {
                         console.warn("Fullscreen/Rotate failed", err);
+                        // Fallback to pseudo-fullscreen if native fails
+                        togglePseudoFullscreen(true);
                     }
                 } else {
                     if (screen.orientation && screen.orientation.unlock) {
@@ -6675,6 +6809,10 @@
                     }
                     if (document.exitFullscreen) await document.exitFullscreen();
                     else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+                    else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
+                    else if (document.msExitFullscreen) await document.msExitFullscreen();
+
+                    togglePseudoFullscreen(false);
                 }
                 showControlSurface();
             });
@@ -9676,6 +9814,13 @@
         initCustomControls();
         bindVideoEvents();
         document.addEventListener('fullscreenchange', showControlSurface);
+        document.addEventListener('webkitfullscreenchange', showControlSurface);
+        window.addEventListener('orientationchange', () => {
+            if (isCurrentlyFullscreen()) showControlSurface();
+        });
+        window.addEventListener('resize', () => {
+            if (isCurrentlyFullscreen()) showControlSurface();
+        });
         init();
     </script>
 </body>
