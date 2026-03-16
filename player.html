@@ -6700,40 +6700,32 @@
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
 
-                // Helper: check if any fullscreen is active (standard + webkit variants)
-                const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement || video?.webkitDisplayingFullscreen);
-
-                // iOS Safari: document.requestFullscreen does NOT work.
-                // Only video.webkitEnterFullscreen() produces a native fullscreen on iPhone.
                 if (IS_IOS) {
-                    try {
-                        if (video && video.webkitSupportsFullscreen && !video.webkitDisplayingFullscreen) {
-                            // Native iOS fullscreen via video element — this also auto-rotates to landscape
-                            video.webkitEnterFullscreen();
-                        } else if (video && video.webkitDisplayingFullscreen) {
-                            video.webkitExitFullscreen();
-                        } else {
-                            // Ultimate fallback: CSS-based pseudo-fullscreen on the player wrapper
-                            const wrap = document.querySelector('.player-wrap') || document.documentElement;
-                            if (!wrap.classList.contains('ios-pseudo-fs')) {
-                                wrap.classList.add('ios-pseudo-fs');
-                                fullscreenBtn.querySelector('i')?.classList.replace('fa-expand', 'fa-compress');
-                                // Try orientation lock even without native fullscreen
-                                try { await screen.orientation?.lock('landscape'); } catch (_) {}
-                            } else {
-                                wrap.classList.remove('ios-pseudo-fs');
-                                fullscreenBtn.querySelector('i')?.classList.replace('fa-compress', 'fa-expand');
-                                try { screen.orientation?.unlock(); } catch (_) {}
-                            }
-                        }
-                    } catch (iosErr) {
-                        console.warn('iOS fullscreen error:', iosErr);
+                    // On iOS, .player-wrap is already position:fixed inset:0 —
+                    // it naturally covers the full viewport. We just need to lock
+                    // orientation so we get the wider landscape view.
+                    // We NEVER call webkitEnterFullscreen() because that replaces
+                    // our custom player with Apple's native UI.
+                    const icon = fullscreenBtn.querySelector('i');
+                    const isLandscapeLocked = fullscreenBtn.dataset.iosLandscape === '1';
+
+                    if (!isLandscapeLocked) {
+                        // Enter: lock to landscape + update icon
+                        try { await screen.orientation?.lock('landscape'); } catch (_) {}
+                        fullscreenBtn.dataset.iosLandscape = '1';
+                        icon?.classList.replace('fa-expand', 'fa-compress');
+                    } else {
+                        // Exit: unlock + update icon
+                        try { screen.orientation?.unlock(); } catch (_) {}
+                        fullscreenBtn.dataset.iosLandscape = '0';
+                        icon?.classList.replace('fa-compress', 'fa-expand');
                     }
                     showControlSurface();
                     return;
                 }
 
                 // Standard fullscreen for Android / Desktop
+                const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
                 const target = document.documentElement;
                 if (!isInFullscreen()) {
                     try {
@@ -9834,15 +9826,21 @@
         document.addEventListener('fullscreenchange', showControlSurface);
         document.addEventListener('webkitfullscreenchange', showControlSurface);
 
-        // Update fullscreen icon when iOS native video fullscreen changes
+        // On iOS: sync fullscreen button icon when user physically rotates back to portrait
         if (IS_IOS) {
-            document.addEventListener('webkitfullscreenchange', () => {
-                const icon = fullscreenBtn?.querySelector('i');
-                if (!icon) return;
-                const active = !!(document.webkitFullscreenElement);
-                icon.classList.toggle('fa-compress', active);
-                icon.classList.toggle('fa-expand', !active);
-            });
+            const syncIosIcon = () => {
+                setTimeout(() => {
+                    const isPortrait = window.innerHeight > window.innerWidth;
+                    if (isPortrait && fullscreenBtn.dataset.iosLandscape === '1') {
+                        // User rotated back — reset state
+                        fullscreenBtn.dataset.iosLandscape = '0';
+                        const icon = fullscreenBtn?.querySelector('i');
+                        icon?.classList.replace('fa-compress', 'fa-expand');
+                    }
+                }, 80);
+            };
+            window.addEventListener('orientationchange', syncIosIcon);
+            screen.orientation?.addEventListener('change', syncIosIcon);
         }
         init();
     </script>
