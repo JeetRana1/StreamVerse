@@ -6701,24 +6701,20 @@
                 e.stopPropagation();
 
                 if (IS_IOS) {
-                    // On iOS, .player-wrap is already position:fixed inset:0 —
-                    // it naturally covers the full viewport. We just need to lock
-                    // orientation so we get the wider landscape view.
-                    // We NEVER call webkitEnterFullscreen() because that replaces
-                    // our custom player with Apple's native UI.
+                    // iOS Safari: screen.orientation.lock() is unsupported without PWA.
+                    // Instead we rotate all player elements 90° via CSS on <body>.
+                    // This gives a true landscape fullscreen using purely CSS — no native APIs.
+                    const entering = !document.body.classList.contains('ios-fs-active');
                     const icon = fullscreenBtn.querySelector('i');
-                    const isLandscapeLocked = fullscreenBtn.dataset.iosLandscape === '1';
-
-                    if (!isLandscapeLocked) {
-                        // Enter: lock to landscape + update icon
-                        try { await screen.orientation?.lock('landscape'); } catch (_) {}
-                        fullscreenBtn.dataset.iosLandscape = '1';
+                    if (entering) {
+                        document.body.classList.add('ios-fs-active');
                         icon?.classList.replace('fa-expand', 'fa-compress');
+                        // Also try orientation lock as a bonus (works in PWA context)
+                        try { await screen.orientation?.lock('landscape'); } catch (_) {}
                     } else {
-                        // Exit: unlock + update icon
-                        try { screen.orientation?.unlock(); } catch (_) {}
-                        fullscreenBtn.dataset.iosLandscape = '0';
+                        document.body.classList.remove('ios-fs-active');
                         icon?.classList.replace('fa-compress', 'fa-expand');
+                        try { screen.orientation?.unlock(); } catch (_) {}
                     }
                     showControlSurface();
                     return;
@@ -9826,21 +9822,22 @@
         document.addEventListener('fullscreenchange', showControlSurface);
         document.addEventListener('webkitfullscreenchange', showControlSurface);
 
-        // On iOS: sync fullscreen button icon when user physically rotates back to portrait
+        // On iOS: when user physically rotates the device to portrait, exit css-fullscreen
         if (IS_IOS) {
-            const syncIosIcon = () => {
+            const onRealOrientationChange = () => {
                 setTimeout(() => {
-                    const isPortrait = window.innerHeight > window.innerWidth;
-                    if (isPortrait && fullscreenBtn.dataset.iosLandscape === '1') {
-                        // User rotated back — reset state
-                        fullscreenBtn.dataset.iosLandscape = '0';
+                    // If device is actually landscape now, nothing to do
+                    if (window.innerWidth > window.innerHeight) return;
+                    // Device went back to portrait — exit our CSS fullscreen
+                    if (document.body.classList.contains('ios-fs-active')) {
+                        document.body.classList.remove('ios-fs-active');
                         const icon = fullscreenBtn?.querySelector('i');
                         icon?.classList.replace('fa-compress', 'fa-expand');
                     }
-                }, 80);
+                }, 120);
             };
-            window.addEventListener('orientationchange', syncIosIcon);
-            screen.orientation?.addEventListener('change', syncIosIcon);
+            window.addEventListener('orientationchange', onRealOrientationChange);
+            screen.orientation?.addEventListener('change', onRealOrientationChange);
         }
         init();
     </script>
@@ -9858,21 +9855,43 @@
         transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.12), opacity 0.25s ease !important;
     }
 
-    /* iOS pseudo-fullscreen fallback: covers entire viewport */
-    .player-wrap.ios-pseudo-fs {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        height: 100dvh !important;
-        z-index: 9999 !important;
-        background: #000 !important;
-        border-radius: 0 !important;
-    }
-    .player-wrap.ios-pseudo-fs video {
-        width: 100% !important;
-        height: 100% !important;
-        object-fit: contain !important;
+    /* ─── iOS CSS-rotation pseudo-fullscreen ─────────────────────────────────
+       Safari doesn't support screen.orientation.lock or document.requestFullscreen.
+       Instead we rotate every fixed-position player element 90° as a group.
+       All fixed elements share the same rotated coordinate space, so controls
+       remain in the correct position relative to each other.
+    ── */
+    body.ios-fs-active .player-wrap,
+    body.ios-fs-active .control-surface,
+    body.ios-fs-active .player-header,
+    body.ios-fs-active #transition-overlay,
+    body.ios-fs-active .ripple-container,
+    body.ios-fs-active #brightness-overlay,
+    body.ios-fs-active #volume-overlay,
+    body.ios-fs-active .ui-lock-btn,
+    body.ios-fs-active .skip-segment-btn,
+    body.ios-fs-active .next-episode-btn,
+    body.ios-fs-active #loader,
+    body.ios-fs-active #error-box,
+    body.ios-fs-active #source-panel,
+    body.ios-fs-active #ep-panel,
+    body.ios-fs-active #audio-panel,
+    body.ios-fs-active #qualityMenu,
+    body.ios-fs-active #captionsMenu,
+    body.ios-fs-active #playbackMenu,
+    body.ios-fs-active #preferencesMenu,
+    body.ios-fs-active #volumeMenu {
+        /* Swap width/height so the element fills the landscape viewport */
+        width: 100vh !important;
+        height: 100vw !important;
+        /* Re-centre after size swap */
+        top: calc((100vh - 100vw) / 2) !important;
+        left: calc((100vw - 100vh) / 2) !important;
+        right: auto !important;
+        bottom: auto !important;
+        /* Rotate 90° clockwise around element centre */
+        transform: rotate(90deg) !important;
+        transform-origin: center center !important;
+        transition: none !important;
     }
 </style>
