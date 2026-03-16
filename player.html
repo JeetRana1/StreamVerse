@@ -6700,22 +6700,34 @@
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
 
+                // Helper: check if any fullscreen is active (standard + webkit variants)
+                const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement || video?.webkitDisplayingFullscreen);
+
+                // iOS Safari: document.requestFullscreen does NOT work.
+                // Only video.webkitEnterFullscreen() produces a native fullscreen on iPhone.
                 if (IS_IOS) {
-                    // iPhone Safari: Toggle pseudo-fullscreen class only.
-                    const wrap = document.querySelector('.player-wrap'),
-                          entering = !wrap.classList.contains('ios-pseudo-fs'),
-                          icon = fullscreenBtn.querySelector('i');
-                    
-                    if (entering) {
-                        wrap.classList.add('ios-pseudo-fs');
-                        document.body.classList.add('has-ios-pseudo-fs');
-                        icon?.classList.replace('fa-expand', 'fa-compress');
-                        try { screen.orientation?.lock('landscape').catch(() => { }); } catch (_) { }
-                    } else {
-                        wrap.classList.remove('ios-pseudo-fs');
-                        document.body.classList.remove('has-ios-pseudo-fs');
-                        icon?.classList.replace('fa-compress', 'fa-expand');
-                        try { screen.orientation?.unlock(); } catch (_) { }
+                    try {
+                        if (video && video.webkitSupportsFullscreen && !video.webkitDisplayingFullscreen) {
+                            // Native iOS fullscreen via video element — this also auto-rotates to landscape
+                            video.webkitEnterFullscreen();
+                        } else if (video && video.webkitDisplayingFullscreen) {
+                            video.webkitExitFullscreen();
+                        } else {
+                            // Ultimate fallback: CSS-based pseudo-fullscreen on the player wrapper
+                            const wrap = document.querySelector('.player-wrap') || document.documentElement;
+                            if (!wrap.classList.contains('ios-pseudo-fs')) {
+                                wrap.classList.add('ios-pseudo-fs');
+                                fullscreenBtn.querySelector('i')?.classList.replace('fa-expand', 'fa-compress');
+                                // Try orientation lock even without native fullscreen
+                                try { await screen.orientation?.lock('landscape'); } catch (_) { }
+                            } else {
+                                wrap.classList.remove('ios-pseudo-fs');
+                                fullscreenBtn.querySelector('i')?.classList.replace('fa-compress', 'fa-expand');
+                                try { screen.orientation?.unlock(); } catch (_) { }
+                            }
+                        }
+                    } catch (iosErr) {
+                        console.warn('iOS fullscreen error:', iosErr);
                     }
                     showControlSurface();
                     return;
@@ -9817,9 +9829,21 @@
         // -----------------------------------------------------------------------
         //  INIT
         // -----------------------------------------------------------------------
-        // Update fullscreen icon when native video fullscreen changes.
-        document.addEventListener('webkitfullscreenchange', showControlSurface);
+        initCustomControls();
+        bindVideoEvents();
         document.addEventListener('fullscreenchange', showControlSurface);
+        document.addEventListener('webkitfullscreenchange', showControlSurface);
+
+        // Update fullscreen icon when iOS native video fullscreen changes
+        if (IS_IOS) {
+            document.addEventListener('webkitfullscreenchange', () => {
+                const icon = fullscreenBtn?.querySelector('i');
+                if (!icon) return;
+                const active = !!(document.webkitFullscreenElement);
+                icon.classList.toggle('fa-compress', active);
+                icon.classList.toggle('fa-expand', !active);
+            });
+        }
         init();
     </script>
 </body>
@@ -9836,45 +9860,17 @@
         transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.12), opacity 0.25s ease !important;
     }
 
-    /* iOS pseudo-fullscreen logic: expands player-wrap to fill the screen. */
+    /* iOS pseudo-fullscreen fallback: covers entire viewport */
     .player-wrap.ios-pseudo-fs {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         width: 100vw !important;
+        height: 100vh !important;
         height: 100dvh !important;
-        z-index: 10000 !important;
+        z-index: 9999 !important;
         background: #000 !important;
         border-radius: 0 !important;
-    }
-
-    body.has-ios-pseudo-fs {
-        overflow: hidden !important;
-        position: fixed;
-        width: 100%;
-        height: 100%;
-    }
-
-    /* Keep custom surface and UI elements on top when in pseudo-fullscreen. */
-    body.has-ios-pseudo-fs .control-surface,
-    body.has-ios-pseudo-fs .player-header,
-    body.has-ios-pseudo-fs .gesture-overlay,
-    body.has-ios-pseudo-fs .ripple-container,
-    body.has-ios-pseudo-fs #source-panel,
-    body.has-ios-pseudo-fs #ep-panel,
-    body.has-ios-pseudo-fs #audio-panel,
-    body.has-ios-pseudo-fs .control-menu,
-    body.has-ios-pseudo-fs .ui-lock-btn,
-    body.has-ios-pseudo-fs .skip-segment-btn,
-    body.has-ios-pseudo-fs .next-episode-btn,
-    body.has-ios-pseudo-fs #transition-overlay,
-    body.has-ios-pseudo-fs #loader,
-    body.has-ios-pseudo-fs .seek-preview {
-        z-index: 10001 !important;
-    }
-
-    .player-wrap video {
-        z-index: 10000 !important;
     }
 
     .player-wrap.ios-pseudo-fs video {
