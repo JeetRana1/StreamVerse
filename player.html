@@ -2369,7 +2369,7 @@
 
         // Provider pools
         const MOVIE_PROVIDERS = ['flixhq', 'goku', 'sflix', 'himovies', 'dramacool'];
-        const ANIME_PROVIDERS = ['justanime', 'satoru', 'hianime'];
+        const ANIME_PROVIDERS = ['animesalt', 'justanime', 'satoru', 'hianime'];
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['hianime', 'justanime'];
 
         const params = new URLSearchParams(location.search);
@@ -4764,7 +4764,7 @@
                     srclang,
                     src,
                     provider,
-                    referer
+                    referer: item?.referer || referer
                 });
             });
 
@@ -4828,22 +4828,39 @@
                 const lower = String(rawSrc || '').toLowerCase();
                 if (subtitleBlobCache.has(lower)) return subtitleBlobCache.get(lower);
 
-                const proxied = getProxiedUrl(rawSrc);
+                // Correctly use the already computed proxied URL which includes the referer.
+                const proxiedSub = proxied;
                 try {
                     const looksLikeSrt = /\.srt(\?|$)/i.test(rawSrc);
                     const looksLikeAss = /\.ass(\?|$)/i.test(rawSrc) || /\.ssa(\?|$)/i.test(rawSrc);
-                    const txtRes = await fetch(proxied, { signal: AbortSignal.timeout(12000) });
+                    const txtRes = await fetch(proxiedSub, { signal: AbortSignal.timeout(12000) });
                     if (txtRes.ok) {
                         const txt = await txtRes.text();
                         const ln = txt.trim().toLowerCase();
                         const hasCueArrow = txt.includes('-->');
-                        const hasSrtTimestamp = /\d{2}:\d{2}:\d{2},\d{3}/.test(txt);
+                        const hasSrtTimestamp = /\d{1,2}:\d{2}:\d{2}[.,]\d{2,3}/.test(txt);
                         const looksAssBody = /^\s*\[script info\]/i.test(txt) || /^\s*\[events\]/im.test(txt) || /dialogue:\s*[^,]*,\d+:\d{1,2}:\d{1,2}\.\d{1,2}/i.test(txt);
                         if (!ln.startsWith('<!doctype html') && !ln.startsWith('<html')) {
+                            let content = txt;
+                            // Check for AnimeSalt base64 encryption
+                            if (!content.includes('-->') && content.length > 50 && /^[a-z0-9+/=]+$/i.test(content.trim())) {
+                                try {
+                                    const decoded = atob(content.trim());
+                                    if (decoded.includes('-->') || /\d{1,2}:\d{2}:\d{2}/.test(decoded)) {
+                                        content = decoded;
+                                    }
+                                } catch (_) {}
+                            }
+                            
+                            const finalLn = content.trim().toLowerCase();
+                            const finalHasCue = content.includes('-->');
+                            const finalHasSrt = /\d{1,2}:\d{2}:\d{2}[.,]\d{2,3}/.test(content);
+
                             let blobUrl = '';
-                            if (looksLikeSrt || (hasCueArrow && hasSrtTimestamp)) blobUrl = toVttBlobUrl(srtToVtt(txt));
-                            else if (looksLikeAss || looksAssBody) blobUrl = toVttBlobUrl(assToVtt(txt));
-                            else if (ln.startsWith('webvtt') || hasCueArrow) blobUrl = toVttBlobUrl(sanitizeText(txt));
+                            if (looksLikeSrt || (finalHasCue && finalHasSrt && !finalLn.startsWith('webvtt'))) blobUrl = toVttBlobUrl(srtToVtt(content));
+                            else if (looksLikeAss || looksAssBody) blobUrl = toVttBlobUrl(assToVtt(content));
+                            else if (finalLn.startsWith('webvtt')) blobUrl = toVttBlobUrl(sanitizeText(content));
+                            else if (finalHasCue) blobUrl = toVttBlobUrl(`WEBVTT\n\n${sanitizeText(content)}`);
 
                             if (blobUrl) {
                                 subtitleBlobCache.set(lower, blobUrl);
@@ -6682,23 +6699,56 @@
 
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
+
+                // Helper: check if any fullscreen is active (standard + webkit variants)
+                const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement || video?.webkitDisplayingFullscreen);
+
+                // iOS Safari: document.requestFullscreen does NOT work.
+                // Only video.webkitEnterFullscreen() produces a native fullscreen on iPhone.
+                if (IS_IOS) {
+                    try {
+                        if (video && video.webkitSupportsFullscreen && !video.webkitDisplayingFullscreen) {
+                            // Native iOS fullscreen via video element — this also auto-rotates to landscape
+                            video.webkitEnterFullscreen();
+                        } else if (video && video.webkitDisplayingFullscreen) {
+                            video.webkitExitFullscreen();
+                        } else {
+                            // Ultimate fallback: CSS-based pseudo-fullscreen on the player wrapper
+                            const wrap = document.querySelector('.player-wrap') || document.documentElement;
+                            if (!wrap.classList.contains('ios-pseudo-fs')) {
+                                wrap.classList.add('ios-pseudo-fs');
+                                fullscreenBtn.querySelector('i')?.classList.replace('fa-expand', 'fa-compress');
+                                // Try orientation lock even without native fullscreen
+                                try { await screen.orientation?.lock('landscape'); } catch (_) {}
+                            } else {
+                                wrap.classList.remove('ios-pseudo-fs');
+                                fullscreenBtn.querySelector('i')?.classList.replace('fa-compress', 'fa-expand');
+                                try { screen.orientation?.unlock(); } catch (_) {}
+                            }
+                        }
+                    } catch (iosErr) {
+                        console.warn('iOS fullscreen error:', iosErr);
+                    }
+                    showControlSurface();
+                    return;
+                }
+
+                // Standard fullscreen for Android / Desktop
                 const target = document.documentElement;
-                if (!document.fullscreenElement) {
+                if (!isInFullscreen()) {
                     try {
                         if (target.requestFullscreen) await target.requestFullscreen();
                         else if (target.webkitRequestFullscreen) await target.webkitRequestFullscreen();
 
-                        // If entering from portrait, automatically lock to landscape
-                        if (window.innerHeight > window.innerWidth && screen.orientation && screen.orientation.lock) {
+                        // Auto-lock to landscape when entering from portrait
+                        if (window.innerHeight > window.innerWidth && screen.orientation?.lock) {
                             await screen.orientation.lock('landscape').catch(() => { });
                         }
                     } catch (err) {
-                        console.warn("Fullscreen/Rotate failed", err);
+                        console.warn('Fullscreen/Rotate failed', err);
                     }
                 } else {
-                    if (screen.orientation && screen.orientation.unlock) {
-                        screen.orientation.unlock();
-                    }
+                    if (screen.orientation?.unlock) screen.orientation.unlock();
                     if (document.exitFullscreen) await document.exitFullscreen();
                     else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
                 }
@@ -7315,7 +7365,7 @@
             }, 60000);
 
             try {
-                const isAnimeOnlyProvider = ['satoru', 'justanime', 'hianime'].includes(FORCED_PROVIDER);
+                const isAnimeOnlyProvider = ['satoru', 'justanime', 'hianime', 'animesalt'].includes(FORCED_PROVIDER);
                 const infoUrls = (FORCED_PROVIDER && !isAnimeOnlyProvider)
                     ? [
                         `${API_BASE.replace('/meta/tmdb', '/movies/' + FORCED_PROVIDER)}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`,
@@ -8063,7 +8113,7 @@
                 providers = ['dramacool', ...providers.filter((p) => p !== 'dramacool')];
             }
             if (MEDIA_TYPE === 'tv' && currentIsLikelyAnime) {
-                const animeTvPriority = ['justanime', 'satoru', 'hianime'];
+                const animeTvPriority = ['animesalt', 'justanime', 'satoru', 'hianime'];
                 providers = [
                     ...animeTvPriority.filter((p) => providers.includes(p)),
                     ...providers.filter((p) => !animeTvPriority.includes(p)),
@@ -8087,7 +8137,7 @@
                     // because TMDB episode IDs don't match anime provider episode IDs
                     let info, provEpisodeId;
                     let satoruResolvedExactly = false;
-                    const isAnimeProvider = ['satoru', 'hianime', 'justanime'].includes(provider);
+                    const isAnimeProvider = ['satoru', 'hianime', 'justanime', 'animesalt'].includes(provider);
 
                     if (isAnimeProvider) {
                         // For JustAnime, always resolve via search/info to avoid bad ID mappings.
@@ -8878,7 +8928,7 @@
                             url: src.url,
                             isM3U8: isM3U8,
                             isEmbed,
-                            referer: data.headers?.Referer || data.headers?.referer || null,
+                            referer: src.referer || data.headers?.Referer || data.headers?.referer || null,
                             provider,
                         });
                     });
@@ -9782,6 +9832,18 @@
         initCustomControls();
         bindVideoEvents();
         document.addEventListener('fullscreenchange', showControlSurface);
+        document.addEventListener('webkitfullscreenchange', showControlSurface);
+
+        // Update fullscreen icon when iOS native video fullscreen changes
+        if (IS_IOS) {
+            document.addEventListener('webkitfullscreenchange', () => {
+                const icon = fullscreenBtn?.querySelector('i');
+                if (!icon) return;
+                const active = !!(document.webkitFullscreenElement);
+                icon.classList.toggle('fa-compress', active);
+                icon.classList.toggle('fa-expand', !active);
+            });
+        }
         init();
     </script>
 </body>
@@ -9796,5 +9858,23 @@
 
     .sheet-animating {
         transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.12), opacity 0.25s ease !important;
+    }
+
+    /* iOS pseudo-fullscreen fallback: covers entire viewport */
+    .player-wrap.ios-pseudo-fs {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        z-index: 9999 !important;
+        background: #000 !important;
+        border-radius: 0 !important;
+    }
+    .player-wrap.ios-pseudo-fs video {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: contain !important;
     }
 </style>
