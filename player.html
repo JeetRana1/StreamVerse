@@ -6638,7 +6638,6 @@
                 captionsMenu.classList.add('active');
             });
 
-
             customServerBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 toggleSourcePanel(customServerBtn);
@@ -6701,13 +6700,11 @@
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
 
-                const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-
                 if (IS_IOS) {
                     // iPhone Safari: Toggle pseudo-fullscreen class only.
-                    const wrap = document.querySelector('.player-wrap');
-                    const entering = !wrap.classList.contains('ios-pseudo-fs');
-                    const icon = fullscreenBtn.querySelector('i');
+                    const wrap = document.querySelector('.player-wrap'),
+                          entering = !wrap.classList.contains('ios-pseudo-fs'),
+                          icon = fullscreenBtn.querySelector('i');
                     
                     if (entering) {
                         wrap.classList.add('ios-pseudo-fs');
@@ -6730,14 +6727,16 @@
                     try {
                         if (target.requestFullscreen) await target.requestFullscreen();
                         else if (target.webkitRequestFullscreen) await target.webkitRequestFullscreen();
+
+                        // Auto-lock to landscape when entering from portrait
                         if (window.innerHeight > window.innerWidth && screen.orientation?.lock) {
                             await screen.orientation.lock('landscape').catch(() => { });
                         }
                     } catch (err) {
-                        console.warn('Fullscreen failed', err);
+                        console.warn('Fullscreen/Rotate failed', err);
                     }
                 } else {
-                    if (screen.orientation?.unlock) try { screen.orientation.unlock(); } catch (_) { }
+                    if (screen.orientation?.unlock) screen.orientation.unlock();
                     if (document.exitFullscreen) await document.exitFullscreen();
                     else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
                 }
@@ -9484,7 +9483,7 @@
                 svAttachHlsListeners(hlsInst, startTime, () => {
                     initPlyr();
                     // On first load, wait for real video frames before hiding the loader
-                    // so the cover-art-loader stays visible the whole time instead of
+                    // so the cover-art loader stays visible the whole time instead of
                     // showing a black gap between loader and first frame.
                     if (isFirstLoad) {
                         const onFirstFrame = () => {
@@ -9818,11 +9817,9 @@
         // -----------------------------------------------------------------------
         //  INIT
         // -----------------------------------------------------------------------
-        initCustomControls();
-        bindVideoEvents();
-        document.addEventListener('fullscreenchange', showControlSurface);
+        // Update fullscreen icon when native video fullscreen changes.
         document.addEventListener('webkitfullscreenchange', showControlSurface);
-
+        document.addEventListener('fullscreenchange', showControlSurface);
         init();
     </script>
 </body>
