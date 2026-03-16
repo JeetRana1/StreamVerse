@@ -6701,6 +6701,7 @@
                 e.stopPropagation();
 
                 if (IS_IOS) {
+                    console.log('[iOS FS] Fullscreen toggled');
                     // iOS Safari: screen.orientation.lock() is unsupported without PWA.
                     // Instead we rotate all player elements 90° via CSS on <body>.
                     // This gives a true landscape fullscreen using purely CSS — no native APIs.
@@ -6709,11 +6710,13 @@
                     if (entering) {
                         document.body.classList.add('ios-fs-active');
                         icon?.classList.replace('fa-expand', 'fa-compress');
+                        console.log('[iOS FS] Entering pseudo-landscape');
                         // Also try orientation lock as a bonus (works in PWA context)
                         try { await screen.orientation?.lock('landscape'); } catch (_) {}
                     } else {
                         document.body.classList.remove('ios-fs-active');
                         icon?.classList.replace('fa-compress', 'fa-expand');
+                        console.log('[iOS FS] Exiting pseudo-landscape');
                         try { screen.orientation?.unlock(); } catch (_) {}
                     }
                     showControlSurface();
@@ -9822,19 +9825,26 @@
         document.addEventListener('fullscreenchange', showControlSurface);
         document.addEventListener('webkitfullscreenchange', showControlSurface);
 
-        // On iOS: when user physically rotates the device to portrait, exit css-fullscreen
+        // On iOS: Handle physical rotation transitions
         if (IS_IOS) {
             const onRealOrientationChange = () => {
                 setTimeout(() => {
-                    // If device is actually landscape now, nothing to do
-                    if (window.innerWidth > window.innerHeight) return;
-                    // Device went back to portrait — exit our CSS fullscreen
-                    if (document.body.classList.contains('ios-fs-active')) {
+                    const isRealLandscape = window.innerWidth > window.innerHeight;
+                    const hasFsClass = document.body.classList.contains('ios-fs-active');
+
+                    if (isRealLandscape && hasFsClass) {
+                        // If user physically rotates to landscape WHILE in pseudo-fullscreen mode,
+                        // we must remove the 90deg rotation class because it will make the landscape view look portrait.
+                        // Since they are now in real landscape, they already have the "wide" view they wanted.
                         document.body.classList.remove('ios-fs-active');
                         const icon = fullscreenBtn?.querySelector('i');
                         icon?.classList.replace('fa-compress', 'fa-expand');
+                    } else if (!isRealLandscape && hasFsClass) {
+                        // Staying in pseudo-fullscreen while in portrait...
+                    } else if (!isRealLandscape && !hasFsClass) {
+                        // Normal portrait...
                     }
-                }, 120);
+                }, 150);
             };
             window.addEventListener('orientationchange', onRealOrientationChange);
             screen.orientation?.addEventListener('change', onRealOrientationChange);
@@ -9855,12 +9865,14 @@
         transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.12), opacity 0.25s ease !important;
     }
 
-    /* ─── iOS CSS-rotation pseudo-fullscreen ─────────────────────────────────
-       Safari doesn't support screen.orientation.lock or document.requestFullscreen.
-       Instead we rotate every fixed-position player element 90° as a group.
-       All fixed elements share the same rotated coordinate space, so controls
-       remain in the correct position relative to each other.
-    ── */
+    body.ios-fs-active {
+        width: 100vw !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        overflow: hidden !important;
+        position: fixed !important;
+    }
+
     body.ios-fs-active .player-wrap,
     body.ios-fs-active .control-surface,
     body.ios-fs-active .player-header,
@@ -9880,7 +9892,8 @@
     body.ios-fs-active #captionsMenu,
     body.ios-fs-active #playbackMenu,
     body.ios-fs-active #preferencesMenu,
-    body.ios-fs-active #volumeMenu {
+    body.ios-fs-active #volumeMenu,
+    body.ios-fs-active .seek-preview {
         /* Swap width/height so the element fills the landscape viewport */
         width: 100vh !important;
         height: 100vw !important;
@@ -9893,5 +9906,15 @@
         transform: rotate(90deg) !important;
         transform-origin: center center !important;
         transition: none !important;
+        z-index: 99999 !important;
+    }
+
+    /* Ensure specific overlays inside their containers still work */
+    body.ios-fs-active #video-brightness-overlay {
+        width: 100% !important;
+        height: 100% !important;
+        top: 0 !important;
+        left: 0 !important;
+        transform: none !important;
     }
 </style>
