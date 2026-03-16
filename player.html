@@ -6704,7 +6704,7 @@
                 const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
 
                 if (IS_IOS) {
-                    // iPhone Safari: Always use pseudo-fullscreen to preserve custom UI
+                    // iPhone Safari: Toggle pseudo-fullscreen class only.
                     const wrap = document.querySelector('.player-wrap');
                     const entering = !wrap.classList.contains('ios-pseudo-fs');
                     const icon = fullscreenBtn.querySelector('i');
@@ -6713,30 +6713,12 @@
                         wrap.classList.add('ios-pseudo-fs');
                         document.body.classList.add('has-ios-pseudo-fs');
                         icon?.classList.replace('fa-expand', 'fa-compress');
-
-                        // Try native on root to potentially bypass safari bars if browser supports it
-                        const root = document.documentElement;
-                        try {
-                            if (root.requestFullscreen) await root.requestFullscreen().catch(() => {});
-                            else if (root.webkitRequestFullscreen) await root.webkitRequestFullscreen().catch(() => {});
-                        } catch (_) {}
-
-                        // Try locking orientation
-                        try { await screen.orientation?.lock('landscape').catch(() => {}); } catch (_) {}
-                        
-                        // Scroll to help hide bars
-                        setTimeout(() => window.scrollTo(0, 0), 300);
+                        try { screen.orientation?.lock('landscape').catch(() => { }); } catch (_) { }
                     } else {
                         wrap.classList.remove('ios-pseudo-fs');
                         document.body.classList.remove('has-ios-pseudo-fs');
                         icon?.classList.replace('fa-compress', 'fa-expand');
-                        
-                        try {
-                            if (document.exitFullscreen) await document.exitFullscreen().catch(() => {});
-                            else if (document.webkitExitFullscreen) await document.webkitExitFullscreen().catch(() => {});
-                        } catch (_) {}
-                        
-                        try { screen.orientation?.unlock(); } catch (_) {}
+                        try { screen.orientation?.unlock(); } catch (_) { }
                     }
                     showControlSurface();
                     return;
@@ -6755,7 +6737,7 @@
                         console.warn('Fullscreen failed', err);
                     }
                 } else {
-                    if (screen.orientation?.unlock) try { screen.orientation.unlock(); } catch(_) {}
+                    if (screen.orientation?.unlock) try { screen.orientation.unlock(); } catch (_) { }
                     if (document.exitFullscreen) await document.exitFullscreen();
                     else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
                 }
@@ -9857,16 +9839,14 @@
         transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.12), opacity 0.25s ease !important;
     }
 
-    /* iOS pseudo-fullscreen logic: expands player-wrap to fill the screen */
+    /* iOS pseudo-fullscreen logic: expands player-wrap to fill the screen. */
     .player-wrap.ios-pseudo-fs {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         width: 100vw !important;
-        height: 100vh !important;
         height: 100dvh !important;
-        min-height: -webkit-fill-available;
-        z-index: 9998 !important; /* Slightly below UI */
+        z-index: 10000 !important;
         background: #000 !important;
         border-radius: 0 !important;
     }
@@ -9876,10 +9856,9 @@
         position: fixed;
         width: 100%;
         height: 100%;
-        overscroll-behavior: none;
     }
 
-    /* Keep custom surface and UI elements on top when in pseudo-fullscreen */
+    /* Keep custom surface and UI elements on top when in pseudo-fullscreen. */
     body.has-ios-pseudo-fs .control-surface,
     body.has-ios-pseudo-fs .player-header,
     body.has-ios-pseudo-fs .gesture-overlay,
@@ -9894,6 +9873,10 @@
     body.has-ios-pseudo-fs #transition-overlay,
     body.has-ios-pseudo-fs #loader,
     body.has-ios-pseudo-fs .seek-preview {
+        z-index: 10001 !important;
+    }
+
+    .player-wrap video {
         z-index: 10000 !important;
     }
 
