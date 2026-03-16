@@ -4849,9 +4849,9 @@
                                     if (decoded.includes('-->') || /\d{1,2}:\d{2}:\d{2}/.test(decoded)) {
                                         content = decoded;
                                     }
-                                } catch (_) {}
+                                } catch (_) { }
                             }
-                            
+
                             const finalLn = content.trim().toLowerCase();
                             const finalHasCue = content.includes('-->');
                             const finalHasSrt = /\d{1,2}:\d{2}:\d{2}[.,]\d{2,3}/.test(content);
@@ -6700,31 +6700,40 @@
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
 
+                // Helper: check if any fullscreen is active (standard + webkit variants)
+                const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement || video?.webkitDisplayingFullscreen);
+
+                // iOS Safari: document.requestFullscreen does NOT work.
+                // Only video.webkitEnterFullscreen() produces a native fullscreen on iPhone.
                 if (IS_IOS) {
-                    console.log('[iOS FS] Fullscreen toggled');
-                    // iOS Safari: screen.orientation.lock() is unsupported without PWA.
-                    // Instead we rotate all player elements 90° via CSS on <body>.
-                    // This gives a true landscape fullscreen using purely CSS — no native APIs.
-                    const entering = !document.body.classList.contains('ios-fs-active');
-                    const icon = fullscreenBtn.querySelector('i');
-                    if (entering) {
-                        document.body.classList.add('ios-fs-active');
-                        icon?.classList.replace('fa-expand', 'fa-compress');
-                        console.log('[iOS FS] Entering pseudo-landscape');
-                        // Also try orientation lock as a bonus (works in PWA context)
-                        try { await screen.orientation?.lock('landscape'); } catch (_) {}
-                    } else {
-                        document.body.classList.remove('ios-fs-active');
-                        icon?.classList.replace('fa-compress', 'fa-expand');
-                        console.log('[iOS FS] Exiting pseudo-landscape');
-                        try { screen.orientation?.unlock(); } catch (_) {}
+                    try {
+                        if (video && video.webkitSupportsFullscreen && !video.webkitDisplayingFullscreen) {
+                            // Native iOS fullscreen via video element — this also auto-rotates to landscape
+                            video.webkitEnterFullscreen();
+                        } else if (video && video.webkitDisplayingFullscreen) {
+                            video.webkitExitFullscreen();
+                        } else {
+                            // Ultimate fallback: CSS-based pseudo-fullscreen on the player wrapper
+                            const wrap = document.querySelector('.player-wrap') || document.documentElement;
+                            if (!wrap.classList.contains('ios-pseudo-fs')) {
+                                wrap.classList.add('ios-pseudo-fs');
+                                fullscreenBtn.querySelector('i')?.classList.replace('fa-expand', 'fa-compress');
+                                // Try orientation lock even without native fullscreen
+                                try { await screen.orientation?.lock('landscape'); } catch (_) { }
+                            } else {
+                                wrap.classList.remove('ios-pseudo-fs');
+                                fullscreenBtn.querySelector('i')?.classList.replace('fa-compress', 'fa-expand');
+                                try { screen.orientation?.unlock(); } catch (_) { }
+                            }
+                        }
+                    } catch (iosErr) {
+                        console.warn('iOS fullscreen error:', iosErr);
                     }
                     showControlSurface();
                     return;
                 }
 
                 // Standard fullscreen for Android / Desktop
-                const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
                 const target = document.documentElement;
                 if (!isInFullscreen()) {
                     try {
@@ -9592,9 +9601,9 @@
                 }
 
             } else if (isM3U8 && (
-                video?.canPlayType?.('application/vnd.apple.mpegurl') || 
-                video?.canPlayType?.('application/x-mpegURL') || 
-                IS_IOS || 
+                video?.canPlayType?.('application/vnd.apple.mpegurl') ||
+                video?.canPlayType?.('application/x-mpegURL') ||
+                IS_IOS ||
                 IS_SAFARI
             )) {
                 console.log('Branch: Native HLS (iOS Safari/WebKit)');
@@ -9604,28 +9613,28 @@
                 let triedNoCors = false;
 
                 const tryNextHlsStep = (reason) => {
-                   if (triedDirect && triedNoCors) {
-                       console.error('Native HLS: All fallbacks exhausted.');
-                       showError('Playback Error', 'Safari cannot play this stream. Please try another server.');
-                       return;
-                   }
+                    if (triedDirect && triedNoCors) {
+                        console.error('Native HLS: All fallbacks exhausted.');
+                        showError('Playback Error', 'Safari cannot play this stream. Please try another server.');
+                        return;
+                    }
 
-                   if (!triedDirect) {
-                       triedDirect = true;
-                       console.warn(`Native HLS: proxy failed (${reason}), trying direct URL`);
-                       video.src = directUrl;
-                   } else if (!triedNoCors) {
-                       triedNoCors = true;
-                       console.warn('Native HLS: direct URL failed, retrying without crossOrigin attribute');
-                       video.removeAttribute('crossorigin');
-                       // Re-set src to trigger new load without crossorigin
-                       video.src = directUrl;
-                   }
-                   
-                   video.load();
-                   video.play().catch(err => {
-                       console.warn('Native HLS: play() failed after fallback:', err.message);
-                   });
+                    if (!triedDirect) {
+                        triedDirect = true;
+                        console.warn(`Native HLS: proxy failed (${reason}), trying direct URL`);
+                        video.src = directUrl;
+                    } else if (!triedNoCors) {
+                        triedNoCors = true;
+                        console.warn('Native HLS: direct URL failed, retrying without crossOrigin attribute');
+                        video.removeAttribute('crossorigin');
+                        // Re-set src to trigger new load without crossorigin
+                        video.src = directUrl;
+                    }
+
+                    video.load();
+                    video.play().catch(err => {
+                        console.warn('Native HLS: play() failed after fallback:', err.message);
+                    });
                 };
 
                 if (startTime > 0) {
@@ -9825,29 +9834,15 @@
         document.addEventListener('fullscreenchange', showControlSurface);
         document.addEventListener('webkitfullscreenchange', showControlSurface);
 
-        // On iOS: Handle physical rotation transitions
+        // Update fullscreen icon when iOS native video fullscreen changes
         if (IS_IOS) {
-            const onRealOrientationChange = () => {
-                setTimeout(() => {
-                    const isRealLandscape = window.innerWidth > window.innerHeight;
-                    const hasFsClass = document.body.classList.contains('ios-fs-active');
-
-                    if (isRealLandscape && hasFsClass) {
-                        // If user physically rotates to landscape WHILE in pseudo-fullscreen mode,
-                        // we must remove the 90deg rotation class because it will make the landscape view look portrait.
-                        // Since they are now in real landscape, they already have the "wide" view they wanted.
-                        document.body.classList.remove('ios-fs-active');
-                        const icon = fullscreenBtn?.querySelector('i');
-                        icon?.classList.replace('fa-compress', 'fa-expand');
-                    } else if (!isRealLandscape && hasFsClass) {
-                        // Staying in pseudo-fullscreen while in portrait...
-                    } else if (!isRealLandscape && !hasFsClass) {
-                        // Normal portrait...
-                    }
-                }, 150);
-            };
-            window.addEventListener('orientationchange', onRealOrientationChange);
-            screen.orientation?.addEventListener('change', onRealOrientationChange);
+            document.addEventListener('webkitfullscreenchange', () => {
+                const icon = fullscreenBtn?.querySelector('i');
+                if (!icon) return;
+                const active = !!(document.webkitFullscreenElement);
+                icon.classList.toggle('fa-compress', active);
+                icon.classList.toggle('fa-expand', !active);
+            });
         }
         init();
     </script>
@@ -9865,56 +9860,22 @@
         transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.12), opacity 0.25s ease !important;
     }
 
-    body.ios-fs-active {
+    /* iOS pseudo-fullscreen fallback: covers entire viewport */
+    .player-wrap.ios-pseudo-fs {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
         width: 100vw !important;
         height: 100vh !important;
         height: 100dvh !important;
-        overflow: hidden !important;
-        position: fixed !important;
+        z-index: 9999 !important;
+        background: #000 !important;
+        border-radius: 0 !important;
     }
 
-    body.ios-fs-active .player-wrap,
-    body.ios-fs-active .control-surface,
-    body.ios-fs-active .player-header,
-    body.ios-fs-active #transition-overlay,
-    body.ios-fs-active .ripple-container,
-    body.ios-fs-active #brightness-overlay,
-    body.ios-fs-active #volume-overlay,
-    body.ios-fs-active .ui-lock-btn,
-    body.ios-fs-active .skip-segment-btn,
-    body.ios-fs-active .next-episode-btn,
-    body.ios-fs-active #loader,
-    body.ios-fs-active #error-box,
-    body.ios-fs-active #source-panel,
-    body.ios-fs-active #ep-panel,
-    body.ios-fs-active #audio-panel,
-    body.ios-fs-active #qualityMenu,
-    body.ios-fs-active #captionsMenu,
-    body.ios-fs-active #playbackMenu,
-    body.ios-fs-active #preferencesMenu,
-    body.ios-fs-active #volumeMenu,
-    body.ios-fs-active .seek-preview {
-        /* Swap width/height so the element fills the landscape viewport */
-        width: 100vh !important;
-        height: 100vw !important;
-        /* Re-centre after size swap */
-        top: calc((100vh - 100vw) / 2) !important;
-        left: calc((100vw - 100vh) / 2) !important;
-        right: auto !important;
-        bottom: auto !important;
-        /* Rotate 90° clockwise around element centre */
-        transform: rotate(90deg) !important;
-        transform-origin: center center !important;
-        transition: none !important;
-        z-index: 99999 !important;
-    }
-
-    /* Ensure specific overlays inside their containers still work */
-    body.ios-fs-active #video-brightness-overlay {
+    .player-wrap.ios-pseudo-fs video {
         width: 100% !important;
         height: 100% !important;
-        top: 0 !important;
-        left: 0 !important;
-        transform: none !important;
+        object-fit: contain !important;
     }
 </style>
