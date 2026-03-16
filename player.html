@@ -6707,23 +6707,25 @@
                 // Only video.webkitEnterFullscreen() produces a native fullscreen on iPhone.
                 if (IS_IOS) {
                     try {
-                        if (video && video.webkitSupportsFullscreen && !video.webkitDisplayingFullscreen) {
-                            // Native iOS fullscreen via video element — this also auto-rotates to landscape
-                            video.webkitEnterFullscreen();
-                        } else if (video && video.webkitDisplayingFullscreen) {
-                            video.webkitExitFullscreen();
+                        const wrap = document.querySelector('.player-wrap');
+                        const isPseudo = wrap.classList.contains('ios-pseudo-fs');
+
+                        // Check if we are in native fullscreen (legacy or standard) and exit if so
+                        if (document.webkitFullscreenElement || video.webkitDisplayingFullscreen) {
+                            if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                            if (video.webkitExitFullscreen) video.webkitExitFullscreen();
+                            wrap.classList.remove('ios-pseudo-fs'); // Also clear pseudo
+                            fullscreenBtn.querySelector('i')?.classList.replace('fa-compress', 'fa-expand');
                         } else {
-                            // Ultimate fallback: CSS-based pseudo-fullscreen on the player wrapper
-                            const wrap = document.querySelector('.player-wrap') || document.documentElement;
-                            if (!wrap.classList.contains('ios-pseudo-fs')) {
+                            // Toggle pseudo-fullscreen to keep custom controls visible
+                            if (!isPseudo) {
                                 wrap.classList.add('ios-pseudo-fs');
                                 fullscreenBtn.querySelector('i')?.classList.replace('fa-expand', 'fa-compress');
-                                // Try orientation lock even without native fullscreen
-                                try { await screen.orientation?.lock('landscape'); } catch (_) { }
+                                // Attempt orientation lock (non-functional on iOS but harmless)
+                                try { screen.orientation?.lock('landscape').catch(() => { }); } catch (_) { }
                             } else {
                                 wrap.classList.remove('ios-pseudo-fs');
                                 fullscreenBtn.querySelector('i')?.classList.replace('fa-compress', 'fa-expand');
-                                try { screen.orientation?.unlock(); } catch (_) { }
                             }
                         }
                     } catch (iosErr) {
@@ -9868,7 +9870,7 @@
         width: 100vw !important;
         height: 100vh !important;
         height: 100dvh !important;
-        z-index: 9999 !important;
+        z-index: 100 !important;
         background: #000 !important;
         border-radius: 0 !important;
     }
@@ -9877,5 +9879,27 @@
         width: 100% !important;
         height: 100% !important;
         object-fit: contain !important;
+    }
+
+    /* Bring custom UI above pseudo-fullscreen wrapper */
+    .player-wrap.ios-pseudo-fs ~ .control-surface,
+    .player-wrap.ios-pseudo-fs ~ .player-header,
+    .player-wrap.ios-pseudo-fs ~ .control-menu,
+    .player-wrap.ios-pseudo-fs ~ #source-panel,
+    .player-wrap.ios-pseudo-fs ~ #ep-panel,
+    .player-wrap.ios-pseudo-fs ~ #audio-panel,
+    .player-wrap.ios-pseudo-fs ~ .ui-lock-btn,
+    .player-wrap.ios-pseudo-fs ~ .skip-segment-btn,
+    .player-wrap.ios-pseudo-fs ~ .next-episode-btn,
+    .player-wrap.ios-pseudo-fs ~ #subtitleOverlay {
+        z-index: 10000 !important;
+    }
+
+    /* Prevent body scroll when in pseudo-fullscreen */
+    body:has(.ios-pseudo-fs) {
+        overflow: hidden !important;
+        position: fixed;
+        width: 100%;
+        height: 100%;
     }
 </style>
