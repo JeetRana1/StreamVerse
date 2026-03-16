@@ -1,2 +1,8 @@
 .env
 .env.vercel
+node_modules/
+*.png
+test-mobile-safari.js
+test.json
+package.json
+package-lock.json

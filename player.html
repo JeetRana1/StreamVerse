@@ -2271,6 +2271,8 @@
         const IS_MOBILE_CLIENT =
             /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(navigator.userAgent || '') ||
             ('ontouchstart' in window);
+        const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
         // Keep local/prod fully isolated (no cross-mixing).
         const API_BASE_CANDIDATES = (effectiveApiSource === 'local'
@@ -2428,7 +2430,8 @@
         let plyr = null;
         let hlsInst = null;
         let dashInst = null;
-        let allSources = [];   // [{label, url, isM3U8, referer, provider}]
+        window.allSources = [];
+        let allSources = window.allSources;
         let externalSubtitleTracks = []; // [{label, srclang, src, provider}]
         const animeSubtitleCache = new Map();
         const justanimeAnimeIdCache = new Map(); // show-title -> justanime anime ID, persists across episodes
@@ -6047,6 +6050,22 @@
         function bindVideoEvents() {
             if (!video || video.dataset.customBound === '1') return;
             video.dataset.customBound = '1';
+            video.addEventListener('error', () => {
+                const err = video.error;
+                let msg = 'Unknown Error';
+                if (err) {
+                    switch (err.code) {
+                        case 1: msg = 'MEDIA_ERR_ABORTED'; break;
+                        case 2: msg = 'MEDIA_ERR_NETWORK'; break;
+                        case 3: msg = 'MEDIA_ERR_DECODE'; break;
+                        case 4: msg = 'MEDIA_ERR_SRC_NOT_SUPPORTED'; break;
+                    }
+                    console.error('[video] Fatal Error:', msg, err.message || '');
+                }
+            });
+            ['stalled', 'suspend', 'waiting', 'emptied'].forEach(evt => {
+                video.addEventListener(evt, () => console.warn(`[video] State event: ${evt}`));
+            });
             video.addEventListener('timeupdate', () => {
                 syncTimeUI();
                 updateSkipSegmentButton();
@@ -7986,7 +8005,7 @@
         //  FETCH SOURCES - per-provider: get that provider's own episodeId, then watch
         // -----------------------------------------------------------------------
         async function fetchSources(_unused) {
-            allSources = [];
+            allSources.length = 0;
             satoruAudioSources = [];
             currentAudioSource = 'justanime';
             activeSatoruTrackIndex = -1;
@@ -9112,9 +9131,14 @@
                 if (oldVideo) wrap.removeChild(oldVideo);
                 const newVideo = document.createElement('video');
                 newVideo.id = 'player-video';
+                newVideo.className = 'plyr-video';
+                newVideo.autoplay = true;
+                newVideo.muted = true;
                 newVideo.playsInline = true;
+                newVideo.setAttribute('playsinline', '');
                 newVideo.setAttribute('webkit-playsinline', 'true');
                 newVideo.crossOrigin = 'anonymous';
+                newVideo.preload = 'auto';
                 wrap.insertBefore(newVideo, wrap.firstChild);
             }
             video = document.getElementById('player-video');
@@ -9248,9 +9272,14 @@
                 if (oldVideo) wrap.removeChild(oldVideo);
                 const newVideo = document.createElement('video');
                 newVideo.id = 'player-video';
+                newVideo.className = 'plyr-video';
+                newVideo.autoplay = true;
+                newVideo.muted = true;
                 newVideo.playsInline = true;
+                newVideo.setAttribute('playsinline', '');
                 newVideo.setAttribute('webkit-playsinline', 'true');
                 newVideo.crossOrigin = 'anonymous';
+                newVideo.preload = 'auto';
                 wrap.insertBefore(newVideo, wrap.firstChild);
             }
             video = document.getElementById('player-video');
@@ -9507,15 +9536,67 @@
                     warmupPreviewVideo(previewVideo);
                 }
 
-            } else if (isM3U8 && video?.canPlayType?.('application/vnd.apple.mpegurl')) {
-                console.log('Branch: Native Safari HLS');
+            } else if (isM3U8 && (
+                video?.canPlayType?.('application/vnd.apple.mpegurl') || 
+                video?.canPlayType?.('application/x-mpegURL') || 
+                IS_IOS || 
+                IS_SAFARI
+            )) {
+                console.log('Branch: Native HLS (iOS Safari/WebKit)');
+                const proxiedUrl = proxiedStreamUrl(url, referer);
+                const directUrl = url;
+                let triedDirect = false;
+                let triedNoCors = false;
+
+                const tryNextHlsStep = (reason) => {
+                   if (triedDirect && triedNoCors) {
+                       console.error('Native HLS: All fallbacks exhausted.');
+                       showError('Playback Error', 'Safari cannot play this stream. Please try another server.');
+                       return;
+                   }
+
+                   if (!triedDirect) {
+                       triedDirect = true;
+                       console.warn(`Native HLS: proxy failed (${reason}), trying direct URL`);
+                       video.src = directUrl;
+                   } else if (!triedNoCors) {
+                       triedNoCors = true;
+                       console.warn('Native HLS: direct URL failed, retrying without crossOrigin attribute');
+                       video.removeAttribute('crossorigin');
+                       // Re-set src to trigger new load without crossorigin
+                       video.src = directUrl;
+                   }
+                   
+                   video.load();
+                   video.play().catch(err => {
+                       console.warn('Native HLS: play() failed after fallback:', err.message);
+                   });
+                };
+
                 if (startTime > 0) {
                     video.addEventListener('loadedmetadata', () => {
                         video.currentTime = startTime;
                     }, { once: true });
                 }
-                const proxiedUrl = proxiedStreamUrl(url, referer);
+
+                video.addEventListener('error', (e) => {
+                    const err = video.error;
+                    console.error('Native HLS Video Error:', err ? err.code : 'unknown', err ? err.message : '');
+                    tryNextHlsStep('video_error');
+                });
+
+                // Detect stalling (no metadata or data after 8s)
+                const hlsStallTimer = setTimeout(() => {
+                    if (video && video.readyState < 2) {
+                        console.warn('Native HLS: Stalling at start, attempting fallback');
+                        tryNextHlsStep('stall');
+                    }
+                }, 8000);
+                video.addEventListener('loadedmetadata', () => clearTimeout(hlsStallTimer), { once: true });
+                video.addEventListener('canplay', () => clearTimeout(hlsStallTimer), { once: true });
+
                 video.src = proxiedUrl;
+                video.load();
 
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
@@ -9530,13 +9611,17 @@
                     const onFirstFrame = () => {
                         isFirstLoad = false;
                         hideLoader();
-                        video && video.removeEventListener('timeupdate', onFirstFrame);
+                        if (video) video.removeEventListener('timeupdate', onFirstFrame);
                     };
-                    video && video.addEventListener('timeupdate', onFirstFrame);
-                    setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
+                    if (video) video.addEventListener('timeupdate', onFirstFrame);
+                    setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 12000);
                 }
 
-                video.play().catch(() => hideLoader());
+                // Initial play attempt
+                video.play().catch(err => {
+                    console.log('Initial Native HLS play() blocked, waiting for user or fallback:', err.message);
+                    // Don't hide loader yet if it's stalling
+                });
 
             } else if (isMPD && window.dashjs?.MediaPlayer) {
                 console.log('Branch: DASH.js');
