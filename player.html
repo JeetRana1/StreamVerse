@@ -26,7 +26,31 @@
             --safe-right: env(safe-area-inset-right, 0px);
         }
 
-        /* Pseudo-fullscreen for iOS iPhones */
+        /* Native Fullscreen styles to ensure controls stay above video */
+        .player-wrap:fullscreen,
+        .player-wrap:-webkit-full-screen,
+        .player-wrap:-moz-full-screen,
+        .player-wrap:-ms-fullscreen {
+            width: 100vw !important;
+            height: 100vh !important;
+            background: #000 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+
+        /* Ensure UI stays on top in native fullscreen */
+        .player-wrap:fullscreen .control-surface,
+        .player-wrap:-webkit-full-screen .control-surface,
+        .player-header,
+        .control-menu,
+        .gesture-overlay,
+        #source-panel,
+        #ep-panel,
+        #audio-panel {
+            z-index: 2147483647 !important;
+        }
+
         body.pseudo-fullscreen {
             overflow: hidden !important;
             position: fixed;
@@ -43,74 +67,6 @@
             background: #000 !important;
             width: 100vw !important;
             height: 100dvh !important;
-        }
-
-        #rotation-hint {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.95);
-            z-index: 100001;
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 2rem;
-            pointer-events: auto;
-        }
-
-        #rotation-hint i {
-            font-size: 4rem;
-            margin-bottom: 1.5rem;
-            color: var(--primary);
-            animation: rotateDevice 2.5s infinite ease-in-out;
-        }
-
-        #rotation-hint p {
-            font-size: 1.2rem;
-            font-weight: 600;
-            max-width: 250px;
-            line-height: 1.5;
-        }
-
-        #rotation-hint .close-hint {
-            margin-top: 2rem;
-            padding: 10px 24px;
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 50px;
-            font-size: 0.9rem;
-            cursor: pointer;
-        }
-
-        @keyframes rotateDevice {
-            0% { transform: rotate(0deg); }
-            40% { transform: rotate(-90deg); }
-            60% { transform: rotate(-90deg); }
-            100% { transform: rotate(0deg); }
-        }
-
-        @media (orientation: portrait) {
-            body.pseudo-fullscreen #rotation-hint {
-                display: flex;
-            }
-        }
-
-        /* Ensure UI elements stay on top of pseudo-fullscreen video */
-        body.pseudo-fullscreen .player-header,
-        body.pseudo-fullscreen .control-surface,
-        body.pseudo-fullscreen .control-menu,
-        body.pseudo-fullscreen .gesture-overlay,
-        body.pseudo-fullscreen #source-panel,
-        body.pseudo-fullscreen #ep-panel,
-        body.pseudo-fullscreen #audio-panel,
-        body.pseudo-fullscreen .ui-lock-btn,
-        body.pseudo-fullscreen .skip-segment-btn,
-        body.pseudo-fullscreen .next-episode-btn,
-        body.pseudo-fullscreen .ripple-container,
-        body.pseudo-fullscreen .transition-overlay,
-        body.pseudo-fullscreen #error-box {
-            z-index: 100005 !important;
         }
 
         *,
@@ -2309,21 +2265,13 @@
     <button id="audio-btn" onclick="toggleAudioPanel()"><i class="fa-solid fa-volume-high"></i> Audio</button>
     <div id="audio-panel"></div>
 
-    <!-- ERROR -->
-    <div id="error-box">
+    <!-- ERROR -->    <div id="error-box">
         <i class="fa-solid fa-triangle-exclamation"></i>
         <h3 id="err-title">Stream Unavailable</h3>
         <p id="err-msg">No providers could find a stream for this title.</p>
-        <button class="retry-btn" onclick="location.reload()"><i class="fa-solid fa-rotate-right"></i> Try
-            Again</button>
+        <button class="retry-btn" onclick="location.reload()"><i class="fa-solid fa-rotate-right"></i> Try Again</button>
     </div>
 
-    <!-- ROTATION HINT FOR IOS -->
-    <div id="rotation-hint">
-        <i class="fa-solid fa-mobile-screen-button"></i>
-        <p>Please rotate your device for the best viewing experience.</p>
-        <div class="close-hint" onclick="togglePseudoFullscreen(false)">Exit</div>
-    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js"></script>
     <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
@@ -6774,44 +6722,41 @@
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
 
-                // For iPhones (Safari/Chrome), use pseudo-fullscreen to preserve custom UI
-                if (IS_IPHONE) {
-                    const isPseudo = document.body.classList.contains('pseudo-fullscreen');
-                    togglePseudoFullscreen(!isPseudo);
+                const target = document.querySelector('.player-wrap');
+                const isFs = isCurrentlyFullscreen();
 
-                    // Attempt orientation lock if available
-                    if (!isPseudo && window.innerHeight > window.innerWidth && screen.orientation && screen.orientation.lock) {
-                        screen.orientation.lock('landscape').catch(() => { });
-                    }
-                    showControlSurface();
-                    return;
-                }
-
-                const target = document.documentElement;
-                if (!isCurrentlyFullscreen()) {
+                if (!isFs) {
                     try {
-                        if (target.requestFullscreen) await target.requestFullscreen();
-                        else if (target.webkitRequestFullscreen) await target.webkitRequestFullscreen();
-                        else if (target.mozRequestFullScreen) await target.mozRequestFullScreen();
-                        else if (target.msRequestFullscreen) await target.msRequestFullscreen();
-
-                        if (window.innerHeight > window.innerWidth && screen.orientation && screen.orientation.lock) {
-                            await screen.orientation.lock('landscape').catch(() => { });
+                        // Priority: Standard API -> Webkit/Safari API
+                        if (target.requestFullscreen) {
+                            await target.requestFullscreen();
+                        } else if (target.webkitRequestFullscreen) {
+                            await target.webkitRequestFullscreen();
+                        } else if (target.mozRequestFullScreen) {
+                            await target.mozRequestFullScreen();
+                        } else if (target.msRequestFullscreen) {
+                            await target.msRequestFullscreen();
+                        } else {
+                            // Re-enable playsinline just in case for iOS
+                            video.setAttribute('webkit-playsinline', 'true');
+                            video.setAttribute('playsinline', 'true');
+                            // If elem-fullscreen unavailable, fallback to minimal pseudo-fullscreen
+                            togglePseudoFullscreen(true);
                         }
                     } catch (err) {
-                        console.warn("Fullscreen/Rotate failed", err);
-                        // Fallback to pseudo-fullscreen if native fails
+                        console.warn("Native fullscreen failed", err);
                         togglePseudoFullscreen(true);
                     }
                 } else {
-                    if (screen.orientation && screen.orientation.unlock) {
-                        screen.orientation.unlock();
+                    if (document.exitFullscreen) {
+                        await document.exitFullscreen().catch(() => {});
+                    } else if (document.webkitExitFullscreen) {
+                        await document.webkitExitFullscreen().catch(() => {});
+                    } else if (document.mozCancelFullScreen) {
+                        await document.mozCancelFullScreen().catch(() => {});
+                    } else if (document.msExitFullscreen) {
+                        await document.msExitFullscreen().catch(() => {});
                     }
-                    if (document.exitFullscreen) await document.exitFullscreen();
-                    else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
-                    else if (document.mozCancelFullScreen) await document.mozCancelFullScreen();
-                    else if (document.msExitFullscreen) await document.msExitFullscreen();
-
                     togglePseudoFullscreen(false);
                 }
                 showControlSurface();
