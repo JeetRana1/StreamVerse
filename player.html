@@ -6711,12 +6711,31 @@
                     
                     if (entering) {
                         wrap.classList.add('ios-pseudo-fs');
+                        document.body.classList.add('has-ios-pseudo-fs');
                         icon?.classList.replace('fa-expand', 'fa-compress');
-                        // Optional: try locking orientation (works if added to home screen)
-                        try { await screen.orientation?.lock('landscape'); } catch (_) {}
+
+                        // Try native on root to potentially bypass safari bars if browser supports it
+                        const root = document.documentElement;
+                        try {
+                            if (root.requestFullscreen) await root.requestFullscreen().catch(() => {});
+                            else if (root.webkitRequestFullscreen) await root.webkitRequestFullscreen().catch(() => {});
+                        } catch (_) {}
+
+                        // Try locking orientation
+                        try { await screen.orientation?.lock('landscape').catch(() => {}); } catch (_) {}
+                        
+                        // Scroll to help hide bars
+                        setTimeout(() => window.scrollTo(0, 0), 300);
                     } else {
                         wrap.classList.remove('ios-pseudo-fs');
+                        document.body.classList.remove('has-ios-pseudo-fs');
                         icon?.classList.replace('fa-compress', 'fa-expand');
+                        
+                        try {
+                            if (document.exitFullscreen) await document.exitFullscreen().catch(() => {});
+                            else if (document.webkitExitFullscreen) await document.webkitExitFullscreen().catch(() => {});
+                        } catch (_) {}
+                        
                         try { screen.orientation?.unlock(); } catch (_) {}
                     }
                     showControlSurface();
@@ -9846,25 +9865,35 @@
         width: 100vw !important;
         height: 100vh !important;
         height: 100dvh !important;
-        z-index: 9999 !important;
+        min-height: -webkit-fill-available;
+        z-index: 9998 !important; /* Slightly below UI */
         background: #000 !important;
         border-radius: 0 !important;
     }
 
+    body.has-ios-pseudo-fs {
+        overflow: hidden !important;
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        overscroll-behavior: none;
+    }
+
     /* Keep custom surface and UI elements on top when in pseudo-fullscreen */
-    .player-wrap.ios-pseudo-fs ~ .control-surface,
-    .player-wrap.ios-pseudo-fs ~ .player-header,
-    .player-wrap.ios-pseudo-fs ~ .gesture-overlay,
-    .player-wrap.ios-pseudo-fs ~ .ripple-container,
-    .player-wrap.ios-pseudo-fs ~ #source-panel,
-    .player-wrap.ios-pseudo-fs ~ #ep-panel,
-    .player-wrap.ios-pseudo-fs ~ #audio-panel,
-    .player-wrap.ios-pseudo-fs ~ .control-menu,
-    .player-wrap.ios-pseudo-fs ~ .ui-lock-btn,
-    .player-wrap.ios-pseudo-fs ~ .skip-segment-btn,
-    .player-wrap.ios-pseudo-fs ~ .next-episode-btn,
-    .player-wrap.ios-pseudo-fs ~ #transition-overlay,
-    .player-wrap.ios-pseudo-fs ~ #loader {
+    body.has-ios-pseudo-fs .control-surface,
+    body.has-ios-pseudo-fs .player-header,
+    body.has-ios-pseudo-fs .gesture-overlay,
+    body.has-ios-pseudo-fs .ripple-container,
+    body.has-ios-pseudo-fs #source-panel,
+    body.has-ios-pseudo-fs #ep-panel,
+    body.has-ios-pseudo-fs #audio-panel,
+    body.has-ios-pseudo-fs .control-menu,
+    body.has-ios-pseudo-fs .ui-lock-btn,
+    body.has-ios-pseudo-fs .skip-segment-btn,
+    body.has-ios-pseudo-fs .next-episode-btn,
+    body.has-ios-pseudo-fs #transition-overlay,
+    body.has-ios-pseudo-fs #loader,
+    body.has-ios-pseudo-fs .seek-preview {
         z-index: 10000 !important;
     }
 
