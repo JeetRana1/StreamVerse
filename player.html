@@ -6707,26 +6707,10 @@
                 // Only video.webkitEnterFullscreen() produces a native fullscreen on iPhone.
                 if (IS_IOS) {
                     try {
-                        const wrap = document.querySelector('.player-wrap');
-                        const isPseudo = wrap.classList.contains('ios-pseudo-fs');
-
-                        // Check if we are in native fullscreen (legacy or standard) and exit if so
-                        if (document.webkitFullscreenElement || video.webkitDisplayingFullscreen) {
-                            if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-                            if (video.webkitExitFullscreen) video.webkitExitFullscreen();
-                            wrap.classList.remove('ios-pseudo-fs'); // Also clear pseudo
-                            fullscreenBtn.querySelector('i')?.classList.replace('fa-compress', 'fa-expand');
-                        } else {
-                            // Toggle pseudo-fullscreen to keep custom controls visible
-                            if (!isPseudo) {
-                                wrap.classList.add('ios-pseudo-fs');
-                                fullscreenBtn.querySelector('i')?.classList.replace('fa-expand', 'fa-compress');
-                                // Attempt orientation lock (non-functional on iOS but harmless)
-                                try { screen.orientation?.lock('landscape').catch(() => { }); } catch (_) { }
-                            } else {
-                                wrap.classList.remove('ios-pseudo-fs');
-                                fullscreenBtn.querySelector('i')?.classList.replace('fa-compress', 'fa-expand');
-                            }
+                        if (video && video.webkitSupportsFullscreen && !video.webkitDisplayingFullscreen) {
+                            video.webkitEnterFullscreen();
+                        } else if (video && video.webkitDisplayingFullscreen) {
+                            video.webkitExitFullscreen();
                         }
                     } catch (iosErr) {
                         console.warn('iOS fullscreen error:', iosErr);
@@ -9862,44 +9846,4 @@
         transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.12), opacity 0.25s ease !important;
     }
 
-    /* iOS pseudo-fullscreen fallback: covers entire viewport */
-    .player-wrap.ios-pseudo-fs {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        height: 100dvh !important;
-        z-index: 100 !important;
-        background: #000 !important;
-        border-radius: 0 !important;
-    }
-
-    .player-wrap.ios-pseudo-fs video {
-        width: 100% !important;
-        height: 100% !important;
-        object-fit: contain !important;
-    }
-
-    /* Bring custom UI above pseudo-fullscreen wrapper */
-    .player-wrap.ios-pseudo-fs ~ .control-surface,
-    .player-wrap.ios-pseudo-fs ~ .player-header,
-    .player-wrap.ios-pseudo-fs ~ .control-menu,
-    .player-wrap.ios-pseudo-fs ~ #source-panel,
-    .player-wrap.ios-pseudo-fs ~ #ep-panel,
-    .player-wrap.ios-pseudo-fs ~ #audio-panel,
-    .player-wrap.ios-pseudo-fs ~ .ui-lock-btn,
-    .player-wrap.ios-pseudo-fs ~ .skip-segment-btn,
-    .player-wrap.ios-pseudo-fs ~ .next-episode-btn,
-    .player-wrap.ios-pseudo-fs ~ #subtitleOverlay {
-        z-index: 10000 !important;
-    }
-
-    /* Prevent body scroll when in pseudo-fullscreen */
-    body:has(.ios-pseudo-fs) {
-        overflow: hidden !important;
-        position: fixed;
-        width: 100%;
-        height: 100%;
-    }
 </style>
