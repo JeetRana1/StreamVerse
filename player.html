@@ -26,49 +26,6 @@
             --safe-right: env(safe-area-inset-right, 0px);
         }
 
-        /* Native Fullscreen styles to ensure controls stay above video */
-        .player-wrap:fullscreen,
-        .player-wrap:-webkit-full-screen,
-        .player-wrap:-moz-full-screen,
-        .player-wrap:-ms-fullscreen {
-            width: 100vw !important;
-            height: 100vh !important;
-            background: #000 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-        }
-
-        /* Ensure UI stays on top in native fullscreen */
-        .player-wrap:fullscreen .control-surface,
-        .player-wrap:-webkit-full-screen .control-surface,
-        .player-header,
-        .control-menu,
-        .gesture-overlay,
-        #source-panel,
-        #ep-panel,
-        #audio-panel {
-            z-index: 2147483647 !important;
-        }
-
-        body.pseudo-fullscreen {
-            overflow: hidden !important;
-            position: fixed;
-            width: 100%;
-            height: 100dvh;
-            inset: 0;
-            z-index: 99999;
-        }
-
-        body.pseudo-fullscreen .player-wrap {
-            position: fixed !important;
-            inset: 0 !important;
-            z-index: 100000 !important;
-            background: #000 !important;
-            width: 100vw !important;
-            height: 100dvh !important;
-        }
-
         *,
         *::before,
         *::after {
@@ -550,10 +507,12 @@
             align-items: center;
             pointer-events: none;
             z-index: 1000;
-            transition: opacity 0.12s ease-out, transform 0.12s ease-out, visibility 0.12s; /* ENHANCED: Faster transitions */
+            transition: opacity 0.12s ease-out, transform 0.12s ease-out, visibility 0.12s;
+            /* ENHANCED: Faster transitions */
             transform: translateX(-50%) translateY(3px);
             opacity: 0;
-            filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.65)); /* ENHANCED: Better shadow */
+            filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.65));
+            /* ENHANCED: Better shadow */
         }
 
         .seek-preview.visible {
@@ -563,7 +522,8 @@
         }
 
         .seek-preview-thumb {
-            width: 240px; /* ENHANCED: Larger preview */
+            width: 240px;
+            /* ENHANCED: Larger preview */
             aspect-ratio: 16/9;
             background: #111;
             display: flex;
@@ -572,8 +532,10 @@
             position: relative;
             border-radius: 10px;
             overflow: hidden;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7); /* ENHANCED: Better shadow */
-            border: 2px solid rgba(229, 9, 20, 0.3); /* ENHANCED: Accent border */
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
+            /* ENHANCED: Better shadow */
+            border: 2px solid rgba(229, 9, 20, 0.3);
+            /* ENHANCED: Accent border */
             backdrop-filter: blur(2px);
         }
 
@@ -588,8 +550,10 @@
         .seek-preview-time {
             width: auto;
             min-width: 70px;
-            background: rgba(15, 15, 15, 0.75); /* ENHANCED: Better overlay background */
-            border: 1.5px solid rgba(229, 9, 20, 0.5); /* ENHANCED: Red accent */
+            background: rgba(15, 15, 15, 0.75);
+            /* ENHANCED: Better overlay background */
+            border: 1.5px solid rgba(229, 9, 20, 0.5);
+            /* ENHANCED: Red accent */
             backdrop-filter: blur(12px);
             color: #fff;
             text-align: center;
@@ -2265,13 +2229,14 @@
     <button id="audio-btn" onclick="toggleAudioPanel()"><i class="fa-solid fa-volume-high"></i> Audio</button>
     <div id="audio-panel"></div>
 
-    <!-- ERROR -->    <div id="error-box">
+    <!-- ERROR -->
+    <div id="error-box">
         <i class="fa-solid fa-triangle-exclamation"></i>
         <h3 id="err-title">Stream Unavailable</h3>
         <p id="err-msg">No providers could find a stream for this title.</p>
-        <button class="retry-btn" onclick="location.reload()"><i class="fa-solid fa-rotate-right"></i> Try Again</button>
+        <button class="retry-btn" onclick="location.reload()"><i class="fa-solid fa-rotate-right"></i> Try
+            Again</button>
     </div>
-
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js"></script>
     <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
@@ -2312,24 +2277,6 @@
             ? [LOCAL_META_API || 'http://localhost:3000/meta/tmdb']
             : [PROD_META_API || DEFAULT_META_API]
         ).filter(b => b && String(b).startsWith('http'));
-
-        const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        const IS_IPHONE = /iPhone/.test(navigator.userAgent) && !window.MSStream;
-
-        function togglePseudoFullscreen(state) {
-            if (state) {
-                document.body.classList.add('pseudo-fullscreen');
-                window.scrollTo(0, 0);
-            } else {
-                document.body.classList.remove('pseudo-fullscreen');
-            }
-            // Trigger a resize event to ensure Plyr and other components update
-            window.dispatchEvent(new Event('resize'));
-        }
-
-        function isCurrentlyFullscreen() {
-            return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement || document.body.classList.contains('pseudo-fullscreen'));
-        }
 
         const IS_LOCAL_API = /localhost|127\.0\.0\.1/i.test(API_BASE);
         let activeApiBase = API_BASE;
@@ -2693,7 +2640,7 @@
             const baseBackBuffer = isThumbnail ? 3 : (mobileMain ? 12 : 20);
             const baseMaxBuffer = isThumbnail ? 6 : (mobileMain ? 24 : 36);
             const baseMaxMaxBuffer = isThumbnail ? 12 : (mobileMain ? 48 : 72);
-            
+
             // Under constrained bandwidth: reduce buffers for faster seeking/switching
             const backBufferLength = isConstrained ? Math.max(4, baseBackBuffer * 0.75) : baseBackBuffer;
             const maxBufferLength = isConstrained ? Math.max(10, baseMaxBuffer * 0.7) : baseMaxBuffer;
@@ -3004,7 +2951,7 @@
                 // Stop loading momentarily to allow clean buffer flush
                 hls.stopLoad();
                 const currentTime = video.currentTime;
-                
+
                 // Remove old audio data from buffer
                 if (video.buffered.length > 0) {
                     const timeRanges = [];
@@ -3014,7 +2961,7 @@
                             end: video.buffered.end(i)
                         });
                     }
-                    
+
                     // Try to remove source buffer programmatically if available
                     if (hls.media && hls.media.buffered && hls.media.sourceBuffers) {
                         try {
@@ -3031,17 +2978,17 @@
                                     }
                                 }
                             }
-                        } catch (_) {}
+                        } catch (_) { }
                     }
                 }
-                
+
                 // Resume loading from near current position
                 setTimeout(() => {
                     if (hls) {
-                        try { hls.startLoad(Math.max(0, currentTime - 0.5)); } catch (_) {}
+                        try { hls.startLoad(Math.max(0, currentTime - 0.5)); } catch (_) { }
                     }
                 }, 150);
-            } catch (_) {}
+            } catch (_) { }
         }
 
         function svApplyPreferredAudioToHls(hls) {
@@ -3182,7 +3129,7 @@
             let lastStallNudgeAt = 0;
             let consecutiveBufferErrors = 0; // ENHANCED: Track consecutive errors
 
-            hls.on(Hls.Events.ERROR, function(_, d) {
+            hls.on(Hls.Events.ERROR, function (_, d) {
                 console.log('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
                 const detailText = String(d?.details || '').toLowerCase();
                 const isFragParsing = detailText.includes('fragparsingerror') || d?.details === Hls.ErrorDetails.FRAG_PARSING_ERROR;
@@ -3191,7 +3138,7 @@
                     d?.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR ||
                     d?.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR;
                 const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000;
-                
+
                 // ENHANCED: Auto-resume playback on non-fatal errors
                 if (!d.fatal && video && video.paused && !isSourceSwitching) {
                     setTimeout(() => {
@@ -3199,210 +3146,210 @@
                             console.log('Auto-resuming playback after error');
                             video.play().catch(() => {
                                 video.muted = true;
-                                video.play().catch(() => {});
+                                video.play().catch(() => { });
                             });
                         }
                     }, 50); // Faster auto-resume
                 }
-            
-            // ENHANCED: More aggressive recovery for fragParsingError
-            if (isFragParsing && !d.fatal) {
-                hlsFragErrorBurst += 1;
-                if (hlsFragErrorBurst >= 2) hlsSessionIsFragile = true; // Lower threshold
-                
-                // Immediate recovery attempt (zero delay)
-                if (video && hls) {
-                    const jumpDistance = Math.min(1.0, Math.max(0.3, hlsFragErrorBurst * 0.2)); // Smaller jumps
-                    const targetTime = Math.max(0, Math.min((video.duration || Infinity) - 0.1, 
-                        (video.currentTime || 0) + jumpDistance));
-                    
-                    if (isFinite(targetTime) && targetTime > 0) {
-                        console.log('Instant recovery from fragParsingError, jumping to:', targetTime);
-                        video.currentTime = targetTime;
-                        try {
-                            hls.stopLoad();
-                            hls.startLoad(Math.max(0, targetTime - 0.3)); // Smaller buffer
-                        } catch (_) {}
-                    }
-                }
-                
-                const applyRapidSeekHeal = () => {
-                    if (!video) return;
-                    showBufferingOverlay();
-                    try {
-                        const jump = isFragParsing ? 1.5 : 0.6;
-                        const near = Math.max(0, Math.min((video.duration || Infinity) - 0.2, (video.currentTime || 0) + jump));
-                        if (isFinite(near) && near > 0) video.currentTime = near;
-                        setTemporaryRecoveryQuality(isFragParsing ? 6000 : 5000);
-                        tuneHlsForJump(near, jump, 'seek');
-                        if (isBufferAppend || d.fatal) hls.recoverMediaError();
-                    } catch (_) { }
-                };
 
-                // Non-fatal stall: nudge playback manually - ENHANCED
-                if (!d.fatal) {
-                    if (inRapidSeekMode && (isFragParsing || isBufferAppend)) {
-                        if (isFragParsing) {
-                            hlsFragErrorBurst += 1;
-                            if (hlsFragErrorBurst >= 4) hlsSessionIsFragile = true; // ENHANCED: More aggressive fragility detection
-                        }
-                        applyRapidSeekHeal();
-                        return;
-                    }
-                    if (isFragParsing && video) {
-                        hlsFragErrorBurst += 1;
-                        if (hlsFragErrorBurst >= 4) hlsSessionIsFragile = true; // ENHANCED: Lower threshold
-                        const now = Date.now();
-                        if (now - fragParseBurstStartAt > 3000) { // ENHANCED: Shorter window
-                            fragParseBurstStartAt = now;
-                            fragParseBurstCount = 0;
-                        }
-                        fragParseBurstCount += 1;
-                        // ENHANCED: More aggressive fragment error handling
-                        if (fragParseBurstCount >= 2 && now - lastFragBypassAt > 1800) {
-                            lastFragBypassAt = now;
-                            const bypassTo = Math.min((video.duration || Infinity) - 0.25, (video.currentTime || 0) + 1.2);
-                            console.warn('[hls] Repeated frag parsing errors, bypassing ahead to', bypassTo);
+                // ENHANCED: More aggressive recovery for fragParsingError
+                if (isFragParsing && !d.fatal) {
+                    hlsFragErrorBurst += 1;
+                    if (hlsFragErrorBurst >= 2) hlsSessionIsFragile = true; // Lower threshold
+
+                    // Immediate recovery attempt (zero delay)
+                    if (video && hls) {
+                        const jumpDistance = Math.min(1.0, Math.max(0.3, hlsFragErrorBurst * 0.2)); // Smaller jumps
+                        const targetTime = Math.max(0, Math.min((video.duration || Infinity) - 0.1,
+                            (video.currentTime || 0) + jumpDistance));
+
+                        if (isFinite(targetTime) && targetTime > 0) {
+                            console.log('Instant recovery from fragParsingError, jumping to:', targetTime);
+                            video.currentTime = targetTime;
                             try {
-                                if (isFinite(bypassTo) && bypassTo > 0) video.currentTime = bypassTo;
-                                setTemporaryRecoveryQuality(5500);
-                                tuneHlsForJump(bypassTo, 1.2, 'seek');
-                            } catch (_) { }
-                            showBufferingOverlay();
-                            return;
-                        }
-                    }
-                    if (
-                        d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
-                        d.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
-                    ) {
-                        const now = Date.now();
-                        // ENHANCED: More responsive stall recovery
-                        if (now - lastStallNudgeAt < 600) return; // Faster repeat interval
-                        lastStallNudgeAt = now;
-                        if (video && !video.paused && video.readyState >= 2) {
-                            try {
-                                showBufferingOverlay();
-                                // ENHANCED: Slightly larger jumps for stall recovery
-                                video.currentTime = Math.min(
-                                    (video.duration || Infinity) - 0.05,
-                                    (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.08 : 0.15),
-                                );
-                                kickHlsLoadNearCurrentTime(video.currentTime, true); // ENHANCED: More aggressive loading
-                                Promise.resolve(video.play()).catch(() => { });
+                                hls.stopLoad();
+                                hls.startLoad(Math.max(0, targetTime - 0.3)); // Smaller buffer
                             } catch (_) { }
                         }
                     }
-                    if (isBufferAppend) {
-                        consecutiveBufferErrors++; // ENHANCED: Track buffer errors
-                        if (consecutiveBufferErrors > 2) {
-                            console.warn('[hls] Multiple buffer append errors, triggering recovery');
-                            setTemporaryRecoveryQuality(4500);
-                        }
-                    } else {
-                        consecutiveBufferErrors = 0;
-                    }
-                    if (!isFragParsing && !isBufferAppend) {
-                        hlsFragErrorBurst = 0;
-                    }
-                    return;
-                }
 
-                // Fatal errors - ENHANCED recovery strategy
-                if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                    const code = d.response ? d.response.code : 0;
-                    if (code === 404 || code === 403 || code >= 500) {
-                        if (typeof onErrorFallback === 'function') onErrorFallback('fatal_network_error');
-                        return;
-                    }
-                    // ENHANCED: Retry network load more aggressively
-                    console.warn('[hls] Fatal network error, retrying startLoad...');
-                    showBufferingOverlay();
-                    setTimeout(() => {
-                        if (hls) {
-                            try { hls.startLoad(); } catch (_) {}
-                        }
-                    }, 200);
-                } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                    mediaErrorCount++;
-                    if (isFragParsing) hlsSessionIsFragile = true;
-                    const recentlySeeked = (Date.now() - lastUserSeekAt) < 6000; // ENHANCED: Shorter window
-                    const preferredRecoveryTarget = pendingJumpTarget?.time ?? Number(video?.currentTime || 0);
-                    const durableRecoveryTarget = Math.max(0, Number(lastRequestedPlaybackTarget ?? preferredRecoveryTarget ?? 0));
-
-                    if (inRapidSeekMode) {
-                        // During seek bursts, prioritize aggressive recovery
-                        if (isFragParsing && typeof onErrorFallback === 'function') {
-                            pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
-                            setTemporaryRecoveryQuality(6000);
-                            onErrorFallback('fatal_frag_parse_jump');
-                            return;
-                        }
-                        setTemporaryRecoveryQuality(5500); // ENHANCED: Faster recovery
-                        applyRapidSeekHeal();
-                        return;
-                    }
-
-                    // ENHANCED: More resilient recovery after seek/skip
-                    if (recentlySeeked && mediaErrorCount <= 2) {
-                        console.warn('[hls] Fatal media error after rapid seek, reloading near current time...');
+                    const applyRapidSeekHeal = () => {
+                        if (!video) return;
                         showBufferingOverlay();
                         try {
-                            let near = Math.max(0, Number(video?.currentTime || 0) - 0.5); // ENHANCED: Smaller lookback
-                            if (isFragParsing && video) {
-                                near = Math.max(0, Number(video.currentTime || 0) + 1.0); // ENHANCED: Larger jump ahead
-                            }
-                            if (isFragParsing) {
-                                if (typeof onErrorFallback === 'function') {
-                                    pendingJumpTarget = pendingJumpTarget || { time: (durableRecoveryTarget || near), reason: 'seek' };
-                                    setTemporaryRecoveryQuality(6500);
-                                    onErrorFallback('fatal_frag_parse_jump');
-                                    return;
-                                }
-                            }
-                            setTemporaryRecoveryQuality(5500);
-                            hls.stopLoad();
-                            hls.startLoad(near);
-                            hls.recoverMediaError();
+                            const jump = isFragParsing ? 1.5 : 0.6;
+                            const near = Math.max(0, Math.min((video.duration || Infinity) - 0.2, (video.currentTime || 0) + jump));
+                            if (isFinite(near) && near > 0) video.currentTime = near;
+                            setTemporaryRecoveryQuality(isFragParsing ? 6000 : 5000);
+                            tuneHlsForJump(near, jump, 'seek');
+                            if (isBufferAppend || d.fatal) hls.recoverMediaError();
                         } catch (_) { }
-                        armFatalRecoveryTimer();
+                    };
+
+                    // Non-fatal stall: nudge playback manually - ENHANCED
+                    if (!d.fatal) {
+                        if (inRapidSeekMode && (isFragParsing || isBufferAppend)) {
+                            if (isFragParsing) {
+                                hlsFragErrorBurst += 1;
+                                if (hlsFragErrorBurst >= 4) hlsSessionIsFragile = true; // ENHANCED: More aggressive fragility detection
+                            }
+                            applyRapidSeekHeal();
+                            return;
+                        }
+                        if (isFragParsing && video) {
+                            hlsFragErrorBurst += 1;
+                            if (hlsFragErrorBurst >= 4) hlsSessionIsFragile = true; // ENHANCED: Lower threshold
+                            const now = Date.now();
+                            if (now - fragParseBurstStartAt > 3000) { // ENHANCED: Shorter window
+                                fragParseBurstStartAt = now;
+                                fragParseBurstCount = 0;
+                            }
+                            fragParseBurstCount += 1;
+                            // ENHANCED: More aggressive fragment error handling
+                            if (fragParseBurstCount >= 2 && now - lastFragBypassAt > 1800) {
+                                lastFragBypassAt = now;
+                                const bypassTo = Math.min((video.duration || Infinity) - 0.25, (video.currentTime || 0) + 1.2);
+                                console.warn('[hls] Repeated frag parsing errors, bypassing ahead to', bypassTo);
+                                try {
+                                    if (isFinite(bypassTo) && bypassTo > 0) video.currentTime = bypassTo;
+                                    setTemporaryRecoveryQuality(5500);
+                                    tuneHlsForJump(bypassTo, 1.2, 'seek');
+                                } catch (_) { }
+                                showBufferingOverlay();
+                                return;
+                            }
+                        }
+                        if (
+                            d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
+                            d.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
+                        ) {
+                            const now = Date.now();
+                            // ENHANCED: More responsive stall recovery
+                            if (now - lastStallNudgeAt < 600) return; // Faster repeat interval
+                            lastStallNudgeAt = now;
+                            if (video && !video.paused && video.readyState >= 2) {
+                                try {
+                                    showBufferingOverlay();
+                                    // ENHANCED: Slightly larger jumps for stall recovery
+                                    video.currentTime = Math.min(
+                                        (video.duration || Infinity) - 0.05,
+                                        (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.08 : 0.15),
+                                    );
+                                    kickHlsLoadNearCurrentTime(video.currentTime, true); // ENHANCED: More aggressive loading
+                                    Promise.resolve(video.play()).catch(() => { });
+                                } catch (_) { }
+                            }
+                        }
+                        if (isBufferAppend) {
+                            consecutiveBufferErrors++; // ENHANCED: Track buffer errors
+                            if (consecutiveBufferErrors > 2) {
+                                console.warn('[hls] Multiple buffer append errors, triggering recovery');
+                                setTemporaryRecoveryQuality(4500);
+                            }
+                        } else {
+                            consecutiveBufferErrors = 0;
+                        }
+                        if (!isFragParsing && !isBufferAppend) {
+                            hlsFragErrorBurst = 0;
+                        }
                         return;
                     }
 
-                    if (mediaErrorCount === 1) {
-                        if ((isFragParsing || hlsSessionIsFragile) && typeof onErrorFallback === 'function') {
-                            pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
-                            setTemporaryRecoveryQuality(6000);
-                            console.warn('[hls] Fatal frag parse detected, rebuilding at target instead of recoverMediaError.');
-                            clearFatalRecoveryTimer();
-                            onErrorFallback('fatal_frag_parse_jump');
+                    // Fatal errors - ENHANCED recovery strategy
+                    if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                        const code = d.response ? d.response.code : 0;
+                        if (code === 404 || code === 403 || code >= 500) {
+                            if (typeof onErrorFallback === 'function') onErrorFallback('fatal_network_error');
                             return;
                         }
-                        console.warn('[hls] Fatal media error, attempting recoverMediaError...');
+                        // ENHANCED: Retry network load more aggressively
+                        console.warn('[hls] Fatal network error, retrying startLoad...');
                         showBufferingOverlay();
-                        hls.recoverMediaError();
-                        armFatalRecoveryTimer();
-                    } else if (mediaErrorCount === 2) {
-                        // Second attempt: swap source and re-attach
-                        console.warn('[hls] Second media error, swapping codec...');
-                        hls.swapAudioCodec();
-                        hls.recoverMediaError();
-                        armFatalRecoveryTimer();
+                        setTimeout(() => {
+                            if (hls) {
+                                try { hls.startLoad(); } catch (_) { }
+                            }
+                        }, 200);
+                    } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                        mediaErrorCount++;
+                        if (isFragParsing) hlsSessionIsFragile = true;
+                        const recentlySeeked = (Date.now() - lastUserSeekAt) < 6000; // ENHANCED: Shorter window
+                        const preferredRecoveryTarget = pendingJumpTarget?.time ?? Number(video?.currentTime || 0);
+                        const durableRecoveryTarget = Math.max(0, Number(lastRequestedPlaybackTarget ?? preferredRecoveryTarget ?? 0));
+
+                        if (inRapidSeekMode) {
+                            // During seek bursts, prioritize aggressive recovery
+                            if (isFragParsing && typeof onErrorFallback === 'function') {
+                                pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
+                                setTemporaryRecoveryQuality(6000);
+                                onErrorFallback('fatal_frag_parse_jump');
+                                return;
+                            }
+                            setTemporaryRecoveryQuality(5500); // ENHANCED: Faster recovery
+                            applyRapidSeekHeal();
+                            return;
+                        }
+
+                        // ENHANCED: More resilient recovery after seek/skip
+                        if (recentlySeeked && mediaErrorCount <= 2) {
+                            console.warn('[hls] Fatal media error after rapid seek, reloading near current time...');
+                            showBufferingOverlay();
+                            try {
+                                let near = Math.max(0, Number(video?.currentTime || 0) - 0.5); // ENHANCED: Smaller lookback
+                                if (isFragParsing && video) {
+                                    near = Math.max(0, Number(video.currentTime || 0) + 1.0); // ENHANCED: Larger jump ahead
+                                }
+                                if (isFragParsing) {
+                                    if (typeof onErrorFallback === 'function') {
+                                        pendingJumpTarget = pendingJumpTarget || { time: (durableRecoveryTarget || near), reason: 'seek' };
+                                        setTemporaryRecoveryQuality(6500);
+                                        onErrorFallback('fatal_frag_parse_jump');
+                                        return;
+                                    }
+                                }
+                                setTemporaryRecoveryQuality(5500);
+                                hls.stopLoad();
+                                hls.startLoad(near);
+                                hls.recoverMediaError();
+                            } catch (_) { }
+                            armFatalRecoveryTimer();
+                            return;
+                        }
+
+                        if (mediaErrorCount === 1) {
+                            if ((isFragParsing || hlsSessionIsFragile) && typeof onErrorFallback === 'function') {
+                                pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
+                                setTemporaryRecoveryQuality(6000);
+                                console.warn('[hls] Fatal frag parse detected, rebuilding at target instead of recoverMediaError.');
+                                clearFatalRecoveryTimer();
+                                onErrorFallback('fatal_frag_parse_jump');
+                                return;
+                            }
+                            console.warn('[hls] Fatal media error, attempting recoverMediaError...');
+                            showBufferingOverlay();
+                            hls.recoverMediaError();
+                            armFatalRecoveryTimer();
+                        } else if (mediaErrorCount === 2) {
+                            // Second attempt: swap source and re-attach
+                            console.warn('[hls] Second media error, swapping codec...');
+                            hls.swapAudioCodec();
+                            hls.recoverMediaError();
+                            armFatalRecoveryTimer();
+                        } else {
+                            console.warn('[hls] Unrecoverable media error, requesting same-source recovery...');
+                            clearFatalRecoveryTimer();
+                            if (typeof onErrorFallback === 'function') onErrorFallback('fatal_media_error');
+                        }
                     } else {
-                        console.warn('[hls] Unrecoverable media error, requesting same-source recovery...');
-                        clearFatalRecoveryTimer();
-                        if (typeof onErrorFallback === 'function') onErrorFallback('fatal_media_error');
+                        if (typeof onErrorFallback === 'function') onErrorFallback('fatal_unknown');
                     }
-                } else {
-                    if (typeof onErrorFallback === 'function') onErrorFallback('fatal_unknown');
                 }
-            }
             });
 
             // ENHANCED: Stall watchdog with faster response times
             let lastWatchdogTime = -1;
             let watchdogStallCount = 0;
-            const watchdogInterval = setInterval(function() {
+            const watchdogInterval = setInterval(function () {
                 if (!video || video.paused || video.ended || video.readyState === 0) {
                     watchdogStallCount = 0;
                     lastWatchdogTime = video ? video.currentTime : -1;
@@ -3462,7 +3409,7 @@
 
             // ENHANCED: Check if we're switching to the same provider for audio track switching
             const isAudioTrackSwitch = url === currentStreamUrl && referer === currentStreamReferer;
-            
+
             if (hlsInst && !isAudioTrackSwitch) {
                 try {
                     hlsInst.stopLoad();
@@ -6281,11 +6228,11 @@
         function toggleAudioPanel(btn = customAudioBtn) {
             updateAudioTracks();
             const hlsTracks = (hlsInst && hlsInst.audioTracks) || [];
-            
+
             // ENHANCED: Check if satoruAudioSources are still being populated
             const hasSatoruSources = satoruAudioSources.length > 0;
             const hasHlsTracks = hlsTracks.length > 1;
-            
+
             // Only show "no tracks" message if we're sure there are none
             if (!hasHlsTracks && !hasSatoruSources) {
                 // Check if satoru sources might be loading in background
@@ -6294,7 +6241,7 @@
                     showToast('No alternative audio tracks found.');
                 }
             }
-            
+
             const willOpen = !audioPanel.classList.contains('open');
             closeAllPopups();
             if (willOpen) {
@@ -6531,19 +6478,19 @@
                             if (src.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
                                 const currentTime = Math.max(0, Number(video?.currentTime || 0));
                                 const wasPlaying = !video?.paused;
-                                
+
                                 console.log('Zero-lag audio switch to satoru:', src.label, 'at time:', currentTime);
-                                
+
                                 // Use zero-lag switching if available, otherwise fallback
                                 if (typeof svZeroLagAudioSwitch === 'function') {
                                     svZeroLagAudioSwitch(src.url, src.referer, currentTime, wasPlaying, () => {
                                         svApplyPreferredAudioToHls(hlsInst);
-                                        
+
                                         // Instant playback resumption
                                         if (wasPlaying && video) {
                                             video.play().catch(() => {
                                                 video.muted = true;
-                                                video.play().catch(() => {});
+                                                video.play().catch(() => { });
                                             });
                                         }
                                     });
@@ -6551,12 +6498,12 @@
                                     // Fallback to ultra-seamless
                                     svUltraSeamlessAudioSwitch(src.url, src.referer, currentTime, wasPlaying, () => {
                                         svApplyPreferredAudioToHls(hlsInst);
-                                        
+
                                         if (wasPlaying && video) {
                                             setTimeout(() => {
                                                 video.play().catch(() => {
                                                     video.muted = true;
-                                                    video.play().catch(() => {});
+                                                    video.play().catch(() => { });
                                                 });
                                             }, 50);
                                         }
@@ -6565,12 +6512,12 @@
                                     // Final fallback to standard switching
                                     svSwitchHlsSourceSilent(src.url, src.referer, () => {
                                         svApplyPreferredAudioToHls(hlsInst);
-                                        
+
                                         if (wasPlaying && video) {
                                             setTimeout(() => {
                                                 video.play().catch(() => {
                                                     video.muted = true;
-                                                    video.play().catch(() => {});
+                                                    video.play().catch(() => { });
                                                 });
                                             }, 100);
                                         }
@@ -6601,14 +6548,9 @@
 
             backBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (isCurrentlyFullscreen()) {
-                    if (document.body.classList.contains('pseudo-fullscreen')) {
-                        togglePseudoFullscreen(false);
-                    } else {
-                        if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
-                        else if (document.webkitExitFullscreen) document.webkitExitFullscreen().catch(() => { });
-                    }
-                    return;
+                if (document.fullscreenElement) {
+                    if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen().catch(() => { });
                 }
                 goBackToHome();
             });
@@ -6721,43 +6663,25 @@
 
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-
-                const target = document.querySelector('.player-wrap');
-                const isFs = isCurrentlyFullscreen();
-
-                if (!isFs) {
+                const target = document.documentElement;
+                if (!document.fullscreenElement) {
                     try {
-                        // Priority: Standard API -> Webkit/Safari API
-                        if (target.requestFullscreen) {
-                            await target.requestFullscreen();
-                        } else if (target.webkitRequestFullscreen) {
-                            await target.webkitRequestFullscreen();
-                        } else if (target.mozRequestFullScreen) {
-                            await target.mozRequestFullScreen();
-                        } else if (target.msRequestFullscreen) {
-                            await target.msRequestFullscreen();
-                        } else {
-                            // Re-enable playsinline just in case for iOS
-                            video.setAttribute('webkit-playsinline', 'true');
-                            video.setAttribute('playsinline', 'true');
-                            // If elem-fullscreen unavailable, fallback to minimal pseudo-fullscreen
-                            togglePseudoFullscreen(true);
+                        if (target.requestFullscreen) await target.requestFullscreen();
+                        else if (target.webkitRequestFullscreen) await target.webkitRequestFullscreen();
+
+                        // If entering from portrait, automatically lock to landscape
+                        if (window.innerHeight > window.innerWidth && screen.orientation && screen.orientation.lock) {
+                            await screen.orientation.lock('landscape').catch(() => { });
                         }
                     } catch (err) {
-                        console.warn("Native fullscreen failed", err);
-                        togglePseudoFullscreen(true);
+                        console.warn("Fullscreen/Rotate failed", err);
                     }
                 } else {
-                    if (document.exitFullscreen) {
-                        await document.exitFullscreen().catch(() => {});
-                    } else if (document.webkitExitFullscreen) {
-                        await document.webkitExitFullscreen().catch(() => {});
-                    } else if (document.mozCancelFullScreen) {
-                        await document.mozCancelFullScreen().catch(() => {});
-                    } else if (document.msExitFullscreen) {
-                        await document.msExitFullscreen().catch(() => {});
+                    if (screen.orientation && screen.orientation.unlock) {
+                        screen.orientation.unlock();
                     }
-                    togglePseudoFullscreen(false);
+                    if (document.exitFullscreen) await document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
                 }
                 showControlSurface();
             });
@@ -6869,14 +6793,14 @@
             window._lastCapturedFrameHash = null;
             window._captureFailureCount = 0;
             window._previewHlsResetAttempts = 0;
-            
+
             function getFrameDataHash(frameDataUrl) {
                 // Simple hash to detect if we're getting the same frame repeatedly
                 if (!frameDataUrl) return null;
                 // Use first 100 chars of data URL as a quick hash
                 return frameDataUrl.substring(0, 100);
             }
-            
+
             function cachePreviewFrame(roundedSecond, frameData = null) {
                 // If frameData is provided, use it directly (from canvas capture)
                 if (frameData) {
@@ -6894,14 +6818,14 @@
                                     window.previewHlsIsUnhealthy = false;
                                     window.previewHlsErrorCount = 0;
                                 }
-                            } catch (_) {}
+                            } catch (_) { }
                             return; // Don't cache the duplicate
                         }
                     } else {
                         window._lastCapturedFrameHash = frameHash;
                         window._captureFailureCount = 0;
                     }
-                    
+
                     previewFrameCache.set(roundedSecond, frameData);
                     if (previewFrameCache.size > maxCacheSize) {
                         const firstKey = previewFrameCache.keys().next().value;
@@ -6909,7 +6833,7 @@
                     }
                     return;
                 }
-                
+
                 const previewVideo = document.getElementById('previewVideo');
                 if (!previewVideo || previewVideo.readyState < 2) return;
                 try {
@@ -6920,7 +6844,7 @@
                     if (ctx) {
                         ctx.drawImage(previewVideo, 0, 0);
                         const frameUrl = canvas.toDataURL('image/jpeg', 0.75);
-                        
+
                         // Check for frame repetition in preview video capture too
                         const frameHash = getFrameDataHash(frameUrl);
                         if (frameHash === window._lastCapturedFrameHash) {
@@ -6933,7 +6857,7 @@
                             window._lastCapturedFrameHash = frameHash;
                             window._captureFailureCount = 0;
                         }
-                        
+
                         previewFrameCache.set(roundedSecond, frameUrl);
                         // Clean up old cache entries
                         if (previewFrameCache.size > maxCacheSize) {
@@ -6941,7 +6865,7 @@
                             previewFrameCache.delete(firstKey);
                         }
                     }
-                } catch (_) {}
+                } catch (_) { }
             }
 
             function getPreviewFrameFromCache(roundedSecond) {
@@ -6976,7 +6900,7 @@
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
                     const wholeSecond = Math.max(0, Math.min(Math.floor(seekTime), Math.floor(video.duration)));
-                    
+
                     // Check if we already have this frame cached
                     const cachedFrame = getPreviewFrameFromCache(wholeSecond);
                     if (cachedFrame) {
@@ -6994,11 +6918,11 @@
                     } else if (previewVideo._cacheDisplay) {
                         previewVideo._cacheDisplay.style.display = 'none';
                     }
-                    
+
                     // Same second skip
                     if (wholeSecond === window.previewLastSecond) return;
                     window.previewLastSecond = wholeSecond;
-                    
+
                     // ENHANCED: Improved frame seeking strategy
                     // Try to get exact second, then with small offset for keyframe variety
                     window.previewTargetTime = wholeSecond;
@@ -7012,22 +6936,22 @@
                 if (!previewVideo || window.previewTargetTime === undefined || !isFinite(previewVideo.duration)) return;
                 if (previewVideo.readyState < 1) return;
                 if (window.previewSeekInFlight) return;
-                
+
                 // ENHANCED: Skip preview HLS if we've forcefully switched to canvas fallback
                 if (window.previewUseCanvasFallbackOnly) {
                     return;
                 }
-                
+
                 // ENHANCED: Disable preview seeking during main video startup to prevent interference
                 if (Date.now() < (window.previewSeekingDisabledUntil || 0)) {
                     return; // Skip preview seeking during initial playback
                 }
-                
+
                 // Also skip if main video is actively seeking or just buffering
                 if (video && video.seeking) {
                     return;
                 }
-                
+
                 // Skip during auto-skip to prevent interference
                 if (window.isAutoSkipping) {
                     return;
@@ -7045,7 +6969,7 @@
                             ctx.drawImage(video, 0, 0, 240, 135);
                             return canvas.toDataURL('image/jpeg', 0.85);
                         }
-                    } catch (_) {}
+                    } catch (_) { }
                     return null;
                 };
 
@@ -7054,7 +6978,7 @@
                 window.previewSeekTimer = setTimeout(() => {
                     const maxTime = Math.max(0, Number(previewVideo.duration || 0) - 0.05);
                     let target = Math.max(0, Math.min(Number(window.previewTargetTime || 0), maxTime));
-                    
+
                     window.previewSeekInFlight = true;
                     try {
                         // ENHANCED: Check preview HLS health - more conservative to avoid main stream interference
@@ -7071,11 +6995,11 @@
                                 if (!video?.seeking) {
                                     window.previewHlsInst.startLoad(Math.max(0, target - 0.5));
                                 }
-                            } catch (_) { 
+                            } catch (_) {
                                 window.previewHlsIsUnhealthy = true;
                             }
                         }
-                        
+
                         // Skip seeking the preview video if HLS is too unhealthy (avoid compounding errors)
                         // OR if the main video is actively seeking
                         if ((!window.previewHlsIsUnhealthy || window.previewHlsErrorCount <= 1) && !video?.seeking) {
@@ -7095,7 +7019,7 @@
                                 } else {
                                     previewVideo.currentTime = target;
                                 }
-                            } catch (_) {}
+                            } catch (_) { }
                         }
                     } finally {
                         window.previewSeekInFlight = false;
@@ -7103,10 +7027,10 @@
                         setTimeout(() => {
                             if (!previewVideo.seeking) {
                                 const rounded = Math.round(window.previewTargetTime || 0);
-                                
+
                                 // Try to capture from preview video first, fallback to main video
                                 let frameData = null;
-                                
+
                                 // Force main video canvas capture if preview HLS has become unreliable
                                 if (!window.previewUseCanvasFallbackOnly) {
                                     try {
@@ -7120,9 +7044,9 @@
                                                 frameData = canvas.toDataURL('image/jpeg', 0.75);
                                             }
                                         }
-                                    } catch (_) {}
+                                    } catch (_) { }
                                 }
-                                
+
                                 // Fallback to main video if preview frame capture failed or preview is too unhealthy
                                 // OR if we've flagged to always use canvas fallback
                                 if ((!frameData || window.previewUseCanvasFallbackOnly) && (window.previewUseCanvasFallbackOnly || (window.previewHlsIsUnhealthy && window.previewHlsErrorCount > 3))) {
@@ -7135,11 +7059,11 @@
                                         if (frameData) break; // Use first successful capture
                                     }
                                 }
-                                
+
                                 if (frameData) {
                                     cachePreviewFrame(rounded, frameData);
                                 }
-                                
+
                                 // ENHANCED: Prefetch adjacent frames for smooth scrolling
                                 const prefetchNext = rounded + 1;
                                 const prefetchPrev = Math.max(0, rounded - 1);
@@ -7871,13 +7795,13 @@
             if (previewVideo) {
                 try {
                     previewVideo.pause();
-                } catch (_) {}
+                } catch (_) { }
             }
-            
+
             // Pre-buffer the target area before executing the skip
             const jumpDistance = Math.abs(target - (video.currentTime || 0));
             const prebufferTime = Math.max(0, target - (jumpDistance > 30 ? 5 : 1.5));
-            
+
             // Use gentler quality tuning for the skip operation
             tuneHlsForJump(target, jumpDistance, 'skip');
 
@@ -7906,7 +7830,7 @@
                 // Ensure UI updates to reflect the new position
                 syncTimeUI();
                 window.isAutoSkipping = false;
-                
+
                 // Resume preview after skip completes
                 setTimeout(() => {
                     if (previewVideo && !manual) {
@@ -7917,10 +7841,10 @@
                                         previewVideo.currentTime = 1.0;
                                     }
                                     previewVideo.pause();
-                                } catch (_) {}
+                                } catch (_) { }
                             };
                             previewVideo.addEventListener('canplay', warmupOnReady, { once: true });
-                        } catch (_) {}
+                        } catch (_) { }
                     }
                 }, 300);
             }, 500); // Short pre-buffer delay before actual skip (avoids jarring transitions)
@@ -9524,14 +9448,14 @@
                             window.previewHlsInst.loadLevel = 0;
                         }
                     });
-                    
+
                     // ENHANCED: Better error handling for preview stream
                     // Disable preview seeking during main video startup (first 8 seconds)
                     window.previewSeekingDisabledUntil = Date.now() + 8000;
-                    
+
                     window.previewHlsInst.on(Hls.Events.ERROR, (_, data) => {
                         window.previewHlsErrorCount = (window.previewHlsErrorCount || 0) + 1;
-                        
+
                         // Non-fatal errors - mark as unhealthy but limit retries to avoid resource exhaustion
                         if (!data.fatal) {
                             console.warn(`[preview] Non-fatal error (count: ${window.previewHlsErrorCount}): ${data.details}`);
@@ -9543,7 +9467,7 @@
                                         try {
                                             console.log('[preview] Retrying after non-fatal error (limited)...');
                                             window.previewHlsInst.recoverMediaError?.();
-                                        } catch (_) {}
+                                        } catch (_) { }
                                     }
                                 }, 1500); // Increased delay to let main stream priority
                             }
@@ -9555,31 +9479,31 @@
                             }
                             return;
                         }
-                        
+
                         // Fatal errors - escalate recovery with more conservative timing
                         console.warn(`[preview] Fatal error (attempt ${window.previewHlsErrorCount}): ${data.details}`);
                         window.previewHlsIsUnhealthy = true;
-                        
+
                         // Only one recovery attempt per consecutive fatals
                         if (window.previewHlsErrorCount <= 2) {
                             try {
                                 console.log('[preview] Fatal: attempting stopLoad for recovery');
                                 window.previewHlsInst.stopLoad();
-                            } catch (_) {}
+                            } catch (_) { }
                         } else {
                             // Multiple failures - signal that we should use main video canvas fallback
                             console.warn('[preview] Fatal errors persistent, fallback to main video capture enabled');
                             window.previewUseCanvasFallbackOnly = true; // Force canvas fallback
                         }
                     });
-                    
+
                     window.previewHlsInst.loadSource(streamUrl);
                     window.previewHlsInst.attachMedia(previewVideo);
-                    
+
                     // Track preview errors to know when to fallback
                     window.previewHlsErrorCount = 0;
                     window.previewHlsIsUnhealthy = false;
-                    
+
                     warmupPreviewVideo(previewVideo);
                 }
 
@@ -9759,13 +9683,6 @@
         initCustomControls();
         bindVideoEvents();
         document.addEventListener('fullscreenchange', showControlSurface);
-        document.addEventListener('webkitfullscreenchange', showControlSurface);
-        window.addEventListener('orientationchange', () => {
-            if (isCurrentlyFullscreen()) showControlSurface();
-        });
-        window.addEventListener('resize', () => {
-            if (isCurrentlyFullscreen()) showControlSurface();
-        });
         init();
     </script>
 </body>

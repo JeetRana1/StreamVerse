@@ -75,12 +75,7 @@ async function fetchJson(url, timeoutMs = API_TIMEOUT_MS) {
             err.status = res.status;
             throw err;
         }
-        const text = await res.text();
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            throw new Error('API returned invalid JSON format');
-        }
+        return await res.json();
     } catch (err) {
         if (err?.name === 'AbortError') {
             const timeoutErr = new Error('Request timed out');
@@ -169,32 +164,33 @@ document.addEventListener('DOMContentLoaded', () => {
 // ------------------ HELPERS -----------------------------------------------
 // Consumet returns full URLs for images already, but sometimes relative paths.
 function imgUrl(path, size = 'w500') {
-    if (!path || typeof path !== 'string') return '';
-    const clean = path.trim();
-    if (clean.length < 3 || clean === 'null' || clean === 'undefined') return '';
+    const isBad = !path || typeof path !== 'string' || path.length < 5 ||
+        path.includes('placehold.co') || path.includes('dramaool.png') ||
+        path.includes('no-image') || path.includes('default-poster') ||
+        path.includes('originalnull') || path.includes('originalundefined');
 
-    const isBad = clean.includes('placehold.co') || clean.includes('dramaool.png') ||
-        clean.includes('no-image') || clean.includes('default-poster') ||
-        clean.includes('originalnull') || clean.includes('originalundefined');
-
-    if (isBad) return '';
-
-    // Already a full URL or protocol-relative
-    if (clean.startsWith('http') || clean.startsWith('//')) {
-        return clean.startsWith('//') ? 'https:' + clean : clean.replace('http:', 'https:');
+    if (isBad) {
+        return 'https://placehold.co/300x450/1a1a2e/e50914?text=No+Image';
     }
 
-    // Relative TMDB paths
-    if (clean.startsWith('/')) {
-        return `${IMG_BASE}${size}${clean}`;
+    // Handle full URLs and protocol-relative URLs
+    if (path.startsWith('http') || path.startsWith('//')) {
+        let url = path.startsWith('//') ? 'https:' + path : path;
+        // Force HTTPS to avoid mixed content blocks from external providers (Dramacool, etc)
+        return url.replace('http:', 'https:');
     }
 
-    // Handle just the filename from TMDB (e.g. "abc.jpg")
-    if ((clean.endsWith('.jpg') || clean.endsWith('.png')) && !clean.includes('/')) {
-        return `${IMG_BASE}${size}/${clean}`;
+    // TMDB relative paths always start with /
+    if (path.startsWith('/')) {
+        return `${IMG_BASE}${size}${path}`;
     }
 
-    return clean;
+    // If it looks like a relative path but without the leading slash (rare)
+    if (path.length > 0 && !path.includes('/') && !path.includes('.')) {
+        return `${IMG_BASE}${size}/${path}`;
+    }
+
+    return path;
 }
 
 function coverUrl(path) {
@@ -353,20 +349,14 @@ function renderDetailsModal(movie, id, type, provider = '') {
         ? movie.directors[0]
         : (movie.directors || 'N/A');
     const desc = movie.description || movie.overview || 'No overview available.';
-    const cast = (Array.isArray(movie.actors) ? movie.actors : (movie.cast || []))
-        .slice(0, 10)
+    const cast = (Array.isArray(movie.actors) ? movie.actors : [])
+        .slice(0, 6)
         .map((actor) => {
-            let name = 'Unknown';
-            let image = '';
-            if (typeof actor === 'string') {
-                name = actor.split('(')[0].trim();
-            } else {
-                name = actor?.name || actor?.originalName || actor?.actor || actor?.name_en || 'Unknown';
-                image = actor?.image || actor?.profilePath || actor?.profile_path || actor?.photo || actor?.profile || actor?.thumbnail || '';
-            }
-            // If image is suspiciously just the name or too short, clear it to trigger fallback
-            if (image && (image === name || image.length < 4)) image = '';
-            return { name, image };
+            if (typeof actor === 'string') return { name: actor, image: '' };
+            return {
+                name: actor?.name || actor?.originalName || actor?.actor || 'Unknown',
+                image: actor?.image || actor?.profilePath || actor?.profile_path || actor?.photo || '',
+            };
         });
     const status = movie.status || 'N/A';
 
@@ -405,24 +395,15 @@ function renderDetailsModal(movie, id, type, provider = '') {
                         ${cast.length ? `
                         <h3 class="section-title modal-subtitle">Cast</h3>
                         <div class="modal-cast-list">
-                            ${cast.map(actor => {
-                                const actorId = `actor-${Math.random().toString(36).substr(2, 9)}`;
-                                return `
-                                    <div class="modal-cast-item" data-actor-name="${actor.name}">
-                                        <div class="modal-cast-avatar">
-                                            ${(() => {
-                                                const url = imgUrl(actor.image, 'w185');
-                                                if (!url) return `<span class="modal-cast-fallback" id="${actorId}-fallback"><i class="fa-solid fa-user"></i></span><img id="${actorId}-img" style="display:none;" alt="${actor.name}" loading="lazy" onerror="this.style.display='none';document.getElementById('${actorId}-fallback').style.display='grid';">`;
-                                                return `
-                                                    <img id="${actorId}-img" src="${url}" alt="${actor.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">
-                                                    <span class="modal-cast-fallback" style="display:none;"><i class="fa-solid fa-user"></i></span>
-                                                `;
-                                            })()}
-                                        </div>
-                                        <p>${actor.name}</p>
+                            ${cast.map(actor => `
+                                <div class="modal-cast-item">
+                                    <div class="modal-cast-avatar">
+                                        ${actor.image ? `<img src="${imgUrl(actor.image, 'w185')}" alt="${actor.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">` : ''}
+                                        <span class="modal-cast-fallback"${actor.image ? ' style="display:none;"' : ''}><i class="fa-solid fa-user"></i></span>
                                     </div>
-                                `;
-                            }).join('')}
+                                    <p>${actor.name}</p>
+                                </div>
+                            `).join('')}
                         </div>` : ''}
                     </div>
                     <div class="modal-info-panel">
@@ -889,54 +870,19 @@ async function openDetails(id, type, provider = '', seedItem = null) {
         if (requestId !== activeModalRequestId) return;
 
         // --- ENRICHMENT LOGIC ---
-        // Catch bad images or K-Dramas and search TMDB for real posters and cast info.
-        const isBad = (s) => !s || String(s).includes('placehold.co') || String(s).includes('No Image') || String(s).includes('dramaool.png') || String(s).includes('No+Image') || String(s).includes('originalnull') || String(s).includes('originalundefined');
-        
-        const currentActors = Array.isArray(movie.actors) ? movie.actors : [];
-        const castMissingImages = currentActors.length === 0 || currentActors.every(a => !a.image && !a.profilePath && !a.profile_path && (typeof a !== 'object' || !a.profile));
-
-        if (provider === 'dramacool' || isBad(getPoster(movie)) || castMissingImages) {
+        // Catch bad images or K-Dramas and search TMDB for real posters.
+        const isBad = (s) => !s || s.includes('placehold.co') || s.includes('No Image') || s.includes('dramaool.png') || s.includes('No+Image') || s.includes('originalnull');
+        if (provider === 'dramacool' || isBad(getPoster(movie))) {
             const cleanTitle = getTitle(movie);
-            const searchYear = getYear(movie);
             try {
                 const tmdbResults = await fetchJsonWithFallback(`/${encodeURIComponent(cleanTitle)}`, 5000);
                 if (tmdbResults?.results?.length && requestId === activeModalRequestId) {
-                    // Try to find a exact title match or same year to avoid wrong movie enrichment
-                    const tmdb = tmdbResults.results.find(r => 
-                        (r.title?.toLowerCase() === cleanTitle.toLowerCase() || r.name?.toLowerCase() === cleanTitle.toLowerCase()) &&
-                        (searchYear === 'N/A' || getYear(r) === searchYear)
-                    ) || tmdbResults.results[0];
-
+                    const tmdb = tmdbResults.results[0];
                     if (isBad(movie.image)) movie.image = tmdb.image || tmdb.poster_path;
                     if (isBad(movie.cover)) movie.cover = tmdb.cover || tmdb.backdrop_path;
                     if (!movie.rating || movie.rating == 0) movie.rating = tmdb.rating || tmdb.vote_average;
                     if (!movie.description || movie.description.includes('Dramacool lovers')) movie.description = tmdb.description || tmdb.overview;
                     if (!movie.releaseDate || movie.releaseDate === 'NaN') movie.releaseDate = tmdb.releaseDate || tmdb.release_date;
-                    
-                    // Fetch full info to get cast/actors if missing or if from external provider
-                    if (tmdb.id && (castMissingImages || provider === 'dramacool')) {
-                        try {
-                            // Try multiple ways to get info if needed
-                            let tmdbInfo = await fetchJsonWithFallback(`/info/${tmdb.id}?type=${getType(tmdb) || type}`, 5000);
-                            
-                            // If first type fails or lacks cast, try alternate
-                            if ((!tmdbInfo?.actors?.length && !tmdbInfo?.cast?.length) && !provider) {
-                                const altType = type === 'movie' ? 'tv' : 'movie';
-                                try {
-                                    const altInfo = await fetchJsonWithFallback(`/info/${tmdb.id}?type=${altType}`, 4000);
-                                    if (altInfo?.actors?.length || altInfo?.cast?.length) tmdbInfo = altInfo;
-                                } catch (eAlt) { }
-                            }
-
-                            const newActors = tmdbInfo?.actors || tmdbInfo?.cast;
-                            if (Array.isArray(newActors) && newActors.length > 0) {
-                                const hasImages = newActors.some(a => a && (a.image || a.profile_path || a.profilePath || a.profile || a.photo));
-                                if (hasImages || currentActors.length === 0) {
-                                    movie.actors = newActors;
-                                }
-                            }
-                        } catch (eInfo) { }
-                    }
                 }
             } catch (e) { }
         }
@@ -944,36 +890,6 @@ async function openDetails(id, type, provider = '', seedItem = null) {
 
         if (requestId !== activeModalRequestId) return;
         renderDetailsModal(movie, id, type, provider);
-
-        // --- DEEP ACTOR IMAGE RESOLUTION ---
-        // After initial render, try to find missing profile photos for the cast
-        const castItems = modalBody.querySelectorAll('.modal-cast-item');
-        castItems.forEach(async (item) => {
-            const img = item.querySelector('img');
-            const fallback = item.querySelector('.modal-cast-fallback');
-            const name = item.getAttribute('data-actor-name');
-
-            if (img && (img.style.display === 'none' || !img.src || img.src.includes('placehold.co'))) {
-                try {
-                    // Try to search for this person on TMDB
-                    const searchRes = await fetchJsonWithFallback(`/${encodeURIComponent(name)}`, 4000);
-                    // Filter for candidates that look like people (no release date, or specific types if available)
-                    const person = (searchRes.results || []).find(r => 
-                         (r.title?.toLowerCase() === name.toLowerCase() || r.name?.toLowerCase() === name.toLowerCase()) &&
-                         (!r.releaseDate || r.releaseDate === 'N/A')
-                    );
-                    
-                    if (person && person.image) {
-                        const profileUrl = imgUrl(person.image, 'w185');
-                        if (profileUrl && requestId === activeModalRequestId) {
-                            img.src = profileUrl;
-                            img.style.display = 'block';
-                            if (fallback) fallback.style.display = 'none';
-                        }
-                    }
-                } catch (e) { }
-            }
-        });
     } catch (err) {
         if (requestId !== activeModalRequestId) return;
         console.error('Details error:', err);
