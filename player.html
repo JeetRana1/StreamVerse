@@ -2643,42 +2643,42 @@
             return new Hls({
                 startPosition: startTime,
                 enableWorker: !isThumbnail,
-                lowLatencyMode: isThumbnail,
+                lowLatencyMode: true, // Always enable low latency for faster switching
                 backBufferLength: backBufferLength,
                 maxBufferLength: maxBufferLength,
                 maxMaxBufferLength: maxMaxBufferLength,
                 maxBufferSize: maxBufferSize,
-                maxBufferHole: isThumbnail ? 0.12 : (mobileMain ? 0.32 : 0.45), // ENHANCED: Tighter hole tolerance
-                highBufferWatchdogPeriod: isThumbnail ? 2 : 2.5, // ENHANCED: More frequent watchdog checks
-                nudgeOffset: isThumbnail ? 0.1 : (mobileMain ? 0.12 : 0.18),
-                nudgeMaxRetry: isThumbnail ? 180 : (mobileMain ? 12 : 16), // ENHANCED: Higher retry count
-                maxFragLookUpTolerance: isThumbnail ? 0.8 : 0.08, // ENHANCED: Stricter tolerance for better seeking
-                manifestLoadingTimeOut: isThumbnail ? 6000 : 12000, // ENHANCED: Faster timeout
-                manifestLoadingMaxRetry: 8, // ENHANCED: More retries for reliability
-                manifestLoadingRetryDelay: isThumbnail ? 300 : 350, // ENHANCED: Faster retry
-                levelLoadingTimeOut: isThumbnail ? 4000 : 12000,
-                levelLoadingMaxRetry: 5,
-                levelLoadingRetryDelay: isThumbnail ? 250 : 400,
-                fragLoadingTimeOut: isThumbnail ? 3500 : 18000, // ENHANCED: More reasonable for streaming
-                fragLoadingMaxRetry: isThumbnail ? 3 : 7, // ENHANCED: More retries
-                fragLoadingRetryDelay: isThumbnail ? 250 : 400,
-                fragLoadingMaxRetryTimeout: isThumbnail ? 1200 : 7000,
+                maxBufferHole: isThumbnail ? 0.08 : (mobileMain ? 0.16 : 0.25), // Tighter hole tolerance
+                highBufferWatchdogPeriod: isThumbnail ? 1 : 1.5, // Faster watchdog checks
+                nudgeOffset: isThumbnail ? 0.05 : (mobileMain ? 0.08 : 0.12), // Smaller nudge offset
+                nudgeMaxRetry: isThumbnail ? 90 : (mobileMain ? 8 : 12), // Fewer retries for speed
+                maxFragLookUpTolerance: isThumbnail ? 0.4 : 0.04, // Stricter tolerance
+                manifestLoadingTimeOut: isThumbnail ? 3000 : 8000, // Faster timeout
+                manifestLoadingMaxRetry: 4, // Fewer retries
+                manifestLoadingRetryDelay: isThumbnail ? 150 : 200, // Faster retry
+                levelLoadingTimeOut: isThumbnail ? 2000 : 8000,
+                levelLoadingMaxRetry: 3,
+                levelLoadingRetryDelay: isThumbnail ? 150 : 250,
+                fragLoadingTimeOut: isThumbnail ? 2000 : 12000, // Faster fragment loading
+                fragLoadingMaxRetry: isThumbnail ? 2 : 5, // Fewer retries
+                fragLoadingRetryDelay: isThumbnail ? 150 : 250,
+                fragLoadingMaxRetryTimeout: isThumbnail ? 800 : 4000,
                 startLevel: isThumbnail ? 0 : -1,
-                abrEwmaDefaultEstimate: mobileMain ? 1500000 : (isConstrained ? 1800000 : 2400000), // ENHANCED: Dynamic
-                abrBandWidthFactor: mobileMain ? 0.82 : (isConstrained ? 0.85 : 0.90), // ENHANCED: More conservative
-                abrBandWidthUpFactor: mobileMain ? 0.5 : (isConstrained ? 0.55 : 0.65), // ENHANCED: Smoother upgrades
-                abrMaxWithRealBitrate: true, // ENHANCED: Better bitrate estimation
+                abrEwmaDefaultEstimate: mobileMain ? 1200000 : (isConstrained ? 1500000 : 2000000), // Faster bitrate estimation
+                abrBandWidthFactor: mobileMain ? 0.75 : (isConstrained ? 0.80 : 0.85), // More conservative
+                abrBandWidthUpFactor: mobileMain ? 0.4 : (isConstrained ? 0.45 : 0.55), // Smoother upgrades
+                abrMaxWithRealBitrate: true,
                 ignoreDevicePixelRatio: true,
                 capLevelToPlayerSize: true,
                 capLevelOnFPSDrop: true,
-                appendErrorMaxRetry: 12, // ENHANCED: More resilient
+                appendErrorMaxRetry: 8, // Fewer retries
                 startFragPrefetch: !isThumbnail,
                 testBandwidth: true,
                 progressive: true,
-                maxStarvationDelay: isThumbnail ? 2 : 3.5, // ENHANCED: Faster response
-                maxLoadingDelay: isThumbnail ? 2 : 3.5,
+                maxStarvationDelay: isThumbnail ? 1 : 2, // Faster response
+                maxLoadingDelay: isThumbnail ? 1 : 2,
                 xhrSetup: (xhr, url) => {
-                    xhr.timeout = isThumbnail ? 7000 : (isConstrained ? 22000 : 20000);
+                    xhr.timeout = isThumbnail ? 4000 : (isConstrained ? 15000 : 12000); // Faster timeouts
                 },
             });
         }
@@ -3122,7 +3122,7 @@
             let lastStallNudgeAt = 0;
             let consecutiveBufferErrors = 0; // ENHANCED: Track consecutive errors
 
-            hls.on(Hls.Events.ERROR, (_, d) => {
+            hls.on(Hls.Events.ERROR, function(_, d) {
                 console.log('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
                 const detailText = String(d?.details || '').toLowerCase();
                 const isFragParsing = detailText.includes('fragparsingerror') || d?.details === Hls.ErrorDetails.FRAG_PARSING_ERROR;
@@ -3130,17 +3130,50 @@
                     detailText.includes('bufferappend') ||
                     d?.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR ||
                     d?.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR;
-                const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000; // ENHANCED: Shorter window
+                const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000;
+                
+                // ENHANCED: Auto-resume playback on non-fatal errors
+                if (!d.fatal && video && video.paused && !isSourceSwitching) {
+                    setTimeout(() => {
+                        if (video && video.paused && !isSourceSwitching) {
+                            console.log('Auto-resuming playback after error');
+                            video.play().catch(() => {
+                                video.muted = true;
+                                video.play().catch(() => {});
+                            });
+                        }
+                    }, 50); // Faster auto-resume
+                }
+            
+            // ENHANCED: More aggressive recovery for fragParsingError
+            if (isFragParsing && !d.fatal) {
+                hlsFragErrorBurst += 1;
+                if (hlsFragErrorBurst >= 2) hlsSessionIsFragile = true; // Lower threshold
+                
+                // Immediate recovery attempt (zero delay)
+                if (video && hls) {
+                    const jumpDistance = Math.min(1.0, Math.max(0.3, hlsFragErrorBurst * 0.2)); // Smaller jumps
+                    const targetTime = Math.max(0, Math.min((video.duration || Infinity) - 0.1, 
+                        (video.currentTime || 0) + jumpDistance));
+                    
+                    if (isFinite(targetTime) && targetTime > 0) {
+                        console.log('Instant recovery from fragParsingError, jumping to:', targetTime);
+                        video.currentTime = targetTime;
+                        try {
+                            hls.stopLoad();
+                            hls.startLoad(Math.max(0, targetTime - 0.3)); // Smaller buffer
+                        } catch (_) {}
+                    }
+                }
                 
                 const applyRapidSeekHeal = () => {
                     if (!video) return;
                     showBufferingOverlay();
                     try {
-                        // ENHANCED: Smarter jump distance for errors
-                        const jump = isFragParsing ? 1.5 : 0.6; // Larger jumps for frag errors
+                        const jump = isFragParsing ? 1.5 : 0.6;
                         const near = Math.max(0, Math.min((video.duration || Infinity) - 0.2, (video.currentTime || 0) + jump));
                         if (isFinite(near) && near > 0) video.currentTime = near;
-                        setTemporaryRecoveryQuality(isFragParsing ? 6000 : 5000); // ENHANCED: Longer recovery
+                        setTemporaryRecoveryQuality(isFragParsing ? 6000 : 5000);
                         tuneHlsForJump(near, jump, 'seek');
                         if (isBufferAppend || d.fatal) hls.recoverMediaError();
                     } catch (_) { }
@@ -3303,12 +3336,13 @@
                 } else {
                     if (typeof onErrorFallback === 'function') onErrorFallback('fatal_unknown');
                 }
+            }
             });
 
             // ENHANCED: Stall watchdog with faster response times
             let lastWatchdogTime = -1;
             let watchdogStallCount = 0;
-            const watchdogInterval = setInterval(() => {
+            const watchdogInterval = setInterval(function() {
                 if (!video || video.paused || video.ended || video.readyState === 0) {
                     watchdogStallCount = 0;
                     lastWatchdogTime = video ? video.currentTime : -1;
@@ -3366,7 +3400,10 @@
 
             captureVideoFrameToOverlay();
 
-            if (hlsInst) {
+            // ENHANCED: Check if we're switching to the same provider for audio track switching
+            const isAudioTrackSwitch = url === currentStreamUrl && referer === currentStreamReferer;
+            
+            if (hlsInst && !isAudioTrackSwitch) {
                 try {
                     hlsInst.stopLoad();
                     hlsInst.detachMedia();
@@ -3374,14 +3411,22 @@
                 } catch (_) { }
             }
 
-            hlsInst = svCreateHlsInstance(targetTime);
-            svAttachHlsListeners(hlsInst, targetTime, onReady);
-
-            hlsInst.loadSource(proxiedStreamUrl(url, referer));
-            hlsInst.attachMedia(video);
-            try {
-                hlsInst.startLoad(Math.max(0, targetTime - 0.8));
-            } catch (_) { }
+            // ENHANCED: For audio track switching, reuse HLS instance if possible
+            if (isAudioTrackSwitch && hlsInst) {
+                console.log('Seamless audio track switch detected, reusing HLS instance');
+                hlsInst.loadSource(proxiedStreamUrl(url, referer));
+                try {
+                    hlsInst.startLoad(Math.max(0, targetTime - 0.8));
+                } catch (_) { }
+            } else {
+                hlsInst = svCreateHlsInstance(targetTime);
+                svAttachHlsListeners(hlsInst, targetTime, onReady);
+                hlsInst.loadSource(proxiedStreamUrl(url, referer));
+                hlsInst.attachMedia(video);
+                try {
+                    hlsInst.startLoad(Math.max(0, targetTime - 0.8));
+                } catch (_) { }
+            }
 
             let lastTime = -1;
             const cleanup = () => {
@@ -6176,9 +6221,20 @@
         function toggleAudioPanel(btn = customAudioBtn) {
             updateAudioTracks();
             const hlsTracks = (hlsInst && hlsInst.audioTracks) || [];
-            if (hlsTracks.length <= 1 && satoruAudioSources.length === 0) {
-                showToast('No alternative audio tracks found.');
+            
+            // ENHANCED: Check if satoruAudioSources are still being populated
+            const hasSatoruSources = satoruAudioSources.length > 0;
+            const hasHlsTracks = hlsTracks.length > 1;
+            
+            // Only show "no tracks" message if we're sure there are none
+            if (!hasHlsTracks && !hasSatoruSources) {
+                // Check if satoru sources might be loading in background
+                const satoruLoading = activeProviders.includes('satoru') && currentIsLikelyAnime;
+                if (!satoruLoading) {
+                    showToast('No alternative audio tracks found.');
+                }
             }
+            
             const willOpen = !audioPanel.classList.contains('open');
             closeAllPopups();
             if (willOpen) {
@@ -6411,8 +6467,55 @@
                         pendingJumpTarget = null;
 
                         if (!isOnSatoru) {
+                            // Ultra-fast zero-lag audio track switching
                             if (src.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
-                                svSwitchHlsSourceSilent(src.url, src.referer, () => { }, resumeAt);
+                                const currentTime = Math.max(0, Number(video?.currentTime || 0));
+                                const wasPlaying = !video?.paused;
+                                
+                                console.log('Zero-lag audio switch to satoru:', src.label, 'at time:', currentTime);
+                                
+                                // Use zero-lag switching if available, otherwise fallback
+                                if (typeof svZeroLagAudioSwitch === 'function') {
+                                    svZeroLagAudioSwitch(src.url, src.referer, currentTime, wasPlaying, () => {
+                                        svApplyPreferredAudioToHls(hlsInst);
+                                        
+                                        // Instant playback resumption
+                                        if (wasPlaying && video) {
+                                            video.play().catch(() => {
+                                                video.muted = true;
+                                                video.play().catch(() => {});
+                                            });
+                                        }
+                                    });
+                                } else if (typeof svUltraSeamlessAudioSwitch === 'function') {
+                                    // Fallback to ultra-seamless
+                                    svUltraSeamlessAudioSwitch(src.url, src.referer, currentTime, wasPlaying, () => {
+                                        svApplyPreferredAudioToHls(hlsInst);
+                                        
+                                        if (wasPlaying && video) {
+                                            setTimeout(() => {
+                                                video.play().catch(() => {
+                                                    video.muted = true;
+                                                    video.play().catch(() => {});
+                                                });
+                                            }, 50);
+                                        }
+                                    });
+                                } else {
+                                    // Final fallback to standard switching
+                                    svSwitchHlsSourceSilent(src.url, src.referer, () => {
+                                        svApplyPreferredAudioToHls(hlsInst);
+                                        
+                                        if (wasPlaying && video) {
+                                            setTimeout(() => {
+                                                video.play().catch(() => {
+                                                    video.muted = true;
+                                                    video.play().catch(() => {});
+                                                });
+                                            }, 100);
+                                        }
+                                    }, resumeAt);
+                                }
                             } else {
                                 loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt);
                             }
@@ -8698,6 +8801,15 @@
                                             await addSatoruWatchSources(watch, cand.dubType, cand.item.id);
                                         }
                                     } catch (_) { }
+                                }
+
+                                // ENHANCED: Auto-update audio panel when sources are ready
+                                if (satoruAudioSources.length > 0) {
+                                    setTimeout(() => {
+                                        if (audioPanel.classList.contains('open')) {
+                                            updateAudioTracks();
+                                        }
+                                    }, 500);
                                 }
                             } catch (e) {
                                 console.warn('[satoru-bg] Failed:', e.message);
