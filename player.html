@@ -9111,10 +9111,23 @@
             currentIdx = idx;
             updateSourceUI(idx);
 
+            const src = allSources[idx];
+            if (!src) return;
+
             // Remember if user prefers Dubbed or Subbed
-            const label = String(allSources[idx]?.label || '').toLowerCase();
-            if (label.includes('dubbed')) preferredSourceLabelMatch = 'dubbed';
-            else if (label.includes('subbed')) preferredSourceLabelMatch = 'subbed';
+            const label = String(src.label || '').toLowerCase();
+            if (label.includes('dubbed')) {
+                preferredSourceLabelMatch = 'dubbed';
+                preferredAudioToken = 'dubbed';
+            } else if (label.includes('subbed')) {
+                preferredSourceLabelMatch = 'subbed';
+                preferredAudioToken = 'subbed';
+            }
+
+            // Also remember the provider preference
+            if (src.provider) {
+                FORCED_PROVIDER = src.provider;
+            }
 
             playSource(idx, savedTime);
             syncUrlState();
@@ -9206,8 +9219,6 @@
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
             window.previewSeeking = false;
             isSourceSwitching = true;
-            currentStreamUrl = String(url || '');
-            currentStreamReferer = referer || null;
             hlsFragErrorBurst = 0;
             hlsSessionIsFragile = false;
             lastRequestedPlaybackTarget = Math.max(0, Number(startTime || 0));
@@ -9235,6 +9246,9 @@
                 hideLoader();
                 return;
             }
+
+            currentStreamUrl = String(url || '');
+            currentStreamReferer = referer || null;
 
             // Visual Bridge: capture current frame before we wipe anything.
             // Skip on the very first load — the #loader (with cover art) is already
