@@ -1,0 +1,21 @@
+{
+  "name": "StreamVerse",
+  "short_name": "StreamVerse",
+  "description": "Watch unlimited movies and TV shows for free.",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["entertainment"],
+  "lang": "en"
+}

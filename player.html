@@ -11,6 +11,13 @@
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="icon" href="logo.png">
+    <!-- PWA manifest — gives iOS the signal to run without browser chrome in standalone mode -->
+    <link rel="manifest" href="manifest.json">
+    <!-- Apple-specific PWA tags. These are required for iOS standalone mode. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="StreamVerse">
+    <link rel="apple-touch-icon" href="logo.png">
     <style>
         :root {
             --primary: #e50914;
@@ -305,6 +312,86 @@
         #ios-rotate-hint.show {
             opacity: 1;
             transform: translateX(-50%) translateY(0);
+        }
+
+        /* ── iOS Add to Home Screen banner ────────────────────────────────── */
+        #ios-a2hs-banner {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(100%);
+            width: min(94vw, 420px);
+            z-index: 200000;
+            transition: transform .35s cubic-bezier(.4,0,.2,1);
+            filter: drop-shadow(0 -4px 24px rgba(0,0,0,.55));
+        }
+        #ios-a2hs-banner.visible {
+            transform: translateX(-50%) translateY(0);
+        }
+        .a2hs-inner {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(18,18,22,.96);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 20px 20px 0 0;
+            padding: 14px 16px 20px;
+            backdrop-filter: blur(16px);
+        }
+        .a2hs-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            flex-shrink: 0;
+            object-fit: cover;
+        }
+        .a2hs-text {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .a2hs-text strong {
+            font-size: 14px;
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+        }
+        .a2hs-text span {
+            font-size: 12px;
+            color: rgba(255,255,255,.65);
+            line-height: 1.4;
+        }
+        .a2hs-share-icon {
+            display: inline-block;
+            background: #007AFF;
+            color: #fff;
+            font-size: 11px;
+            padding: 1px 5px;
+            border-radius: 5px;
+            font-weight: 700;
+            vertical-align: middle;
+        }
+        .a2hs-text em { color: #fff; font-style: normal; font-weight: 600; }
+        .a2hs-close {
+            background: rgba(255,255,255,.1);
+            border: none;
+            color: rgba(255,255,255,.6);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            font-size: 13px;
+            cursor: pointer;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .a2hs-arrow {
+            width: 0; height: 0;
+            border-left: 12px solid transparent;
+            border-right: 12px solid transparent;
+            border-top: 10px solid rgba(18,18,22,.96);
+            margin: 0 auto;
         }
 
         #video-brightness-overlay {
@@ -2162,6 +2249,21 @@
     <!-- Transition overlay: lives OUTSIDE player-wrap so it escapes its stacking context -->
     <!-- iOS pseudo-fullscreen rotation hint -->
     <div id="ios-rotate-hint">⟳ Rotate for best experience</div>
+
+    <!-- iOS "Add to Home Screen" install banner.
+         Shows only on iOS Safari in browser mode (not in standalone PWA mode).
+         Once installed, the app launches with ZERO browser chrome. -->
+    <div id="ios-a2hs-banner" style="display:none;">
+        <div class="a2hs-inner">
+            <img src="logo.png" class="a2hs-icon" alt="StreamVerse">
+            <div class="a2hs-text">
+                <strong>Get the full experience</strong>
+                <span>Tap <span class="a2hs-share-icon">⬆</span> then <em>"Add to Home Screen"</em> to watch without browser bars</span>
+            </div>
+            <button class="a2hs-close" id="a2hs-close-btn" aria-label="Dismiss">✕</button>
+        </div>
+        <div class="a2hs-arrow"></div>
+    </div>
     <div id="transition-overlay" class="transition-overlay">
         <canvas></canvas>
         <div class="transition-spinner">
@@ -7248,6 +7350,45 @@
                         showControlSurface();
                     }
                 });
+            }
+
+            // ── iOS "Add to Home Screen" banner ───────────────────────────────
+            // navigator.standalone is ONLY defined on iOS Safari.
+            //   true  = already running as installed PWA → never show banner
+            //   false = running in browser → show banner so user knows to install
+            if (IS_IOS && navigator.standalone === false) {
+                const a2hsBanner  = document.getElementById('ios-a2hs-banner');
+                const a2hsClose   = document.getElementById('a2hs-close-btn');
+                const A2HS_KEY    = 'sv_a2hs_dismissed_at';
+                const DISMISS_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+
+                const wasDismissed = () => {
+                    const t = parseInt(localStorage.getItem(A2HS_KEY) || '0', 10);
+                    return t && (Date.now() - t) < DISMISS_TTL;
+                };
+
+                if (a2hsBanner && !wasDismissed()) {
+                    a2hsBanner.style.display = '';
+                    let showTimer, autoHideTimer;
+
+                    // Slide up after 2.5s so it doesn't distract from initial load
+                    showTimer = setTimeout(() => {
+                        a2hsBanner.classList.add('visible');
+                    }, 2500);
+
+                    // Auto-dismiss after 12s
+                    autoHideTimer = setTimeout(() => {
+                        a2hsBanner.classList.remove('visible');
+                    }, 14500);
+
+                    a2hsClose?.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        a2hsBanner.classList.remove('visible');
+                        localStorage.setItem(A2HS_KEY, String(Date.now()));
+                        clearTimeout(showTimer);
+                        clearTimeout(autoHideTimer);
+                    });
+                }
             }
 
             uiLockBtn.addEventListener('click', (e) => {

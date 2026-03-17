@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>StreamVerse | Unlimited Movies & TV Shows</title>
     <meta name="description"
         content="Watch your favorite movies and TV shows for free in high quality with multi-audio support.">
@@ -16,6 +16,13 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" href="logo.png">
+    <!-- PWA manifest — gives iOS the signal to run without browser chrome in standalone mode -->
+    <link rel="manifest" href="manifest.json">
+    <!-- Apple-specific PWA tags. Required for iOS standalone (no browser chrome) mode. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="StreamVerse">
+    <link rel="apple-touch-icon" href="logo.png">
 </head>
 
 <body>
