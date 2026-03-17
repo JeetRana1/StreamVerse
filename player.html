@@ -272,6 +272,14 @@
             position: fixed !important;
             inset: 0 !important;
             z-index: 100100 !important; /* always above player-wrap */
+            pointer-events: auto !important; /* iOS: ensure taps reach buttons */
+        }
+
+        /* Force all interactive elements inside the control surface to be tappable */
+        html.ios-pseudo-fs-active .control-surface button,
+        html.ios-pseudo-fs-active .control-surface input,
+        html.ios-pseudo-fs-active .control-surface [role="button"] {
+            pointer-events: auto !important;
         }
 
         /* Plyr wrapper must also fill the promoted container */
@@ -6960,7 +6968,14 @@
 
             const hlsTracks = (hlsInst && Array.isArray(hlsInst.audioTracks)) ? hlsInst.audioTracks : [];
             const hasSatoruSources = satoruAudioSources.length > 0;
-            const hasAnyTracks = hlsTracks.length > 0 || hasSatoruSources;
+
+            // iOS Safari uses native HLS (no HLS.js), so hlsInst is null.
+            // Read WebKit's native AudioTrackList from the <video> element instead.
+            const iosNativeTracks = (!hlsInst && video && video.audioTracks && video.audioTracks.length > 0)
+                ? Array.from(video.audioTracks)
+                : [];
+
+            const hasAnyTracks = hlsTracks.length > 0 || hasSatoruSources || iosNativeTracks.length > 0;
 
             audioBtn.style.display = 'flex';
 
@@ -7002,6 +7017,21 @@
                         }
                     });
                 });
+
+                // iOS Safari native AudioTrackList (when HLS.js is not used)
+                if (iosNativeTracks.length > 0) {
+                    iosNativeTracks.forEach((track) => {
+                        let label = track.label || track.language || 'Default';
+                        if (!label || label === 'und') label = 'Japanese';
+                        const isActive = track.enabled;
+                        addItem(label, isActive, () => {
+                            // Disable all tracks then enable the picked one
+                            iosNativeTracks.forEach(t => { t.enabled = false; });
+                            track.enabled = true;
+                            updateAudioTracks();
+                        });
+                    });
+                }
             } else {
                 // Return to original JustAnime track
                 addItem('Japanese', false, () => {
@@ -7290,7 +7320,10 @@
                         console.log('[ios-pseudo-fs] Exited pseudo-fullscreen');
                     }
 
-                    showControlSurface();
+                    // Keep controls clearly visible after toggling so the user
+                    // has time to interact — holdControlsVisible prevents the
+                    // 3-second auto-hide from firing immediately on touch devices.
+                    holdControlsVisible(4000);
                     return;
                 }
 
@@ -10382,6 +10415,12 @@
                 video.addEventListener('loadedmetadata', () => clearTimeout(hlsStallTimer), { once: true });
                 video.addEventListener('canplay', () => clearTimeout(hlsStallTimer), { once: true });
 
+                // Refresh audio track UI once metadata is parsed — iOS populates
+                // video.audioTracks only AFTER loadedmetadata fires.
+                video.addEventListener('loadedmetadata', () => {
+                    setTimeout(() => updateAudioTracks(), 100);
+                }, { once: true });
+
                 video.src = proxiedUrl;
                 video.load();
 
@@ -10394,6 +10433,20 @@
 
                 initPlyr();
 
+                // iOS native HLS: Plyr's event wrappers are not reliable enough for hiding the loader.
+                // Hook directly onto the native video element events to guarantee the loader clears.
+                const _iosHideLoader = () => {
+                    isFirstLoad = false;
+                    hideLoader();
+                    try { hideTransitionOverlay(); } catch (_) { }
+                    // Also refresh audio tracks now that native AudioTrackList is populated
+                    setTimeout(() => updateAudioTracks(), 300);
+                };
+                video.addEventListener('playing', _iosHideLoader, { once: true });
+                video.addEventListener('canplay',  _iosHideLoader, { once: true });
+                // Hard fallback: if neither fires within 14s, force-clear the loader
+                setTimeout(() => { isFirstLoad = false; hideLoader(); updateAudioTracks(); }, 14000);
+
                 if (isFirstLoad) {
                     const onFirstFrame = () => {
                         isFirstLoad = false;
@@ -10401,7 +10454,6 @@
                         if (video) video.removeEventListener('timeupdate', onFirstFrame);
                     };
                     if (video) video.addEventListener('timeupdate', onFirstFrame);
-                    setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 12000);
                 }
 
                 // Initial play attempt
