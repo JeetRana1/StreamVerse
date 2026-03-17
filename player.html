@@ -2490,7 +2490,6 @@
         };
         const MEDIA_INFO_CACHE_PREFIX = 'sv_media_info_v1';
         const MEDIA_INFO_CACHE_TTL_MS = 10 * 60 * 1000;
-        const USE_HEURISTIC_SKIP_FALLBACK = false;
         const ENABLE_CONSUMET_META_FILLER = false;
         const animeSkipCache = new Map();
         const animeFillerCache = new Map();
@@ -2638,56 +2637,58 @@
             const mobileMain = IS_MOBILE_CLIENT && !isThumbnail;
             const isConstrained = !isThumbnail && estimateNetworkQuality();
 
-            // ADVANCED: Dynamic buffer sizing based on network quality
-            const baseBackBuffer = isThumbnail ? 3 : (mobileMain ? 12 : 20);
-            const baseMaxBuffer = isThumbnail ? 6 : (mobileMain ? 24 : 36);
-            const baseMaxMaxBuffer = isThumbnail ? 12 : (mobileMain ? 48 : 72);
-
-            // Under constrained bandwidth: reduce buffers for faster seeking/switching
-            const backBufferLength = isConstrained ? Math.max(4, baseBackBuffer * 0.75) : baseBackBuffer;
-            const maxBufferLength = isConstrained ? Math.max(10, baseMaxBuffer * 0.7) : baseMaxBuffer;
-            const maxMaxBufferLength = isConstrained ? Math.max(20, baseMaxMaxBuffer * 0.75) : baseMaxMaxBuffer;
-            const maxBufferSize = isThumbnail ? 8 * 1024 * 1024 : (isConstrained ? Math.max(12 * 1000 * 1000, mobileMain ? 20 * 1000 * 1000 : 32 * 1000 * 1000) : (mobileMain ? 28 * 1000 * 1000 : 48 * 1000 * 1000));
+            // Dynamic buffer sizing — keep buffers modest to avoid bufferFullError cascades
+            // (oversized buffers fill up, HLS.js panics → stall loop)
+            const backBufferLength = isThumbnail ? 2 : (mobileMain ? 8 : 12);
+            const maxBufferLength = isThumbnail ? 5 : (mobileMain ? 14 : 20);
+            const maxMaxBufferLength = isThumbnail ? 10 : (mobileMain ? 28 : 40);
+            const maxBufferSize = isThumbnail
+                ? 6 * 1024 * 1024
+                : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000);
 
             return new Hls({
                 startPosition: startTime,
                 enableWorker: !isThumbnail,
-                lowLatencyMode: true, // Always enable low latency for faster switching
+                // VOD streams — disable low-latency mode (it increases stalling on non-LL streams)
+                lowLatencyMode: false,
                 backBufferLength: backBufferLength,
                 maxBufferLength: maxBufferLength,
                 maxMaxBufferLength: maxMaxBufferLength,
                 maxBufferSize: maxBufferSize,
-                maxBufferHole: isThumbnail ? 0.08 : (mobileMain ? 0.16 : 0.25), // Tighter hole tolerance
-                highBufferWatchdogPeriod: isThumbnail ? 1 : 1.5, // Faster watchdog checks
-                nudgeOffset: isThumbnail ? 0.05 : (mobileMain ? 0.08 : 0.12), // Smaller nudge offset
-                nudgeMaxRetry: isThumbnail ? 90 : (mobileMain ? 8 : 12), // Fewer retries for speed
-                maxFragLookUpTolerance: isThumbnail ? 0.4 : 0.04, // Stricter tolerance
-                manifestLoadingTimeOut: isThumbnail ? 3000 : 8000, // Faster timeout
-                manifestLoadingMaxRetry: 4, // Fewer retries
-                manifestLoadingRetryDelay: isThumbnail ? 150 : 200, // Faster retry
-                levelLoadingTimeOut: isThumbnail ? 2000 : 8000,
-                levelLoadingMaxRetry: 3,
-                levelLoadingRetryDelay: isThumbnail ? 150 : 250,
-                fragLoadingTimeOut: isThumbnail ? 2000 : 12000, // Faster fragment loading
-                fragLoadingMaxRetry: isThumbnail ? 2 : 5, // Fewer retries
-                fragLoadingRetryDelay: isThumbnail ? 150 : 250,
-                fragLoadingMaxRetryTimeout: isThumbnail ? 800 : 4000,
+                maxBufferHole: isThumbnail ? 0.1 : 0.3,
+                // Longer watchdog period prevents false positive stall detections
+                highBufferWatchdogPeriod: isThumbnail ? 2 : 4,
+                nudgeOffset: isThumbnail ? 0.1 : 0.2,
+                // Cap nudge retries — too many nudges cause bufferNudgeOnStall spam→stall loop
+                nudgeMaxRetry: isThumbnail ? 3 : 4,
+                maxFragLookUpTolerance: isThumbnail ? 0.4 : 0.05,
+                manifestLoadingTimeOut: isThumbnail ? 4000 : 10000,
+                manifestLoadingMaxRetry: 3,
+                manifestLoadingRetryDelay: isThumbnail ? 200 : 300,
+                levelLoadingTimeOut: isThumbnail ? 3000 : 10000,
+                levelLoadingMaxRetry: 2,
+                levelLoadingRetryDelay: isThumbnail ? 200 : 300,
+                fragLoadingTimeOut: isThumbnail ? 3000 : 14000,
+                // Fewer fragment retries — fail fast so we can rebuild in-place instead of stalling
+                fragLoadingMaxRetry: isThumbnail ? 2 : 3,
+                fragLoadingRetryDelay: isThumbnail ? 200 : 500,
+                fragLoadingMaxRetryTimeout: isThumbnail ? 1000 : 6000,
                 startLevel: isThumbnail ? 0 : -1,
-                abrEwmaDefaultEstimate: mobileMain ? 1200000 : (isConstrained ? 1500000 : 2000000), // Faster bitrate estimation
-                abrBandWidthFactor: mobileMain ? 0.75 : (isConstrained ? 0.80 : 0.85), // More conservative
-                abrBandWidthUpFactor: mobileMain ? 0.4 : (isConstrained ? 0.45 : 0.55), // Smoother upgrades
+                abrEwmaDefaultEstimate: mobileMain ? 1000000 : 1500000,
+                abrBandWidthFactor: mobileMain ? 0.7 : 0.8,
+                abrBandWidthUpFactor: mobileMain ? 0.35 : 0.5,
                 abrMaxWithRealBitrate: true,
                 ignoreDevicePixelRatio: true,
                 capLevelToPlayerSize: true,
                 capLevelOnFPSDrop: true,
-                appendErrorMaxRetry: 8, // Fewer retries
+                appendErrorMaxRetry: 4,
                 startFragPrefetch: !isThumbnail,
-                testBandwidth: true,
+                testBandwidth: !isThumbnail,
                 progressive: true,
-                maxStarvationDelay: isThumbnail ? 1 : 2, // Faster response
-                maxLoadingDelay: isThumbnail ? 1 : 2,
+                maxStarvationDelay: isThumbnail ? 2 : 4,
+                maxLoadingDelay: isThumbnail ? 2 : 4,
                 xhrSetup: (xhr, url) => {
-                    xhr.timeout = isThumbnail ? 4000 : (isConstrained ? 15000 : 12000); // Faster timeouts
+                    xhr.timeout = isThumbnail ? 5000 : 18000;
                 },
             });
         }
@@ -2850,10 +2851,8 @@
             pendingJumpTarget = { time: clampedTarget, reason };
             lastRequestedPlaybackTarget = clampedTarget;
 
-            if (hlsInst && hlsSessionIsFragile && jumpDistance > 12) {
-                performHotReloadJump(clampedTarget, reason);
-                return;
-            }
+            // ENHANCED: Do not arbitrarily trigger full hot-reloads on normal skips,
+            // as this can lead to unwarranted full pipeline rebuilds that stall the player.
 
             // ENHANCED: Faster burst seeking - reduced cooldown
             if (now < jumpCooldownUntil && seekBurstCount >= 8) {
@@ -2901,7 +2900,7 @@
                         Promise.resolve(video.play()).catch(() => { });
                     }
                 }
-            });
+            }, clampedTarget, true);
             return true;
         }
 
@@ -3129,7 +3128,9 @@
             // Track media error state for better recovery
             let mediaErrorCount = 0;
             let lastStallNudgeAt = 0;
-            let consecutiveBufferErrors = 0; // ENHANCED: Track consecutive errors
+            let consecutiveBufferErrors = 0;
+            let consecutiveFragErrors = 0;
+            let lastBufferFlushAt = 0;
 
             hls.on(Hls.Events.ERROR, function (_, d) {
                 console.log('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
@@ -3139,175 +3140,238 @@
                     detailText.includes('bufferappend') ||
                     d?.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR ||
                     d?.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR;
+                const isBufferFull = d?.details === Hls.ErrorDetails.BUFFER_FULL_ERROR;
+                const isFragLoad = detailText.includes('fragloaderror') || d?.details === Hls.ErrorDetails.FRAG_LOAD_ERROR;
+                const isLevelLoad = detailText.includes('levelloadtimeout') || detailText.includes('levelloadererror') || d?.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR || d?.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT;
                 const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000;
 
-                // ENHANCED: Auto-resume playback on non-fatal errors
+                // ── bufferFullError: flush stale back-buffer instead of spiralling ──
+                if (isBufferFull && !d.fatal) {
+                    consecutiveBufferErrors++;
+                    const now = Date.now();
+                    if (now - lastBufferFlushAt > 1500) {
+                        lastBufferFlushAt = now;
+                        console.warn('[hls] bufferFullError – flushing back-buffer and reducing quality');
+                        try {
+                            // Drop to lowest quality so new fragments are tiny
+                            if (hls.levels && hls.levels.length > 1) {
+                                hls.autoLevelCapping = 0;
+                                hls.nextLevel = 0;
+                                hls.loadLevel = 0;
+                                setTimeout(() => {
+                                    try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { }
+                                }, 3000);
+                            }
+                            hls.stopLoad();
+                            hls.startLoad(video ? Math.max(0, video.currentTime - 0.5) : 0);
+                        } catch (_) { }
+                    }
+                    if (consecutiveBufferErrors >= 5 && typeof onErrorFallback === 'function') {
+                        consecutiveBufferErrors = 0;
+                        onErrorFallback('buffer_full_unrecoverable');
+                    }
+                    return;
+                } else if (!isBufferFull) {
+                    consecutiveBufferErrors = 0;
+                }
+
+                // Auto-resume playback on non-fatal errors
                 if (!d.fatal && video && video.paused && !isSourceSwitching) {
                     setTimeout(() => {
                         if (video && video.paused && !isSourceSwitching) {
-                            console.log('Auto-resuming playback after error');
                             video.play().catch(() => {
                                 video.muted = true;
                                 video.play().catch(() => { });
                             });
                         }
-                    }, 50); // Faster auto-resume
+                    }, 80);
                 }
 
-                // ENHANCED: More aggressive recovery for fragParsingError
                 if (isFragParsing && !d.fatal) {
                     hlsFragErrorBurst += 1;
-                    if (hlsFragErrorBurst >= 2) hlsSessionIsFragile = true; // Lower threshold
+                    fragParseBurstCount += 1;
+                    const now = Date.now();
+                    if (now - fragParseBurstStartAt > 4000) {
+                        fragParseBurstStartAt = now;
+                        fragParseBurstCount = 1;
+                    }
+                    
+                    if (hlsFragErrorBurst >= 3) hlsSessionIsFragile = true;
 
-                    // Immediate recovery attempt (zero delay)
-                    if (video && hls) {
-                        const jumpDistance = Math.min(1.0, Math.max(0.3, hlsFragErrorBurst * 0.2)); // Smaller jumps
-                        const targetTime = Math.max(0, Math.min((video.duration || Infinity) - 0.1,
-                            (video.currentTime || 0) + jumpDistance));
-
-                        if (isFinite(targetTime) && targetTime > 0) {
-                            console.log('Instant recovery from fragParsingError, jumping to:', targetTime);
-                            video.currentTime = targetTime;
-                            try {
-                                hls.stopLoad();
-                                hls.startLoad(Math.max(0, targetTime - 0.3)); // Smaller buffer
-                            } catch (_) { }
+                    // ENHANCED: Only escalate to full rebuild for excessive rapid bursts, allowing normal scrubbing.
+                    if (fragParseBurstCount > 8) {
+                        console.warn('[hls] Excessive frag parsing errors, triggering full rebuild.');
+                        if (typeof onErrorFallback === 'function') {
+                            onErrorFallback('watchdog_stall');
+                            return;
                         }
                     }
 
-                    const applyRapidSeekHeal = () => {
-                        if (!video) return;
-                        showBufferingOverlay();
-                        try {
-                            const jump = isFragParsing ? 1.5 : 0.6;
-                            const near = Math.max(0, Math.min((video.duration || Infinity) - 0.2, (video.currentTime || 0) + jump));
-                            if (isFinite(near) && near > 0) video.currentTime = near;
-                            setTemporaryRecoveryQuality(isFragParsing ? 6000 : 5000);
-                            tuneHlsForJump(near, jump, 'seek');
-                            if (isBufferAppend || d.fatal) hls.recoverMediaError();
-                        } catch (_) { }
-                    };
+                    if (video && hls) {
+                        // Very subtle jump to bypass corrupted TS frames.
+                        // We do not want to jump 5 seconds, as that ruins user experience.
+                        const jumpDistance = Math.min(1.5, Math.max(0.3, hlsFragErrorBurst * 0.25));
+                        
+                        // BUT if the user just manually seeked within the last 1.5 seconds,
+                        // this error is likely a transient fetch truncation, not a real TS corruption.
+                        // We shouldn't jump them forward arbitrarily.
+                        if (now - lastUserSeekAt < 1500) {
+                            return; // Let HLS.js naturally discard the truncated skip-driven chunk
+                        }
 
-                    // Non-fatal stall: nudge playback manually - ENHANCED
-                    if (!d.fatal) {
-                        if (inRapidSeekMode && (isFragParsing || isBufferAppend)) {
-                            if (isFragParsing) {
-                                hlsFragErrorBurst += 1;
-                                if (hlsFragErrorBurst >= 4) hlsSessionIsFragile = true; // ENHANCED: More aggressive fragility detection
-                            }
-                            applyRapidSeekHeal();
-                            return;
+                        const targetTime = Math.max(0, Math.min((video.duration || Infinity) - 0.1,
+                            (video.currentTime || 0) + jumpDistance));
+                        
+                        if (isFinite(targetTime) && targetTime > 0 && (now - lastFragBypassAt > 800)) {
+                            lastFragBypassAt = now;
+                            console.log(`[hls] fragParsingError bypass: jumping ${jumpDistance.toFixed(2)}s to ${targetTime.toFixed(2)}`);
+                            try { 
+                                hls.stopLoad(); 
+                                video.currentTime = targetTime;
+                                hls.startLoad(Math.max(0, targetTime - 0.1)); 
+                            } catch (_) { }
                         }
-                        if (isFragParsing && video) {
-                            hlsFragErrorBurst += 1;
-                            if (hlsFragErrorBurst >= 4) hlsSessionIsFragile = true; // ENHANCED: Lower threshold
-                            const now = Date.now();
-                            if (now - fragParseBurstStartAt > 3000) { // ENHANCED: Shorter window
-                                fragParseBurstStartAt = now;
-                                fragParseBurstCount = 0;
-                            }
-                            fragParseBurstCount += 1;
-                            // ENHANCED: More aggressive fragment error handling
-                            if (fragParseBurstCount >= 2 && now - lastFragBypassAt > 1800) {
-                                lastFragBypassAt = now;
-                                const bypassTo = Math.min((video.duration || Infinity) - 0.25, (video.currentTime || 0) + 1.2);
-                                console.warn('[hls] Repeated frag parsing errors, bypassing ahead to', bypassTo);
-                                try {
-                                    if (isFinite(bypassTo) && bypassTo > 0) video.currentTime = bypassTo;
-                                    setTemporaryRecoveryQuality(5500);
-                                    tuneHlsForJump(bypassTo, 1.2, 'seek');
-                                } catch (_) { }
-                                showBufferingOverlay();
-                                return;
-                            }
+                    }
+                    return; // Handled
+                }
+
+                // Auto-resume playback on non-fatal errors
+                if (!d.fatal && video && video.paused && !isSourceSwitching) {
+                    setTimeout(() => {
+                        if (video && video.paused && !isSourceSwitching) {
+                            video.play().catch(() => {
+                                video.muted = true;
+                                video.play().catch(() => { });
+                            });
                         }
-                        if (
-                            d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
-                            d.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
-                        ) {
+                    }, 80);
+                }
+
+                if (!d.fatal) {
+                    if (inRapidSeekMode && (isFragParsing || isBufferAppend)) {
+                        // handled above for fragParsing
+                        if (!isFragParsing) {
+                            showBufferingOverlay();
+                            try {
+                                const jump = 0.6;
+                                const near = Math.max(0, Math.min((video.duration || Infinity) - 0.2, (video.currentTime || 0) + jump));
+                                if (isFinite(near) && near > 0) video.currentTime = near;
+                                setTemporaryRecoveryQuality(5000);
+                                tuneHlsForJump(near, jump, 'seek');
+                                hls.recoverMediaError();
+                            } catch (_) { }
+                        }
+                        return;
+                    }
+
+                    if (
+                        d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
+                        d.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
+                    ) {
                             const now = Date.now();
-                            // ENHANCED: More responsive stall recovery
-                            if (now - lastStallNudgeAt < 600) return; // Faster repeat interval
+                            if (now - lastStallNudgeAt < 800) return;
                             lastStallNudgeAt = now;
                             if (video && !video.paused && video.readyState >= 2) {
                                 try {
                                     showBufferingOverlay();
-                                    // ENHANCED: Slightly larger jumps for stall recovery
                                     video.currentTime = Math.min(
                                         (video.duration || Infinity) - 0.05,
-                                        (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.08 : 0.15),
+                                        (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.1 : 0.2),
                                     );
-                                    kickHlsLoadNearCurrentTime(video.currentTime, true); // ENHANCED: More aggressive loading
+                                    kickHlsLoadNearCurrentTime(video.currentTime, true);
                                     Promise.resolve(video.play()).catch(() => { });
                                 } catch (_) { }
                             }
                         }
                         if (isBufferAppend) {
-                            consecutiveBufferErrors++; // ENHANCED: Track buffer errors
+                            consecutiveBufferErrors++;
                             if (consecutiveBufferErrors > 2) {
                                 console.warn('[hls] Multiple buffer append errors, triggering recovery');
                                 setTemporaryRecoveryQuality(4500);
                             }
-                        } else {
+                        } else if (!isBufferFull) {
                             consecutiveBufferErrors = 0;
                         }
-                        if (!isFragParsing && !isBufferAppend) {
-                            hlsFragErrorBurst = 0;
-                        }
-                        return;
+                        if (!isFragParsing && !isBufferAppend) hlsFragErrorBurst = 0;
                     }
 
-                    // Fatal errors - ENHANCED recovery strategy
+                // ── Fatal fragLoadError / levelLoadError: rebuild HLS in-place ──
+                // (This is the main cause of black-screen — proxy refused = fatal frag load)
+                if (d.fatal && (isFragLoad || isLevelLoad)) {
+                    consecutiveFragErrors++;
+                    console.warn(`[hls] Fatal ${d.details} (attempt ${consecutiveFragErrors}), rebuilding HLS in-place...`);
+                    showBufferingOverlay();
+                    if (consecutiveFragErrors <= 3 && typeof onErrorFallback === 'function') {
+                        const recoveryTarget = pendingJumpTarget?.time ?? Number(video?.currentTime || 0);
+                        pendingJumpTarget = { time: recoveryTarget, reason: 'seek' };
+                        onErrorFallback('watchdog_stall'); // triggers recoverSameSource with in-place rebuild
+                    } else if (consecutiveFragErrors > 3 && typeof onErrorFallback === 'function') {
+                        onErrorFallback('fatal_network_error');
+                    } else {
+                        // last-ditch: just restart loading
+                        setTimeout(() => { try { if (hls) hls.startLoad(); } catch (_) { } }, 500);
+                    }
+                    return;
+                }
+                if (!d.fatal && (isFragLoad || isLevelLoad)) {
+                    // Non-fatal: let HLS.js retry itself, just kick loading
+                    setTimeout(() => { try { if (hls) hls.startLoad(); } catch (_) { } }, 200);
+                    return;
+                }
+                if (d.fatal && !isFragLoad && !isLevelLoad && !isFragParsing) {
+                    consecutiveFragErrors = 0;
+                }
+
+                // ── Fatal media / other errors ──
+                if (d.fatal) {
                     if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
                         const code = d.response ? d.response.code : 0;
                         if (code === 404 || code === 403 || code >= 500) {
                             if (typeof onErrorFallback === 'function') onErrorFallback('fatal_network_error');
                             return;
                         }
-                        // ENHANCED: Retry network load more aggressively
                         console.warn('[hls] Fatal network error, retrying startLoad...');
                         showBufferingOverlay();
-                        setTimeout(() => {
-                            if (hls) {
-                                try { hls.startLoad(); } catch (_) { }
-                            }
-                        }, 200);
+                        setTimeout(() => { try { if (hls) hls.startLoad(); } catch (_) { } }, 300);
                     } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
                         mediaErrorCount++;
                         if (isFragParsing) hlsSessionIsFragile = true;
-                        const recentlySeeked = (Date.now() - lastUserSeekAt) < 6000; // ENHANCED: Shorter window
+                        const recentlySeeked = (Date.now() - lastUserSeekAt) < 6000;
                         const preferredRecoveryTarget = pendingJumpTarget?.time ?? Number(video?.currentTime || 0);
                         const durableRecoveryTarget = Math.max(0, Number(lastRequestedPlaybackTarget ?? preferredRecoveryTarget ?? 0));
 
                         if (inRapidSeekMode) {
-                            // During seek bursts, prioritize aggressive recovery
                             if (isFragParsing && typeof onErrorFallback === 'function') {
                                 pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
                                 setTemporaryRecoveryQuality(6000);
                                 onErrorFallback('fatal_frag_parse_jump');
                                 return;
                             }
-                            setTemporaryRecoveryQuality(5500); // ENHANCED: Faster recovery
-                            applyRapidSeekHeal();
+                            setTemporaryRecoveryQuality(5500);
+                            if (video) {
+                                showBufferingOverlay();
+                                try {
+                                    const jump = isFragParsing ? 1.5 : 0.6;
+                                    const near = Math.max(0, Math.min((video.duration || Infinity) - 0.2, (video.currentTime || 0) + jump));
+                                    if (isFinite(near) && near > 0) video.currentTime = near;
+                                    tuneHlsForJump(near, jump, 'seek');
+                                    if (isBufferAppend || d.fatal) hls.recoverMediaError();
+                                } catch (_) { }
+                            }
                             return;
                         }
 
-                        // ENHANCED: More resilient recovery after seek/skip
                         if (recentlySeeked && mediaErrorCount <= 2) {
                             console.warn('[hls] Fatal media error after rapid seek, reloading near current time...');
                             showBufferingOverlay();
                             try {
-                                let near = Math.max(0, Number(video?.currentTime || 0) - 0.5); // ENHANCED: Smaller lookback
-                                if (isFragParsing && video) {
-                                    near = Math.max(0, Number(video.currentTime || 0) + 1.0); // ENHANCED: Larger jump ahead
-                                }
-                                if (isFragParsing) {
-                                    if (typeof onErrorFallback === 'function') {
-                                        pendingJumpTarget = pendingJumpTarget || { time: (durableRecoveryTarget || near), reason: 'seek' };
-                                        setTemporaryRecoveryQuality(6500);
-                                        onErrorFallback('fatal_frag_parse_jump');
-                                        return;
-                                    }
+                                let near = Math.max(0, Number(video?.currentTime || 0) - 0.5);
+                                if (isFragParsing && video) near = Math.max(0, Number(video.currentTime || 0) + 1.0);
+                                if (isFragParsing && typeof onErrorFallback === 'function') {
+                                    pendingJumpTarget = pendingJumpTarget || { time: (durableRecoveryTarget || near), reason: 'seek' };
+                                    setTemporaryRecoveryQuality(6500);
+                                    onErrorFallback('fatal_frag_parse_jump');
+                                    return;
                                 }
                                 setTemporaryRecoveryQuality(5500);
                                 hls.stopLoad();
@@ -3322,7 +3386,7 @@
                             if ((isFragParsing || hlsSessionIsFragile) && typeof onErrorFallback === 'function') {
                                 pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
                                 setTemporaryRecoveryQuality(6000);
-                                console.warn('[hls] Fatal frag parse detected, rebuilding at target instead of recoverMediaError.');
+                                console.warn('[hls] Fatal frag parse detected, rebuilding at target.');
                                 clearFatalRecoveryTimer();
                                 onErrorFallback('fatal_frag_parse_jump');
                                 return;
@@ -3332,7 +3396,6 @@
                             hls.recoverMediaError();
                             armFatalRecoveryTimer();
                         } else if (mediaErrorCount === 2) {
-                            // Second attempt: swap source and re-attach
                             console.warn('[hls] Second media error, swapping codec...');
                             hls.swapAudioCodec();
                             hls.recoverMediaError();
@@ -3348,7 +3411,7 @@
                 }
             });
 
-            // ENHANCED: Stall watchdog with faster response times
+            // Stall watchdog — checks every 2.5s, escalates after 3 consecutive stalls (~7.5s total)
             let lastWatchdogTime = -1;
             let watchdogStallCount = 0;
             const watchdogInterval = setInterval(function () {
@@ -3357,12 +3420,7 @@
                     lastWatchdogTime = video ? video.currentTime : -1;
                     return;
                 }
-                if (Date.now() < audioSwitchInFlightUntil) {
-                    watchdogStallCount = 0;
-                    lastWatchdogTime = video ? video.currentTime : -1;
-                    return;
-                }
-                if (Date.now() < jumpInFlightUntil) {
+                if (Date.now() < audioSwitchInFlightUntil || Date.now() < jumpInFlightUntil) {
                     watchdogStallCount = 0;
                     lastWatchdogTime = video ? video.currentTime : -1;
                     return;
@@ -3370,10 +3428,21 @@
                 const now = video.currentTime;
                 if (Math.abs(now - lastWatchdogTime) < 0.05) {
                     watchdogStallCount++;
-                    if (watchdogStallCount === 1) { // ENHANCED: Faster initial detection
+                    if (watchdogStallCount === 1) {
                         console.warn('[hls-watchdog] Stall detected, nudging startLoad...');
-                        try { hls.startLoad(); } catch (_) { }
-                    } else if (watchdogStallCount >= 3) { // ENHANCED: Faster escalation
+                        try { hls.stopLoad(); hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5)); } catch (_) { }
+                    } else if (watchdogStallCount === 2) {
+                        // Second check: try quality drop + reload
+                        console.warn('[hls-watchdog] Stall persists, dropping quality...');
+                        try {
+                            if (hls.levels && hls.levels.length > 1) {
+                                hls.autoLevelCapping = 0; hls.nextLevel = 0;
+                                setTimeout(() => { try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { } }, 4000);
+                            }
+                            hls.stopLoad();
+                            hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
+                        } catch (_) { }
+                    } else if (watchdogStallCount >= 3) {
                         console.warn('[hls-watchdog] Persistent stall, attempting same-source recovery...');
                         watchdogStallCount = 0;
                         if (typeof onErrorFallback === 'function') onErrorFallback('watchdog_stall');
@@ -3382,7 +3451,7 @@
                     watchdogStallCount = 0;
                 }
                 lastWatchdogTime = now;
-            }, 2000); // ENHANCED: More frequent checks (was 3000ms)
+            }, 2500);
 
             // Clean up watchdog when hls is destroyed
             hls.on(Hls.Events.DESTROYING, () => {
@@ -3391,7 +3460,7 @@
             });
         }
 
-        function svSwitchHlsSourceSilent(url, referer, onReady, explicitTargetTime = null) {
+        function svSwitchHlsSourceSilent(url, referer, onReady, explicitTargetTime = null, forceRebuild = false) {
             if (!video) return;
             const savedTime = video.currentTime;
             const targetTime = Math.max(0, Number(
@@ -3410,7 +3479,8 @@
             captureVideoFrameToOverlay();
 
             // ENHANCED: Check if we're switching to the same provider for audio track switching
-            const isAudioTrackSwitch = url === currentStreamUrl && referer === currentStreamReferer;
+            // Do not reuse if we are forcing a full rebuild (e.g., recovering from fatal pipeline crash)
+            const isAudioTrackSwitch = !forceRebuild && url === currentStreamUrl && referer === currentStreamReferer;
 
             if (hlsInst && !isAudioTrackSwitch) {
                 try {
@@ -3418,6 +3488,7 @@
                     hlsInst.detachMedia();
                     hlsInst.destroy();
                 } catch (_) { }
+                hlsInst = null;
             }
 
             // ENHANCED: For audio track switching, reuse HLS instance if possible
@@ -3562,11 +3633,17 @@
 
             // 1. Try to use TMDB's season structure as the skeleton
             if (rawSeasons.length > 0) {
-                const buckets = rawSeasons.map((s, idx) => ({
-                    seasonNo: mapSNo(s?.season || s?.seasonNumber || s?.season_number || s?.number, idx + 1),
-                    name: String(s?.name || `Season ${idx + 1}`),
-                    episodes: Array.isArray(s?.episodes) ? [...s.episodes] : []
-                }));
+                const buckets = rawSeasons.map((s, idx) => {
+                    let sName = String(s?.name || `Season ${idx + 1}`);
+                    if (currentIsLikelyAnime && /^season\s+\d+$/i.test(sName)) {
+                        sName = sName.replace(/season/i, 'Part');
+                    }
+                    return {
+                        seasonNo: mapSNo(s?.season || s?.seasonNumber || s?.season_number || s?.number, idx + 1),
+                        name: sName,
+                        episodes: Array.isArray(s?.episodes) ? [...s.episodes] : []
+                    };
+                });
 
                 // If buckets exist but are empty (common in flat-list proxies), try to distribute rawEpisodes
                 const epsAlreadyInBuckets = buckets.reduce((sum, b) => sum + b.episodes.length, 0);
@@ -3624,7 +3701,7 @@
                     const sNo = Math.floor(i / 24) + 1;
                     chunks.push({
                         seasonNo: sNo,
-                        name: `Season ${sNo}`,
+                        name: `Part ${sNo}`,
                         episodes: rawEpisodes.slice(i, i + 24)
                     });
                 }
@@ -3644,7 +3721,7 @@
                     .sort((a, b) => a[0] - b[0])
                     .map(([seasonNo, episodes]) => ({
                         seasonNo,
-                        name: `Season ${seasonNo}`,
+                        name: currentIsLikelyAnime ? `Part ${seasonNo}` : `Season ${seasonNo}`,
                         episodes
                     }));
             }
@@ -4647,6 +4724,10 @@
             if (t.includes('cour 2')) return 2;
             if (t.includes('part 2')) return 2;
             if (t.includes('part 3')) return 3;
+            if (t.includes('mugen train')) return 2;
+            if (t.includes('entertainment district')) return 2;
+            if (t.includes('swordsmith village')) return 3;
+            if (t.includes('hashira training')) return 4;
 
             // Standalone number at end or with hyphen? e.g. "Jujutsu Kaisen 2" or "Jujutsu Kaisen - 2"
             const m2 = t.match(/[\-\s](\d+)$/);
@@ -4994,6 +5075,19 @@
         async function resolveSubtitleTrackSrc(sub) {
             const rawSrc = String(sub?.src || '').trim();
             if (!rawSrc) return '';
+
+            // iOS AVKit native fullscreen CANNOT load data: URI text tracks — needs a real HTTP URL.
+            // Route all subtitle fetching through /utils/vtt which does server-side fetch+convert
+            // and returns proper text/vtt with CORS headers that iOS AVKit can load natively.
+            try {
+                const apiOrigin = activeApiBase.split('/meta/tmdb')[0];
+                const referer = String(sub?.referer || '').trim();
+                const refParam = referer ? `&referer=${encodeURIComponent(referer)}` : '';
+                const vttUrl = `${apiOrigin}/utils/vtt?url=${encodeURIComponent(rawSrc)}${refParam}`;
+                console.log('[sub] track src → /utils/vtt proxy:', rawSrc.slice(0, 60));
+                return vttUrl;
+            } catch (_) { /* fall through to legacy data URI path */ }
+
             const proxied = proxiedStreamUrl(rawSrc, sub?.referer || null);
             const toVttDataUri = (text) => {
                 const vttText = String(text || '');
@@ -5756,11 +5850,17 @@
             skippedSegments = { intro: false, outro: false };
             hasApiSkipSegments = false;
             _lastSkipUiTime = 0;
+            _skipBtnWasVisible = false;
+            _clearSkipCountdown();
             if (skipSegmentBtn) {
                 skipSegmentBtn.style.display = 'none';
                 skipSegmentBtn.textContent = '';
+                skipSegmentBtn.classList.remove('counting', 'countdown-paused');
             }
+            updateSkipMarkers(); // Clear markers from seekbar
         }
+
+        let aniSkipFetchStatus = 'none'; // 'none', 'fetching', 'success', 'failed'
 
         function normalizeSegmentWindow(segment) {
             if (!segment) return null;
@@ -5796,6 +5896,7 @@
             animeSkipSegments.intro = intro;
             animeSkipSegments.outro = outro;
             hasApiSkipSegments = true;
+            aniSkipFetchStatus = 'success';
             updateSkipMarkers();
             return true;
         }
@@ -5805,7 +5906,7 @@
             if (!container) return;
             container.innerHTML = '';
 
-            if (!video || !video.duration || !isFinite(video.duration) || video.duration <= 0) return;
+            if (!hasApiSkipSegments || !video || !video.duration || !isFinite(video.duration) || video.duration <= 0) return;
 
             const dur = video.duration;
             const segments = [];
@@ -5878,10 +5979,15 @@
         async function fetchAniSkipSegmentsForCurrentEpisode() {
             if (!currentIsLikelyAnime || MEDIA_TYPE !== 'tv') return false;
             const title = normalizeAnimeSearchQuery(currentMediaInfo?.title || currentMediaInfo?.name || '');
+            const selectedSeason = tvSeasons?.[Number(curSeason || 0)];
+            const seasonLabel = selectedSeason?.name || `Season ${Number(curSeason || 0) + 1}`;
+            const targetSeasonNo = Number.isFinite(Number(selectedSeason?.seasonNo)) 
+                ? Number(selectedSeason?.seasonNo) 
+                : (Number(curSeason || 0) + 1);
             const episodeNum = Number(curEpisode || 0) + 1;
             if (!title || !Number.isFinite(episodeNum) || episodeNum <= 0) return false;
 
-            const cacheKey = `${title.toLowerCase()}::${episodeNum}`;
+            const cacheKey = `${title.toLowerCase()}::${seasonLabel.toLowerCase()}::${episodeNum}`;
             if (animeSkipCache.has(cacheKey)) {
                 const cached = animeSkipCache.get(cacheKey);
                 if (cached) return applyApiSkipSegments(cached);
@@ -5889,13 +5995,17 @@
             }
 
             try {
+                aniSkipFetchStatus = 'fetching';
+                console.log(`[aniskip] Fetching skip times for "${title}" ${seasonLabel} Ep ${episodeNum}...`);
                 const gqlQuery = `
                   query ($search: String) {
-                    Page(page: 1, perPage: 6) {
+                    Page(page: 1, perPage: 15) {
                       media(search: $search, type: ANIME, sort: POPULARITY_DESC) {
                         id
                         idMal
                         title { romaji english native }
+                        seasonYear
+                        format
                       }
                     }
                   }
@@ -5906,38 +6016,49 @@
                     body: JSON.stringify({ query: gqlQuery, variables: { search: title } }),
                     signal: AbortSignal.timeout(7000),
                 });
-                if (!aniRes.ok) return false;
+                if (!aniRes.ok) {
+                    aniSkipFetchStatus = 'failed';
+                    resetAnimeSkipState();
+                    return false;
+                }
                 const aniJson = await aniRes.json();
                 const mediaList = Array.isArray(aniJson?.data?.Page?.media) ? aniJson.data.Page.media : [];
-                let picked = null;
-                let bestScore = -1;
-                for (const media of mediaList) {
-                    const s = getTitleMatchScore(media, title);
-                    if (s > bestScore) {
-                        bestScore = s;
-                        picked = media;
-                    }
+                
+                mediaList.forEach(m => {
+                    if (m.seasonYear) m.year = m.seasonYear;
+                });
+
+                const picked = pickAnimeResultByTitle(mediaList, title, null, targetSeasonNo, seasonLabel);
+                
+                if (!picked) {
+                    resetAnimeSkipState();
+                    return false;
                 }
-                if (!picked || bestScore < 30) return false;
                 const aniId = Number(picked.id || 0);
                 const malId = Number(picked.idMal || 0);
                 const candidateIds = [];
                 if (aniId > 0) candidateIds.push(aniId);
                 if (malId > 0 && malId !== aniId) candidateIds.push(malId);
 
-                if (!candidateIds.length) return false;
+                if (!candidateIds.length) {
+                    resetAnimeSkipState();
+                    return false;
+                }
 
                 const failedAny = (animeSkipCache.get('__failedIds__') || new Set());
-                if (candidateIds.every(id => failedAny.has(id))) return false;
+                if (candidateIds.every(id => failedAny.has(id))) {
+                    resetAnimeSkipState();
+                    return false;
+                }
 
                 setTimeout(async () => {
+                    let found = false;
                     for (const id of candidateIds) {
                         if (failedAny.has(id)) continue;
                         const u2 = `https://api.aniskip.com/v2/skip-times/${id}/${episodeNum}?types=op&types=ed&episodeLength=0`;
                         const u1 = `https://api.aniskip.com/v1/skip-times/${id}/${episodeNum}?types=op&types=ed`;
                         const skipUrls = [u2, u1, getProxiedUrl(u2), getProxiedUrl(u1)];
 
-                        let allFailedForId = true;
                         for (const url of skipUrls) {
                             try {
                                 const skipRes = await fetch(url, {
@@ -5949,39 +6070,29 @@
                                 const skipJson = await skipRes.json();
                                 const parsed = parseAniSkipResults(skipJson);
                                 if (parsed.intro || parsed.outro) {
+                                    console.log(`[aniskip] ✔ Found segments via ${url.includes('v1') ? 'v1' : 'v2'} API for ID ${id}`);
                                     animeSkipCache.set(cacheKey, parsed);
                                     applyApiSkipSegments(parsed);
                                     updateSkipSegmentButton();
+                                    found = true;
                                     return;
                                 }
                             } catch (_) { }
                         }
-                        if (allFailedForId) {
-                            failedAny.add(id);
-                            animeSkipCache.set('__failedIds__', failedAny);
-                        }
+                    }
+                    if (!found) {
+                        animeSkipCache.set(cacheKey, null);
+                        aniSkipFetchStatus = 'failed';
+                        resetAnimeSkipState();
                     }
                 }, 100);
                 return false;
-            } catch (_) { }
-
-            animeSkipCache.set(cacheKey, null);
-            return false;
-        }
-
-        function detectAnimeSkipSegments() {
-            if (!USE_HEURISTIC_SKIP_FALLBACK) return;
-            if (!video || !currentIsLikelyAnime || !isFinite(video.duration) || video.duration <= 0) return;
-            if (hasApiSkipSegments) return;
-
-            const duration = Number(video.duration);
-            const introEnd = Math.min(95, Math.max(45, Math.floor(duration * 0.07)));
-            const outroStart = Math.max(duration - 110, Math.floor(duration * 0.86));
-            const outroEnd = Math.max(outroStart + 5, duration - 2);
-
-            animeSkipSegments.intro = { start: 0, end: introEnd };
-            animeSkipSegments.outro = { start: outroStart, end: outroEnd };
-            updateSkipMarkers();
+            } catch (_) {
+                animeSkipCache.set(cacheKey, null);
+                aniSkipFetchStatus = 'failed';
+                resetAnimeSkipState();
+                return false;
+            }
         }
 
         function getActiveSkipSegment(nowSec) {
@@ -5998,7 +6109,7 @@
         }
 
         function updateSkipSegmentButton() {
-            if (!video || !currentIsLikelyAnime) {
+            if (!video || !currentIsLikelyAnime || !hasApiSkipSegments) {
                 if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
                 _clearSkipCountdown();
                 _skipBtnWasVisible = false;
@@ -6052,6 +6163,13 @@
                     m.classList.remove('active');
                 }
             });
+
+            if (!hasApiSkipSegments) {
+                if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+                _clearSkipCountdown();
+                _skipBtnWasVisible = false;
+                return;
+            }
 
             if (!active) {
                 if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
@@ -6188,8 +6306,8 @@
 
         // User preferences — persisted across sessions
         let autoEpisodeEnabled = localStorage.getItem('pref_autoEpisode') !== 'false';
-        let autoSkipIntroEnabled = localStorage.getItem('pref_autoSkipIntro') !== 'false';
-        let autoSkipOutroEnabled = localStorage.getItem('pref_autoSkipOutro') !== 'false';
+        let autoSkipIntroEnabled = localStorage.getItem('pref_autoSkipIntro') === 'true';
+        let autoSkipOutroEnabled = localStorage.getItem('pref_autoSkipOutro') === 'true';
 
         function buildPlaybackMenu() {
             if (!playbackMenu) return;
@@ -6339,7 +6457,6 @@
             });
             video.addEventListener('loadedmetadata', () => {
                 isSourceSwitching = false;
-                detectAnimeSkipSegments();
                 syncTimeUI();
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(false);
@@ -7669,6 +7786,7 @@
                     animeHint.includes('anime')
                 );
                 currentIsLikelyAnime = isLikelyAnime;
+                aniSkipFetchStatus = 'none';
                 resetAnimeSkipState();
 
                 // Reset active providers pool based on content type, regardless of FORCED_PROVIDER
@@ -7725,7 +7843,10 @@
                         const mapped = Array.from(
                             entries
                                 .map((entry, index) => {
-                                    const entryTitle = String(entry?.title || Season);
+                                    let entryTitle = String(entry?.title || `Part ${index + 1}`);
+                                    if (/^season\s+\d+$/i.test(entryTitle)) {
+                                        entryTitle = entryTitle.replace(/season/i, 'Part');
+                                    }
                                     const entryId = String(entry?.id || '').trim();
                                     const inferredSeasonNo = Number(
                                         extractSeasonNumberFromTitle(entryTitle)
@@ -7865,13 +7986,21 @@
                 const seasonNo = Number(s?.seasonNo || si + 1);
                 const rawSeasonName = String(s?.name || '').trim();
                 const genericSeasonName = /^season\s+\d+$/i.test(rawSeasonName);
+                
+                let textContent = '';
                 if (rawSeasonName && !genericSeasonName) {
-                    lbl.textContent = rawSeasonName;
+                    textContent = rawSeasonName;
                 } else {
-                    lbl.textContent = Number.isFinite(seasonNo) && seasonNo > 0
+                    textContent = Number.isFinite(seasonNo) && seasonNo > 0
                         ? `Season ${seasonNo}`
                         : String(rawSeasonName || `Season ${si + 1}`);
                 }
+                
+                if (currentIsLikelyAnime) {
+                    textContent = textContent.replace(/^Season /i, 'Part ');
+                }
+                
+                lbl.textContent = textContent;
                 epPanel.appendChild(lbl);
 
                 (s.episodes || []).forEach((ep, ei) => {
@@ -7960,7 +8089,7 @@
             if (!nextEpisodeBtn.classList.contains('counting')) return;
 
             const now = Date.now();
-            const paused = !video || video.paused;
+            const paused = !video || (video.paused && !video.ended);
 
             // Accumulate time only while playing
             if (!paused) {
@@ -8156,7 +8285,7 @@
             if (!skipSegmentBtn.classList.contains('counting')) return;
 
             const now = Date.now();
-            const videoPaused = !video || video.paused;
+            const videoPaused = !video || (video.paused && !video.ended);
 
             // Accumulate time only while playing
             if (!videoPaused) {
@@ -8273,7 +8402,10 @@
                 ? (ei + 1)
                 : Number(ep.episode || ep.number || ep.episodeNum || (ei + 1));
             const epTitle = String(ep.title || '').trim();
-            const seasonTitle = String(season?.name || `Season ${si + 1}`).trim();
+            let seasonTitle = String(season?.name || `Season ${si + 1}`).trim();
+            if (currentIsLikelyAnime) {
+                seasonTitle = seasonTitle.replace(/^Season /i, 'Part ');
+            }
             const metaText = epTitle
                 ? `${seasonTitle} - Episode ${epNo}: ${epTitle}`
                 : `${seasonTitle} - Episode ${epNo}`;
@@ -8978,8 +9110,8 @@
                     chipState(provider, 'success');
                     lastSuccessfulProvider = provider;
                     if (provider === 'satoru') satoruAudioSources = []; // satoru is primary; no need for virtual tracks
-                    applyApiSkipSegments(data?.data || data);
-                    if (currentIsLikelyAnime && !hasApiSkipSegments) {
+                    
+                    if (currentIsLikelyAnime) {
                         // Background fetch skip times to avoid blocking video load
                         fetchAniSkipSegmentsForCurrentEpisode();
                     }
@@ -9485,7 +9617,12 @@
             if (wrap) {
                 // Remove only the video element, keep the brightness overlay
                 const oldVideo = wrap.querySelector('video');
-                if (oldVideo) wrap.removeChild(oldVideo);
+                if (oldVideo) oldVideo.remove();
+                
+                // Also clean up any extra plyr wrappers that might have been left behind
+                const extraWrappers = wrap.querySelectorAll('.plyr');
+                extraWrappers.forEach(w => w.remove());
+
                 const newVideo = document.createElement('video');
                 newVideo.id = 'player-video';
                 newVideo.className = 'plyr-video';
@@ -9674,8 +9811,8 @@
 
                 plyr = new Plyr(video, {
                     blankVideo: 'data:video/mp4;base64,AAAAHGZ0eXBtcDQyAAAAAG1wNDJpc29tYXZjMQAAADpmcmVlAAAAAG1kYXQ=',
-                    autoplay: true, // Ensure Plyr doesn't override current autoplay intent
-                    muted: video.muted, // Sync with initial state
+                    autoplay: true,
+                    muted: video.muted,
                     controls: [
                         'play-large',
                         'play',
@@ -9706,10 +9843,14 @@
                 // Sync play icon in case video was already playing when Plyr initialized
                 if (video && !video.paused) setPlayIcon(true);
 
-                const hide = () => { if (!isFirstLoad) hideLoader(); };
-                plyr.on('ready', hide);
-                plyr.on('playing', hide);
-                plyr.on('canplay', hide);
+                const hideIfReady = () => { if (!isFirstLoad) hideLoader(); };
+                plyr.on('ready', hideIfReady);
+                plyr.on('canplay', hideIfReady);
+                plyr.on('playing', () => {
+                    isFirstLoad = false;
+                    hideLoader();
+                    try { hideTransitionOverlay(); } catch (_) { }
+                });
                 plyr.on('play', () => {
                     setPlayIcon(true);
                     showControlSurface();
@@ -9726,55 +9867,48 @@
                 const currentTime = (video && video.currentTime > 0) ? video.currentTime : startTime;
                 sameSourceRecoverCount += 1;
                 console.warn(`[hls] Recovering same source (attempt ${sameSourceRecoverCount}) reason=${reason}`);
-                const forceHotRebuild = reason === 'fatal_frag_parse_jump';
 
-                // Soft in-place recovery first (no full player rebuild/restart)
+                // Capture last visible frame immediately to prevent black screen flash during rebuild
+                try { captureVideoFrameToOverlay(); } catch (_) { }
+
                 if (hlsInst && isM3U8 && sameSourceRecoverCount <= 40) {
                     try {
                         const jump = sameSourceRecoverCount > 12 ? 2.6 : (sameSourceRecoverCount > 5 ? 1.4 : 0.25);
                         const pendingTargetTime = pendingJumpTarget?.time;
                         const near = Math.max(0, Number.isFinite(pendingTargetTime) ? pendingTargetTime : Number(currentTime || 0) + jump);
+                        const resumeAt = Math.max(0, Number.isFinite(pendingTargetTime) ? pendingTargetTime : Number(video?.currentTime || near));
                         showBufferingOverlay();
-                        if (!forceHotRebuild && video && isFinite(video.duration) && near < video.duration) {
-                            video.currentTime = near;
-                        }
-                        if (!forceHotRebuild) {
-                            try {
-                                hlsInst.autoLevelCapping = 0;
-                                hlsInst.nextLevel = 0;
-                                hlsInst.loadLevel = 0;
-                            } catch (_) { }
-                            hlsInst.stopLoad();
-                            hlsInst.startLoad(Math.max(0, near - 0.8));
-                            hlsInst.recoverMediaError();
-                            setTimeout(() => {
-                                try { hlsInst.nextLevel = -1; } catch (_) { }
-                                try { hlsInst.autoLevelCapping = -1; } catch (_) { }
-                            }, 2200);
-                        }
 
-                        // Every few failed heals, or a fatal frag-parse jump, hot-rebuild HLS in-place.
-                        if (forceHotRebuild || sameSourceRecoverCount % 8 === 0) {
-                            try {
-                                const resumeAt = Math.max(0, Number.isFinite(pendingTargetTime) ? pendingTargetTime : Number(video?.currentTime || near));
-                                pendingJumpTarget = { time: resumeAt, reason: pendingJumpTarget?.reason || 'seek' };
-                                setTemporaryRecoveryQuality(forceHotRebuild ? 7000 : 5000);
-                                svSwitchHlsSourceSilent(url, referer, () => {
-                                    hlsFragErrorBurst = 0;
-                                    hlsSessionIsFragile = false;
+                        // Always do a clean in-place HLS rebuild.
+                        // recoverMediaError() alone leaves a blank video when the pipeline is truly broken.
+                        // svSwitchHlsSourceSilent destroys the old instance and rebuilds from scratch,
+                        // ensuring video resumes at the correct time without a black frame.
+                        pendingJumpTarget = { time: resumeAt, reason: pendingJumpTarget?.reason || 'recover' };
+                        const isForced = reason === 'fatal_frag_parse_jump'
+                            || reason === 'watchdog_stall'
+                            || reason === 'buffer_full_unrecoverable';
+                        setTemporaryRecoveryQuality(isForced ? 7000 : 5000);
+                        svSwitchHlsSourceSilent(url, referer, () => {
+                            hlsFragErrorBurst = 0;
+                            hlsSessionIsFragile = false;
+                            hideBufferingOverlaySoon(120);
+                            if (video && video.paused) {
+                                Promise.resolve(video.play()).catch(() => {
+                                    video.muted = true;
+                                    Promise.resolve(video.play()).catch(() => { });
                                 });
-                            } catch (_) { }
-                        }
+                            }
+                        }, null, true);
                     } catch (_) { }
-                    setTimeout(() => { sameSourceRecoveryLock = false; }, 420);
+                    setTimeout(() => { sameSourceRecoveryLock = false; }, 600);
                     return;
                 }
 
-                // No hard reloads/restarts: keep it in-place only.
+                // Exhausted all recovery attempts
                 sameSourceRecoveryLock = false;
                 showError(
                     'Stream Decode Error',
-                    'Playback could not recover in-place from repeated broken fragments. Please choose another server manually.'
+                    'Playback could not recover. Please choose another server manually.'
                 );
             };
 

@@ -19,12 +19,41 @@
     box-sizing: border-box;
 }
 
+/* Custom Scrollbar - Modern & Minimal (Dark Mode) */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    border: 1px solid transparent;
+    background-clip: content-box;
+    transition: var(--transition);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary);
+}
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
 body {
     font-family: 'Inter', 'Outfit', sans-serif;
     background-color: var(--bg-dark);
     color: var(--text-main);
     line-height: 1.6;
     overflow-x: hidden;
+    color-scheme: dark;
 }
 
 .container {

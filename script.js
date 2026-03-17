@@ -75,7 +75,19 @@ async function fetchJson(url, timeoutMs = API_TIMEOUT_MS) {
             err.status = res.status;
             throw err;
         }
-        return await res.json();
+        const text = await res.text();
+        // Sanity check: If we see source code clues (common in misconfigured fallbacks), abort JSON parse
+        if (text.trim().startsWith('require(') || text.trim().startsWith('import ') || text.trim().startsWith('module.exports')) {
+            const codeErr = new Error('API returned source code instead of JSON');
+            codeErr.isSourceLeak = true;
+            throw codeErr;
+        }
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            console.error('Failed to parse JSON response:', text.slice(0, 100));
+            throw new Error(`Invalid JSON response: ${e.message}`);
+        }
     } catch (err) {
         if (err?.name === 'AbortError') {
             const timeoutErr = new Error('Request timed out');
@@ -143,6 +155,8 @@ let heroInterval;
 const detailsMemoryCache = new Map();
 const detailsInFlight = new Map();
 let activeModalRequestId = 0;
+let searchVersion = 0;
+let hydrationObserver = null;
 
 // ------------------ SCROLL HANDLER ----------------------------------------
 window.addEventListener('scroll', () => {
@@ -198,27 +212,73 @@ function coverUrl(path) {
 }
 
 function getTitle(item) {
-    let t = item.name || item.title || 'Unknown';
+    if (!item) return 'Unknown';
+    const fields = [
+        item.title, item.name, item.originalTitle, item.original_title,
+        item.originalName, item.original_name, item.romaji, item.english,
+        item.altTitles?.[0], item.synonyms?.[0]
+    ];
+    let t = '';
+    for (const f of fields) {
+        if (f && typeof f === 'string' && f.trim() && f !== 'Unknown' && f !== 'null' && f !== 'undefined') {
+            t = f.trim();
+            break;
+        }
+    }
+    if (!t) return 'Unknown';
     // Clean up Dramacool specific titles (remove episode info for the grid)
     if (item.provider === 'dramacool') {
         t = t.replace(/\s*\(.*?\)\s*/g, ' ').replace(/Episode\s+\d+.*/i, '').trim();
     }
     return t;
 }
-function getYear(item) { return String(item.releaseDate || item.release_date || item.first_air_date || '').slice(0, 4) || 'N/A'; }
-function getRating(item) { return parseFloat(item.rating || item.vote_average || 0).toFixed(1); }
+function getYear(item) {
+    if (!item) return 'N/A';
+    const raw = item.releaseDate || item.release_date || item.first_air_date ||
+        item.startDate?.year || item.airDate || item.premiered || item.year || '';
+    if (typeof raw === 'object' && raw?.year) return String(raw.year);
+    const str = String(raw).trim();
+    const y = str.slice(0, 4);
+    return (y && /^\d{4}$/.test(y)) ? y : 'N/A';
+}
+function getRating(item) {
+    const r = item.rating || item.vote_average || item.score || item.averageScore;
+    const n = parseFloat(r || 0);
+    // AniList scores are 0-100, TMDB/Consumet are 0-10
+    if (n > 10) return (n / 10).toFixed(1);
+    return n.toFixed(1);
+}
 function getPoster(item) {
     // Aggregate all possible poster fields across different providers
-    const p = item.image || item.poster || item.img || item.thumbnail || item.poster_path;
+    const p = item.image || item.poster || item.img || item.thumbnail || item.poster_path ||
+        item.coverImage?.large || item.coverImage?.medium || item.bannerImage || '';
     return imgUrl(p);
 }
 function getCover(item) {
-    const c = item.cover || item.backdrop_path || item.image || item.poster || item.img || item.poster_path;
+    const c = item.cover || item.backdrop_path || item.bannerImage || item.image ||
+        item.poster || item.img || item.poster_path || item.coverImage?.extraLarge || '';
     return imgUrl(c, 'w1280');
 }
 function getType(item) {
-    const t = (item.type || item.media_type || 'movie').toLowerCase();
-    if (t === 'tv series' || t === 'tv') return 'tv';
+    if (!item) return 'movie';
+    const t = String(item.type || item.media_type || item.format || '').toLowerCase();
+    
+    // Explicit indicators
+    if (['tv series', 'tv', 'tv_series', 'show', 'special', 'ova', 'ona', 'tv_short'].includes(t)) {
+        return 'tv';
+    }
+    if (t === 'movie' || t === 'film' || t === 'movie_short') return 'movie';
+    
+    // Fallback: Only infer TV if we have multiple episodes or any seasons
+    // This prevents movies (which sometimes have 1 'episode' entry) from being called TV shows.
+    const hasSeasons = Array.isArray(item.seasons) && item.seasons.length > 0;
+    const hasManyEps = Array.isArray(item.episodes) && item.episodes.length > 1;
+    const hasHighTotal = Number(item.totalEpisodes || 0) > 1;
+
+    if (hasSeasons || hasManyEps || hasHighTotal) {
+        return 'tv';
+    }
+    
     return 'movie';
 }
 
@@ -274,11 +334,34 @@ function normalizeDetailPayload(payload, id) {
     if (Array.isArray(movie?.results) && movie.results.length) {
         movie = movie.results[0];
     }
+    if (Array.isArray(movie) && movie.length) {
+        movie = movie[0];
+    }
     if (!movie || typeof movie !== 'object') throw new Error('Empty response');
+    
+    // Error handling for API returned messages
     if (movie.message && !movie.id && !movie.title && !movie.name) {
         throw new Error(movie.message);
     }
+    
     if (!movie.id) movie.id = id;
+    
+    // Ensure title field is always populated for getTitle() to work
+    if (!movie.title && !movie.name) {
+        movie.title = movie.originalTitle || movie.original_title ||
+            movie.originalName || movie.original_name || movie.romaji || movie.english || '';
+    }
+
+    // Standardize duration/runtime
+    if (!movie.duration && (movie.runtime || movie.runTime)) {
+        movie.duration = movie.runtime || movie.runTime;
+    }
+
+    // Standardize release dates
+    if (!movie.releaseDate && (movie.release_date || movie.first_air_date || movie.startDate)) {
+        movie.releaseDate = movie.release_date || movie.first_air_date || movie.startDate;
+    }
+
     return movie;
 }
 
@@ -339,83 +422,46 @@ function renderDetailsModal(movie, id, type, provider = '') {
     const poster = getPoster(movie);
     const year = getYear(movie);
     const rating = getRating(movie);
+    
+    const runtimeVal = Number(movie.duration || movie.runtime || 0);
     const runtime = type === 'movie'
-        ? `${movie.duration || 0} min`
-        : `${(movie.totalEpisodes || 0)} Episodes`;
-    const genres = Array.isArray(movie.genres)
-        ? movie.genres.join(', ')
-        : (movie.genres || 'N/A');
-    const director = Array.isArray(movie.directors) && movie.directors.length
-        ? movie.directors[0]
-        : (movie.directors || 'N/A');
+        ? (runtimeVal > 0 ? `${runtimeVal} min` : 'N/A')
+        : `${(movie.totalEpisodes || movie.episodes?.length || 0) || 'N/A'} Episodes`;
+    
+    const genresList = Array.isArray(movie.genres) ? movie.genres : (movie.genres || 'N/A').split(',').map(g => g.trim());
     const desc = movie.description || movie.overview || 'No overview available.';
-    const cast = (Array.isArray(movie.actors) ? movie.actors : [])
-        .slice(0, 6)
-        .map((actor) => {
-            if (typeof actor === 'string') return { name: actor, image: '' };
-            return {
-                name: actor?.name || actor?.originalName || actor?.actor || 'Unknown',
-                image: actor?.image || actor?.profilePath || actor?.profile_path || actor?.photo || '',
-            };
-        });
-    const status = movie.status || 'N/A';
 
     modalBody.innerHTML = `
-            <div class="modal-header" style="background-image:url('${cover}')">
-                <div class="modal-header-overlay"></div>
-            </div>
-            <div class="modal-details modal-details-fit">
-                <div class="modal-top">
-                    <img class="modal-poster" src="${poster}" alt="${title}"
-                         onerror="this.src='https://placehold.co/200x300/1a1a2e/e50914?text=No+Poster'">
-                    <div class="modal-main">
-                        <h2 class="modal-title">${title}</h2>
-                        <div class="hero-meta modal-meta">
-                            <span><i class="fa-solid fa-star rating"></i> ${rating}</span>
-                            <span>${runtime}</span>
-                            <span>${year}</span>
-                        </div>
-                        <div class="modal-tags">
-                            ${genres.split(', ').map(g => `<span class="modal-tag">${g}</span>`).join('')}
-                        </div>
-                        <p class="modal-desc">${desc}</p>
-                        <div class="hero-btns modal-actions">
-                            <button class="btn btn-primary btn-glass-primary" onclick="watchNow('${id}','${type}', '${provider}')">
-                                <i class="fa-solid fa-play"></i> Watch Now
-                            </button>
-                            <button class="btn btn-secondary btn-glass-secondary">
-                                <i class="fa-solid fa-plus"></i> Add to List
-                            </button>
-                        </div>
+        <div class="modal-header" style="background-image:url('${cover}')">
+            <div class="modal-header-overlay"></div>
+        </div>
+        <div class="modal-details modal-details-fit">
+            <div class="modal-top">
+                <img class="modal-poster" src="${poster}" alt="${title}"
+                     onerror="this.src='https://placehold.co/200x300/1a1a2e/e50914?text=No+Poster'">
+                <div class="modal-main">
+                    <h2 class="modal-title">${title}</h2>
+                    <div class="hero-meta modal-meta">
+                        <span><i class="fa-solid fa-star rating"></i> ${rating}</span>
+                        <span>${runtime}</span>
+                        <span>${year}</span>
                     </div>
-                </div>
-
-                <div class="modal-bottom">
-                    <div class="modal-cast-panel">
-                        ${cast.length ? `
-                        <h3 class="section-title modal-subtitle">Cast</h3>
-                        <div class="modal-cast-list">
-                            ${cast.map(actor => `
-                                <div class="modal-cast-item">
-                                    <div class="modal-cast-avatar">
-                                        ${actor.image ? `<img src="${imgUrl(actor.image, 'w185')}" alt="${actor.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">` : ''}
-                                        <span class="modal-cast-fallback"${actor.image ? ' style="display:none;"' : ''}><i class="fa-solid fa-user"></i></span>
-                                    </div>
-                                    <p>${actor.name}</p>
-                                </div>
-                            `).join('')}
-                        </div>` : ''}
+                    <div class="modal-tags">
+                        ${genresList.map(g => `<span class="modal-tag">${g}</span>`).join('')}
                     </div>
-                    <div class="modal-info-panel">
-                        <h3 class="section-title modal-subtitle">Details</h3>
-                        <p><span>Director:</span> ${director}</p>
-                        <p><span>Genres:</span> ${genres}</p>
-                        <p><span>Status:</span> ${status}</p>
-                        <p><span>Type:</span> ${type === 'tv' ? 'TV Series' : 'Movie'}</p>
+                    <p class="modal-desc">${desc}</p>
+                    <div class="hero-btns modal-actions">
+                        <button class="btn btn-primary btn-glass-primary" onclick="watchNow('${id}','${type}', '${provider}')">
+                            <i class="fa-solid fa-play"></i> Watch Now
+                        </button>
+                        <button class="btn btn-secondary btn-glass-secondary">
+                            <i class="fa-solid fa-plus"></i> Add to List
+                        </button>
                     </div>
                 </div>
             </div>
-        `;
+        </div>
+    `;
 }
 
 // ------------------ FETCH TRENDING -----------------------------------------
@@ -570,6 +616,13 @@ async function hydrateGridCard(item, card) {
                 const metaSpan = card.querySelector('.movie-card-meta span:first-child');
                 if (metaSpan) metaSpan.textContent = yearVal;
             }
+            
+            // Also rescue the title if it was "Unknown" in the initial search results
+            const titleEl = card.querySelector('.movie-title');
+            const currentTitle = titleEl ? titleEl.textContent.trim() : '';
+            if (titleEl && (currentTitle === 'Unknown' || !currentTitle) && details.title && details.title !== 'Unknown') {
+                titleEl.textContent = details.title;
+            }
         }
     } catch (e) { }
 }
@@ -628,6 +681,27 @@ function startHeroRotation() {
 function displayGrid(items, container, forcedType = null) {
     if (!container) return;
     container.innerHTML = '';
+
+    // Setup lazy hydration
+    if (!hydrationObserver) {
+        hydrationObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const card = entry.target;
+                    const itemData = JSON.parse(card.dataset.item || '{}');
+                    const itemType = card.dataset.type;
+                    const itemProv = card.dataset.provider;
+                    
+                    if (card.dataset.hydrated !== 'true') {
+                        card.dataset.hydrated = 'true';
+                        hydrateGridCard(itemData, card);
+                    }
+                    hydrationObserver.unobserve(card);
+                }
+            });
+        }, { rootMargin: '200px' });
+    }
+
     items.forEach(item => {
         const poster = getPoster(item);
         const title = getTitle(item);
@@ -640,6 +714,10 @@ function displayGrid(items, container, forcedType = null) {
 
         const card = document.createElement('div');
         card.className = 'movie-card';
+        card.dataset.item = JSON.stringify(item);
+        card.dataset.type = type;
+        card.dataset.provider = provider;
+
         card.innerHTML = `
             <img src="${poster}" alt="${title}" loading="lazy"
                  onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Image'">
@@ -656,7 +734,9 @@ function displayGrid(items, container, forcedType = null) {
         card.addEventListener('mouseenter', () => prefetchDetails(id, type, provider), { once: true });
         card.addEventListener('touchstart', () => prefetchDetails(id, type, provider), { once: true, passive: true });
         card.addEventListener('pointerdown', () => prefetchDetails(id, type, provider), { once: true, passive: true });
+        
         container.appendChild(card);
+        hydrationObserver.observe(card);
     });
 }
 
@@ -666,9 +746,16 @@ function displayMovies(items, container, type) { displayGrid(items, container, t
 
 // ------------------ SEARCH -------------------------------------------------
 let searchTimeout;
-searchInput.addEventListener('input', e => {
+
+async function triggerSearch(immediate = false) {
+    if (!immediate) {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => triggerSearch(true), 500);
+        return;
+    }
+
     clearTimeout(searchTimeout);
-    const q = e.target.value.trim();
+    const q = searchInput.value.trim();
     if (q.length < 2) {
         searchPage.style.display = 'none';
         heroSection.style.display = 'block';
@@ -676,27 +763,50 @@ searchInput.addEventListener('input', e => {
         return;
     }
 
-    searchTimeout = setTimeout(async () => {
-        try {
-            let data;
-            try {
-                data = await fetchJson(`${BASE_URL}/${encodeURIComponent(q)}`, 5000);
-            } catch (err) {
-                if (FALLBACK_API) {
-                    console.warn('Search primary failed, trying fallback...');
-                    data = await fetchJson(`${FALLBACK_API}/${encodeURIComponent(q)}`, 8000);
-                } else {
-                    throw err;
-                }
-            }
-            const hits = (data.results || [])
-                .filter(r => (r.type || r.media_type || '').toLowerCase() !== 'person');
-            displaySearchResults(hits, q);
-        } catch (err) {
-            console.error('Search error:', err?.message || err);
-        }
-    }, 400);
+    const version = ++searchVersion;
+
+    // UI state
+    heroSection.style.display = 'none';
+    contentRows.style.display = 'none';
+    searchPage.style.display = 'block';
+    searchTitle.textContent = `Searching for "${q}"...`;
+    searchPageGrid.innerHTML = `
+        <div style="grid-column: 1/-1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 4rem 0;">
+            <div style="width:40px;height:40px;border:3px solid rgba(255,255,255,.1);border-top-color:var(--primary);border-radius:50%;animation:spin 1s linear infinite;"></div>
+            <p style="margin-top:1rem;color:var(--text-muted)">Looking for titles...</p>
+        </div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
+
+    try {
+        let data;
+        // Use the centralized fetchJsonWithFallback which already handles prod/local routing
+        data = await fetchJsonWithFallback(`/${encodeURIComponent(q)}`, 9000);
+
+        if (version !== searchVersion) return; // Ignore stale results
+
+        const hits = (data?.results || [])
+            .filter(r => (r.type || r.media_type || '').toLowerCase() !== 'person');
+        displaySearchResults(hits, q);
+    } catch (err) {
+        console.error('Search error:', err);
+        searchPageGrid.innerHTML = `<p style="grid-column: 1/-1; color:var(--text-muted); text-align:center">Search service unavailable. Please check your connection or try again.</p>`;
+    }
+}
+
+// Attach listeners with improved robustness for paste/enter
+searchInput.addEventListener('input', () => triggerSearch(false));
+searchInput.addEventListener('keydown', e => { 
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        triggerSearch(true); 
+    }
 });
+searchInput.addEventListener('paste', () => { 
+    // Small timeout to allow input value to update before triggering
+    setTimeout(() => triggerSearch(true), 20); 
+});
+const searchBtn = document.getElementById('search-btn');
+if (searchBtn) searchBtn.addEventListener('click', () => triggerSearch(true));
 
 function displaySearchResults(results, query) {
     heroSection.style.display = 'none';
@@ -868,28 +978,38 @@ async function openDetails(id, type, provider = '', seedItem = null) {
         }
 
         if (requestId !== activeModalRequestId) return;
+        
+        // Merge with initial data (from search results) to ensure we don't lose title/poster
+        // if the info hydration is partial or returns "Unknown" due to TMDB proxy lag
+        if (initial) {
+            if (!movie.title || movie.title === 'Unknown') movie.title = initial.title || initial.name || movie.title;
+            if (!movie.image) movie.image = initial.image || initial.poster_path;
+            if (!movie.cover) movie.cover = initial.cover || initial.backdrop_path;
+            if (!movie.releaseDate) movie.releaseDate = initial.releaseDate || initial.release_date || initial.first_air_date;
+        }
 
-        // --- ENRICHMENT LOGIC ---
-        // Catch bad images or K-Dramas and search TMDB for real posters.
-        const isBad = (s) => !s || s.includes('placehold.co') || s.includes('No Image') || s.includes('dramaool.png') || s.includes('No+Image') || s.includes('originalnull');
-        if (provider === 'dramacool' || isBad(getPoster(movie))) {
+        renderDetailsModal(movie, id, type, provider);
+
+        // --- BACKGROUND ENRICHMENT ---
+        // Improve images/info in the background if they look bad.
+        const isBad = (s) => !s || s.includes('placehold.co') || s.includes('No Image') || s.includes('No+Image') || s.includes('originalnull');
+        if (isBad(getPoster(movie)) || (provider === 'dramacool' && movie.description?.includes('Dramacool lovers'))) {
             const cleanTitle = getTitle(movie);
-            try {
-                const tmdbResults = await fetchJsonWithFallback(`/${encodeURIComponent(cleanTitle)}`, 5000);
+            fetchJsonWithFallback(`/${encodeURIComponent(cleanTitle)}`, 4000).then(tmdbResults => {
                 if (tmdbResults?.results?.length && requestId === activeModalRequestId) {
                     const tmdb = tmdbResults.results[0];
-                    if (isBad(movie.image)) movie.image = tmdb.image || tmdb.poster_path;
-                    if (isBad(movie.cover)) movie.cover = tmdb.cover || tmdb.backdrop_path;
-                    if (!movie.rating || movie.rating == 0) movie.rating = tmdb.rating || tmdb.vote_average;
-                    if (!movie.description || movie.description.includes('Dramacool lovers')) movie.description = tmdb.description || tmdb.overview;
-                    if (!movie.releaseDate || movie.releaseDate === 'NaN') movie.releaseDate = tmdb.releaseDate || tmdb.release_date;
+                    let changed = false;
+                    if (isBad(movie.image)) { movie.image = tmdb.image || tmdb.poster_path; changed = true; }
+                    if (isBad(movie.cover)) { movie.cover = tmdb.cover || tmdb.backdrop_path; changed = true; }
+                    if (!movie.rating || movie.rating == 0) { movie.rating = tmdb.rating || tmdb.vote_average; changed = true; }
+                    if (!movie.description || movie.description.includes('Dramacool lovers')) { 
+                        movie.description = tmdb.description || tmdb.overview; 
+                        changed = true; 
+                    }
+                    if (changed) renderDetailsModal(movie, id, type, provider);
                 }
-            } catch (e) { }
+            }).catch(() => { });
         }
-        // -------------------------
-
-        if (requestId !== activeModalRequestId) return;
-        renderDetailsModal(movie, id, type, provider);
     } catch (err) {
         if (requestId !== activeModalRequestId) return;
         console.error('Details error:', err);
