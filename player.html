@@ -13,6 +13,8 @@
     <link rel="icon" href="logo.png">
     <!-- PWA manifest — gives iOS the signal to run without browser chrome in standalone mode -->
     <link rel="manifest" href="manifest.json">
+    <!-- Standard PWA meta (non-Apple) -->
+    <meta name="mobile-web-app-capable" content="yes">
     <!-- Apple-specific PWA tags. These are required for iOS standalone mode. -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -2719,6 +2721,7 @@
         let audioSwitchInFlightUntil = 0;
         let controlsHoldVisibleUntil = 0;
         let seekBufferOverlayTimer = null;
+        let waitingOverlayTimer    = null; // iOS: debounces spurious 'waiting' events
         window.addEventListener('beforeunload', () => { subtitleBlobUrls = []; });
         const fitModes = [
             { value: 'contain', label: 'Contain', icon: 'fa-up-right-and-down-left-from-center' },
@@ -2901,7 +2904,13 @@
                 if (isSourceSwitching) return;
                 if (isUserSeeking) return;
                 if (!video) return;
-                if (!video.paused && video.readyState >= 3) hideTransitionOverlay();
+                // On iOS native HLS, readyState is unreliable — the browser
+                // reports readyState < 3 even while playing smoothly because
+                // it is pre-fetching ahead. Use actual playback progress instead:
+                // if the video is not paused and has started playing, hide.
+                const isPlayingWell = !video.paused && video.currentTime > 0;
+                const readyEnough  = video.readyState >= 3;
+                if (isPlayingWell || readyEnough) hideTransitionOverlay();
             }, delay);
         }
 
@@ -6635,6 +6644,18 @@
                 syncTimeUI();
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(false);
+
+                // Self-healing overlay hide for iOS native HLS:
+                // If the video is clearly playing (time is advancing, not paused)
+                // but the buffering overlay is still visible, force it away.
+                // This catches cases where 'canplay'/'playing' fired before
+                // initPlyr() set up Plyr's event listeners.
+                if (!hlsInst && IS_IOS) {
+                    const overlay = document.getElementById('transition-overlay');
+                    if (overlay && overlay.classList.contains('active') && !video.paused && video.currentTime > 0) {
+                        hideTransitionOverlay();
+                    }
+                }
             });
             video.addEventListener('seeked', () => {
                 // Immediately re-evaluate after any seek so the countdown
@@ -6708,10 +6729,30 @@
                 bufferingRecoveryTimer = setTimeout(() => hideBufferingOverlaySoon(80), 120);
             });
             video.addEventListener('waiting', () => {
-                showBufferingOverlay();
-                kickHlsLoadNearCurrentTime();
+                // iOS Safari fires 'waiting' between HLS segments during normal
+                // playback. Only show the spinner if the video is genuinely stuck
+                // (not just briefly buffering the next segment during active play).
+                if (!hlsInst && IS_IOS) {
+                    // On iOS native HLS, delay showing the overlay to filter
+                    // out the spurious sub-second 'waiting' events.
+                    if (waitingOverlayTimer) clearTimeout(waitingOverlayTimer);
+                    waitingOverlayTimer = setTimeout(() => {
+                        waitingOverlayTimer = null;
+                        if (video && !video.paused && video.readyState < 2) {
+                            showBufferingOverlay();
+                        }
+                    }, 800);
+                } else {
+                    if (waitingOverlayTimer) clearTimeout(waitingOverlayTimer);
+                    showBufferingOverlay();
+                    kickHlsLoadNearCurrentTime();
+                }
             });
             video.addEventListener('stalled', () => {
+                // iOS Safari fires 'stalled' as a false alarm constantly during normal
+                // native HLS playback while the browser prefetches. Only treat it as
+                // a real stall when HLS.js is in charge (hlsInst exists).
+                if (!hlsInst) return;
                 showBufferingOverlay();
                 kickHlsLoadNearCurrentTime();
             });
