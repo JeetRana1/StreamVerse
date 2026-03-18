@@ -5493,7 +5493,11 @@
                 bindNativeTrackChangeListener(); // iOS: sync state when native picker selects a track
                 activeSubtitleTrackIndex = -1;
                 if (videoEl.textTracks) {
-                    Array.from(videoEl.textTracks).forEach((t) => { t.mode = 'disabled'; });
+                    // iOS: use 'hidden' so Safari fetches & parses the VTT file.
+                    // 'disabled' prevents iOS from loading the track at all, so it can never render.
+                    // 'hidden' = loaded & parsed, but not displayed until set to 'showing'.
+                    const initialMode = IS_IOS ? 'hidden' : 'disabled';
+                    Array.from(videoEl.textTracks).forEach((t) => { t.mode = initialMode; });
                 }
                 renderSubtitleOverlayFromTrack(null);
                 updateCaptionsButtonVisibility();
@@ -5781,7 +5785,10 @@
                 if (shouldBeActive) {
                     if (t.mode !== 'showing') t.mode = 'showing';
                 } else {
-                    if (t.mode !== 'disabled') t.mode = 'disabled';
+                    // Use 'hidden' instead of 'disabled' so iOS fetches/parses the VTT
+                    // 'disabled' = browser never fetches the file → iOS can't render cues
+                    // 'hidden' = browser fetches & parses cues silently (no rendering)
+                    if (t.mode !== 'hidden') t.mode = 'hidden';
                 }
             });
             // Re-enable after a tick so any pending change events are ignored
@@ -5881,9 +5888,10 @@
 
         function setVolumeBoost(level) {
             if (!video) return;
-            volumeBoost = Math.max(100, Math.min(200, level));
+            // Extended: 0 = mute, 100 = normal, 200 = double boost
+            volumeBoost = Math.max(0, Math.min(200, level));
 
-            if (volumeBoost > 100) {
+            if (volumeBoost !== 100 || IS_IOS) {
                 if (!audioCtx) {
                     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 }
@@ -8445,20 +8453,24 @@
                         if (bBar) bBar.style.height = `${bLevel * 100}%`;
                         updateOverlayIcon('brightness', bLevel);
                     } else if (gestureType === 'volume') {
-                        // Set on both video element and Plyr so they stay in sync (important in iOS PWA)
-                        // Set the actual video volume
-                        video.volume = newVal;
-                        // Auto-unmute if dragging up from 0
-                        if (newVal > 0 && video.muted) video.muted = false;
-                        // Sync Plyr's own range input directly (avoids Plyr event loop fighting us)
-                        const plyrVolInput = document.querySelector('.plyr__volume input[type="range"]');
-                        if (plyrVolInput) {
-                            plyrVolInput.value = newVal;
-                            plyrVolInput.dispatchEvent(new Event('input', { bubbles: false }));
+                        if (IS_IOS) {
+                            // On iOS, video.volume is read-only (always 1). 
+                            // Use WebAudio GainNode — the only way to control volume on iOS.
+                            setVolumeBoost(Math.round(newVal * 100));
+                        } else {
+                            // Non-iOS: set video element volume directly
+                            video.volume = newVal;
+                            if (newVal > 0 && video.muted) video.muted = false;
+                            // Sync Plyr's range input to match
+                            const plyrVolInput = document.querySelector('.plyr__volume input[type="range"]');
+                            if (plyrVolInput) {
+                                plyrVolInput.value = newVal;
+                                plyrVolInput.dispatchEvent(new Event('input', { bubbles: false }));
+                            }
                         }
                         if (vBar) vBar.style.height = `${newVal * 100}%`;
                         updateOverlayIcon('volume', newVal);
-                        updateMuteIcon(); // Keep mute button icon in sync
+                        updateMuteIcon();
                     }
 
                 }
