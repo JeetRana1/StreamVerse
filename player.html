@@ -5326,14 +5326,19 @@
             } catch (_) { /* fall through to legacy data URI path */ }
 
             const proxied = proxiedStreamUrl(rawSrc, sub?.referer || null);
-            const toVttDataUri = (text) => {
+            const toVttBlobUrl = (text) => {
                 const vttText = String(text || '');
-                // Use base64 Data URI to completely avoid blob lifecycle and Safari revocation issues
                 try {
+                    const blob = new Blob([vttText], { type: 'text/vtt' });
+                    const url = URL.createObjectURL(blob);
+                    // Keep a reference to prevent premature garbage collection
+                    if (!window._activeSubtitleBlobs) window._activeSubtitleBlobs = [];
+                    window._activeSubtitleBlobs.push(url);
+                    return url;
+                } catch (e) {
+                    // Fallback to Data URI if Blob fails
                     const b64 = btoa(unescape(encodeURIComponent(vttText)));
                     return `data:text/vtt;base64,${b64}`;
-                } catch (e) {
-                    return `data:text/vtt;charset=utf-8,${encodeURIComponent(vttText)}`;
                 }
             };
             const sanitizeText = (text) => String(text || '').replace(/\r+/g, '').replace(/^\uFEFF/, '');
@@ -5379,7 +5384,7 @@
                 // Data URIs are generated on the fly.
                 if (subtitleBlobCache.has(lower)) {
                     const cachedVtt = subtitleBlobCache.get(lower);
-                    return cachedVtt ? toVttDataUri(cachedVtt) : '';
+                    return cachedVtt ? toVttBlobUrl(cachedVtt) : '';
                 }
 
                 // Correctly use the already computed proxied URL which includes the referer.
@@ -5423,7 +5428,7 @@
 
                         if (vttContent) {
                             subtitleBlobCache.set(lower, vttContent);
-                            return toVttDataUri(vttContent);
+                            return toVttBlobUrl(vttContent);
                         }
                     } else if (txtRes.status === 404 || txtRes.status === 403) {
                         subtitleBlobCache.set(lower, '');
@@ -5808,18 +5813,26 @@
         function activateTracksForIOSNativePlayer() {
             if (!video || !video.textTracks) return;
             const tracks = Array.from(video.textTracks);
-            tracks.forEach((t, i) => {
-                const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
-                if (shouldBeActive) {
-                    // Force a 'kick' by setting to disabled then showing
-                    t.mode = 'disabled';
-                    setTimeout(() => {
-                        if (t) t.mode = 'showing';
-                    }, 50);
-                } else {
-                    if (t.mode !== 'disabled') t.mode = 'disabled';
-                }
-            });
+            console.log(`[sub] iOS Native Handoff: ${tracks.length} tracks, activeIdx=${activeSubtitleTrackIndex}`);
+            
+            const runActivation = () => {
+                tracks.forEach((t, i) => {
+                    const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
+                    if (shouldBeActive) {
+                        // Force a 'kick' to ensure Safari's AVPlayerViewController refreshes
+                        t.mode = 'disabled';
+                        setTimeout(() => { if (t) t.mode = 'showing'; }, 5);
+                    } else {
+                        if (t.mode !== 'disabled') t.mode = 'disabled';
+                    }
+                });
+            };
+
+            // Run immediately and again with increasing delays to catch the native transition
+            runActivation();
+            setTimeout(runActivation, 300);
+            setTimeout(runActivation, 800);
+            setTimeout(runActivation, 1500);
         }
 
         // Restore subtitle tracks to 'hidden'/'disabled' after iOS native player exits

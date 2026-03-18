@@ -769,8 +769,8 @@ async function resolveSubtitleTrackSrc(sub) {
 async function applyExternalSubtitlesToVideo(videoEl) {
     if (!videoEl) return;
     const applyVersion = ++subtitleApplyVersion;
-    subtitleBlobUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) { } });
-    subtitleBlobUrls = [];
+    // subtitleBlobUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) { } });
+    // subtitleBlobUrls = [];
     if (!Array.isArray(externalSubtitleTracks) || externalSubtitleTracks.length === 0) {
         updateCaptionsButtonVisibility();
         buildCaptionsMenu();
@@ -934,18 +934,25 @@ function silenceNativeTracks() {
 function activateTracksForIOSNativePlayer() {
     if (!video || !video.textTracks) return;
     const tracks = Array.from(video.textTracks);
-    tracks.forEach((t, i) => {
-        const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
-        if (shouldBeActive) {
-            // Force a 'kick' by setting to disabled then showing
-            t.mode = 'disabled';
-            setTimeout(() => {
-                if (t) t.mode = 'showing';
-            }, 50);
-        } else {
-            if (t.mode !== 'disabled') t.mode = 'disabled';
-        }
-    });
+    console.log(`[sub] iOS Native Handoff: ${tracks.length} tracks, activeIdx=${activeSubtitleTrackIndex}`);
+
+    const runActivation = () => {
+        tracks.forEach((t, i) => {
+            const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
+            if (shouldBeActive) {
+                // Force a 'kick' by flipping mode to trigger Safari internal redraw
+                t.mode = 'disabled';
+                setTimeout(() => { if (t) t.mode = 'showing'; }, 5);
+            } else {
+                if (t.mode !== 'disabled') t.mode = 'disabled';
+            }
+        });
+    };
+
+    runActivation();
+    setTimeout(runActivation, 300);
+    setTimeout(runActivation, 850);
+    setTimeout(runActivation, 1600);
 }
 
 function deactivateTracksFromIOSNativePlayer() {
