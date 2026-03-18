@@ -5721,20 +5721,21 @@
             });
         }
 
-        /**
-         * iOS Safari: when the user picks a subtitle in the native AirPlay/PiP/fullscreen picker,
-         * the browser fires a 'change' event on video.textTracks.
-         * We listen here to sync activeSubtitleTrackIndex and re-render our overlay.
-         */
+        // Flag to suppress our own programmatic track mode changes from triggering the native listener
+        let _suppressNativeTrackChange = false;
+
         function bindNativeTrackChangeListener() {
             if (!video || !video.textTracks) return;
             if (video.textTracks.__nativeChangeBound) return;
             video.textTracks.__nativeChangeBound = true;
 
             video.textTracks.addEventListener('change', () => {
+                // Ignore changes we made ourselves (silenceNativeTracks)
+                if (_suppressNativeTrackChange) return;
+
                 const tracks = Array.from(video.textTracks);
 
-                // Find which track iOS just set to 'showing'
+                // Find which track the native picker set to 'showing'
                 const nativeShowingIdx = tracks.findIndex(t => t.mode === 'showing');
 
                 if (nativeShowingIdx === activeSubtitleTrackIndex) return; // Already in sync
@@ -5771,24 +5772,20 @@
         }
 
         function silenceNativeTracks() {
-
             if (!video || !video.textTracks) return;
-            const isNativeFs = (!!video.webkitDisplayingFullscreen) || (document.fullscreenElement === video);
+            // Suppress our own native change listener while we programmatically set modes
+            _suppressNativeTrackChange = true;
             const tracks = Array.from(video.textTracks);
             tracks.forEach((t, i) => {
                 const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
-
                 if (shouldBeActive) {
-                    // showing mode: track index is showing in native player too
-                    // previously it was 'hidden', but for iOS native player we need 'showing'
-                    // but we still want our own overlay if not in true native fullscreen
-                    const targetMode = 'showing'; 
-                    if (t.mode !== targetMode) t.mode = targetMode;
+                    if (t.mode !== 'showing') t.mode = 'showing';
                 } else {
-                    // disabled mode: track is completely off
                     if (t.mode !== 'disabled') t.mode = 'disabled';
                 }
             });
+            // Re-enable after a tick so any pending change events are ignored
+            setTimeout(() => { _suppressNativeTrackChange = false; }, 50);
         }
 
         function selectSubtitleTrack(index) {
@@ -8449,17 +8446,19 @@
                         updateOverlayIcon('brightness', bLevel);
                     } else if (gestureType === 'volume') {
                         // Set on both video element and Plyr so they stay in sync (important in iOS PWA)
+                        // Set the actual video volume
                         video.volume = newVal;
-                        if (plyr) {
-                            plyr.volume = newVal;
-                            // If user dragged volume up from muted state, unmute
-                            if (newVal > 0 && plyr.muted) plyr.muted = false;
-                        } else {
-                            if (newVal > 0 && video.muted) video.muted = false;
+                        // Auto-unmute if dragging up from 0
+                        if (newVal > 0 && video.muted) video.muted = false;
+                        // Sync Plyr's own range input directly (avoids Plyr event loop fighting us)
+                        const plyrVolInput = document.querySelector('.plyr__volume input[type="range"]');
+                        if (plyrVolInput) {
+                            plyrVolInput.value = newVal;
+                            plyrVolInput.dispatchEvent(new Event('input', { bubbles: false }));
                         }
                         if (vBar) vBar.style.height = `${newVal * 100}%`;
                         updateOverlayIcon('volume', newVal);
-                        updateMuteIcon(); // Keep mute button in sync
+                        updateMuteIcon(); // Keep mute button icon in sync
                     }
 
                 }
