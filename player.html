@@ -5490,6 +5490,7 @@
 
             setTimeout(() => {
                 bindSubtitleCueListeners();
+                bindNativeTrackChangeListener(); // iOS: sync state when native picker selects a track
                 activeSubtitleTrackIndex = -1;
                 if (videoEl.textTracks) {
                     Array.from(videoEl.textTracks).forEach((t) => { t.mode = 'disabled'; });
@@ -5720,7 +5721,57 @@
             });
         }
 
+        /**
+         * iOS Safari: when the user picks a subtitle in the native AirPlay/PiP/fullscreen picker,
+         * the browser fires a 'change' event on video.textTracks.
+         * We listen here to sync activeSubtitleTrackIndex and re-render our overlay.
+         */
+        function bindNativeTrackChangeListener() {
+            if (!video || !video.textTracks) return;
+            if (video.textTracks.__nativeChangeBound) return;
+            video.textTracks.__nativeChangeBound = true;
+
+            video.textTracks.addEventListener('change', () => {
+                const tracks = Array.from(video.textTracks);
+
+                // Find which track iOS just set to 'showing'
+                const nativeShowingIdx = tracks.findIndex(t => t.mode === 'showing');
+
+                if (nativeShowingIdx === activeSubtitleTrackIndex) return; // Already in sync
+
+                if (nativeShowingIdx >= 0) {
+                    // iOS selected a track natively — sync our state
+                    console.log('[sub] iOS native track change → idx', nativeShowingIdx, tracks[nativeShowingIdx].label);
+                    activeSubtitleTrackIndex = nativeShowingIdx;
+
+                    // Persist preference
+                    localStorage.setItem('preferredSubtitleLabel', tracks[nativeShowingIdx].label);
+
+                    // On iOS native fullscreen AVKit renders natively — don't double-render overlay.
+                    // Outside fullscreen (e.g. inline), we render our overlay.
+                    const isNativeFullscreen = !!video.webkitDisplayingFullscreen;
+                    if (!isNativeFullscreen) {
+                        renderSubtitleOverlayFromTrack(tracks[nativeShowingIdx]);
+                    } else {
+                        // Ensure overlay is cleared so iOS AVKit renders exclusively
+                        const overlay = document.getElementById('subtitleOverlay');
+                        if (overlay) { overlay.innerHTML = ''; overlay.style.display = 'none'; }
+                    }
+                } else {
+                    // iOS turned off all tracks (user selected "Off")
+                    console.log('[sub] iOS native track change → Off');
+                    activeSubtitleTrackIndex = -1;
+                    localStorage.removeItem('preferredSubtitleLabel');
+                    renderSubtitleOverlayFromTrack(null);
+                }
+
+                // Always update our menu to reflect new state
+                buildCaptionsMenu();
+            });
+        }
+
         function silenceNativeTracks() {
+
             if (!video || !video.textTracks) return;
             const isNativeFs = (!!video.webkitDisplayingFullscreen) || (document.fullscreenElement === video);
             const tracks = Array.from(video.textTracks);
@@ -8397,10 +8448,20 @@
                         if (bBar) bBar.style.height = `${bLevel * 100}%`;
                         updateOverlayIcon('brightness', bLevel);
                     } else if (gestureType === 'volume') {
+                        // Set on both video element and Plyr so they stay in sync (important in iOS PWA)
                         video.volume = newVal;
+                        if (plyr) {
+                            plyr.volume = newVal;
+                            // If user dragged volume up from muted state, unmute
+                            if (newVal > 0 && plyr.muted) plyr.muted = false;
+                        } else {
+                            if (newVal > 0 && video.muted) video.muted = false;
+                        }
                         if (vBar) vBar.style.height = `${newVal * 100}%`;
                         updateOverlayIcon('volume', newVal);
+                        updateMuteIcon(); // Keep mute button in sync
                     }
+
                 }
             }, { passive: false });
 
