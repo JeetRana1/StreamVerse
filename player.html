@@ -488,6 +488,28 @@
             opacity: 1;
         }
 
+        .control-surface:not(.visible) {
+            pointer-events: none !important;
+        }
+
+        /* Allow lock button and skip buttons to always be clickable */
+        .control-surface:not(.visible) #uiLockBtn,
+        .control-surface:not(.visible) .ui-lock-btn,
+        .control-surface:not(.visible) #skipBackBtn,
+        .control-surface:not(.visible) #skipFwdBtn,
+        .control-surface:not(.visible) #skipSegmentBtn {
+            pointer-events: auto !important;
+        }
+
+        .control-surface:not(.visible) button,
+        .control-surface:not(.visible) input[type="range"],
+        .control-surface:not(.visible) .control-menu,
+        .control-surface:not(.visible) .panel,
+        .control-surface:not(.visible) [role="button"],
+        .control-surface:not(.visible) [role="slider"] {
+            pointer-events: none !important;
+        }
+
         .control-center {
             display: flex;
             align-items: center;
@@ -791,16 +813,16 @@
             position: fixed;
             background: var(--glass);
             border-radius: 16px;
-            padding: 12px;
+            padding: 8px;
             display: none;
             flex-direction: column;
-            gap: 6px;
-            width: 220px;
+            gap: 4px;
+            width: 210px;
             /* Default width */
             z-index: 1200;
             border: 1px solid var(--glass-border);
             backdrop-filter: blur(20px);
-            max-height: 340px;
+            max-height: 250px;
             overflow-y: auto;
             /* JS will handle left and bottom */
         }
@@ -815,7 +837,7 @@
         }
 
         #qualityMenu {
-            width: 175px;
+            width: 150px;
         }
 
         #source-panel,
@@ -825,27 +847,27 @@
             background: var(--glass);
             border: 1px solid var(--glass-border);
             border-radius: 20px;
-            padding: 16px;
+            padding: 12px;
             display: none;
             flex-direction: column;
             z-index: 1200;
             backdrop-filter: blur(25px);
             box-shadow: 0 12px 48px rgba(0, 0, 0, .8);
             animation: slideUp .25s cubic-bezier(0.4, 0, 0.2, 1);
-            max-height: 420px;
+            max-height: 300px;
             overflow-y: auto;
         }
 
         #source-panel {
-            width: 220px;
+            width: 180px;
         }
 
         #ep-panel {
-            width: 300px;
+            width: 260px;
         }
 
         #audio-panel {
-            width: 200px;
+            width: 160px;
         }
 
         #source-panel.open,
@@ -919,7 +941,7 @@
         }
 
         #volumeMenu {
-            width: 250px;
+            width: 260px;
         }
 
         .volume-row {
@@ -1063,7 +1085,7 @@
         }
 
         .menu-item {
-            padding: 11px 14px;
+            padding: 8px 12px;
             color: #ddd;
             cursor: pointer;
             border-radius: 10px;
@@ -1073,7 +1095,7 @@
             transition: var(--transition);
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            font-size: 0.88rem;
+            font-size: 0.8rem;
             font-weight: 500;
             box-sizing: border-box !important;
         }
@@ -1091,6 +1113,7 @@
             font-weight: 600;
             position: relative;
             overflow: hidden;
+            padding: 18px 18px !important;
         }
 
         .menu-item.selected::before {
@@ -1777,10 +1800,10 @@
         /* Duplicate panel block removed */
 
         .audio-item {
-            padding: 10px 14px;
+            padding: 8px 12px;
             border-radius: 8px;
             cursor: pointer;
-            font-size: .87rem;
+            font-size: .82rem;
             color: var(--muted);
             transition: var(--transition);
             display: flex;
@@ -1969,7 +1992,7 @@
                 max-height: 75vh !important;
                 border-radius: 28px 28px 0 0 !important;
                 border-bottom: none !important;
-                padding: 28px 16px calc(20px + var(--safe-bottom)) !important;
+                padding: 20px 12px calc(16px + var(--safe-bottom)) !important;
                 transform: translateY(100%);
                 transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease !important;
                 opacity: 0;
@@ -2050,8 +2073,8 @@
             align-items: center !important;
             justify-content: space-between !important;
             border-left: 4px solid transparent !important;
-            margin: 4px !important;
-            padding: 10px 14px !important;
+            margin: 3px !important;
+            padding: 8px 12px !important;
             transition: all 0.2s ease !important;
         }
 
@@ -2958,59 +2981,24 @@
             if (!hlsInst || !video) return;
 
             const clampedTarget = Math.max(0, Number(targetTime || 0));
-            const isLargeJump = jumpDistance > 18;
-            const isMediumJump = jumpDistance > 8;
-            const isSmallJump = jumpDistance > 3;
+            const isLargeJump = jumpDistance > 15;
 
             try {
+                // For any significant jump, immediately stop old loads and start at target
+                hlsInst.stopLoad();
+                
                 if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) {
-                    // ENHANCED: Gentler quality ramping for skips to avoid buffering cascade
-                    if (reason === 'skip') {
-                        // For skips: Use multi-level ramp instead of aggressive drop to level 0
-                        // This allows intermediate quality chunks to load without major lag
-                        if (isLargeJump) {
-                            // Large intro skips (>18s): Ramp down gradually
-                            hlsInst.autoLevelCapping = Math.max(0, hlsInst.levels.length - 2);
-                            hlsInst.nextLevel = Math.max(0, hlsInst.levels.length - 2);
-                            hlsInst.loadLevel = Math.max(0, hlsInst.levels.length - 2);
-                            // Recover to auto faster since we're not at absolute lowest
-                            setTimeout(() => {
-                                try { hlsInst.nextLevel = -1; hlsInst.autoLevelCapping = -1; } catch (_) { }
-                            }, 1400);
-                        } else if (isMediumJump) {
-                            // Medium skips: Keep closer to normal quality
-                            const fallbackLevel = Math.min(2, hlsInst.levels.length - 1);
-                            hlsInst.autoLevelCapping = fallbackLevel;
-                            hlsInst.nextLevel = fallbackLevel;
-                            hlsInst.loadLevel = fallbackLevel;
-                            setTimeout(() => {
-                                try { hlsInst.nextLevel = -1; hlsInst.autoLevelCapping = -1; } catch (_) { }
-                            }, 1200);
-                        }
-                    } else {
-                        // Regular seeks: Original aggressive logic still applies
-                        if (isLargeJump) {
-                            hlsInst.autoLevelCapping = 0;
-                            hlsInst.nextLevel = 0;
-                            hlsInst.loadLevel = 0;
-                            setTimeout(() => {
-                                try { hlsInst.nextLevel = -1; hlsInst.autoLevelCapping = -1; } catch (_) { }
-                            }, 1800);
-                        } else if (isMediumJump) {
-                            const fallbackLevel = Math.min(1, hlsInst.levels.length - 1);
-                            hlsInst.autoLevelCapping = fallbackLevel;
-                            hlsInst.nextLevel = fallbackLevel;
-                            hlsInst.loadLevel = fallbackLevel;
-                            setTimeout(() => {
-                                try { hlsInst.nextLevel = -1; hlsInst.autoLevelCapping = -1; } catch (_) { }
-                            }, 1600);
-                        }
-                    }
+                    // Temporarily drop quality to load thumbnails/segments instantly
+                    hlsInst.currentLevel = 0;
+                    hlsInst.loadLevel = 0;
+                    
+                    setTimeout(() => {
+                        if (hlsInst) hlsInst.loadLevel = -1; // Resume auto
+                    }, 1500);
                 }
+                
+                hlsInst.startLoad(clampedTarget);
             } catch (_) { }
-
-            // ENHANCED: More aggressive loading strategy for jumps
-            kickHlsLoadNearCurrentTime(clampedTarget, isLargeJump || reason === 'skip' || isMediumJump);
         }
 
         function setTemporaryRecoveryQuality(ms = 4500) {
@@ -3265,6 +3253,12 @@
                     if (isNative) {
                         if (!tracks[targetIdx].enabled) {
                             tracks.forEach((t, i) => { t.enabled = (i === targetIdx); });
+                            
+                            // Safari iOS hack: force native audio track to apply
+                            if (typeof IS_IOS !== 'undefined' && IS_IOS && typeof video !== 'undefined' && video && video.readyState >= 1) {
+                                video.currentTime = video.currentTime + 0.0001;
+                            }
+                            
                             const sel = tracks[targetIdx];
                             console.log(`[native-audio] Successfully auto-switched to index ${targetIdx} (${sel.label || sel.language})`);
                         }
@@ -5728,14 +5722,16 @@
 
         function silenceNativeTracks() {
             if (!video || !video.textTracks) return;
-            const isNativeFs = !!video.webkitDisplayingFullscreen;
+            const isNativeFs = (!!video.webkitDisplayingFullscreen) || (document.fullscreenElement === video);
             const tracks = Array.from(video.textTracks);
             tracks.forEach((t, i) => {
                 const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
 
                 if (shouldBeActive) {
-                    // hidden mode: track is active (cues fire) but browser doesn't render unless in native fullscreen
-                    const targetMode = isNativeFs ? 'showing' : 'hidden';
+                    // showing mode: track index is showing in native player too
+                    // previously it was 'hidden', but for iOS native player we need 'showing'
+                    // but we still want our own overlay if not in true native fullscreen
+                    const targetMode = 'showing'; 
                     if (t.mode !== targetMode) t.mode = targetMode;
                 } else {
                     // disabled mode: track is completely off
@@ -6442,7 +6438,19 @@
             clearTimeout(controlsHideTimer);
             clearTimeout(headerTimer);
 
+            // Auto-hide after 3 seconds
+            const hideDelay = 3000;
+
             controlsHideTimer = setTimeout(() => {
+                // Check if any menu is open - if so, extend the hold time
+                const hasOpenMenu = document.querySelector('.control-menu.active, .panel.open');
+                if (hasOpenMenu) {
+                    // Extend hold time by 3 seconds when menu is open
+                    controlsHoldVisibleUntil = Date.now() + 3000;
+                    showControlSurface();
+                    return;
+                }
+
                 if (Date.now() < controlsHoldVisibleUntil) {
                     showControlSurface();
                     return;
@@ -6452,11 +6460,14 @@
                     playerHeader.classList.add('hidden');
                     closeCustomMenus();
                 }
-            }, 3000);
+            }, hideDelay);
         }
 
         function holdControlsVisible(ms = 900) {
-            controlsHoldVisibleUntil = Math.max(controlsHoldVisibleUntil, Date.now() + ms);
+            // Enforce minimum 3 seconds on all devices
+            const minHold = 3000;
+            const effectiveMs = Math.max(ms, minHold);
+            controlsHoldVisibleUntil = Math.max(controlsHoldVisibleUntil, Date.now() + effectiveMs);
             showControlSurface();
         }
 
@@ -7104,6 +7115,9 @@
                             // Disable all tracks then enable the picked one
                             iosNativeTracks.forEach(t => { t.enabled = false; });
                             track.enabled = true;
+                            if (typeof IS_IOS !== 'undefined' && IS_IOS && typeof video !== 'undefined' && video && video.readyState >= 1) {
+                                video.currentTime = video.currentTime + 0.001;
+                            }
                             rememberAudioPreference({ lang: track.language, name: track.label });
                             updateAudioTracks();
                         });
@@ -7244,6 +7258,11 @@
 
             playPauseBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // If controls are hidden, show them instead of playing/pausing
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 if (!video) return;
                 if (video.paused) video.play();
                 else video.pause();
@@ -7252,7 +7271,12 @@
             skipBackBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
-                holdControlsVisible(1200);
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
+                holdControlsVisible(0);
                 registerSkipPulse('left', 10);
                 requestSeekToTime(Math.max(0, (video.currentTime || 0) - 10), true);
             });
@@ -7260,7 +7284,12 @@
             skipFwdBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
-                holdControlsVisible(1200);
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
+                holdControlsVisible(0);
                 registerSkipPulse('right', 10);
                 if (isFinite(video.duration)) requestSeekToTime(Math.min(video.duration, (video.currentTime || 0) + 10), true);
                 else requestSeekToTime((video.currentTime || 0) + 10, true);
@@ -7275,12 +7304,22 @@
 
             customAudioBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 toggleAudioPanel(customAudioBtn);
             });
 
             captionsBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 const wasOpen = captionsMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -7291,17 +7330,32 @@
 
             customServerBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 toggleSourcePanel(customServerBtn);
             });
 
             customEpisodeBtn?.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 toggleEpPanel(customEpisodeBtn);
             });
 
             qualityBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!hlsInst) return;
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 const wasOpen = qualityMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -7312,6 +7366,11 @@
 
             playbackBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 const wasOpen = playbackMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -7322,6 +7381,11 @@
 
             preferencesBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 const wasOpen = preferencesMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -7332,6 +7396,11 @@
 
             fitBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 fitIndex = (fitIndex + 1) % fitModes.length;
                 applyFitMode();
                 showControlSurface();
@@ -7340,6 +7409,11 @@
             muteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
                 const wasOpen = volumeMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -7350,6 +7424,12 @@
 
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
+
+                // If controls are hidden, show them instead
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(0); // Uses minimum hold time
+                    return;
+                }
 
                 // Helper: check if any fullscreen is active (standard + webkit variants)
                 const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement || video?.webkitDisplayingFullscreen);
@@ -7405,12 +7485,12 @@
                         const scrollY = window.scrollY;
                         html.dataset.pseudoFsScrollY = scrollY;
 
-                        // ── TECHNIQUE 1: Force landscape ──────────────────────────
-                        // In landscape, Safari collapses its entire chrome (tab strip,
-                        // bottom toolbar) to a minimal top strip — the closest to
-                        // fullscreen you can get without the PWA.
+                        // ── TECHNIQUE 1: Auto-rotate screen ──────────────────────────
+                        // Toggle orientation: portrait ↔ landscape for fullscreen immersion
                         if (screen.orientation?.lock) {
-                            screen.orientation.lock('landscape').catch(() => {
+                            const isCurrentlyLandscape = window.innerWidth > window.innerHeight;
+                            const targetOrientation = isCurrentlyLandscape ? 'portrait' : 'landscape';
+                            screen.orientation.lock(targetOrientation).catch(() => {
                                 // lock() not supported or denied — just continue
                             });
                         }
@@ -7617,6 +7697,11 @@
                     }
                     return;
                 }
+                // If controls are hidden, don't seek
+                if (Date.now() >= controlsHoldVisibleUntil) {
+                    holdControlsVisible(1500);
+                    return;
+                }
                 requestSeekToTime((percent / 100) * (video?.duration || 0), true);
             });
 
@@ -7639,6 +7724,11 @@
             seekBar.addEventListener('change', () => {
                 // Keyboard/click commits (non-drag path)
                 if (!isSeekDragging) {
+                    // If controls are hidden, don't seek
+                    if (Date.now() >= controlsHoldVisibleUntil) {
+                        holdControlsVisible(1500);
+                        return;
+                    }
                     const percent = parseFloat(seekBar.value || '0');
                     requestSeekToTime((percent / 100) * (video?.duration || 0), true);
                 }
@@ -8089,6 +8179,83 @@
             }, { passive: true });
 
 
+            // Global blocker: Toggle controls on any screen interaction
+            const blockInteractionsWhenHidden = (e) => {
+                const isControlsVisible = controlSurface.classList.contains('visible');
+
+                // 1. Always allow lock button and specific player buttons to work
+                const isLockButton = e.target.closest('#uiLockBtn, .ui-lock-btn');
+                const isSkipPulse = e.target.closest('.ripple-skip');
+                if (isLockButton || isSkipPulse) return;
+
+                // 2. Identify interactive elements (buttons, sliders, menus, etc.)
+                const isOnButton = e.target.closest('button');
+                const isOnSeekbar = e.target.closest('input[type="range"]');
+                const menuEl = e.target.closest('.control-menu, .panel');
+                const isOnMenu = menuEl && (menuEl.classList.contains('active') || menuEl.classList.contains('open'));
+                const isOnMenuItem = e.target.closest('.ep-item, .source-item, .audio-item, [role="button"], [role="slider"]');
+                const isOnInteractive = isOnButton || isOnSeekbar || isOnMenu || isOnMenuItem;
+
+                // 3. Handle different states
+                if (isControlsVisible) {
+                    // IF CONTROLS ARE VISIBLE:
+                    // If tapping on an interactive element, DO NOT intercept (allow click/touch to work immediately)
+                    if (isOnInteractive) return;
+
+                    // Only hide if tapping on EMPTY SPACE (non-interactive area)
+                    if (e.type === 'touchstart' || e.type === 'mousedown' || e.type === 'click') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        hideControlSurfaceNow();
+                        return false;
+                    }
+                } else {
+                    // IF CONTROLS ARE HIDDEN:
+                    // Show them on ANY interaction
+                    if (e.type === 'touchstart' || e.type === 'mousedown' || e.type === 'click') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        holdControlsVisible(3000);
+                        return false;
+                    }
+                }
+            };
+
+            // Attach blocker at document level in CAPTURE phase (fires first, before any other handlers)
+            document.addEventListener('pointerdown', blockInteractionsWhenHidden, { capture: true });
+            document.addEventListener('touchstart', blockInteractionsWhenHidden, { capture: true, passive: false });
+            document.addEventListener('mousedown', blockInteractionsWhenHidden, { capture: true });
+            document.addEventListener('click', blockInteractionsWhenHidden, { capture: true });
+
+            // Also attach blocker directly to controlSurface for more reliable interception
+            controlSurface.addEventListener('pointerdown', blockInteractionsWhenHidden, { capture: true });
+            controlSurface.addEventListener('touchstart', blockInteractionsWhenHidden, { capture: true, passive: false });
+            controlSurface.addEventListener('mousedown', blockInteractionsWhenHidden, { capture: true });
+            controlSurface.addEventListener('click', blockInteractionsWhenHidden, { capture: true });
+
+            // Simple hide handler: when controls visible and user clicks on controlSurface (empty area), hide
+            controlSurface.addEventListener('click', (e) => {
+                const isVisible = controlSurface.classList.contains('visible');
+                if (!isVisible) return;
+
+                // Check if clicked on interactive element
+                const isOnButton = e.target.closest('button');
+                const isOnSeekbar = e.target.closest('input[type="range"]');
+                const menuEl = e.target.closest('.control-menu, .panel');
+                const isOnMenu = menuEl && (menuEl.classList.contains('active') || menuEl.classList.contains('open'));
+                const isOnMenuItem = e.target.closest('.ep-item, .source-item, .audio-item, [role="button"], [role="slider"]');
+
+                // If on empty space, hide controls immediately
+                if (!isOnButton && !isOnSeekbar && !isOnMenu && !isOnMenuItem) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    clearTimeout(window.singleTapTimeout);
+                    hideControlSurfaceNow();
+                }
+            }, { capture: true }); // Use capture phase to intercept before buttons if needed, or ensuring it catches early
+
             function handleSurfaceInteraction(e) {
                 if (isUiLocked && e.target !== uiLockBtn && !uiLockBtn.contains(e.target)) return;
                 if (Date.now() < controlsHoldVisibleUntil) return;
@@ -8138,8 +8305,11 @@
                     lastTap = now;
                     // Single Tap Logic -> Give a small delay in case a double tap is coming
                     window.singleTapTimeout = setTimeout(() => {
+                        // Don't hide controls if they were just made visible (still on hold)
+                        if (Date.now() < controlsHoldVisibleUntil) return;
+
                         if (!controlSurface.classList.contains('visible')) {
-                            showControlSurface();
+                            holdControlsVisible(3000);
                         } else {
                             hideControlSurfaceNow();
                         }
@@ -8147,10 +8317,81 @@
                 }
             }
 
-            // Using capture:true for the surface to handle these before other logic if needed, 
+            // Using capture:true for the surface to handle these before other logic if needed,
             // but standard phase is fine here since we filter by target closest.
-            controlSurface.addEventListener('touchstart', handleSurfaceInteraction, { passive: true });
-            controlSurface.addEventListener('click', handleSurfaceInteraction);
+
+            controlSurface.addEventListener('touchstart', (e) => {
+                if (e.touches.length > 1) return;
+                const touch = e.touches[0];
+                startX = touch.clientX;
+                startY = touch.clientY;
+                isGesturing = false;
+                gestureType = null;
+            }, { passive: true });
+
+            controlSurface.addEventListener('touchmove', (e) => {
+                if (isUiLocked || e.touches.length > 1) return;
+                const touch = e.touches[0];
+                const dx = touch.clientX - startX;
+                const dy = touch.clientY - startY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 20 && !isGesturing) {
+                    const angle = Math.atan2(dy, dx);
+                    // Vertical gesture (brightness/volume)
+                    if (Math.abs(Math.sin(angle)) > 0.7) {
+                        isGesturing = true;
+                        if (touch.clientX < window.innerWidth / 2) {
+                            gestureType = 'brightness';
+                            const bOverlay = document.getElementById('brightness-overlay');
+                            if (bOverlay) bOverlay.classList.add('visible');
+                        } else {
+                            gestureType = 'volume';
+                            const vOverlay = document.getElementById('volume-overlay');
+                            if (vOverlay) vOverlay.classList.add('visible');
+                        }
+                    }
+                    // Horizontal gesture (seek)
+                    else if (Math.abs(Math.cos(angle)) > 0.7) {
+                        isGesturing = true;
+                        gestureType = 'seek';
+                    }
+                }
+                // Brightness: vertical swipe on left side
+                if (gestureType === 'brightness') {
+                    const dy = touch.clientY - startY;
+                    const delta = -dy / 100;
+                    let newVal = Math.max(0, Math.min(1, brightness + delta));
+                    brightness = newVal;
+                    const video = document.querySelector('video');
+                    if (video) {
+                        video.style.filter = `brightness(${newVal})`;
+                        video.style.webkitFilter = `brightness(${newVal})`;
+                    }
+                    const bDisplay = document.querySelector('.brightness-display');
+                    if (bDisplay) {
+                        bDisplay.textContent = Math.round(newVal * 100) + '%';
+                        bDisplay.style.opacity = '1';
+                    }
+                }
+                // Volume: vertical swipe on right side
+                else if (gestureType === 'volume') {
+                    const dy = touch.clientY - startY;
+                    const delta = -dy / 100;
+                    const video = document.querySelector('video');
+                    if (video) {
+                        let newVal = Math.max(0, Math.min(1, video.volume + delta));
+                        video.volume = newVal;
+                        if (vBar) vBar.style.height = `${newVal * 100}%`;
+                    }
+                }
+            }, { passive: false });
+
+            controlSurface.addEventListener('touchend', () => {
+                bOverlay.classList.remove('visible');
+                vOverlay.classList.remove('visible');
+            }, { passive: true });
+
+            // All control interactions are now handled by blockInteractionsWhenHidden
 
             function playRipple(side, amount = 10) {
                 const el = document.getElementById(`ripple-${side}`);
@@ -8928,7 +9169,7 @@
 
             // Always prefetch subtitles from JustAnime fallback for anime content,
             // even if a forced provider (e.g. satoru) is active — since satoru has no subtitles.
-            const forcedProviderHasOwnSubs = FORCED_PROVIDER === 'justanime' || FORCED_PROVIDER === 'hianime';
+            const forcedProviderHasOwnSubs = FORCED_PROVIDER === 'justanime';
             const subtitlePrefetchPromise = currentIsLikelyAnime && !forcedProviderHasOwnSubs
                 ? fetchAnimeSubtitleFallback()
                     .then((subs) => {
@@ -8950,7 +9191,7 @@
                 providers = ['dramacool', ...providers.filter((p) => p !== 'dramacool')];
             }
             if (MEDIA_TYPE === 'tv' && currentIsLikelyAnime) {
-                const animeTvPriority = ['animesalt', 'justanime', 'satoru', 'hianime'];
+                const animeTvPriority = ['animesalt', 'justanime', 'satoru'];
                 providers = [
                     ...animeTvPriority.filter((p) => providers.includes(p)),
                     ...providers.filter((p) => !animeTvPriority.includes(p)),
@@ -8974,7 +9215,7 @@
                     // because TMDB episode IDs don't match anime provider episode IDs
                     let info, provEpisodeId;
                     let satoruResolvedExactly = false;
-                    const isAnimeProvider = ['satoru', 'hianime', 'justanime', 'animesalt'].includes(provider);
+                    const isAnimeProvider = ['satoru', 'justanime', 'animesalt'].includes(provider);
                     const isNetMirrorProvider = ['flixhq', 'goku', 'viewvault', 'netmirror'].some(v => String(provider || '').toLowerCase().includes(v));
 
                     if (isAnimeProvider) {
@@ -9591,7 +9832,7 @@
                     const extractedSubs = normalizeSubtitleEntries(data?.data || data, provider, data?.headers?.Referer || data?.headers?.referer || null);
                     if (extractedSubs.length) {
                         externalSubtitleTracks = extractedSubs;
-                        if (currentIsLikelyAnime && provider !== 'hianime') {
+                        if (currentIsLikelyAnime) {
                             subtitlePrefetchPromise
                                 .then((subs) => {
                                     if (!Array.isArray(subs) || !subs.length) return;
@@ -9903,7 +10144,6 @@
                 himovies: 'HiMovies',
                 dramacool: 'DramaCool',
                 satoru: 'Satoru',
-                hianime: 'HiAnime',
                 justanime: 'JustAnime',
             };
             return map[p] || p;
@@ -10354,7 +10594,9 @@
                 // Capture last visible frame immediately to prevent black screen flash during rebuild
                 try { captureVideoFrameToOverlay(); } catch (_) { }
 
-                if (hlsInst && isM3U8 && sameSourceRecoverCount <= 40) {
+                const maxAttempts = reason === 'fatal_network_error' ? 1 : 40;
+
+                if (hlsInst && isM3U8 && sameSourceRecoverCount <= maxAttempts) {
                     try {
                         const jump = sameSourceRecoverCount > 12 ? 2.6 : (sameSourceRecoverCount > 5 ? 1.4 : 0.25);
                         const pendingTargetTime = pendingJumpTarget?.time;
