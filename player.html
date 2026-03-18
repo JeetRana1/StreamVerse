@@ -8221,14 +8221,14 @@
             const blockInteractionsWhenHidden = (e) => {
                 const now = Date.now();
 
-                // 0. TOP PRIORITY: UI Lock button always works immediately
-                const isLockButton = e.target.closest('#uiLockBtn, .ui-lock-btn');
-                if (isLockButton) return; // Allow interaction to bubble natively
+                // 0. TOP PRIORITY: Lock-mode bypasses (always work)
+                const isLockedAction = e.target.closest('#uiLockBtn, .ui-lock-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
+                if (isLockedAction) return;
 
                 const isControlsVisible = controlSurface.classList.contains('visible');
 
                 // 1. Identify other interactive elements
-                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .source-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
+                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
 
                 // 2. Hide logic: Let buttons and specific bubble-phase handlers handle hiding.
                 // We ONLY intercept here if we need to reveal the UI.
@@ -8281,7 +8281,7 @@
                 if (now - lastInteractionAt < 100) return; // Prevent double-toggle from reveal-tap
 
                 // Identify if clicked on an actual button/control
-                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .source-item, .ctrl-btn, .ctrl-icon, .back-btn');
+                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn');
 
                 if (!isOnInteractive) {
                     e.preventDefault();
@@ -8294,10 +8294,10 @@
             // Handles: Double-tap Skip, Double-tap Play/Pause, and Single-tap Hide.
             function handleSurfaceInteraction(e) {
                 // UI Lock bypass
-                const isLockButton = e.target.closest('#uiLockBtn, .ui-lock-btn');
-                if (isLockButton) return; // Don't even count lock-taps for double-tap detection
+                const isLockedAction = e.target.closest('#uiLockBtn, .ui-lock-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
+                if (isLockedAction) return; 
                 if (isUiLocked) return;
-                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .source-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
+                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
                 if (isOnInteractive) return;
 
                 const now = Date.now();
