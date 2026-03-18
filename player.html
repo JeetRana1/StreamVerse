@@ -5472,7 +5472,7 @@
 
             resolved.forEach((sub, i) => {
                 const track = document.createElement('track');
-                track.kind = 'subtitles'; // Use subtitles so native iOS player can render them
+                track.kind = 'captions'; // captions work more reliably in native iOS menu
                 
                 let trackLabel = sub.label || `Subtitle ${i + 1}`;
                 if (sub.provider) {
@@ -5486,7 +5486,7 @@
                 track.srclang = sub.srclang || 'en';
                 track.src = sub.resolvedSrc || '';
                 track.dataset.extSub = '1';
-                track.crossOrigin = 'anonymous';
+                // track.crossOrigin is not a valid property; handled by video element
                 track.addEventListener('load', () => {
                     console.log('[sub] track loaded:', track.label);
                     updateCaptionsButtonVisibility();
@@ -5810,9 +5810,12 @@
             const tracks = Array.from(video.textTracks);
             tracks.forEach((t, i) => {
                 const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
-                // 'showing' = native player renders the captions
                 if (shouldBeActive) {
-                    if (t.mode !== 'showing') t.mode = 'showing';
+                    // Force a 'kick' by setting to disabled then showing
+                    t.mode = 'disabled';
+                    setTimeout(() => {
+                        if (t) t.mode = 'showing';
+                    }, 50);
                 } else {
                     if (t.mode !== 'disabled') t.mode = 'disabled';
                 }
@@ -10998,9 +11001,10 @@
                 // Remove it for native HLS — canvas thumbnail capture isn't used on iOS.
                 // Exception: 'justanime' uses external subtitles resolving to a cross-origin /utils/vtt.
                 // If we remove crossorigin, iOS WebKit instantly crashes the <video> when the <track> is added.
+                // Keep crossorigin logic intact for iOS subtitle support
                 const activeProviderForCORS = String(allSources?.[srcIdx]?.provider || '').toLowerCase();
-                if (activeProviderForCORS !== 'justanime') {
-                    video.removeAttribute('crossorigin');
+                if (activeProviderForCORS === 'justanime') {
+                    video.setAttribute('crossorigin', 'anonymous');
                 }
 
                 const proxiedUrl = proxiedStreamUrl(url, referer);

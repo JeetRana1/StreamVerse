@@ -792,12 +792,12 @@ async function applyExternalSubtitlesToVideo(videoEl) {
     videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach((t) => t.remove());
     resolved.forEach((sub, i) => {
         const track = document.createElement('track');
-        track.kind = 'subtitles';
+        track.kind = 'captions'; // captions work more reliably in native iOS menu
         track.label = sub.label || `Subtitle ${i + 1}`;
         track.srclang = sub.srclang || 'en';
         track.src = sub.resolvedSrc || '';
         track.dataset.extSub = '1';
-        track.crossOrigin = 'anonymous';
+        // track.crossOrigin is not a valid property; handled by video element
         track.addEventListener('load', () => {
             updateCaptionsButtonVisibility();
             buildCaptionsMenu();
@@ -937,7 +937,11 @@ function activateTracksForIOSNativePlayer() {
     tracks.forEach((t, i) => {
         const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
         if (shouldBeActive) {
-            if (t.mode !== 'showing') t.mode = 'showing';
+            // Force a 'kick' by setting to disabled then showing
+            t.mode = 'disabled';
+            setTimeout(() => {
+                if (t) t.mode = 'showing';
+            }, 50);
         } else {
             if (t.mode !== 'disabled') t.mode = 'disabled';
         }
@@ -2171,7 +2175,7 @@ async function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) 
     }
     const wrap = document.querySelector('.player-wrap');
     // Hard reset video element to clear any hanging buffers from previous episode
-    wrap.innerHTML = '<video id="player-video" playsinline></video>';
+    wrap.innerHTML = '<video id="player-video" playsinline crossorigin="anonymous"></video>';
     video = document.getElementById('player-video');
     setVolumeBoost(volumeBoost);
     const initPlyr = () => {
@@ -2237,7 +2241,7 @@ async function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) 
     // 1. HLS with hls.js
     if (isM3U8 && Hls.isSupported()) {
         console.log('Branch: HLS.js');
-        wrap.innerHTML = '<video id="player-video" playsinline></video>';
+        wrap.innerHTML = '<video id="player-video" playsinline crossorigin="anonymous"></video>';
         video = document.getElementById('player-video');
         const streamUrl = proxiedStreamUrl(url, referer);
         hlsInst = new Hls({
@@ -2408,7 +2412,7 @@ async function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) 
         });
     } else if (isM3U8 && video?.canPlayType?.('application/vnd.apple.mpegurl')) {
         console.log('Branch: Native Safari HLS');
-        wrap.innerHTML = '<video id="player-video" playsinline></video>';
+        wrap.innerHTML = '<video id="player-video" playsinline crossorigin="anonymous"></video>';
         video = document.getElementById('player-video');
         if (startTime > 0) {
             video.addEventListener('loadedmetadata', () => {
@@ -2420,7 +2424,7 @@ async function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) 
         video.play().catch(() => hideLoader());
     } else if (isMPD && window.dashjs?.MediaPlayer) {
         console.log('Branch: DASH.js');
-        wrap.innerHTML = '<video id="player-video" playsinline></video>';
+        wrap.innerHTML = '<video id="player-video" playsinline crossorigin="anonymous"></video>';
         video = document.getElementById('player-video');
         const mpdUrl = proxiedStreamUrl(url, referer);
         dashInst = window.dashjs.MediaPlayer().create();
@@ -2458,7 +2462,7 @@ async function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) 
         }, 9000);
     } else if (!isM3U8) {
         console.log('Branch: Direct MP4');
-        wrap.innerHTML = '<video id="player-video" playsinline></video>';
+        wrap.innerHTML = '<video id="player-video" playsinline crossorigin="anonymous"></video>';
         video = document.getElementById('player-video');
         if (startTime > 0) {
             video.addEventListener('loadedmetadata', () => {
