@@ -1406,26 +1406,40 @@
 
         /* Keep skip/next buttons visible in lock mode per UX request */
 
-        video::cue,
-        ::cue,
-        video::-webkit-media-text-track-container,
-        video::-webkit-media-text-track-display,
-        video::-webkit-media-text-track-display-backdrop,
+        /* ──────────────────────────────────────────────────────────────────
+           Subtitle rendering strategy:
+           - Our custom overlay (#subtitleOverlay) renders subtitles in the
+             web player via JS/cuechange events. We suppress browser's own
+             rendering (::cue) so there is no double display.
+           - The -webkit-media-text-track-container is NOT suppressed here.
+             When iOS native QuickTime player is active (webkitbeginfullscreen),
+             our JS sets track.mode = 'showing' and iOS renders the captions
+             natively inside that container. On webkitendfullscreen we restore
+             track.mode = 'hidden' and our overlay takes back over.
+           - body.ios-native-player is toggled by JS to allow native rendering.
+        ──────────────────────────────────────────────────────────────────── */
+
+        /* Always hide Plyr's built-in caption UI — we never use it */
         .plyr__captions,
         .plyr__caption,
         .plyr__video-wrapper [class*="captions"],
-        .plyr__video-wrapper [class*="caption"],
-        #player-video::cue {
+        .plyr__video-wrapper [class*="caption"] {
             display: none !important;
             opacity: 0 !important;
             visibility: hidden !important;
+        }
+
+        /* Suppress browser ::cue rendering in our custom player.
+           When mode='showing' is set for iOS native player, the browser
+           renders via -webkit-media-text-track-container (not ::cue),
+           so this does NOT affect iOS native subtitle display. */
+        body:not(.ios-native-player) video::cue,
+        body:not(.ios-native-player) #player-video::cue,
+        body:not(.ios-native-player) ::cue {
             all: unset !important;
             font-size: 0 !important;
             line-height: 0 !important;
-            height: 0 !important;
-            width: 0 !important;
-            position: absolute !important;
-            top: -9999px !important;
+            opacity: 0 !important;
         }
 
         #subtitleOverlay {
@@ -2282,12 +2296,12 @@
         <script>
             (function() {
                 const v = document.getElementById('player-video');
-                const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-                const isPwa = (isIos && navigator.standalone) || window.matchMedia('(display-mode: standalone)').matches;
-                if (!isIos || isPwa) {
-                    v.setAttribute('playsinline', '');
-                    v.setAttribute('webkit-playsinline', 'true');
-                }
+                // Always set playsinline for iOS/Mobile to allow custom controls by default.
+                // Standard iPhone behavior is to force native fullscreen on play; 
+                // playsinline allows us to stay in the custom player UI.
+                v.setAttribute('playsinline', '');
+                v.setAttribute('webkit-playsinline', 'true');
+                v.playsInline = true;
             })();
         </script>
         <div id="video-brightness-overlay"></div>
@@ -2664,6 +2678,7 @@
         const subtitleBlobCache = new Map(); // Cache processed VTT text by source URL to avoid redundant fetches and proxy hits
         let subtitleApplyVersion = 0;
         let activeSubtitleTrackIndex = -1;
+        let _iosNativePlayerActive = false; // Tracks whether iOS native player is currently in fullscreen
         let currentIdx = 0;
         let currentMediaInfo = null;
         let currentCoverUrl = null; // poster/backdrop used as transition overlay background
@@ -5490,19 +5505,24 @@
 
             setTimeout(() => {
                 bindSubtitleCueListeners();
-                bindNativeTrackChangeListener(); // iOS: sync state when native picker selects a track
-                activeSubtitleTrackIndex = -1;
-                if (videoEl.textTracks) {
-                    // iOS: use 'hidden' so Safari fetches & parses the VTT file.
-                    // 'disabled' prevents iOS from loading the track at all, so it can never render.
-                    // 'hidden' = loaded & parsed, but not displayed until set to 'showing'.
-                    const initialMode = IS_IOS ? 'hidden' : 'disabled';
-                    Array.from(videoEl.textTracks).forEach((t) => { t.mode = initialMode; });
+                bindNativeTrackChangeListener();
+
+                const preferredLabel = localStorage.getItem('preferredSubtitleLabel');
+                const tracks = Array.from(videoEl.textTracks || []);
+                let bestIdx = -1;
+
+                if (preferredLabel && tracks.length) {
+                    bestIdx = tracks.findIndex(t => t.label === preferredLabel);
                 }
-                renderSubtitleOverlayFromTrack(null);
+
+                if (bestIdx === -1) {
+                    bestIdx = getDefaultEnglishSubtitleIndex();
+                }
+
+                selectSubtitleTrack(bestIdx);
                 updateCaptionsButtonVisibility();
                 buildCaptionsMenu();
-            }, 120);
+            }, 200);
         }
 
         function mergeSubtitleTrackLists(primary, secondary) {
@@ -5738,44 +5758,33 @@
                 if (_suppressNativeTrackChange) return;
 
                 const tracks = Array.from(video.textTracks);
-
-                // Find which track the native picker set to 'showing'
                 const nativeShowingIdx = tracks.findIndex(t => t.mode === 'showing');
-
-                if (nativeShowingIdx === activeSubtitleTrackIndex) return; // Already in sync
 
                 if (nativeShowingIdx >= 0) {
                     // iOS selected a track natively — sync our state
                     console.log('[sub] iOS native track change → idx', nativeShowingIdx, tracks[nativeShowingIdx].label);
                     activeSubtitleTrackIndex = nativeShowingIdx;
-
-                    // Persist preference
                     localStorage.setItem('preferredSubtitleLabel', tracks[nativeShowingIdx].label);
 
-                    // On iOS native fullscreen AVKit renders natively — don't double-render overlay.
-                    // Outside fullscreen (e.g. inline), we render our overlay.
-                    const isNativeFullscreen = !!video.webkitDisplayingFullscreen;
-                    if (!isNativeFullscreen) {
+                    // Sync overlay display if not in native fullscreen
+                    if (!_iosNativePlayerActive) {
                         renderSubtitleOverlayFromTrack(tracks[nativeShowingIdx]);
-                    } else {
-                        // Ensure overlay is cleared so iOS AVKit renders exclusively
-                        const overlay = document.getElementById('subtitleOverlay');
-                        if (overlay) { overlay.innerHTML = ''; overlay.style.display = 'none'; }
                     }
-                } else {
-                    // iOS turned off all tracks (user selected "Off")
-                    console.log('[sub] iOS native track change → Off');
+                } else if (!_iosNativePlayerActive) {
+                    // iOS turned off all tracks — only sync 'Off' if NOT in native player
+                    // (Native player might briefly set all to hidden during transitions)
                     activeSubtitleTrackIndex = -1;
                     localStorage.removeItem('preferredSubtitleLabel');
                     renderSubtitleOverlayFromTrack(null);
                 }
-
-                // Always update our menu to reflect new state
                 buildCaptionsMenu();
             });
         }
 
         function silenceNativeTracks() {
+            // On iOS when the native player is active, we must NOT silence tracks —
+            // instead the native player needs them in 'showing' mode to render captions.
+            if (_iosNativePlayerActive) return;
             if (!video || !video.textTracks) return;
             // Suppress our own native change listener while we programmatically set modes
             _suppressNativeTrackChange = true;
@@ -5783,16 +5792,43 @@
             tracks.forEach((t, i) => {
                 const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
                 if (shouldBeActive) {
-                    if (t.mode !== 'showing') t.mode = 'showing';
+                    // hidden mode: track is active (cues fire) but browser doesn't render
+                    // This allows our custom overlay to work without double-display.
+                    if (t.mode !== 'hidden') t.mode = 'hidden';
                 } else {
-                    // Use 'hidden' instead of 'disabled' so iOS fetches/parses the VTT
-                    // 'disabled' = browser never fetches the file → iOS can't render cues
-                    // 'hidden' = browser fetches & parses cues silently (no rendering)
+                    // Use 'hidden' instead of 'disabled' so iOS fetches/parses the VTT if needed
                     if (t.mode !== 'hidden') t.mode = 'hidden';
                 }
             });
             // Re-enable after a tick so any pending change events are ignored
             setTimeout(() => { _suppressNativeTrackChange = false; }, 50);
+        }
+
+        // Switch subtitle tracks to 'showing' for iOS native player
+        function activateTracksForIOSNativePlayer() {
+            if (!video || !video.textTracks) return;
+            const tracks = Array.from(video.textTracks);
+            tracks.forEach((t, i) => {
+                const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
+                // 'showing' = native player renders the captions
+                if (shouldBeActive) {
+                    if (t.mode !== 'showing') t.mode = 'showing';
+                } else {
+                    if (t.mode !== 'disabled') t.mode = 'disabled';
+                }
+            });
+        }
+
+        // Restore subtitle tracks to 'hidden'/'disabled' after iOS native player exits
+        function deactivateTracksFromIOSNativePlayer() {
+             _iosNativePlayerActive = false;
+             silenceNativeTracks();
+             // Re-bind cue listeners in case iOS cleared them
+             bindSubtitleCueListeners();
+             // Ensure custom overlay is updated
+             if (activeSubtitleTrackIndex >= 0 && video && video.textTracks) {
+                 renderSubtitleOverlayFromTrack(video.textTracks[activeSubtitleTrackIndex]);
+             }
         }
 
         function selectSubtitleTrack(index) {
@@ -6808,10 +6844,31 @@
                     buildCaptionsMenu();
                 });
             }
-            video.addEventListener('play', silenceNativeTracks);
-            video.addEventListener('playing', silenceNativeTracks);
-            video.addEventListener('webkitbeginfullscreen', silenceNativeTracks);
-            video.addEventListener('webkitendfullscreen', silenceNativeTracks);
+            video.addEventListener('play', () => {
+                if (!_iosNativePlayerActive) silenceNativeTracks();
+            });
+            video.addEventListener('playing', () => {
+                if (!_iosNativePlayerActive) silenceNativeTracks();
+            });
+            video.addEventListener('webkitbeginfullscreen', () => {
+                console.log('[ios] Native fullscreen begin');
+                _iosNativePlayerActive = true;
+                document.body.classList.add('ios-native-player');
+                
+                // Native player UI sometimes needs a moment to initialize its track list.
+                // We set 'showing' immediately and again after a short delay.
+                activateTracksForIOSNativePlayer();
+                setTimeout(activateTracksForIOSNativePlayer, 200);
+                setTimeout(activateTracksForIOSNativePlayer, 800);
+
+                const overlay = document.getElementById('subtitleOverlay');
+                if (overlay) overlay.style.display = 'none';
+            });
+            video.addEventListener('webkitendfullscreen', () => {
+                console.log('[ios] Native fullscreen end');
+                document.body.classList.remove('ios-native-player');
+                deactivateTracksFromIOSNativePlayer();
+            });
             video.addEventListener('volumechange', () => {
                 updateMuteIcon();
                 if (volumeSliderEl) {

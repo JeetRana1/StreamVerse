@@ -151,6 +151,9 @@ async function fetchJsonWithApiFallback(url, options = {}) {
     let subtitleBlobUrls = [];
     let subtitleApplyVersion = 0;
     let activeSubtitleTrackIndex = -1;
+    let _iosNativePlayerActive = false;
+    let _suppressNativeTrackChange = false;
+    const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     let currentIdx = 0;
     let currentMediaInfo = null;
     let tvSeasons = [];
@@ -218,7 +221,7 @@ async function fetchJsonWithApiFallback(url, options = {}) {
     ];
     // -----------------------------------------------------------------------
     //  LOADER / ERROR HELPERS
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ———————————————————————————————————————————————————————————————————————
 }
 function setLoader(title, sub) {
     document.getElementById('loader-title').textContent = title;
@@ -632,6 +635,7 @@ function toArrayPayload(payload) {
     if (Array.isArray(payload?.data)) return payload.data;
     return [];
 }
+
 function pickBestMalSearchResult(title, results) {
     const norm = normalizeTitleForMatch(title);
     if (!norm) return null;
@@ -643,7 +647,7 @@ function pickBestMalSearchResult(title, results) {
         if (!itemNorm) continue;
         let score = 0;
         if (itemNorm === norm) score += 120;
-        if (itemNorm.includes(norm) || norm.includes(itemNorm)) score += 30;
+        else if (itemNorm.includes(norm) || norm.includes(itemNorm)) score += 30;
         const tokens = itemNorm.split(' ').filter(Boolean);
         let overlap = 0;
         tokens.forEach((t) => { if (titleTokens.has(t)) overlap += 1; });
@@ -652,284 +656,43 @@ function pickBestMalSearchResult(title, results) {
     }
     return best.score > 0 ? best.item : null;
 }
-function parseFillerMapFromMetaMalInfo(infoPayload) {
-    const out = new Map();
-    const episodes = toArrayPayload(infoPayload?.episodes ? infoPayload.episodes : infoPayload);
-    episodes.forEach((ep, idx) => {
-        const epNo = Number(ep?.number || ep?.episodeNumber || ep?.episode || idx + 1);
-        if (!Number.isFinite(epNo) || epNo <= 0) return;
-        const boolFiller = ep?.isFiller === true || ep?.filler === true;
-        const boolMixed = ep?.isMixed === true || ep?.mixed === true;
-        const boolCanon =
-            ep?.isMangaCanon === true ||
-            ep?.isCanon === true ||
-            ep?.mangaCanon === true ||
-            ep?.canon === true;
-        const text = normalizeTitleForMatch(
-            `${ep?.title || ''} ${ep?.description || ''} ${ep?.type || ''} ${ep?.category || ''}`
-        );
-        const textFiller = text.includes('filler');
-        const textMixed = text.includes('mixed canon filler') || text.includes('mixed canon');
-        const textCanon = text.includes('manga canon') || text.includes('canon');
-        if (boolFiller || textFiller) out.set(epNo, 'filler');
-        else if (boolMixed || textMixed) out.set(epNo, 'mixed');
-        else if (boolCanon || textCanon) out.set(epNo, 'manga');
+
+function normalizeSubtitleEntries(watchData, provider, referer = null) {
+    const toArray = (v) => Array.isArray(v) ? v : [];
+    const all = [
+        ...toArray(watchData?.subtitles),
+        ...toArray(watchData?.captions),
+        ...toArray(watchData?.tracks)
+    ];
+    const out = [];
+    all.forEach((item, idx) => {
+        const kind = String(item?.kind || '').toLowerCase();
+        if (kind && kind !== 'captions' && kind !== 'subtitles') return;
+        const src = item?.url || item?.file || item?.src;
+        if (!src || typeof src !== 'string') return;
+        const rawLang = String(item?.lang || item?.language || item?.label || `Track ${idx + 1}`).trim();
+        const langLower = rawLang.toLowerCase();
+        let srclang = 'en';
+        if (langLower === 'ja' || langLower === 'jpn' || langLower.includes('japanese')) srclang = 'ja';
+        else if (langLower === 'en' || langLower === 'eng' || langLower.includes('english')) srclang = 'en';
+        else if (/^[a-z]{2,3}$/i.test(rawLang)) srclang = rawLang.toLowerCase();
+        out.push({
+            label: item?.label || item?.language || rawLang,
+            srclang,
+            src,
+            provider,
+            referer
+        });
     });
-    return out;
-}
-async function fetchFillerViaConsumetMeta(provider, title) {
-    try {
-        const metaBase = API_BASE.replace('/meta/tmdb', `/meta/${provider}`);
-        const searchRes = await fetchJsonWithRetry(`${metaBase}/${encodeURIComponent(title)}?page=1`, 9000, 15000);
-        const searchResults = toArrayPayload(searchRes);
-        const best = pickBestMalSearchResult(title, searchResults);
-        const contentId = best?.id || best?.anilistId || best?.malId || best?._id;
-        if (!contentId) return new Map();
-        const infoRes = await fetchJsonWithRetry(`${metaBase}/info/${encodeURIComponent(String(contentId))}?fetchFiller=true`, 12000, 20000);
-        const parsed = parseFillerMapFromMetaMalInfo(infoRes);
-        if (parsed.size > 0) {
-            console.log('[filler] meta matched provider=', provider, 'id=', contentId, 'episodes=', parsed.size);
-            return parsed;
-        }
-    } catch (_) {
-    }
-    return new Map();
-}
-async function fetchAnimeFillerStatusMap(title) {
-    const key = String(title || '').toLowerCase().trim();
-    if (!key) return new Map();
-    if (animeFillerCache.has(key)) return animeFillerCache.get(key);
-    try {
-        const utilsBase = API_BASE.replace('/meta/tmdb', '/utils');
-        const payload = await fetchJsonWithRetry(`${utilsBase}/filler?title=${encodeURIComponent(title)}`, 9000, 15000);
-        const episodesObj = payload?.episodes && typeof payload.episodes === 'object' ? payload.episodes : null;
-        if (episodesObj) {
-            const map = new Map();
-            Object.entries(episodesObj).forEach(([k, v]) => {
-                const epNo = Number(k);
-                const status = String(v || '').toLowerCase();
-                if (!Number.isFinite(epNo)) return;
-                if (status === 'filler' || status === 'mixed' || status === 'manga') {
-                    map.set(epNo, status);
-                }
-            });
-            if (map.size > 0) {
-                animeFillerCache.set(key, map);
-                return map;
-            }
-        }
-    } catch (_) {
-    }
-    const empty = new Map();
-    animeFillerCache.set(key, empty);
-    return empty;
-}
-function goBackToHome() {
-    const home = 'index.html';
-    try {
-        if (document.referrer) {
-            const ref = new URL(document.referrer);
-            const sameOrigin = ref.origin === location.origin;
-            const samePage = ref.pathname.toLowerCase().endsWith('/player.html');
-            if (sameOrigin && !samePage) {
-                location.href = ref.href;
-                return;
-            }
-        }
-    } catch (_) {
-    }
-    location.href = home;
-}
-backBtn?.addEventListener('click', (e) => {
-    e.preventDefault();
-    goBackToHome();
-});
-function getMediaInfoCacheKey() {
-    return `${MEDIA_INFO_CACHE_PREFIX}:${apiSrc}:${FORCED_PROVIDER || 'auto'}:${MEDIA_TYPE}:${TMDB_ID}`;
-}
-function readCachedMediaInfo() {
-    try {
-        const raw = localStorage.getItem(getMediaInfoCacheKey());
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        const expiresAt = Number(parsed?.expiresAt || 0);
-        if (!parsed?.info || !Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
-        return parsed.info;
-    } catch (_) {
-        return null;
-    }
+    const seen = new Set();
+    return out.filter((t) => {
+        const key = `${t.src}|${t.srclang}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
 }
 
-function writeCachedMediaInfo(info) {
-    try {
-        localStorage.setItem(getMediaInfoCacheKey(), JSON.stringify({
-            info,
-            expiresAt: Date.now() + MEDIA_INFO_CACHE_TTL_MS,
-        }));
-    } catch (_) {
-    }
-}
-
-async function fetchJsonWithRetry(url, timeoutMs = 12000, retryTimeoutMs = 25000) {
-    const tryFetch = async (ms) => {
-        const { res } = await fetchJsonWithApiFallback(url, { signal: AbortSignal.timeout(ms) });
-        if (!res.ok) throw new Error(`Info fetch failed (${res.status})`);
-        return res.json();
-    };
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const isRetriable = (err) => {
-        const msg = String(err?.message || '').toLowerCase();
-        if (err?.name === 'TimeoutError' || msg.includes('timed out') || msg.includes('abort')) return true;
-        if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed')) return true;
-        const statusMatch = msg.match(/\((\d{3})\)/);
-        const status = statusMatch ? Number(statusMatch[1]) : 0;
-        if (status === 404 || status === 429 || status >= 500) return true;
-        return false;
-    };
-    try {
-        return await tryFetch(timeoutMs);
-    } catch (err) {
-        if (!isRetriable(err)) throw err;
-        await sleep(1200);
-        try {
-            return await tryFetch(retryTimeoutMs);
-        } catch (err2) {
-            if (!isRetriable(err2)) throw err2;
-            await sleep(2200);
-            return await tryFetch(Math.max(retryTimeoutMs, 30000));
-        }
-    }
-}
-
-function normalizeAnimeSearchQuery(raw) {
-    return String(raw || '')
-        .replace(/[_-]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
-function getAnimeProviderBase(provider) {
-    return activeApiBase.replace('/meta/tmdb', `/anime/${provider}`);
-}
-function buildAnimeInfoUrl(provider, animeId) {
-    const base = getAnimeProviderBase(provider);
-    if (provider === 'satoru') {
-        return `${base}/info/${encodeURIComponent(animeId)}`;
-    }
-    const url = new URL(`${base}/info`);
-    url.searchParams.set('id', animeId);
-    return url.toString();
-}
-function buildAnimeWatchUrl(provider, episodeId) {
-    const base = getAnimeProviderBase(provider);
-    const url = new URL(`${base}/watch/${encodeURIComponent(episodeId)}`);
-    if (provider === 'hianime') url.searchParams.set('category', 'both');
-    return url.toString();
-}
-function getAnimeSearchResults(searchData) {
-    if (Array.isArray(searchData?.results)) return searchData.results;
-    if (Array.isArray(searchData?.data?.results)) return searchData.data.results;
-    if (Array.isArray(searchData?.data)) return searchData.data;
-    return Array.isArray(searchData) ? searchData : [];
-}
-function getPreferredMediaYear() {
-    const yearRaw =
-        currentMediaInfo?.releaseDate ||
-        currentMediaInfo?.release_date ||
-        currentMediaInfo?.first_air_date ||
-        currentMediaInfo?.startDate ||
-        '';
-    const y = Number(String(yearRaw).slice(0, 4));
-    return Number.isFinite(y) && y > 1900 ? y : null;
-}
-function getAnimeSearchTerms(title, preferredYear = null) {
-    const base = normalizeAnimeSearchQuery(title);
-    if (!base) return [];
-    const terms = [];
-    if (preferredYear) terms.push(`${base} ${preferredYear}`);
-    terms.push(base);
-    return Array.from(new Set(terms.filter(Boolean)));
-}
-function pickAnimeResultByTitle(results, title, preferredYear = null) {
-    if (!Array.isArray(results) || results.length === 0) return null;
-    if (!title) return results[0];
-    const normTitle = normalizeAnimeSearchQuery(title).toLowerCase();
-    const qWords = normTitle.split(' ').filter(Boolean);
-    let best = null;
-    let bestScore = -Infinity;
-    const parseYear = (item) => {
-        const raw = String(
-            item?.releaseDate ||
-            item?.release_date ||
-            item?.year ||
-            item?.startDate ||
-            '',
-        );
-        const y = Number(raw.slice(0, 4));
-        return Number.isFinite(y) ? y : null;
-    };
-    for (const r of results) {
-        let rawTitle = r?.title || r?.name || '';
-        if (typeof rawTitle === 'object') {
-            rawTitle = rawTitle.english || rawTitle.romaji || rawTitle.native || String(rawTitle);
-        }
-        const itemTitle = normalizeAnimeSearchQuery(rawTitle).toLowerCase();
-        if (!itemTitle) continue;
-        let score = 0;
-        if (itemTitle === normTitle) score += 120;
-        else if (itemTitle.startsWith(normTitle)) score += 95;
-        else if (itemTitle.includes(normTitle)) score += 80;
-        const tWords = itemTitle.split(' ').filter(Boolean);
-        const common = qWords.filter((w) => tWords.includes(w)).length;
-        score += common * 10;
-        score -= Math.abs(itemTitle.length - normTitle.length) * 0.2;
-        const itemYear = parseYear(r);
-        if (preferredYear && itemYear) {
-            if (itemYear === preferredYear) score += 30;
-            else if (Math.abs(itemYear - preferredYear) === 1) score += 12;
-        }
-        if (score > bestScore) {
-            bestScore = score;
-            best = r;
-        }
-        return best || results[0];
-    }
-    function normalizeSubtitleEntries(watchData, provider, referer = null) {
-        const toArray = (v) => Array.isArray(v) ? v : [];
-        const all = [
-            ...toArray(watchData?.subtitles),
-            ...toArray(watchData?.captions),
-            ...toArray(watchData?.tracks)
-        ];
-        const out = [];
-        all.forEach((item, idx) => {
-            const kind = String(item?.kind || '').toLowerCase();
-            if (kind && kind !== 'captions' && kind !== 'subtitles') return;
-            const src = item?.url || item?.file || item?.src;
-            if (!src || typeof src !== 'string') return;
-            const rawLang = String(item?.lang || item?.language || item?.label || `Track ${idx + 1}`).trim();
-            const langLower = rawLang.toLowerCase();
-            let srclang = 'en';
-            if (langLower === 'ja' || langLower === 'jpn' || langLower.includes('japanese')) srclang = 'ja';
-            else if (langLower === 'en' || langLower === 'eng' || langLower.includes('english')) srclang = 'en';
-            else if (/^[a-z]{2,3}$/i.test(rawLang)) srclang = rawLang.toLowerCase();
-            out.push({
-                label: item?.label || item?.language || rawLang,
-                srclang,
-                src,
-                provider,
-                referer
-            });
-        });
-        const seen = new Set();
-        return out.filter((t) => {
-            const key = `${t.src}|${t.srclang}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-    }
-}
 async function resolveSubtitleTrackSrc(sub) {
     const rawSrc = String(sub?.src || '').trim();
     if (!rawSrc) return '';
@@ -938,14 +701,13 @@ async function resolveSubtitleTrackSrc(sub) {
         const vttText = String(text || '');
         const blob = new Blob([vttText], { type: 'text/vtt' });
         const url = URL.createObjectURL(blob);
-        subtitleBlobUrls.push(url); // track for cleanup
+        subtitleBlobUrls.push(url);
         return url;
     };
     const sanitizeText = (text) => String(text || '').replace(/\r+/g, '').replace(/^\uFEFF/, '');
     const srtToVtt = (srtText) => {
         const clean = sanitizeText(srtText);
-        return `WEBVTT
-    ${clean.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')}`;
+        return `WEBVTT\n\n${clean.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')}`;
     };
     const assTimeToVtt = (t) => {
         const m = String(t || '').trim().match(/^(\d+):(\d{1,2}):(\d{1,2})[.](\d{1,2})$/);
@@ -987,40 +749,27 @@ async function resolveSubtitleTrackSrc(sub) {
             const hasCueArrow = txt.includes('-->');
             const hasSrtTimestamp = /\d{2}:\d{2}:\d{2},\d{3}/.test(txt);
             const looksAssBody = /^\s*\[script info\]/i.test(txt) || /^\s*\[events\]/im.test(txt) || /dialogue:\s*[^,]*,\d+:\d{1,2}:\d{1,2}\.\d{1,2}/i.test(txt);
-            // proxy failures often come back as HTML pages; ignore those
             if (!lower.startsWith('<!doctype html') && !lower.startsWith('<html')) {
-                if (looksLikeSrt || (hasCueArrow && hasSrtTimestamp)) {
-                    return toVttBlobUrl(srtToVtt(txt));
-                }
+                if (looksLikeSrt || (hasCueArrow && hasSrtTimestamp)) return toVttBlobUrl(srtToVtt(txt));
                 if (looksLikeAss || looksAssBody) {
                     const converted = assToVtt(txt);
                     if (converted) return toVttBlobUrl(converted);
                 }
-                if (lower.startsWith('webvtt') || hasCueArrow) {
-                    return toVttBlobUrl(sanitizeText(txt));
-                }
-            } else if (txtRes.status === 404 || txtRes.status === 403) {
-                return '';
+                if (lower.startsWith('webvtt') || hasCueArrow) return toVttBlobUrl(sanitizeText(txt));
             }
         }
-    } catch (_) {
-    }
+    } catch (_) { }
     try {
         const testRes = await fetch(proxied, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
         if (testRes.ok) return proxied;
-        if (testRes.status === 404 || testRes.status === 403) return '';
-    } catch (_) {
-    }
+    } catch (_) { }
     return '';
 }
+
 async function applyExternalSubtitlesToVideo(videoEl) {
     if (!videoEl) return;
     const applyVersion = ++subtitleApplyVersion;
-    // Revoke old blob URLs before creating new ones
-    subtitleBlobUrls.forEach((u) => {
-        try { URL.revokeObjectURL(u); } catch (_) {
-        }
-    });
+    subtitleBlobUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) { } });
     subtitleBlobUrls = [];
     if (!Array.isArray(externalSubtitleTracks) || externalSubtitleTracks.length === 0) {
         updateCaptionsButtonVisibility();
@@ -1040,12 +789,11 @@ async function applyExternalSubtitlesToVideo(videoEl) {
         buildCaptionsMenu();
         return;
     }
-    // Replace old external tracks only when we have a ready replacement set.
     videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach((t) => t.remove());
     resolved.forEach((sub, i) => {
         const track = document.createElement('track');
-        track.kind = 'metadata'; // Use metadata to prevent ANY browser rendering while still firing events
-        track.label = sub.label || `Subtitle ${i + 1} `;
+        track.kind = 'subtitles';
+        track.label = sub.label || `Subtitle ${i + 1}`;
         track.srclang = sub.srclang || 'en';
         track.src = sub.resolvedSrc || '';
         track.dataset.extSub = '1';
@@ -1054,25 +802,22 @@ async function applyExternalSubtitlesToVideo(videoEl) {
             updateCaptionsButtonVisibility();
             buildCaptionsMenu();
         });
-        track.addEventListener('error', () => {
-            if (applyVersion === subtitleApplyVersion) {
-                console.warn('Subtitle track failed to load:', track.label, track.src);
-            }
-        });
         videoEl.appendChild(track);
     });
-    console.log(`Subtitles prepared = ${prepared.length}, attached = ${videoEl.querySelectorAll('track[data-ext-sub="1"]').length} `);
     setTimeout(() => {
         bindSubtitleCueListeners();
-        activeSubtitleTrackIndex = -1;
-        if (videoEl.textTracks) {
-            Array.from(videoEl.textTracks).forEach((t) => { t.mode = 'disabled'; });
-        }
-        renderSubtitleOverlayFromTrack(null);
+        bindNativeTrackChangeListener();
+        const preferredLabel = localStorage.getItem('preferredSubtitleLabel');
+        const tracks = Array.from(videoEl.textTracks || []);
+        let bestIdx = -1;
+        if (preferredLabel && tracks.length) bestIdx = tracks.findIndex(t => t.label === preferredLabel);
+        if (bestIdx === -1) bestIdx = getDefaultEnglishSubtitleIndex();
+        selectSubtitleTrack(bestIdx);
         updateCaptionsButtonVisibility();
         buildCaptionsMenu();
-    }, 120);
+    }, 200);
 }
+
 function mergeSubtitleTrackLists(primary, secondary) {
     const p = Array.isArray(primary) ? primary : [];
     const s = Array.isArray(secondary) ? secondary : [];
@@ -1167,31 +912,62 @@ function bindSubtitleCueListeners() {
         track.__overlayBound = true;
     });
 }
+// Tracks whether iOS native player is currently in fullscreen
+let _suppressNativeTrackChange = false; // New flag to prevent infinite loops
+
 function silenceNativeTracks() {
+    if (_iosNativePlayerActive) return;
+    if (!video || !video.textTracks) return;
+    _suppressNativeTrackChange = true;
+    const tracks = Array.from(video.textTracks);
+    tracks.forEach((t, i) => {
+        const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
+        if (shouldBeActive) {
+            if (t.mode !== 'hidden') t.mode = 'hidden';
+        } else {
+            if (t.mode !== 'hidden') t.mode = 'hidden';
+        }
+    });
+    setTimeout(() => { _suppressNativeTrackChange = false; }, 50);
+}
+
+function activateTracksForIOSNativePlayer() {
     if (!video || !video.textTracks) return;
     const tracks = Array.from(video.textTracks);
     tracks.forEach((t, i) => {
-        const isMetadata = t.kind === 'metadata';
         const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
         if (shouldBeActive) {
-            // hidden mode: track is active (cues fire) but browser doesn't render
-            if (t.mode !== 'hidden') t.mode = 'hidden';
+            if (t.mode !== 'showing') t.mode = 'showing';
         } else {
-            // disabled mode: track is completely off
             if (t.mode !== 'disabled') t.mode = 'disabled';
         }
     });
 }
+
+function deactivateTracksFromIOSNativePlayer() {
+    _iosNativePlayerActive = false;
+    silenceNativeTracks();
+    bindSubtitleCueListeners();
+    if (activeSubtitleTrackIndex >= 0 && video && video.textTracks) {
+        renderSubtitleOverlayFromTrack(video.textTracks[activeSubtitleTrackIndex]);
+    }
+}
+
 function selectSubtitleTrack(index) {
     if (!video || !video.textTracks) return;
-    activeSubtitleTrackIndex = Number.isInteger(index) ? index : -1;
+    const tracks = Array.from(video.textTracks);
+    activeSubtitleTrackIndex = (index >= 0 && index < tracks.length) ? index : -1;
     silenceNativeTracks();
-    const activeTrack = activeSubtitleTrackIndex >= 0
-        ? (video.textTracks[activeSubtitleTrackIndex] || null)
-        : null;
-    renderSubtitleOverlayFromTrack(activeTrack || null);
+    const activeTrack = activeSubtitleTrackIndex >= 0 ? tracks[activeSubtitleTrackIndex] : null;
+    renderSubtitleOverlayFromTrack(activeTrack);
     buildCaptionsMenu();
+    if (activeSubtitleTrackIndex >= 0) {
+        localStorage.setItem('preferredSubtitleLabel', tracks[activeSubtitleTrackIndex].label);
+    } else {
+        localStorage.removeItem('preferredSubtitleLabel');
+    }
 }
+
 function getDefaultEnglishSubtitleIndex() {
     if (!video || !video.textTracks) return -1;
     const tracks = Array.from(video.textTracks);
@@ -1208,13 +984,39 @@ function getDefaultEnglishSubtitleIndex() {
     });
     return idx >= 0 ? idx : (tracks.length > 0 ? 0 : -1);
 }
+
+function bindNativeTrackChangeListener() {
+    if (!video || !video.textTracks) return;
+    if (video.textTracks.__nativeChangeBound) return;
+    video.textTracks.__nativeChangeBound = true;
+    video.textTracks.addEventListener('change', () => {
+        if (_suppressNativeTrackChange) return;
+        const tracks = Array.from(video.textTracks);
+        // Find if a track was set to 'showing' in the native menu
+        const nativeShowingIdx = tracks.findIndex(t => t.mode === 'showing');
+        if (nativeShowingIdx >= 0) {
+            activeSubtitleTrackIndex = nativeShowingIdx;
+            localStorage.setItem('preferredSubtitleLabel', tracks[nativeShowingIdx].label);
+            // If in-page, immediately apply our overlay for consistency
+            if (!_iosNativePlayerActive) {
+                silenceNativeTracks();
+                renderSubtitleOverlayFromTrack(tracks[nativeShowingIdx]);
+            }
+        } else if (!_iosNativePlayerActive) {
+            // User selected 'Off' in native menu (while in-page)
+            activeSubtitleTrackIndex = -1;
+            localStorage.removeItem('preferredSubtitleLabel');
+            renderSubtitleOverlayFromTrack(null);
+        }
+        buildCaptionsMenu();
+    });
+}
+
 function buildCaptionsMenu() {
     if (!captionsMenu || !video) return;
     captionsMenu.innerHTML = '';
     const tracks = video.textTracks ? Array.from(video.textTracks) : [];
-    const activeIdx = (activeSubtitleTrackIndex >= 0 && activeSubtitleTrackIndex < tracks.length)
-        ? activeSubtitleTrackIndex
-        : -1;
+    const activeIdx = (activeSubtitleTrackIndex >= 0 && activeSubtitleTrackIndex < tracks.length) ? activeSubtitleTrackIndex : -1;
     if (tracks.length === 0 && currentIsLikelyAnime) {
         const emptyItem = document.createElement('div');
         emptyItem.className = 'menu-item';
@@ -1231,8 +1033,7 @@ function buildCaptionsMenu() {
                     externalSubtitleTracks = mergeSubtitleTrackLists(externalSubtitleTracks, subs);
                     if (video) await applyExternalSubtitlesToVideo(video);
                 }
-            } catch (_) {
-            }
+            } catch (_) { }
             buildCaptionsMenu();
             updateCaptionsButtonVisibility();
         };
@@ -1259,12 +1060,11 @@ function buildCaptionsMenu() {
 }
 function setVolumeBoost(level) {
     if (!video) return;
-    volumeBoost = Math.max(100, Math.min(200, level));
-    if (volumeBoost > 100) {
+    volumeBoost = Math.max(0, Math.min(200, level));
+    if (volumeBoost !== 100 || IS_IOS) {
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
-        // If sourceNode doesn't exist or is attached to the wrong element
         if (!sourceNode || sourceNode.mediaElement !== video) {
             try {
                 if (sourceNode) sourceNode.disconnect();
@@ -1276,472 +1076,294 @@ function setVolumeBoost(level) {
                 console.warn('AudioContext boost failed:', e);
                 return;
             }
-            if (audioCtx && gainNode) {
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                gainNode.gain.value = volumeBoost / 100;
-            }
-            const boostValEl = document.querySelector('.boost-value');
-            if (boostValEl) {
-                boostValEl.textContent = volumeBoost > 100 ? `${volumeBoost}% ` : 'Off';
-            }
-            const boostSlider = document.querySelector('.boost-slider');
-            if (boostSlider) {
-                boostSlider.value = String(volumeBoost);
-                const percent = (volumeBoost - 100) + '%';
-                boostSlider.style.setProperty('--boost-percent', percent);
-            }
-            // Update tick highlights
-            const ticks = document.querySelectorAll('.tick');
-            const activeCount = Math.round(((volumeBoost - 100) / 100) * (ticks.length - 1));
-            ticks.forEach((t, i) => {
-                t.classList.toggle('active', i <= activeCount && volumeBoost > 100);
-            });
         }
     }
-    function formatTime(seconds) {
-        if (!isFinite(seconds)) return '0:00';
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.floor(seconds % 60);
-        if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')} `;
-        return `${m}:${s.toString().padStart(2, '0')} `;
+    syncGain();
+    const boostValEl = document.querySelector('.boost-value');
+    if (boostValEl) {
+        boostValEl.textContent = volumeBoost > 100 ? `${volumeBoost}%` : 'Off';
     }
-    function setPlayIcon(isPlaying) {
-        if (!playPauseBtn) return;
-        playPauseBtn.innerHTML = isPlaying
-            ? '<i class="fa-solid fa-pause"></i>'
-            : '<i class="fa-solid fa-play"></i>';
+    const boostSlider = document.querySelector('.boost-slider');
+    if (boostSlider) {
+        boostSlider.value = String(volumeBoost);
+        const percent = (volumeBoost - 100) + '%';
+        boostSlider.style.setProperty('--boost-percent', percent);
     }
-    function updateMuteIcon() {
-        if (!muteBtn || !video) return;
-        if (video.muted || video.volume === 0) muteBtn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
-        else if (video.volume < 0.5) muteBtn.innerHTML = '<i class="fa-solid fa-volume-low"></i>';
-        else muteBtn.innerHTML = '<i class="fa-solid fa-volume-high"></i>';
+    const ticks = document.querySelectorAll('.tick');
+    const activeCount = Math.round(((volumeBoost - 100) / 100) * (ticks.length - 1));
+    ticks.forEach((t, i) => {
+        t.classList.toggle('active', i <= activeCount && volumeBoost > 100);
+    });
+}
+
+function syncGain() {
+    if (!audioCtx || !gainNode) return;
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => { });
     }
-    function updateVolumeFromClientX(clientX, slider) {
-        if (!slider || !Number.isFinite(clientX) || !video) return;
-        const rect = slider.getBoundingClientRect();
-        if (!rect || !Number.isFinite(rect.width) || rect.width <= 0) return;
-        const clamped = Math.min(rect.right, Math.max(rect.left, clientX));
-        const percent = ((clamped - rect.left) / rect.width) * 100;
-        const val = Math.max(0, Math.min(100, percent));
-        slider.value = String(Math.round(val));
-        slider.style.setProperty('--vol-percent', `${val}% `);
+    const elementVol = video.muted ? 0 : video.volume;
+    const boostFactor = volumeBoost / 100;
+    gainNode.gain.value = elementVol * boostFactor;
+}
+
+function formatTime(seconds) {
+    if (!isFinite(seconds)) return '0:00';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function setPlayIcon(isPlaying) {
+    if (!playPauseBtn) return;
+    playPauseBtn.innerHTML = isPlaying
+        ? '<i class="fa-solid fa-pause"></i>'
+        : '<i class="fa-solid fa-play"></i>';
+}
+
+function updateMuteIcon() {
+    if (!muteBtn || !video) return;
+    if (video.muted || video.volume === 0) muteBtn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
+    else if (video.volume < 0.5) muteBtn.innerHTML = '<i class="fa-solid fa-volume-low"></i>';
+    else muteBtn.innerHTML = '<i class="fa-solid fa-volume-high"></i>';
+}
+
+function updateVolumeFromClientX(clientX, slider) {
+    if (!slider || !Number.isFinite(clientX) || !video) return;
+    const rect = slider.getBoundingClientRect();
+    if (!rect || !Number.isFinite(rect.width) || rect.width <= 0) return;
+    const clamped = Math.min(rect.right, Math.max(rect.left, clientX));
+    const percent = ((clamped - rect.left) / rect.width) * 100;
+    const val = Math.max(0, Math.min(100, percent));
+    slider.value = String(Math.round(val));
+    slider.style.setProperty('--vol-percent', `${val}%`);
+    video.volume = val / 100;
+    video.muted = val === 0;
+    updateMuteIcon();
+}
+
+function buildVolumeMenu() {
+    if (!volumeMenu || !video) return;
+    volumeMenu.innerHTML = '';
+    volumeSliderEl = null;
+    volumeToggleEl = null;
+    const row = document.createElement('div');
+    row.className = 'volume-row';
+    const toggle = document.createElement('button');
+    toggle.className = 'volume-toggle';
+    toggle.type = 'button';
+    toggle.innerHTML = video.muted || video.volume === 0
+        ? '<i class="fa-solid fa-volume-xmark"></i>'
+        : '<i class="fa-solid fa-volume-high"></i>';
+    toggle.onclick = (e) => {
+        e.stopPropagation();
+        video.muted = !video.muted;
+        if (!video.muted && video.volume === 0) video.volume = 0.5;
+        updateMuteIcon();
+        if (volumeSliderEl) {
+            const next = Math.round((video.muted ? 0 : video.volume) * 100);
+            volumeSliderEl.value = String(next);
+            volumeSliderEl.style.setProperty('--vol-percent', `${next}%`);
+        }
+        if (volumeToggleEl) {
+            volumeToggleEl.innerHTML = video.muted || video.volume === 0
+                ? '<i class="fa-solid fa-volume-xmark"></i>'
+                : '<i class="fa-solid fa-volume-high"></i>';
+        }
+    };
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '100';
+    slider.step = '1';
+    slider.className = 'volume-slider';
+    slider.value = String(Math.round((video.muted ? 0 : video.volume) * 100));
+    slider.style.setProperty('--vol-percent', `${slider.value}%`);
+    slider.addEventListener('input', (e) => {
+        const val = Math.max(0, Math.min(100, Number.parseInt(e.target.value || '0', 10)));
         video.volume = val / 100;
         video.muted = val === 0;
+        slider.style.setProperty('--vol-percent', `${val}%`);
         updateMuteIcon();
+        if (val < 100 && volumeBoost > 100) setVolumeBoost(100);
+    });
+    slider.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        slider.setPointerCapture?.(e.pointerId);
+        updateVolumeFromClientX(e.clientX, slider);
+    });
+    slider.addEventListener('pointermove', (e) => {
+        if (!slider.hasPointerCapture?.(e.pointerId)) return;
+        updateVolumeFromClientX(e.clientX, slider);
+    });
+    slider.addEventListener('pointerup', (e) => {
+        if (slider.hasPointerCapture?.(e.pointerId)) slider.releasePointerCapture?.(e.pointerId);
+    });
+    volumeSliderEl = slider;
+    volumeToggleEl = toggle;
+    row.appendChild(toggle);
+    row.appendChild(slider);
+    volumeMenu.appendChild(row);
+    const boostRow = document.createElement('div');
+    boostRow.className = 'volume-boost-row';
+    const boostHeader = document.createElement('div');
+    boostHeader.className = 'boost-header';
+    const boostLabel = document.createElement('span');
+    boostLabel.className = 'boost-label';
+    boostLabel.textContent = 'Extra Volume';
+    const boostValue = document.createElement('span');
+    boostValue.className = 'boost-value';
+    boostValue.textContent = volumeBoost > 100 ? `${volumeBoost}%` : 'Off';
+    boostHeader.appendChild(boostLabel);
+    boostHeader.appendChild(boostValue);
+    boostRow.appendChild(boostHeader);
+    const sliderCont = document.createElement('div');
+    sliderCont.className = 'boost-slider-container';
+    const ticksCont = document.createElement('div');
+    ticksCont.className = 'boost-ticks';
+    for (let i = 0; i < 6; i++) {
+        const t = document.createElement('div');
+        t.className = 'tick';
+        ticksCont.appendChild(t);
     }
-    function buildVolumeMenu() {
-        if (!volumeMenu || !video) return;
-        volumeMenu.innerHTML = '';
-        volumeSliderEl = null;
-        volumeToggleEl = null;
-        const row = document.createElement('div');
-        row.className = 'volume-row';
-        const toggle = document.createElement('button');
-        toggle.className = 'volume-toggle';
-        toggle.type = 'button';
-        toggle.innerHTML = video.muted || video.volume === 0
-            ? '<i class="fa-solid fa-volume-xmark"></i>'
-            : '<i class="fa-solid fa-volume-high"></i>';
-        toggle.onclick = (e) => {
-            e.stopPropagation();
-            video.muted = !video.muted;
-            if (!video.muted && video.volume === 0) video.volume = 0.5;
-            updateMuteIcon();
+    sliderCont.appendChild(ticksCont);
+    const bSlider = document.createElement('input');
+    bSlider.type = 'range';
+    bSlider.min = '100';
+    bSlider.max = '200';
+    bSlider.step = '2';
+    bSlider.className = 'boost-slider';
+    bSlider.value = String(volumeBoost);
+    bSlider.oninput = (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (video.volume < 1.0 && val > 100) {
+            video.volume = 1.0;
             if (volumeSliderEl) {
-                const next = Math.round((video.muted ? 0 : video.volume) * 100);
-                volumeSliderEl.value = String(next);
-                volumeSliderEl.style.setProperty('--vol-percent', `${next}% `);
+                volumeSliderEl.value = '100';
+                volumeSliderEl.style.setProperty('--vol-percent', '100%');
             }
-            if (volumeToggleEl) {
-                volumeToggleEl.innerHTML = video.muted || video.volume === 0
-                    ? '<i class="fa-solid fa-volume-xmark"></i>'
-                    : '<i class="fa-solid fa-volume-high"></i>';
-            }
+        }
+        setVolumeBoost(val);
+    };
+    sliderCont.appendChild(bSlider);
+    boostRow.appendChild(sliderCont);
+    volumeMenu.appendChild(boostRow);
+    setTimeout(() => setVolumeBoost(volumeBoost), 0);
+}
+
+function syncTimeUI() {
+    if (!video) return;
+    durationTimeEl.textContent = formatTime(video.duration);
+    if (isSeekDragging && Number.isFinite(pendingSeekPercent) && isFinite(video.duration) && video.duration > 0) {
+        const previewTimeSec = (pendingSeekPercent / 100) * video.duration;
+        currentTimeEl.textContent = formatTime(previewTimeSec);
+        seekBar.style.setProperty('--seek-percent', `${pendingSeekPercent}%`);
+        return;
+    }
+    currentTimeEl.textContent = formatTime(video.currentTime);
+    if (isFinite(video.duration) && video.duration > 0) {
+        const p = (video.currentTime / video.duration) * 100;
+        seekBar.value = String(p);
+        seekBar.style.setProperty('--seek-percent', p + '%');
+    }
+}
+
+function updateSkipSegmentButton() {
+    if (!video || !currentIsLikelyAnime || !hasApiSkipSegments) {
+        if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+        return;
+    }
+    const nowSec = Number(video.currentTime || 0);
+    const active = getActiveSkipSegment(nowSec);
+    if (!active || skippedSegments[active.type]) {
+        if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
+        return;
+    }
+    if (skipSegmentBtn) {
+        skipSegmentBtn.textContent = active.type === 'intro' ? 'Skip Intro' : 'Skip Outro';
+        skipSegmentBtn.style.display = 'inline-flex';
+        skipSegmentBtn.onclick = (e) => {
+            e.stopPropagation();
+            video.currentTime = active.end;
+            skippedSegments[active.type] = true;
+            skipSegmentBtn.style.display = 'none';
         };
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.min = '0';
-        slider.max = '100';
-        slider.step = '1';
-        slider.className = 'volume-slider';
-        slider.value = String(Math.round((video.muted ? 0 : video.volume) * 100));
-        slider.style.setProperty('--vol-percent', `${slider.value}% `);
-        slider.addEventListener('input', (e) => {
-            const val = Math.max(0, Math.min(100, Number.parseInt(e.target.value || '0', 10)));
-            video.volume = val / 100;
-            video.muted = val === 0;
-            slider.style.setProperty('--vol-percent', `${val}% `);
-            updateMuteIcon();
-            // If sliding down, maybe reset boost?
-            if (val < 100 && volumeBoost > 100) {
-                setVolumeBoost(100);
-            }
-        });
-        slider.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            slider.setPointerCapture?.(e.pointerId);
-            updateVolumeFromClientX(e.clientX, slider);
-        });
-        slider.addEventListener('pointermove', (e) => {
-            if (!slider.hasPointerCapture?.(e.pointerId)) return;
-            updateVolumeFromClientX(e.clientX, slider);
-        });
-        slider.addEventListener('pointerup', (e) => {
-            if (slider.hasPointerCapture?.(e.pointerId)) slider.releasePointerCapture?.(e.pointerId);
-        });
-        volumeSliderEl = slider;
-        volumeToggleEl = toggle;
-        row.appendChild(toggle);
-        row.appendChild(slider);
-        volumeMenu.appendChild(row);
-        // Boost Row
-        const boostRow = document.createElement('div');
-        boostRow.className = 'volume-boost-row';
-        const boostHeader = document.createElement('div');
-        boostHeader.className = 'boost-header';
-        const boostLabel = document.createElement('span');
-        boostLabel.className = 'boost-label';
-        boostLabel.textContent = 'Extra Volume';
-        const boostValue = document.createElement('span');
-        boostValue.className = 'boost-value';
-        boostValue.textContent = volumeBoost > 100 ? `${volumeBoost}% ` : 'Off';
-        boostHeader.appendChild(boostLabel);
-        boostHeader.appendChild(boostValue);
-        boostRow.appendChild(boostHeader);
-        const sliderCont = document.createElement('div');
-        sliderCont.className = 'boost-slider-container';
-        const ticksCont = document.createElement('div');
-        ticksCont.className = 'boost-ticks';
-        // Create 6 ticks from 100% to 200%
-        for (let i = 0; i < 6; i++) {
-            const t = document.createElement('div');
-            t.className = 'tick';
-            ticksCont.appendChild(t);
-        }
-        sliderCont.appendChild(ticksCont);
-        const bSlider = document.createElement('input');
-        bSlider.type = 'range';
-        bSlider.min = '100';
-        bSlider.max = '200';
-        bSlider.step = '2'; // small steps for smoothness
-        bSlider.className = 'boost-slider';
-        bSlider.value = String(volumeBoost);
-        bSlider.oninput = (e) => {
-            const val = parseInt(e.target.value, 10);
-            if (video.volume < 1.0 && val > 100) {
-                video.volume = 1.0;
-                if (volumeSliderEl) {
-                    volumeSliderEl.value = '100';
-                    volumeSliderEl.style.setProperty('--vol-percent', '100%');
-                }
-                setVolumeBoost(val);
-            };
-            sliderCont.appendChild(bSlider);
-            boostRow.appendChild(sliderCont);
-            volumeMenu.appendChild(boostRow);
-            // Initial tick update
-            setTimeout(() => setVolumeBoost(volumeBoost), 0);
-        }
-        function syncTimeUI() {
-            if (!video) return;
-            currentTimeEl.textContent = formatTime(video.currentTime);
-            durationTimeEl.textContent = formatTime(video.duration);
-            if (isFinite(video.duration) && video.duration > 0) {
-                const percent = (video.currentTime / video.duration) * 100;
-                seekBar.value = String(percent);
-                seekBar.style.setProperty('--seek-percent', `${percent}% `);
-            }
-            function resetAnimeSkipState() {
-                animeSkipSegments = { intro: null, outro: null };
-                skippedSegments = { intro: false, outro: false };
-                hasApiSkipSegments = false;
-                if (skipSegmentBtn) {
-                    skipSegmentBtn.style.display = 'none';
-                    skipSegmentBtn.textContent = '';
-                }
-                function normalizeSegmentWindow(segment) {
-                    if (!segment) return null;
-                    const start =
-                        Number(segment.start ?? segment.from ?? segment.begin ?? segment.startTime ?? segment[0]);
-                    const end =
-                        Number(segment.end ?? segment.to ?? segment.finish ?? segment.endTime ?? segment[1]);
-                    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-                    if (end <= start) return null;
-                    return { start: Math.max(0, start), end: Math.max(0, end) };
-                }
-                function applyApiSkipSegments(payload) {
-                    if (!payload || !currentIsLikelyAnime) return false;
-                    const intro = normalizeSegmentWindow(
-                        payload.intro ||
-                        payload.skip?.intro ||
-                        payload.skips?.intro ||
-                        payload.timestamps?.intro
-                    );
-                    const outro = normalizeSegmentWindow(
-                        payload.outro ||
-                        payload.skip?.outro ||
-                        payload.skips?.outro ||
-                        payload.timestamps?.outro
-                    );
-                    if (!intro && !outro) return false;
-                    animeSkipSegments.intro = intro;
-                    animeSkipSegments.outro = outro;
-                    hasApiSkipSegments = true;
-                    return true;
-                }
-                function parseAniSkipResults(payload) {
-                    const results = Array.isArray(payload?.results) ? payload.results : [];
-                    let intro = null;
-                    let outro = null;
-                    for (const entry of results) {
-                        const type = String(entry?.skipType || entry?.skip_type || '').toLowerCase();
-                        const interval = entry?.interval || {};
-                        const seg = normalizeSegmentWindow({
-                            start: interval.startTime ?? interval.start_time ?? entry?.startTime ?? entry?.start_time,
-                            end: interval.endTime ?? interval.end_time ?? entry?.endTime ?? entry?.end_time,
-                        });
-                        if (!seg) continue;
-                        if (!intro && (type === 'op' || type === 'mixed-op' || type === 'opening')) intro = seg;
-                        if (!outro && (type === 'ed' || type === 'mixed-ed' || type === 'ending')) outro = seg;
-                    }
-                    return { intro, outro };
-                }
-                function getTitleMatchScore(media, queryTitle) {
-                    const norm = (v) => normalizeAnimeSearchQuery(v || '').toLowerCase();
-                    const q = norm(queryTitle);
-                    if (!q) return 0;
-                    const titles = [
-                        norm(media?.title?.english),
-                        norm(media?.title?.romaji),
-                        norm(media?.title?.native),
-                    ].filter(Boolean);
-                    if (!titles.length) return 0;
-                    let score = 0;
-                    for (const t of titles) {
-                        if (t === q) score = Math.max(score, 100);
-                        else if (t.includes(q) || q.includes(t)) score = Math.max(score, 70);
-                        else {
-                            const qWords = q.split(' ').filter(Boolean);
-                            const tWords = t.split(' ').filter(Boolean);
-                            const common = qWords.filter((w) => tWords.includes(w)).length;
-                            if (common > 0) {
-                                const overlap = common / Math.max(1, qWords.length);
-                                score = Math.max(score, Math.floor(overlap * 60));
-                            }
-                            return score;
-                        }
-
-                        async function fetchAniSkipSegmentsForCurrentEpisode() {
-                            if (!currentIsLikelyAnime || MEDIA_TYPE !== 'tv') return false;
-                            const title = normalizeAnimeSearchQuery(currentMediaInfo?.title || currentMediaInfo?.name || '');
-                            const episodeNum = Number(curEpisode || 0) + 1;
-                            if (!title || !Number.isFinite(episodeNum) || episodeNum <= 0) return false;
-                            const cacheKey = `${title.toLowerCase()}::${episodeNum}`;
-                            if (animeSkipCache.has(cacheKey)) {
-                                const cached = animeSkipCache.get(cacheKey);
-                                if (cached) return applyApiSkipSegments(cached);
-                                return false;
-                            }
-                            try {
-                                const gqlQuery = `
-    query($search: String) {
-        Page(page: 1, perPage: 6) {
-            media(search: $search, type: ANIME, sort: POPULARITY_DESC) {
-                id
-                idMal
-                title { romaji english native }
-            }
     }
 }
-`;
-                                const aniRes = await fetch('https://graphql.anilist.co', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                                    body: JSON.stringify({ query: gqlQuery, variables: { search: title } }),
-                                    signal: AbortSignal.timeout(7000),
-                                });
-                                if (!aniRes.ok) return false;
-                                const aniJson = await aniRes.json();
-                                const mediaList = Array.isArray(aniJson?.data?.Page?.media) ? aniJson.data.Page.media : [];
-                                let picked = null;
-                                let bestScore = -1;
-                                for (const media of mediaList) {
-                                    const s = getTitleMatchScore(media, title);
-                                    if (s > bestScore) {
-                                        bestScore = s;
-                                        picked = media;
-                                    }
-                                }
-                                if (!picked || bestScore < 30) return false;
-                                const candidateIds = [];
-                                const malId = Number(picked?.idMal || 0);
-                                const aniId = Number(picked?.id || 0);
-                                if (malId > 0) candidateIds.push(malId);
-                                if (aniId > 0 && aniId !== malId) candidateIds.push(aniId);
-                                if (!candidateIds.length) return false;
 
-                                for (const id of candidateIds) {
-                                    const v2 = new URL(`https://api.aniskip.com/v2/skip-times/${id}/${episodeNum}`);
-                                    v2.searchParams.append('types', 'op');
-                                    v2.searchParams.append('types', 'ed');
-                                    v2.searchParams.set('episodeLength', '0');
-                                    const v1 = new URL(`https://api.aniskip.com/v1/skip-times/${id}/${episodeNum}`);
-                                    v1.searchParams.append('types', 'op');
-                                    v1.searchParams.append('types', 'ed');
-                                    const skipUrls = [v2.toString(), v1.toString()];
-                                    for (const url of skipUrls) {
-                                        try {
-                                            const skipRes = await fetch(url, {
-                                                headers: { 'Accept': 'application/json' },
-                                                signal: AbortSignal.timeout(7000),
-                                            });
-                                            if (!skipRes.ok) continue;
-                                            const skipJson = await skipRes.json();
-                                            const parsed = parseAniSkipResults(skipJson);
-                                            if (parsed.intro || parsed.outro) {
-                                                animeSkipCache.set(cacheKey, parsed);
-                                                return applyApiSkipSegments(parsed);
-                                            }
-                                        } catch (_) { }
-                                    }
-                                }
-                                animeSkipCache.set(cacheKey, null);
-                                return false;
-                            } catch (err) {
-                                console.warn('fetchAniSkipSegments failed:', err);
-                                return false;
-                            }
-                        }
-
-                        function detectAnimeSkipSegments() {
-                            if (!USE_HEURISTIC_SKIP_FALLBACK) return;
-                            if (!video || !currentIsLikelyAnime || !isFinite(video.duration) || video.duration <= 0) return;
-                            if (hasApiSkipSegments) return;
-                            const duration = Number(video.duration);
-                            const introEnd = Math.min(95, Math.max(45, Math.floor(duration * 0.07)));
-                            const outroStart = Math.max(duration - 110, Math.floor(duration * 0.86));
-                            const outroEnd = Math.max(outroStart + 5, duration - 2);
-                            animeSkipSegments.intro = { start: 0, end: introEnd };
-                            animeSkipSegments.outro = { start: outroStart, end: outroEnd };
-                        }
-                        function getActiveSkipSegment(nowSec) {
-                            if (!Number.isFinite(nowSec)) return null;
-                            const intro = animeSkipSegments.intro;
-                            if (intro && !skippedSegments.intro && nowSec >= intro.start && nowSec < intro.end) {
-                                return { type: 'intro', start: intro.start, end: intro.end };
-                            }
-                            const outro = animeSkipSegments.outro;
-                            if (outro && !skippedSegments.outro && nowSec >= outro.start && nowSec < outro.end) {
-                                return { type: 'outro', start: outro.start, end: outro.end };
-                            }
-                            return null;
-                        }
-                        function updateSkipSegmentButton() {
-                            if (!skipSegmentBtn) return;
-                            if (isUiLocked || !video || !currentIsLikelyAnime) {
-                                skipSegmentBtn.style.display = 'none';
-                                return;
-                            }
-                            const active = getActiveSkipSegment(Number(video.currentTime || 0));
-                            if (!active) {
-                                skipSegmentBtn.style.display = 'none';
-                                return;
-                            }
-                            skipSegmentBtn.textContent = active.type === 'intro' ? 'Skip Intro' : 'Skip Outro';
-                            skipSegmentBtn.dataset.segmentType = active.type;
-                            skipSegmentBtn.style.display = 'inline-flex';
-                        }
-                        function showControlSurface() {
-                            if (isUiLocked || !video) {
-                                controlSurface.classList.remove('visible');
-                                return;
-                            }
-                            controlSurface.classList.add('visible');
-                            clearTimeout(controlsHideTimer);
-                            controlsHideTimer = setTimeout(() => {
-                                if (video && !video.paused) {
-                                    controlSurface.classList.remove('visible');
-                                    closeCustomMenus();
-                                }
-                            }, 3000);
-                        }
-                        function hideControlSurfaceNow() {
-                            clearTimeout(controlsHideTimer);
-                            controlSurface.classList.remove('visible');
-                            closeCustomMenus();
-                        }
-                        function applyFitMode() {
-                            const mode = fitModes[fitIndex];
-                            document.documentElement.style.setProperty('--video-fit', mode.value);
-                            fitBtn.title = mode.label;
-                            fitBtn.setAttribute('aria-label', `Screen Fit: ${mode.label}`);
-                            fitBtn.innerHTML = `<i class="fa-solid ${mode.icon}"></i>`;
-                        }
-                        function updateLockUi() {
-                            document.body.classList.toggle('ui-locked', isUiLocked);
-                            uiLockBtn.classList.toggle('locked', isUiLocked);
-                            uiLockBtn.innerHTML = isUiLocked
-                                ? '<i class="fa-solid fa-lock"></i>'
-                                : '<i class="fa-solid fa-lock-open"></i>';
-                            if (isUiLocked) hideControlSurfaceNow();
-                            updateNextEpisodeButton(false);
-                        }
-                        function buildQualityMenuItems() {
-                            qualityMenu.innerHTML = '';
-                            const formatQualityLabel = (height) => {
-                                const h = Number(height) || 0;
-                                let tier = '';
-                                if (h >= 2160) tier = 'UHD';
-                                else if (h >= 1440) tier = 'QHD';
-                                else if (h >= 1080) tier = 'FHD';
-                                else if (h >= 720) tier = 'HD';
-                                else if (h > 0) tier = 'SD';
-                                return tier ? `${h}p (${tier})` : `${h}p`;
-                            };
-                            const autoItem = document.createElement('div');
-                            autoItem.className = `menu-item ${(hlsInst && hlsInst.currentLevel === -1) || !hlsInst ? 'selected' : ''}`;
-                            autoItem.textContent = 'Auto';
-                            autoItem.onclick = () => {
-                                changeQuality(0);
-                                buildQualityMenuItems();
-                            };
-                            qualityMenu.appendChild(autoItem);
-                            if (!hlsInst || !Array.isArray(hlsInst.levels) || hlsInst.levels.length === 0) return;
-                            const heights = [...new Set(hlsInst.levels.map((l) => l.height).filter(Boolean))].sort((a, b) => a - b);
-                            heights.forEach((h) => {
-                                const isSelected = hlsInst.currentLevel >= 0 && hlsInst.levels[hlsInst.currentLevel]?.height === h;
-                                const item = document.createElement('div');
-                                item.className = `menu-item ${isSelected ? 'selected' : ''}`;
-                                item.textContent = formatQualityLabel(h);
-                                item.onclick = () => {
-                                    changeQuality(h);
-                                    buildQualityMenuItems();
-                                };
-                                qualityMenu.appendChild(item);
-                            });
-                        }
-                        function buildSettingsMenu() {
-                            settingsMenu.innerHTML = '';
-                            const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
-                            speeds.forEach((rate) => {
-                                const item = document.createElement('div');
-                                item.className = `menu-item ${(video && video.playbackRate === rate) ? 'selected' : ''}`;
-                                item.textContent = `${rate}x`;
-                                item.onclick = () => {
-                                    if (video) video.playbackRate = rate;
-                                    buildSettingsMenu();
-                                };
-                                settingsMenu.appendChild(item);
-                            });
-                        }
-                    }
-                }
-            }
+function showControlSurface() {
+    if (isUiLocked || !video) return;
+    controlSurface.classList.add('visible');
+    playerHeader.classList.remove('hidden');
+    clearTimeout(controlsHideTimer);
+    controlsHideTimer = setTimeout(() => {
+        if (!video.paused && !document.querySelector('.control-menu.active')) {
+            controlSurface.classList.remove('visible');
+            playerHeader.classList.add('hidden');
+            closeCustomMenus();
         }
+    }, 3000);
+}
+
+function hideControlSurfaceNow() {
+    clearTimeout(controlsHideTimer);
+    controlSurface.classList.remove('visible');
+    playerHeader.classList.add('hidden');
+    closeCustomMenus();
+}
+
+function applyFitMode() {
+    const mode = fitModes[fitIndex];
+    document.documentElement.style.setProperty('--video-fit', mode.value);
+    fitBtn.title = mode.label;
+    fitBtn.setAttribute('aria-label', `Screen Fit: ${mode.label}`);
+    fitBtn.innerHTML = `<i class="fa-solid ${mode.icon}"></i>`;
+}
+
+function updateLockUi() {
+    document.body.classList.toggle('ui-locked', isUiLocked);
+    uiLockBtn.classList.toggle('locked', isUiLocked);
+    uiLockBtn.innerHTML = isUiLocked ? '<i class="fa-solid fa-lock"></i>' : '<i class="fa-solid fa-lock-open"></i>';
+    if (isUiLocked) hideControlSurfaceNow();
+}
+
+function buildQualityMenuItems() {
+    qualityMenu.innerHTML = '';
+    const isAuto = !hlsInst || hlsInst.autoLevelEnabled !== false;
+    const autoItem = document.createElement('div');
+    autoItem.className = `menu-item ${isAuto ? 'selected' : ''}`;
+    autoItem.textContent = 'Auto';
+    autoItem.onclick = () => { changeQuality(0); buildQualityMenuItems(); };
+    qualityMenu.appendChild(autoItem);
+    if (hlsInst && Array.isArray(hlsInst.levels)) {
+        const heights = [...new Set(hlsInst.levels.map(l => l.height).filter(Boolean))].sort((a, b) => b - a);
+        heights.forEach(h => {
+            const isSelected = !isAuto && hlsInst.levels[hlsInst.currentLevel]?.height === h;
+            const item = document.createElement('div');
+            item.className = `menu-item ${isSelected ? 'selected' : ''}`;
+            item.textContent = h + 'p';
+            item.onclick = () => { changeQuality(h); buildQualityMenuItems(); };
+            qualityMenu.appendChild(item);
+        });
     }
 }
+
+function buildSettingsMenu() {
+    settingsMenu.innerHTML = '';
+    const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+    speeds.forEach((rate) => {
+        const item = document.createElement('div');
+        item.className = `menu-item ${(video && video.playbackRate === rate) ? 'selected' : ''}`;
+        item.textContent = `${rate}x`;
+        item.onclick = () => {
+            if (video) video.playbackRate = rate;
+            buildSettingsMenu();
+        };
+        settingsMenu.appendChild(item);
+    });
+}
+
 function bindVideoEvents() {
     if (!video || video.dataset.customBound === '1') return;
     video.dataset.customBound = '1';
@@ -1762,22 +1384,60 @@ function bindVideoEvents() {
     if (video.textTracks && typeof video.textTracks.addEventListener === 'function') {
         video.textTracks.addEventListener('addtrack', (e) => {
             const t = e.track;
-            if (t) t.mode = 'disabled';
-            silenceNativeTracks();
+            // If iOS native player is active, new tracks must be set correctly
+            if (_iosNativePlayerActive) {
+                // New tracks start 'disabled' unless we decide to activate
+                if (t) t.mode = 'disabled';
+                // Re-run iOS activation to respect current activeSubtitleTrackIndex
+                activateTracksForIOSNativePlayer();
+            } else {
+                if (t) t.mode = 'disabled';
+                silenceNativeTracks();
+            }
             bindSubtitleCueListeners();
             updateCaptionsButtonVisibility();
             buildCaptionsMenu();
         });
-        video.textTracks.addEventListener('change', () => {
-            silenceNativeTracks();
-            updateCaptionsButtonVisibility();
-            buildCaptionsMenu();
-        });
     }
-    video.addEventListener('play', silenceNativeTracks);
-    video.addEventListener('playing', silenceNativeTracks);
+    // Only silence native tracks when NOT handing off to iOS native player
+    video.addEventListener('play', () => { if (!_iosNativePlayerActive) silenceNativeTracks(); });
+    video.addEventListener('playing', () => { if (!_iosNativePlayerActive) silenceNativeTracks(); });
+
+    // ── iOS Native Player subtitle bridge ─────────────────────────────────
+    video.addEventListener('webkitbeginfullscreen', () => {
+        _iosNativePlayerActive = true;
+        document.body.classList.add('ios-native-player');
+        // Small delay ensures the native player UI is ready before we shove track modes
+        setTimeout(() => {
+            activateTracksForIOSNativePlayer();
+        }, 150);
+        // Hide our custom overlay
+        const overlay = document.getElementById('subtitleOverlay');
+        if (overlay) overlay.style.display = 'none';
+        // Ensure audio context resumes for volume control
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    });
+
+    video.addEventListener('webkitendfullscreen', () => {
+        _iosNativePlayerActive = false;
+        document.body.classList.remove('ios-native-player');
+        deactivateTracksFromIOSNativePlayer();
+        // Sync track index one last time from native selection
+        const tracks = Array.from(video.textTracks);
+        const currentActive = tracks.findIndex(t => t.mode === 'showing' || t.mode === 'hidden');
+        if (currentActive >= 0) activeSubtitleTrackIndex = currentActive;
+
+        bindSubtitleCueListeners();
+        if (activeSubtitleTrackIndex >= 0) {
+            const activeTrack = video.textTracks[activeSubtitleTrackIndex] || null;
+            renderSubtitleOverlayFromTrack(activeTrack);
+        }
+    });
+
+    bindNativeTrackChangeListener();
     video.addEventListener('volumechange', () => {
         updateMuteIcon();
+        syncGain(); // Crucial for iOS volume control bypass
         if (volumeSliderEl) {
             const val = Math.round((video.muted ? 0 : video.volume) * 100);
             volumeSliderEl.value = String(val);
