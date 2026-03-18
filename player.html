@@ -6289,7 +6289,10 @@
                                     headers: { 'Accept': 'application/json' },
                                     signal: AbortSignal.timeout(6000),
                                 });
-                                if (skipRes.status === 404) continue;
+                                if (skipRes.status === 404 || skipRes.status === 502 || skipRes.status === 500) {
+                                  if (skipRes.status !== 404) failedAny.add(id); // Only mark ID as failed if it's a real server error
+                                  continue;
+                                }
                                 if (!skipRes.ok) continue;
                                 const skipJson = await skipRes.json();
                                 const parsed = parseAniSkipResults(skipJson);
@@ -6301,7 +6304,9 @@
                                     found = true;
                                     return;
                                 }
-                            } catch (_) { }
+                            } catch (_) { 
+                                // On network failure, might be a proxy issue, try next URL
+                            }
                         }
                     }
                     if (!found) {
@@ -6309,6 +6314,7 @@
                         aniSkipFetchStatus = 'failed';
                         resetAnimeSkipState();
                     }
+                    animeSkipCache.set('__failedIds__', failedAny);
                 }, 100);
                 return false;
             } catch (_) {
@@ -6463,12 +6469,27 @@
             }, hideDelay);
         }
 
+        let controlsShownAt = 0;
         function holdControlsVisible(ms = 900) {
             // Enforce minimum 3 seconds on all devices
             const minHold = 3000;
             const effectiveMs = Math.max(ms, minHold);
             controlsHoldVisibleUntil = Math.max(controlsHoldVisibleUntil, Date.now() + effectiveMs);
+            controlsShownAt = Date.now();
+            lastTap = 0; // Reset double-tap sequence on reveal to avoid accidental skips
             showControlSurface();
+        }
+
+        function toggleControls() {
+            if (isUiLocked || !video) return;
+            // Prevent immediate toggle-off if they were just shown by a tap-down interaction
+            if (Date.now() - controlsShownAt < 350) return;
+
+            if (controlSurface.classList.contains('visible')) {
+                hideControlSurfaceNow();
+            } else {
+                holdControlsVisible(3000);
+            }
         }
 
         function hideControlSurfaceNow() {
@@ -6477,6 +6498,7 @@
             controlSurface.classList.remove('visible');
             playerHeader.classList.add('hidden');
             closeCustomMenus();
+            lastTap = 0; // Reset double-tap sequence on hide
         }
 
         function applyFitMode() {
@@ -8099,11 +8121,26 @@
             const bBar = document.getElementById('brightness-bar');
             const vOverlay = document.getElementById('volume-overlay');
             const vBar = document.getElementById('volume-bar');
+
+            function updateOverlayIcon(type, level) {
+                if (type === 'volume') {
+                    const iconEl = vOverlay.querySelector('i');
+                    if (!iconEl) return;
+                    if (level === 0 || video.muted) iconEl.className = 'fa-solid fa-volume-xmark';
+                    else if (level < 0.5) iconEl.className = 'fa-solid fa-volume-low';
+                    else iconEl.className = 'fa-solid fa-volume-high';
+                } else if (type === 'brightness') {
+                    const iconEl = bOverlay.querySelector('i');
+                    if (!iconEl) return;
+                    if (level < 0.4) iconEl.className = 'fa-solid fa-cloud-sun';
+                    else iconEl.className = 'fa-solid fa-sun';
+                }
+            }
             const vBrightnessOverlay = document.getElementById('video-brightness-overlay');
 
             let lastTap = 0;
             const tapThreshold = 300;
-            let startX = 0, startY = 0;
+            let startX = 0, startY = 0, startTime = 0;
             let startVal = 0;
             let isGesturing = false;
             let gestureType = null;
@@ -8179,112 +8216,104 @@
             }, { passive: true });
 
 
-            // Global blocker: Toggle controls on any screen interaction
+            // Global blocker: Show controls on any screen interaction when hidden
+            let lastInteractionAt = 0;
             const blockInteractionsWhenHidden = (e) => {
+                const now = Date.now();
+
+                // 0. TOP PRIORITY: UI Lock button always works immediately
+                const isLockButton = e.target.closest('#uiLockBtn, .ui-lock-btn');
+                if (isLockButton) return; // Allow interaction to bubble natively
+
                 const isControlsVisible = controlSurface.classList.contains('visible');
 
-                // 1. Always allow lock button and specific player buttons to work
-                const isLockButton = e.target.closest('#uiLockBtn, .ui-lock-btn');
-                const isSkipPulse = e.target.closest('.ripple-skip');
-                if (isLockButton || isSkipPulse) return;
+                // 1. Identify other interactive elements
+                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .source-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
 
-                // 2. Identify interactive elements (buttons, sliders, menus, etc.)
-                const isOnButton = e.target.closest('button');
-                const isOnSeekbar = e.target.closest('input[type="range"]');
-                const menuEl = e.target.closest('.control-menu, .panel');
-                const isOnMenu = menuEl && (menuEl.classList.contains('active') || menuEl.classList.contains('open'));
-                const isOnMenuItem = e.target.closest('.ep-item, .source-item, .audio-item, [role="button"], [role="slider"]');
-                const isOnInteractive = isOnButton || isOnSeekbar || isOnMenu || isOnMenuItem;
-
-                // 3. Handle different states
+                // 2. Hide logic: Let buttons and specific bubble-phase handlers handle hiding.
+                // We ONLY intercept here if we need to reveal the UI.
                 if (isControlsVisible) {
-                    // IF CONTROLS ARE VISIBLE:
-                    // If tapping on an interactive element, DO NOT intercept (allow click/touch to work immediately)
-                    if (isOnInteractive) return;
+                    if (now - lastInteractionAt < 100) return;
+                    if (isOnInteractive) return; 
 
-                    // Only hide if tapping on EMPTY SPACE (non-interactive area)
-                    if (e.type === 'touchstart' || e.type === 'mousedown' || e.type === 'click') {
+                    // On empty space when showing: We prevent default to stop clicks from leaking,
+                    // but we do NOT stop propagation so handleSurfaceInteraction can detect double-taps.
+                    if (e.type === 'touchstart' || e.type === 'mousedown' || e.type === 'pointerdown') {
+                        e.preventDefault(); 
+                        return;
+                    }
+                    
+                    // Final click safety: stop any click at capture level when showing on empty space
+                    if (e.type === 'click') {
                         e.preventDefault();
                         e.stopPropagation();
-                        e.stopImmediatePropagation();
-                        hideControlSurfaceNow();
                         return false;
                     }
                 } else {
-                    // IF CONTROLS ARE HIDDEN:
-                    // Show them on ANY interaction
-                    if (e.type === 'touchstart' || e.type === 'mousedown' || e.type === 'click') {
+                    // HIDDEN: Reveal controls
+                    if (e.type === 'touchstart' || e.type === 'mousedown' || e.type === 'pointerdown') {
+                        if (now - lastInteractionAt < 100) return;
+                        lastInteractionAt = now;
                         e.preventDefault();
                         e.stopPropagation();
-                        e.stopImmediatePropagation();
                         holdControlsVisible(3000);
+                        return false;
+                    }
+                    
+                    if (e.type === 'click' && now - lastInteractionAt < 500) {
+                        e.preventDefault();
+                        e.stopPropagation();
                         return false;
                     }
                 }
             };
 
-            // Attach blocker at document level in CAPTURE phase (fires first, before any other handlers)
-            document.addEventListener('pointerdown', blockInteractionsWhenHidden, { capture: true });
+            // Capture reveal-taps at document level
             document.addEventListener('touchstart', blockInteractionsWhenHidden, { capture: true, passive: false });
             document.addEventListener('mousedown', blockInteractionsWhenHidden, { capture: true });
             document.addEventListener('click', blockInteractionsWhenHidden, { capture: true });
 
-            // Also attach blocker directly to controlSurface for more reliable interception
-            controlSurface.addEventListener('pointerdown', blockInteractionsWhenHidden, { capture: true });
-            controlSurface.addEventListener('touchstart', blockInteractionsWhenHidden, { capture: true, passive: false });
-            controlSurface.addEventListener('mousedown', blockInteractionsWhenHidden, { capture: true });
-            controlSurface.addEventListener('click', blockInteractionsWhenHidden, { capture: true });
-
-            // Simple hide handler: when controls visible and user clicks on controlSurface (empty area), hide
+            // Bubble phase: Handles hiding when tapping empty space of the control-surface
             controlSurface.addEventListener('click', (e) => {
-                const isVisible = controlSurface.classList.contains('visible');
-                if (!isVisible) return;
+                if (!controlSurface.classList.contains('visible') || isUiLocked) return;
+                
+                const now = Date.now();
+                if (now - lastInteractionAt < 100) return; // Prevent double-toggle from reveal-tap
 
-                // Check if clicked on interactive element
-                const isOnButton = e.target.closest('button');
-                const isOnSeekbar = e.target.closest('input[type="range"]');
-                const menuEl = e.target.closest('.control-menu, .panel');
-                const isOnMenu = menuEl && (menuEl.classList.contains('active') || menuEl.classList.contains('open'));
-                const isOnMenuItem = e.target.closest('.ep-item, .source-item, .audio-item, [role="button"], [role="slider"]');
+                // Identify if clicked on an actual button/control
+                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .source-item, .ctrl-btn, .ctrl-icon, .back-btn');
 
-                // If on empty space, hide controls immediately
-                if (!isOnButton && !isOnSeekbar && !isOnMenu && !isOnMenuItem) {
+                if (!isOnInteractive) {
                     e.preventDefault();
                     e.stopPropagation();
-                    clearTimeout(window.singleTapTimeout);
                     hideControlSurfaceNow();
                 }
-            }, { capture: true }); // Use capture phase to intercept before buttons if needed, or ensuring it catches early
+            });
 
+            // ─── ADVANCED INTERACTION HANDLER ───
+            // Handles: Double-tap Skip, Double-tap Play/Pause, and Single-tap Hide.
             function handleSurfaceInteraction(e) {
-                if (isUiLocked && e.target !== uiLockBtn && !uiLockBtn.contains(e.target)) return;
-                if (Date.now() < controlsHoldVisibleUntil) return;
-
-                // Ignore interactive controls
-                if (e.target.closest('button, .control-menu, .panel, .seek-bar, .ep-item, .source-item')) return;
-
-                if (isGesturing) return;
+                // UI Lock bypass
+                const isLockButton = e.target.closest('#uiLockBtn, .ui-lock-btn');
+                if (isLockButton) return; // Don't even count lock-taps for double-tap detection
+                if (isUiLocked) return;
+                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .source-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
+                if (isOnInteractive) return;
 
                 const now = Date.now();
-
-                // Handle touchstart vs click/mousedown normalization
-                if (e.type === 'touchstart') {
-                    suppressClicksUntil = now + 1200;
-                } else if (e.type === 'click' && now < suppressClicksUntil) {
-                    return;
-                }
-
                 const isVisible = controlSurface.classList.contains('visible');
 
+                // Standard double-tap detection
                 const diff = now - lastTap;
                 if (diff < tapThreshold && lastTap !== 0) {
-                    // Double Tap Logic
                     clearTimeout(window.singleTapTimeout);
-                    lastTap = now; // keep chain alive for consecutive double-taps!
-                    hideControlSurfaceNow(); // Always hide controls on double tap
+                    lastTap = 0; // Reset chain
+                    
+                    // If we were hidden, we showed on first tap - stop here
+                    if (!isVisible) return;
 
                     const rect = controlSurface.getBoundingClientRect();
-                    const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+                    const clientX = (e.type.startsWith('touch') ? e.touches?.[0]?.clientX : e.clientX) || startX;
                     const x = clientX - rect.left;
                     const third = rect.width / 3;
 
@@ -8296,26 +8325,29 @@
                         if (isFinite(video.duration)) requestSeekToTime(Math.min(video.duration, (video.currentTime || 0) + 10), true);
                         else requestSeekToTime((video.currentTime || 0) + 10, true);
                     } else {
-                        skipAccumulator = 0;
-                        skipAccumulatorSide = null;
-                        lastTap = 0; // kill chain
                         if (video.paused) video.play(); else video.pause();
                     }
-                } else {
-                    lastTap = now;
-                    // Single Tap Logic -> Give a small delay in case a double tap is coming
-                    window.singleTapTimeout = setTimeout(() => {
-                        // Don't hide controls if they were just made visible (still on hold)
-                        if (Date.now() < controlsHoldVisibleUntil) return;
-
-                        if (!controlSurface.classList.contains('visible')) {
-                            holdControlsVisible(3000);
-                        } else {
-                            hideControlSurfaceNow();
-                        }
-                    }, 250);
+                    return;
                 }
+
+                lastTap = now;
+                window.singleTapTimeout = setTimeout(() => {
+                    // SINGLE TAP LOGIC (fires only if no second tap arrived within 280ms)
+                    if (isGesturing) return;
+
+                    if (controlSurface.classList.contains('visible')) {
+                        // If controls are showing, a single tap on empty space hides them
+                        hideControlSurfaceNow();
+                    } else {
+                        // If controls are hidden, they should have been revealed by the capture blocker.
+                        // We do nothing else here.
+                    }
+                }, tapThreshold);
             }
+            
+            // Re-attach handleSurfaceInteraction to catch double-taps
+            controlSurface.addEventListener('touchstart', handleSurfaceInteraction, { passive: true });
+            controlSurface.addEventListener('mousedown', handleSurfaceInteraction);
 
             // Using capture:true for the surface to handle these before other logic if needed,
             // but standard phase is fine here since we filter by target closest.
@@ -8325,6 +8357,7 @@
                 const touch = e.touches[0];
                 startX = touch.clientX;
                 startY = touch.clientY;
+                startTime = Date.now();
                 isGesturing = false;
                 gestureType = null;
             }, { passive: true });
@@ -8333,63 +8366,128 @@
                 if (isUiLocked || e.touches.length > 1) return;
                 const touch = e.touches[0];
                 const dx = touch.clientX - startX;
-                const dy = touch.clientY - startY;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > 20 && !isGesturing) {
-                    const angle = Math.atan2(dy, dx);
-                    // Vertical gesture (brightness/volume)
-                    if (Math.abs(Math.sin(angle)) > 0.7) {
-                        isGesturing = true;
-                        if (touch.clientX < window.innerWidth / 2) {
-                            gestureType = 'brightness';
-                            const bOverlay = document.getElementById('brightness-overlay');
-                            if (bOverlay) bOverlay.classList.add('visible');
-                        } else {
-                            gestureType = 'volume';
-                            const vOverlay = document.getElementById('volume-overlay');
-                            if (vOverlay) vOverlay.classList.add('visible');
-                        }
-                    }
-                    // Horizontal gesture (seek)
-                    else if (Math.abs(Math.cos(angle)) > 0.7) {
-                        isGesturing = true;
-                        gestureType = 'seek';
+                const dy = startY - touch.clientY; 
+
+                if (!isGesturing && Math.abs(dy) > 20 && Math.abs(dy) > Math.abs(dx)) {
+                    isGesturing = true;
+                    holdControlsVisible(3000);
+                    const third = window.innerWidth / 3;
+                    if (startX < third) {
+                        gestureType = 'brightness';
+                        startVal = bLevel;
+                        bOverlay.classList.add('visible');
+                    } else if (startX > 2 * third) {
+                        gestureType = 'volume';
+                        startVal = video.volume;
+                        vOverlay.classList.add('visible');
                     }
                 }
-                // Brightness: vertical swipe on left side
-                if (gestureType === 'brightness') {
-                    const dy = touch.clientY - startY;
-                    const delta = -dy / 100;
-                    let newVal = Math.max(0, Math.min(1, brightness + delta));
-                    brightness = newVal;
-                    const video = document.querySelector('video');
-                    if (video) {
-                        video.style.filter = `brightness(${newVal})`;
-                        video.style.webkitFilter = `brightness(${newVal})`;
-                    }
-                    const bDisplay = document.querySelector('.brightness-display');
-                    if (bDisplay) {
-                        bDisplay.textContent = Math.round(newVal * 100) + '%';
-                        bDisplay.style.opacity = '1';
-                    }
-                }
-                // Volume: vertical swipe on right side
-                else if (gestureType === 'volume') {
-                    const dy = touch.clientY - startY;
-                    const delta = -dy / 100;
-                    const video = document.querySelector('video');
-                    if (video) {
-                        let newVal = Math.max(0, Math.min(1, video.volume + delta));
+
+                if (isGesturing && gestureType) {
+                    if (e.cancelable) e.preventDefault();
+                    holdControlsVisible(3000);
+                    const sensitivity = 200;
+                    const change = dy / sensitivity;
+                    let newVal = Math.max(0, Math.min(1, startVal + change));
+
+                    if (gestureType === 'brightness') {
+                        bLevel = newVal;
+                        const vBO = document.getElementById('video-brightness-overlay');
+                        if (vBO) vBO.style.opacity = (1 - bLevel) * 0.8;
+                        if (bBar) bBar.style.height = `${bLevel * 100}%`;
+                        updateOverlayIcon('brightness', bLevel);
+                    } else if (gestureType === 'volume') {
                         video.volume = newVal;
                         if (vBar) vBar.style.height = `${newVal * 100}%`;
+                        updateOverlayIcon('volume', newVal);
                     }
                 }
             }, { passive: false });
 
-            controlSurface.addEventListener('touchend', () => {
+            controlSurface.addEventListener('touchend', (e) => {
+                const duration = Date.now() - startTime;
+                if (e.changedTouches && e.changedTouches[0]) {
+                    const endX = e.changedTouches[0].clientX;
+                    const endY = e.changedTouches[0].clientY;
+                    const dist = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+
+                    if (!isGesturing && !isUiLocked && duration < 300 && dist < 15) {
+                        // toggleControls() removed — visibility is handled by capture-phase blocker and bubble click handler
+                    }
+                }
                 bOverlay.classList.remove('visible');
                 vOverlay.classList.remove('visible');
+                isGesturing = false;
+                gestureType = null;
             }, { passive: true });
+
+            // PC / Desktop Support
+            controlSurface.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                startX = e.clientX;
+                startY = e.clientY;
+                startTime = Date.now();
+                isGesturing = false;
+                gestureType = null;
+
+                const onMouseMove = (moveEvent) => {
+                    const dx = moveEvent.clientX - startX;
+                    const dy = startY - moveEvent.clientY;
+
+                    if (!isGesturing && Math.abs(dy) > 20 && Math.abs(dy) > Math.abs(dx)) {
+                        isGesturing = true;
+                        holdControlsVisible(3000);
+                        const third = window.innerWidth / 3;
+                        if (startX < third) {
+                            gestureType = 'brightness';
+                            startVal = bLevel;
+                            bOverlay.classList.add('visible');
+                        } else if (startX > 2 * third) {
+                            gestureType = 'volume';
+                            startVal = video.volume;
+                            vOverlay.classList.add('visible');
+                        }
+                    }
+
+                    if (isGesturing && gestureType) {
+                        moveEvent.preventDefault();
+                        holdControlsVisible(3000);
+                        const sensitivity = 200;
+                        const change = dy / sensitivity;
+                        let newVal = Math.max(0, Math.min(1, startVal + change));
+
+                        if (gestureType === 'brightness') {
+                            bLevel = newVal;
+                            const vBO = document.getElementById('video-brightness-overlay');
+                            if (vBO) vBO.style.opacity = (1 - bLevel) * 0.8;
+                            if (bBar) bBar.style.height = `${bLevel * 100}%`;
+                        } else if (gestureType === 'volume') {
+                            video.volume = newVal;
+                            if (vBar) vBar.style.height = `${newVal * 100}%`;
+                        }
+                    }
+                };
+
+                const onMouseUp = (upEvent) => {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+
+                    const duration = Date.now() - startTime;
+                    const dist = Math.sqrt(Math.pow(upEvent.clientX - startX, 2) + Math.pow(upEvent.clientY - startY, 2));
+
+                    if (!isGesturing && !isUiLocked && duration < 300 && dist < 15) {
+                        // toggleControls() removed — visibility is handled by capture-phase blocker and bubble click handler
+                    }
+
+                    bOverlay.classList.remove('visible');
+                    vOverlay.classList.remove('visible');
+                    isGesturing = false;
+                    gestureType = null;
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
 
             // All control interactions are now handled by blockInteractionsWhenHidden
 
@@ -10532,6 +10630,7 @@
                     blankVideo: 'data:video/mp4;base64,AAAAHGZ0eXBtcDQyAAAAAG1wNDJpc29tYXZjMQAAADpmcmVlAAAAAG1kYXQ=',
                     autoplay: !IS_IOS,
                     muted: video.muted,
+                    clickToPlay: false,
                     controls: [
                         'play-large',
                         'play',
