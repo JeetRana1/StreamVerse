@@ -923,16 +923,26 @@ function bindSubtitleCueListeners() {
 let _suppressNativeTrackChange = false; // New flag to prevent infinite loops
 
 function silenceNativeTracks() {
+    // NEW STRATEGY: We keep the active track in 'showing' mode even when inline on iOS,
+    // but we hide the browser's native rendering of it using CSS. This ensures 
+    // the System Player (AVKit) already has the track active when entering fullscreen.
     if (_iosNativePlayerActive) return;
     if (!video || !video.textTracks) return;
+
     _suppressNativeTrackChange = true;
     const tracks = Array.from(video.textTracks);
     tracks.forEach((t, i) => {
-        const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
-        if (shouldBeActive) {
-            if (t.mode !== 'hidden') t.mode = 'hidden';
+        const isTheActiveOne = (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex);
+        if (isTheActiveOne) {
+            // On iOS, use 'showing' so it's ready for native fullscreen.
+            // On other platforms, 'hidden' is safer to rely solely on our custom overlay.
+            if (IS_IOS) {
+                t.mode = 'showing';
+            } else {
+                t.mode = 'hidden';
+            }
         } else {
-            if (t.mode !== 'hidden') t.mode = 'hidden';
+            t.mode = 'disabled';
         }
     });
     setTimeout(() => { _suppressNativeTrackChange = false; }, 50);

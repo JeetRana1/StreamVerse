@@ -44,6 +44,10 @@
             -webkit-tap-highlight-color: transparent;
         }
 
+        video::-webkit-media-text-track-container {
+            display: none !important;
+        }
+
         html,
         body {
             width: 100%;
@@ -5793,25 +5797,29 @@
         }
 
         function silenceNativeTracks() {
-            // On iOS when the native player is active, we must NOT silence tracks —
-            // instead the native player needs them in 'showing' mode to render captions.
+            // On iOS when the native player is active, we must NOT silence tracks.
+            // NEW STRATEGY: We keep the active track in 'showing' mode even when inline, 
+            // but we hide the browser's native rendering of it using CSS. This ensures 
+            // the System Player (AVKit) already has the track active when entering fullscreen.
             if (_iosNativePlayerActive) return;
             if (!video || !video.textTracks) return;
-            // Suppress our own native change listener while we programmatically set modes
+
             _suppressNativeTrackChange = true;
             const tracks = Array.from(video.textTracks);
             tracks.forEach((t, i) => {
-                const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
-                if (shouldBeActive) {
-                    // hidden mode: track is active (cues fire) but browser doesn't render
-                    // This allows our custom overlay to work without double-display.
-                    if (t.mode !== 'hidden') t.mode = 'hidden';
+                const isTheActiveOne = (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex);
+                if (isTheActiveOne) {
+                    // On iOS, use 'showing' so it's ready for native fullscreen.
+                    // On other platforms, 'hidden' is safer to rely solely on our custom overlay.
+                    if (IS_IOS) {
+                        t.mode = 'showing';
+                    } else {
+                        t.mode = 'hidden';
+                    }
                 } else {
-                    // Use 'hidden' instead of 'disabled' so iOS fetches/parses the VTT if needed
-                    if (t.mode !== 'hidden') t.mode = 'hidden';
+                    t.mode = 'disabled';
                 }
             });
-            // Re-enable after a tick so any pending change events are ignored
             setTimeout(() => { _suppressNativeTrackChange = false; }, 50);
         }
 
