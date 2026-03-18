@@ -259,6 +259,8 @@
             overscroll-behavior: none;
             position: fixed;
             width: 100%;
+            /* Black background so any sliver outside the player is invisible */
+            background: #000 !important;
         }
 
         html.ios-pseudo-fs-active .player-wrap {
@@ -268,6 +270,7 @@
             height: 100dvh !important; /* dynamic viewport — handles address-bar collapse */
             z-index: 99999 !important;
             background: #000 !important;
+            overscroll-behavior: none !important; /* Prevent swipe-to-refresh/history navigation */
         }
 
         html.ios-pseudo-fs-active .control-surface {
@@ -7336,6 +7339,44 @@
                         const scrollY = window.scrollY;
                         html.dataset.pseudoFsScrollY = scrollY;
 
+                        // ── TECHNIQUE 1: Force landscape ──────────────────────────
+                        // In landscape, Safari collapses its entire chrome (tab strip,
+                        // bottom toolbar) to a minimal top strip — the closest to
+                        // fullscreen you can get without the PWA.
+                        if (screen.orientation?.lock) {
+                            screen.orientation.lock('landscape').catch(() => {
+                                // lock() not supported or denied — just continue
+                            });
+                        }
+
+                        // ── TECHNIQUE 2: Address-bar scroll-collapse ───────────────
+                        // Safari's URL bar is gesture-driven but it CAN be forced into
+                        // its collapsed state by scrolling the page by at least 1px.
+                        // We temporarily grow the body, scroll, then restore.
+                        // The fixed-position player content does not move visibly.
+                        const _collapseBar = () => {
+                            const prev = document.body.style.minHeight;
+                            document.body.style.minHeight = `${window.innerHeight + 2}px`;
+                            window.scrollTo({ top: 1, behavior: 'instant' });
+                            // After the bar has had time to animate closed (≈ 300ms),
+                            // remove the extra height and stay at top.
+                            setTimeout(() => {
+                                document.body.style.minHeight = prev;
+                                window.scrollTo({ top: 0, behavior: 'instant' });
+                            }, 320);
+                        };
+                        // Delay slightly so orientation change starts first
+                        setTimeout(_collapseBar, 80);
+
+                        // If the user taps the top area, Safari might show the bar again.
+                        // Re-trigger collapse on next tap if pseudo-fs is active.
+                        const reCollapseHandler = () => {
+                            if (html.classList.contains('ios-pseudo-fs-active')) {
+                                setTimeout(_collapseBar, 400);
+                            }
+                        };
+                        html.addEventListener('click', reCollapseHandler, { once: true });
+
                         html.classList.add('ios-pseudo-fs-active');
                         if (fsIcon) { fsIcon.className = 'fa-solid fa-compress'; }
 
@@ -7353,7 +7394,12 @@
                         if (fsIcon) { fsIcon.className = 'fa-solid fa-expand'; }
                         if (rotateHint) rotateHint.classList.remove('show');
 
-                        // Restore scroll position 
+                        // Unlock orientation
+                        if (screen.orientation?.unlock) {
+                            try { screen.orientation.unlock(); } catch (_) { }
+                        }
+
+                        // Restore scroll position
                         const savedY = parseInt(html.dataset.pseudoFsScrollY || '0', 10);
                         delete html.dataset.pseudoFsScrollY;
                         window.scrollTo(0, savedY);
