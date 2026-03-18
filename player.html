@@ -2255,7 +2255,18 @@
 
     <!-- VIDEO PLAYER -->
     <div class="player-wrap">
-        <video id="player-video" playsinline crossorigin="anonymous"></video>
+        <video id="player-video" crossorigin="anonymous"></video>
+        <script>
+            (function() {
+                const v = document.getElementById('player-video');
+                const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+                const isPwa = (isIos && navigator.standalone) || window.matchMedia('(display-mode: standalone)').matches;
+                if (!isIos || isPwa) {
+                    v.setAttribute('playsinline', '');
+                    v.setAttribute('webkit-playsinline', 'true');
+                }
+            })();
+        </script>
         <div id="video-brightness-overlay"></div>
     </div>
 
@@ -2464,6 +2475,7 @@
             ('ontouchstart' in window);
         const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        const IS_PWA = (IS_IOS && navigator.standalone) || window.matchMedia('(display-mode: standalone)').matches;
 
         // Keep local/prod fully isolated (no cross-mixing).
         const API_BASE_CANDIDATES = (effectiveApiSource === 'local'
@@ -2764,10 +2776,10 @@
         }
 
         function getTrackAudioTokens(track) {
-            const lang = String(track?.lang || '').toLowerCase();
-            const langToken = normalizeAudioToken(lang);
-            const nameToken = normalizeAudioToken(track?.name || '');
-            return [lang, langToken, nameToken].filter(Boolean);
+            const langVal = String(track?.lang || track?.language || '').toLowerCase();
+            const langToken = normalizeAudioToken(langVal);
+            const nameToken = normalizeAudioToken(track?.name || track?.label || '');
+            return [langVal, langToken, nameToken].filter(Boolean);
         }
 
         function rememberAudioPreference(track) {
@@ -3191,8 +3203,18 @@
         }
 
         function svApplyPreferredAudioToHls(hls) {
-            if (!hls || !Array.isArray(hls.audioTracks) || hls.audioTracks.length === 0) return;
-            const tracks = hls.audioTracks;
+            let tracks = [];
+            let isNative = false;
+
+            if (hls && Array.isArray(hls.audioTracks) && hls.audioTracks.length > 0) {
+                tracks = hls.audioTracks;
+            } else if (!hls && video && video.audioTracks && video.audioTracks.length > 0) {
+                tracks = Array.from(video.audioTracks);
+                isNative = true;
+            }
+
+            if (tracks.length === 0) return;
+
             const activeSourceProvider = String(allSources?.[currentIdx]?.provider || '').toLowerCase();
             const shouldForceOriginalTrack =
                 currentAudioSource !== 'satoru' &&
@@ -3226,27 +3248,35 @@
             // 3. Fallback: Japanese (common for anime)
             if (targetIdx === -1) {
                 targetIdx = tracks.findIndex(t => {
-                    const l = String(t?.lang || '').toLowerCase();
-                    const n = String(t?.name || '').toLowerCase();
+                    const l = String(t?.lang || t?.language || '').toLowerCase();
+                    const n = String(t?.name || t?.label || '').toLowerCase();
                     return l === 'ja' || l === 'jpn' || n.includes('japanese') || n.includes('nihongo') || n.includes('jp');
                 });
             }
 
             // 4. Fallback: Default or first track
             if (targetIdx === -1) {
-                const def = tracks.findIndex(t => t.default);
+                const def = tracks.findIndex(t => isNative ? t.enabled : t.default);
                 targetIdx = def !== -1 ? def : 0;
             }
 
-            if (targetIdx !== -1 && hls.audioTrack !== targetIdx) {
+            if (targetIdx !== -1) {
                 try {
-                    // ENHANCED: Smooth buffer flushing before track switch
-                    flushAudioBufferForTrackSwitch(hls);
-                    hls.audioTrack = targetIdx;
-                    const sel = tracks[targetIdx];
-                    console.log(`[hls-audio] Successfully auto-switched to index ${targetIdx} (${sel.name || sel.lang})`);
+                    if (isNative) {
+                        if (!tracks[targetIdx].enabled) {
+                            tracks.forEach((t, i) => { t.enabled = (i === targetIdx); });
+                            const sel = tracks[targetIdx];
+                            console.log(`[native-audio] Successfully auto-switched to index ${targetIdx} (${sel.label || sel.language})`);
+                        }
+                    } else if (hls.audioTrack !== targetIdx) {
+                        // ENHANCED: Smooth buffer flushing before track switch
+                        flushAudioBufferForTrackSwitch(hls);
+                        hls.audioTrack = targetIdx;
+                        const sel = tracks[targetIdx];
+                        console.log(`[hls-audio] Successfully auto-switched to index ${targetIdx} (${sel.name || sel.lang})`);
+                    }
                 } catch (e) {
-                    console.warn('[hls-audio] Failed to switch track:', e);
+                    console.warn('[audio-switch] Failed to switch track:', e);
                 }
             }
         }
@@ -7047,8 +7077,10 @@
                 audioPanel.appendChild(item);
             };
 
-            // Native tracks (JustAnime usually just has 'Japanese', but Satoru natively exposes many)
-            if (!isOnSatoru) {
+            // Decide whether to show the native/hls tracks menu
+            const showPlayerTracks = !isOnSatoru || !hlsInst;
+
+            if (showPlayerTracks) {
                 hlsTracks.forEach((track) => {
                     let label = track.name || track.lang || 'Default';
                     if (label === 'Default' || label === 'und') label = 'Japanese';
@@ -7072,13 +7104,16 @@
                             // Disable all tracks then enable the picked one
                             iosNativeTracks.forEach(t => { t.enabled = false; });
                             track.enabled = true;
+                            rememberAudioPreference({ lang: track.language, name: track.label });
                             updateAudioTracks();
                         });
                     });
                 }
-            } else {
+            }
+            
+            if (isOnSatoru) {
                 // Return to original JustAnime track
-                addItem('Japanese', false, () => {
+                addItem('Japanese (Alt Source)', false, () => {
                     const jaSource = allSources.find((s) => s.provider === 'justanime');
                     if (!jaSource) return;
                     const resumeAt = Math.max(0, Number(video?.currentTime || 0));
@@ -7099,7 +7134,8 @@
             }
 
             // Virtual Satoru tracks
-            if (hasSatoruSources) {
+            const showVirtualSatoruTracks = hasSatoruSources && (!isOnSatoru || !!hlsInst);
+            if (showVirtualSatoruTracks) {
                 satoruAudioSources.forEach((src, idx) => {
                     const isActive = isOnSatoru && activeSatoruTrackIndex === idx;
                     addItem(src.label, isActive, () => {
@@ -7327,6 +7363,36 @@
                 // via a CSS class, and lock body scrolling. The video keeps its
                 // `playsinline` attribute so AVKit is never triggered.
                 if (IS_IOS) {
+                    if (!IS_PWA) {
+                        try {
+                            if (video) {
+                                video.removeAttribute('playsinline');
+                                video.removeAttribute('webkit-playsinline');
+                                video.playsInline = false;
+                                
+                                if (video.webkitEnterFullscreen) {
+                                    video.webkitEnterFullscreen();
+                                } else if (video.requestFullscreen) {
+                                    video.requestFullscreen();
+                                }
+
+                                const restorePlaysinline = () => {
+                                    if (!IS_PWA) {
+                                        video.setAttribute('playsinline', '');
+                                        video.setAttribute('webkit-playsinline', 'true');
+                                        video.playsInline = true;
+                                    }
+                                    video.removeEventListener('webkitendfullscreen', restorePlaysinline);
+                                };
+                                video.addEventListener('webkitendfullscreen', restorePlaysinline);
+                            }
+                        } catch (err) {
+                            console.warn('Native iOS fullscreen failed', err);
+                        }
+                        return;
+                    }
+
+                    // ── iOS Pseudo-Fullscreen (PWA MODE ONLY) ──────────────────────
                     const html = document.documentElement;
                     const isPseudoFs = html.classList.contains('ios-pseudo-fs-active');
                     const fsIcon = fullscreenBtn.querySelector('i');
@@ -10033,11 +10099,15 @@
                 const newVideo = document.createElement('video');
                 newVideo.id = 'player-video';
                 newVideo.className = 'plyr-video';
-                newVideo.autoplay = true;
-                newVideo.muted = true;
-                newVideo.playsInline = true;
-                newVideo.setAttribute('playsinline', '');
-                newVideo.setAttribute('webkit-playsinline', 'true');
+                // On iOS, autoplaying often leads to persistent loaders or audio track issues.
+                // Disabling it ensures a clean user gesture when they tap play.
+                newVideo.autoplay = !IS_IOS;
+                newVideo.muted = IS_IOS ? true : false;
+                if (!IS_IOS || IS_PWA) {
+                    newVideo.playsInline = true;
+                    newVideo.setAttribute('playsinline', '');
+                    newVideo.setAttribute('webkit-playsinline', 'true');
+                }
                 newVideo.crossOrigin = 'anonymous';
                 newVideo.preload = 'auto';
                 wrap.insertBefore(newVideo, wrap.firstChild);
@@ -10175,11 +10245,13 @@
                 const newVideo = document.createElement('video');
                 newVideo.id = 'player-video';
                 newVideo.className = 'plyr-video';
-                newVideo.autoplay = true;
-                newVideo.muted = true;
-                newVideo.playsInline = true;
-                newVideo.setAttribute('playsinline', '');
-                newVideo.setAttribute('webkit-playsinline', 'true');
+                newVideo.autoplay = !IS_IOS;
+                newVideo.muted = IS_IOS ? true : false;
+                if (!IS_IOS || IS_PWA) {
+                    newVideo.playsInline = true;
+                    newVideo.setAttribute('playsinline', '');
+                    newVideo.setAttribute('webkit-playsinline', 'true');
+                }
                 newVideo.crossOrigin = 'anonymous';
                 newVideo.preload = 'auto';
                 wrap.insertBefore(newVideo, wrap.firstChild);
@@ -10218,7 +10290,7 @@
 
                 plyr = new Plyr(video, {
                     blankVideo: 'data:video/mp4;base64,AAAAHGZ0eXBtcDQyAAAAAG1wNDJpc29tYXZjMQAAADpmcmVlAAAAAG1kYXQ=',
-                    autoplay: true,
+                    autoplay: !IS_IOS,
                     muted: video.muted,
                     controls: [
                         'play-large',
@@ -10250,7 +10322,11 @@
                 // Sync play icon in case video was already playing when Plyr initialized
                 if (video && !video.paused) setPlayIcon(true);
 
-                const hideIfReady = () => { if (!isFirstLoad) hideLoader(); };
+                const hideIfReady = () => { 
+                    // On iOS, we don't autoplay, so we MUST hide the loader when ready 
+                    // to show the play button. On other platforms, we wait for 'playing'.
+                    if (!isFirstLoad || IS_IOS) hideLoader(); 
+                };
                 plyr.on('ready', hideIfReady);
                 plyr.on('canplay', hideIfReady);
                 plyr.on('playing', () => {
@@ -10342,6 +10418,7 @@
                         // Safety: hide after 10s no matter what
                         setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
                     }
+                if (!IS_IOS) {
                     video.play().catch(() => {
                         video.muted = true;
                         video.play()
@@ -10350,6 +10427,10 @@
                     }).then(() => {
                         if (video && !video.paused) setPlayIcon(true);
                     });
+                } else {
+                    // On iOS, we just make sure we're ready for the user to tap play
+                    setPlayIcon(false);
+                }
                 }, recoverSameSource);
 
                 hlsInst.loadSource(streamUrl);
@@ -10445,7 +10526,12 @@
                 // On iOS, crossOrigin='anonymous' triggers CORS preflight for every segment
                 // request, which can cause failures when the CDN doesn't support CORS.
                 // Remove it for native HLS — canvas thumbnail capture isn't used on iOS.
-                video.removeAttribute('crossorigin');
+                // Exception: 'justanime' uses external subtitles resolving to a cross-origin /utils/vtt.
+                // If we remove crossorigin, iOS WebKit instantly crashes the <video> when the <track> is added.
+                const activeProviderForCORS = String(allSources?.[srcIdx]?.provider || '').toLowerCase();
+                if (activeProviderForCORS !== 'justanime') {
+                    video.removeAttribute('crossorigin');
+                }
 
                 const proxiedUrl = proxiedStreamUrl(url, referer);
                 const directUrl = url;
@@ -10505,6 +10591,7 @@
                 // Refresh audio track UI once metadata is parsed — iOS populates
                 // video.audioTracks only AFTER loadedmetadata fires.
                 video.addEventListener('loadedmetadata', () => {
+                    svApplyPreferredAudioToHls(null);
                     setTimeout(() => updateAudioTracks(), 100);
                 }, { once: true });
 
@@ -10544,10 +10631,11 @@
                 }
 
                 // Initial play attempt
-                video.play().catch(err => {
-                    console.log('Initial Native HLS play() blocked, waiting for user or fallback:', err.message);
-                    // Don't hide loader yet if it's stalling
-                });
+                if (!IS_IOS) {
+                    video.play().catch(err => {
+                        console.log('Initial Native HLS play() blocked, waiting for user or fallback:', err.message);
+                    });
+                }
 
             } else if (isMPD && window.dashjs?.MediaPlayer) {
                 console.log('Branch: DASH.js');
@@ -10595,7 +10683,7 @@
                     setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
                 }
 
-                video.play().catch(() => hideLoader());
+                if (!IS_IOS) video.play().catch(() => hideLoader());
 
             } else if (isEmbed) {
                 console.log('Branch: Direct IFRAME Embed');
@@ -10676,7 +10764,7 @@
                     setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
                 }
 
-                video.play().catch(() => hideLoader());
+                if (!IS_IOS) video.play().catch(() => hideLoader());
 
             } else {
                 showError('Unsupported Browser', 'Your browser does not support HLS streaming.');

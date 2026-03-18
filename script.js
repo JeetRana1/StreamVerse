@@ -449,7 +449,7 @@ function renderDetailsModal(movie, id, type, provider = '') {
                     <div class="modal-tags">
                         ${genresList.map(g => `<span class="modal-tag">${g}</span>`).join('')}
                     </div>
-                    <p class="modal-desc">${desc}</p>
+                    
                     <div class="hero-btns modal-actions">
                         <button class="btn btn-primary btn-glass-primary" onclick="watchNow('${id}','${type}', '${provider}')">
                             <i class="fa-solid fa-play"></i> Watch Now
@@ -458,10 +458,32 @@ function renderDetailsModal(movie, id, type, provider = '') {
                             <i class="fa-solid fa-plus"></i> Add to List
                         </button>
                     </div>
+
+                    <div class="modal-desc-wrapper">
+                        <p id="modal-desc-text" class="modal-desc ${desc.length > 160 ? 'truncated' : ''}">${desc}</p>
+                        ${desc.length > 160 ? `
+                        <div id="desc-toggle-btn" class="description-toggle" onclick="toggleDescription()">
+                           more..
+                        </div>` : ''}
+                    </div>
                 </div>
             </div>
         </div>
     `;
+
+    // Check if description actually needs a "More" button
+    setTimeout(() => {
+        const descEl = document.getElementById('modal-desc-text');
+        const toggleBtn = document.getElementById('desc-toggle-btn');
+        if (descEl && toggleBtn) {
+            // If the actual height is less than or equal to the visible height (clamped),
+            // it means no truncation is occurring.
+            if (descEl.scrollHeight <= descEl.offsetHeight + 2) {
+                toggleBtn.style.display = 'none';
+                descEl.classList.remove('truncated');
+            }
+        }
+    }, 100);
 }
 
 // ------------------ FETCH TRENDING -----------------------------------------
@@ -819,19 +841,18 @@ function displaySearchResults(results, query) {
         searchPageGrid.innerHTML = '<p style="color:var(--text-muted);font-size:1.1rem">No results found.</p>';
         return;
     }
-
     displayGrid(results, searchPageGrid);
 }
 
 // ------------------ DETAILS MODAL HANDLERS --------------------------------
 closeModal.onclick = () => {
     movieModal.style.display = 'none';
-    document.body.style.overflow = 'auto';
+    document.body.classList.remove('modal-open');
 };
 window.onclick = e => {
     if (e.target === movieModal) {
         movieModal.style.display = 'none';
-        document.body.style.overflow = 'auto';
+        document.body.classList.remove('modal-open');
     }
 };
 
@@ -949,7 +970,7 @@ function updateSwitcherState() {
 // Fast modal override: render immediately from seed/cache, then hydrate full details.
 async function openDetails(id, type, provider = '', seedItem = null) {
     movieModal.style.display = 'block';
-    document.body.style.overflow = 'hidden';
+    document.body.classList.add('modal-open');
     const requestId = ++activeModalRequestId;
 
     const cached = readDetailCache(id, type, provider);
@@ -1026,4 +1047,16 @@ async function openDetails(id, type, provider = '', seedItem = null) {
     }
 }
 
-
+function toggleDescription() {
+    const desc = document.getElementById('modal-desc-text');
+    const btn = document.getElementById('desc-toggle-btn');
+    if (!desc || !btn) return;
+    
+    if (desc.classList.contains('truncated')) {
+        desc.classList.remove('truncated');
+        btn.innerHTML = 'less';
+    } else {
+        desc.classList.add('truncated');
+        btn.innerHTML = 'more..';
+    }
+}
