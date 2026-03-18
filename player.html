@@ -5384,11 +5384,15 @@
             try {
                 const lower = String(rawSrc || '').toLowerCase();
                 
-                // CRITICAL FIX: Cache the VTT text, NOT the blob URL. 
-                // Data URIs are generated on the fly.
+                // CRITICAL FIX: Direct skip if already a VTT and on iOS 
+                // Normal HTTP URLs are much more stable for AVKit probes than Blobs.
+                if (IS_IOS && lower.split('?')[0].endsWith('.vtt')) {
+                     return proxied;
+                }
+
                 if (subtitleBlobCache.has(lower)) {
                     const cachedVtt = subtitleBlobCache.get(lower);
-                    return cachedVtt ? toVttBlobUrl(cachedVtt) : '';
+                    return cachedVtt ? toVttUrl(cachedVtt) : '';
                 }
 
                 // Correctly use the already computed proxied URL which includes the referer.
@@ -5432,7 +5436,7 @@
 
                         if (vttContent) {
                             subtitleBlobCache.set(lower, vttContent);
-                            return toVttBlobUrl(vttContent);
+                            return toVttUrl(vttContent);
                         }
                     } else if (txtRes.status === 404 || txtRes.status === 403) {
                         subtitleBlobCache.set(lower, '');

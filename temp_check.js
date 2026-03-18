@@ -697,8 +697,18 @@ async function resolveSubtitleTrackSrc(sub) {
     const rawSrc = String(sub?.src || '').trim();
     if (!rawSrc) return '';
     const proxied = proxiedStreamUrl(rawSrc, sub?.referer || null);
-    const toVttBlobUrl = (text) => {
+    const toVttUrl = (text) => {
         const vttText = String(text || '');
+        if (IS_IOS) {
+            try {
+                // AVKit native system player on iOS cannot access renderer-process Blobs.
+                // Data URIs are a robust alternative for side-loading captions.
+                const b64 = btoa(unescape(encodeURIComponent(vttText)));
+                return `data:text/vtt;base64,${b64}`;
+            } catch (e) {
+                console.warn('[sub] DataURI encoding failed:', e);
+            }
+        }
         const blob = new Blob([vttText], { type: 'text/vtt' });
         const url = URL.createObjectURL(blob);
         subtitleBlobUrls.push(url);
@@ -750,12 +760,12 @@ async function resolveSubtitleTrackSrc(sub) {
             const hasSrtTimestamp = /\d{2}:\d{2}:\d{2},\d{3}/.test(txt);
             const looksAssBody = /^\s*\[script info\]/i.test(txt) || /^\s*\[events\]/im.test(txt) || /dialogue:\s*[^,]*,\d+:\d{1,2}:\d{1,2}\.\d{1,2}/i.test(txt);
             if (!lower.startsWith('<!doctype html') && !lower.startsWith('<html')) {
-                if (looksLikeSrt || (hasCueArrow && hasSrtTimestamp)) return toVttBlobUrl(srtToVtt(txt));
+                if (looksLikeSrt || (hasCueArrow && hasSrtTimestamp)) return toVttUrl(srtToVtt(txt));
                 if (looksLikeAss || looksAssBody) {
                     const converted = assToVtt(txt);
-                    if (converted) return toVttBlobUrl(converted);
+                    if (converted) return toVttUrl(converted);
                 }
-                if (lower.startsWith('webvtt') || hasCueArrow) return toVttBlobUrl(sanitizeText(txt));
+                if (lower.startsWith('webvtt') || hasCueArrow) return toVttUrl(sanitizeText(txt));
             }
         }
     } catch (_) { }
