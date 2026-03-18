@@ -44,7 +44,9 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        video::-webkit-media-text-track-container {
+        /* Hide native captions in the browser to avoid double subtitles with custom overlay. */
+        /* BUT allow them in native iOS fullscreen by removing this rule's scope via .ios-native-player class. */
+        body:not(.ios-native-player) video::-webkit-media-text-track-container {
             display: none !important;
         }
 
@@ -5453,6 +5455,63 @@
             return '';
         }
 
+        function applyExternalSubtitlesToVideoSync(videoEl) {
+            if (!videoEl || !Array.isArray(window.externalSubtitleTracks) || window.externalSubtitleTracks.length === 0) return;
+            
+            // Derive API origin for proxy. Must point to the BACKEND server, not the frontend origin.
+            let apiOrigin = '';
+            try {
+                // Priority: activeApiBase (runtime) -> window.__STREAMVERSE_CONFIG__ -> API_BASE -> location.origin
+                const configBase = (typeof window !== 'undefined' && window.__STREAMVERSE_CONFIG__?.PROD_META_API_BASE);
+                const base = (typeof activeApiBase !== 'undefined' && activeApiBase) ? activeApiBase : 
+                             (configBase || (typeof API_BASE !== 'undefined' ? API_BASE : ''));
+                
+                if (base && base.startsWith('http')) {
+                    const urlObj = new URL(base);
+                    apiOrigin = `${urlObj.protocol}//${urlObj.host}`;
+                } else {
+                    apiOrigin = location.origin; // Last resort
+                }
+            } catch (e) {
+                apiOrigin = location.origin;
+            }
+
+            console.log('[sub] iOS Sync Injection using API Origin:', apiOrigin);
+            videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach(t => t.remove());
+            
+            window.externalSubtitleTracks.forEach((sub, i) => {
+                const track = document.createElement('track');
+                track.kind = 'subtitles';
+                track.label = sub.label || `Subtitle ${i + 1}`;
+                track.srclang = sub.srclang || 'en';
+                const rs = String(sub?.src || '').trim();
+                const rf = String(sub?.referer || '').trim();
+                
+                // Use the /utils/vtt proxy. IMPORTANT: Server must return Content-Type: text/vtt
+                const vttUrl = `${apiOrigin}/utils/vtt?url=${encodeURIComponent(rs)}${rf ? `&referer=${encodeURIComponent(rf)}` : ''}`;
+                track.src = vttUrl;
+                track.dataset.extSub = '1';
+                track.id = `track-${i}`;
+                
+                if (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) {
+                    track.default = true;
+                }
+                
+                videoEl.appendChild(track);
+                
+                // Immediately force the track to be active in the native media engine
+                // On iOS, this ensures the 'CC' button in native HUD shows the track as selected.
+                try {
+                    if (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) {
+                        track.track.mode = 'showing';
+                    } else {
+                        track.track.mode = 'disabled';
+                    }
+                } catch(e) { /* Track might not be ready yet */ }
+            });
+            console.log(`[sub] iOS Sync Injection complete: ${window.externalSubtitleTracks.length} tracks added.`);
+        }
+
         async function applyExternalSubtitlesToVideo(videoEl) {
             if (!videoEl) return;
             const applyVersion = ++subtitleApplyVersion;
@@ -5837,11 +5896,9 @@
                 tracks.forEach((t, i) => {
                     const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
                     if (shouldBeActive) {
-                        // Force a 'kick' to ensure Safari's AVPlayerViewController refreshes
-                        t.mode = 'disabled';
-                        setTimeout(() => { if (t) t.mode = 'showing'; }, 5);
+                        t.mode = 'showing';
                     } else {
-                        if (t.mode !== 'disabled') t.mode = 'disabled';
+                        t.mode = 'disabled';
                     }
                 });
             };
@@ -6889,11 +6946,10 @@
                 _iosNativePlayerActive = true;
                 document.body.classList.add('ios-native-player');
                 
-                // Native player UI sometimes needs a moment to initialize its track list.
-                // We set 'showing' immediately and again after a short delay.
-                activateTracksForIOSNativePlayer();
-                setTimeout(activateTracksForIOSNativePlayer, 200);
-                setTimeout(activateTracksForIOSNativePlayer, 800);
+                // Allow CSS rules to update before native player probes
+                setTimeout(() => {
+                    activateTracksForIOSNativePlayer();
+                }, 100);
 
                 const overlay = document.getElementById('subtitleOverlay');
                 if (overlay) overlay.style.display = 'none';
@@ -11032,11 +11088,14 @@
                 // Remove it for native HLS — canvas thumbnail capture isn't used on iOS.
                 // Exception: 'justanime' uses external subtitles resolving to a cross-origin /utils/vtt.
                 // If we remove crossorigin, iOS WebKit instantly crashes the <video> when the <track> is added.
-                // ALWAYS set crossorigin='anonymous' when on iOS/Safari to ensure external VTT tracks 
-                // are rendered by the native system player (AVKit). Without this, Safari refuses 
-                // to show external tracks in fullscreen mode.
                 video.setAttribute('crossorigin', 'anonymous');
                 video.crossOrigin = 'anonymous';
+
+                // CRITICAL SYNC INJECTION for iOS Safari/AVKit. 
+                // Any 'await' here before source assignment would break the native probe.
+                if (IS_IOS && (externalSubtitleTracks || []).length > 0) {
+                     applyExternalSubtitlesToVideoSync(video);
+                }
 
                 const proxiedUrl = proxiedStreamUrl(url, referer);
                 const directUrl = url;
