@@ -5491,6 +5491,12 @@
                 track.srclang = sub.srclang || 'en';
                 track.src = sub.resolvedSrc || '';
                 track.dataset.extSub = '1';
+
+                // On iOS, the 'default' attribute is the most reliable way to ensure the track 
+                // is auto-selected in the native system menu when entering fullscreen.
+                if (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) {
+                    track.default = true;
+                }
                 // track.crossOrigin is not a valid property; handled by video element
                 track.addEventListener('load', () => {
                     console.log('[sub] track loaded:', track.label);
@@ -11014,11 +11020,11 @@
                 // Remove it for native HLS — canvas thumbnail capture isn't used on iOS.
                 // Exception: 'justanime' uses external subtitles resolving to a cross-origin /utils/vtt.
                 // If we remove crossorigin, iOS WebKit instantly crashes the <video> when the <track> is added.
-                // Keep crossorigin logic intact for iOS subtitle support
-                const activeProviderForCORS = String(allSources?.[srcIdx]?.provider || '').toLowerCase();
-                if (activeProviderForCORS === 'justanime') {
-                    video.setAttribute('crossorigin', 'anonymous');
-                }
+                // ALWAYS set crossorigin='anonymous' when on iOS/Safari to ensure external VTT tracks 
+                // are rendered by the native system player (AVKit). Without this, Safari refuses 
+                // to show external tracks in fullscreen mode.
+                video.setAttribute('crossorigin', 'anonymous');
+                video.crossOrigin = 'anonymous';
 
                 const proxiedUrl = proxiedStreamUrl(url, referer);
                 const directUrl = url;

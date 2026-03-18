@@ -797,6 +797,13 @@ async function applyExternalSubtitlesToVideo(videoEl) {
         track.srclang = sub.srclang || 'en';
         track.src = sub.resolvedSrc || '';
         track.dataset.extSub = '1';
+        
+        // On iOS, the 'default' attribute is the most reliable way to ensure the track 
+        // is auto-selected in the native system menu when entering fullscreen.
+        if (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) {
+            track.default = true;
+        }
+        
         // track.crossOrigin is not a valid property; handled by video element
         track.addEventListener('load', () => {
             updateCaptionsButtonVisibility();
@@ -1389,6 +1396,16 @@ function bindVideoEvents() {
         updateSkipSegmentButton();
         updateNextEpisodeButton(false);
         updateCaptionsButtonVisibility();
+        
+        // On iOS, source changes often clear tracks. Re-apply them.
+        if (IS_IOS && (externalSubtitleTracks || []).length > 0) {
+            // Check if we already have ext tracks to avoid duplication
+            if (video.querySelectorAll('track[data-ext-sub="1"]').length === 0) {
+                console.log('[sub] iOS reload → re-applying external tracks');
+                applyExternalSubtitlesToVideo(video);
+            }
+        }
+        
         bindSubtitleCueListeners();
         buildCaptionsMenu();
     });
