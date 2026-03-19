@@ -44,11 +44,6 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* Hide native captions in the browser to avoid double subtitles with custom overlay. */
-        /* BUT allow them in native iOS devices for system HUD menu to work. */
-        body:not(.is-ios) video::-webkit-media-text-track-container {
-            display: none !important;
-        }
 
         html,
         body {
@@ -1435,18 +1430,7 @@
             visibility: hidden !important;
         }
 
-        /* Suppress browser ::cue rendering in our custom player.
-           When mode='showing' is set for iOS native player, the browser
-           renders via -webkit-media-text-track-container (not ::cue),
-           so this does NOT affect iOS native subtitle display. */
-        body:not(.ios-native-player) video::cue,
-        body:not(.ios-native-player) #player-video::cue,
-        body:not(.ios-native-player) ::cue {
-            all: unset !important;
-            font-size: 0 !important;
-            line-height: 0 !important;
-            opacity: 0 !important;
-        }
+        /* Standard cue styling if needed, otherwise rely on TextTrack.mode = 'hidden' */
 
         #subtitleOverlay {
             pointer-events: none;
@@ -5858,7 +5842,7 @@
         }
 
         function silenceNativeTracks() {
-            // On iOS when the native player is active, we must NOT silence tracks.
+            // On iOS when the native player is active, we must NOT toggle modes as it breaks the HUD.
             if (_iosNativePlayerActive) return;
             if (!video || !video.textTracks) return;
 
@@ -5867,13 +5851,9 @@
             tracks.forEach((t, i) => {
                 const isTheActiveOne = (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex);
                 if (isTheActiveOne) {
-                    // On iOS, use 'showing' so it's ready for native fullscreen.
-                    // On other platforms, 'hidden' is safer to rely solely on our custom overlay.
-                    if (IS_IOS) {
-                        t.mode = 'showing';
-                    } else {
-                        t.mode = 'hidden';
-                    }
+                    // 'hidden' is the magic mode: events fire (for our overlay) but browser doesn't draw.
+                    // On iOS, we only elevate to 'showing' when fullscreen is active.
+                    t.mode = (IS_IOS && document.webkitDisplayingFullscreen) ? 'showing' : 'hidden';
                 } else {
                     t.mode = 'disabled';
                 }
