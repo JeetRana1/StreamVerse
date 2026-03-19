@@ -5478,36 +5478,34 @@
 
             console.log('[sub] iOS Sync Injection using API Origin:', apiOrigin);
             videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach(t => t.remove());
-            
-            window.externalSubtitleTracks.forEach((sub, i) => {
+
+            (window.externalSubtitleTracks || []).forEach((sub, i) => {
                 const track = document.createElement('track');
-                track.kind = 'subtitles';
+                track.kind = 'captions';
                 track.label = sub.label || `Subtitle ${i + 1}`;
                 track.srclang = sub.srclang || 'en';
                 const rs = String(sub?.src || '').trim();
                 const rf = String(sub?.referer || '').trim();
-                
-                // Use the /utils/vtt proxy. IMPORTANT: Server must return Content-Type: text/vtt
+
                 const vttUrl = `${apiOrigin}/utils/vtt?url=${encodeURIComponent(rs)}${rf ? `&referer=${encodeURIComponent(rf)}` : ''}`;
                 track.src = vttUrl;
+                track.type = 'text/vtt';
                 track.dataset.extSub = '1';
                 track.id = `track-${i}`;
-                
+
                 if (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) {
                     track.default = true;
                 }
-                
+
                 videoEl.appendChild(track);
-                
-                // Immediately force the track to be active in the native media engine
-                // On iOS, this ensures the 'CC' button in native HUD shows the track as selected.
+
                 try {
                     if (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) {
                         track.track.mode = 'showing';
                     } else {
                         track.track.mode = 'disabled';
                     }
-                } catch(e) { /* Track might not be ready yet */ }
+                } catch(e) { }
             });
             console.log(`[sub] iOS Sync Injection complete: ${window.externalSubtitleTracks.length} tracks added.`);
         }
@@ -6910,6 +6908,18 @@
                 // Immediately re-evaluate after any seek so the countdown
                 // resets if the user jumps back past the 30-second threshold.
                 updateNextEpisodeButton(false);
+            });
+            video.addEventListener('webkitbeginfullscreen', () => {
+                document.body.classList.add('ios-native-player');
+                // Re-sync tracks just in case the native system probe missed them
+                setTimeout(activateTracksForIOSNativePlayer, 200);
+            });
+            video.addEventListener('webkitendfullscreen', () => {
+                document.body.classList.remove('ios-native-player');
+            });
+            // Backup listener for track propagation on iOS
+            video.addEventListener('loadedmetadata', () => {
+                if (IS_IOS) activateTracksForIOSNativePlayer();
             });
             video.addEventListener('loadedmetadata', () => {
                 isSourceSwitching = false;
@@ -10660,11 +10670,10 @@
                 // Disabling it ensures a clean user gesture when they tap play.
                 newVideo.autoplay = !IS_IOS;
                 newVideo.muted = IS_IOS ? true : false;
-                if (!IS_IOS || IS_PWA) {
-                    newVideo.playsInline = true;
-                    newVideo.setAttribute('playsinline', '');
-                    newVideo.setAttribute('webkit-playsinline', 'true');
-                }
+                // Force playsinline on all iOS devices to ensure track probing happens properly in the browser context.
+                newVideo.playsInline = true;
+                newVideo.setAttribute('playsinline', '');
+                newVideo.setAttribute('webkit-playsinline', 'true');
                 newVideo.crossOrigin = 'anonymous';
                 newVideo.preload = 'auto';
                 wrap.insertBefore(newVideo, wrap.firstChild);
@@ -10804,11 +10813,10 @@
                 newVideo.className = 'plyr-video';
                 newVideo.autoplay = !IS_IOS;
                 newVideo.muted = IS_IOS ? true : false;
-                if (!IS_IOS || IS_PWA) {
-                    newVideo.playsInline = true;
-                    newVideo.setAttribute('playsinline', '');
-                    newVideo.setAttribute('webkit-playsinline', 'true');
-                }
+                // Force playsinline on all iOS devices to ensure track probing happens properly in the browser context.
+                newVideo.playsInline = true;
+                newVideo.setAttribute('playsinline', '');
+                newVideo.setAttribute('webkit-playsinline', 'true');
                 newVideo.crossOrigin = 'anonymous';
                 newVideo.preload = 'auto';
                 wrap.insertBefore(newVideo, wrap.firstChild);
@@ -10838,8 +10846,12 @@
 
             const initPlyr = () => {
                 console.log('Initializing Plyr...');
-                // Ensure subtitles are applied to the NEW video element created by loadStream
+                // Ensure subtitles are applied to the NEW video element. 
+                // Sync version for native iOS probe early-takeover, async for others.
+                applyExternalSubtitlesToVideoSync(video);
                 applyExternalSubtitlesToVideo(video);
+                // Extra sync for iOS just in case
+                if (IS_IOS) setTimeout(() => applyExternalSubtitlesToVideoSync(video), 600);
                 const qualities = hlsInst
                     ? [...new Set(hlsInst.levels.map(l => l.height).filter(Boolean))]
                     : [];
@@ -11095,6 +11107,9 @@
                 // Any 'await' here before source assignment would break the native probe.
                 if (IS_IOS && (externalSubtitleTracks || []).length > 0) {
                      applyExternalSubtitlesToVideoSync(video);
+                // Redundancy for native HLS playback on iOS
+                setTimeout(() => { if (video) applyExternalSubtitlesToVideoSync(video); }, 800);
+                setTimeout(() => { if (video) activateTracksForIOSNativePlayer(); }, 2000);
                 }
 
                 const proxiedUrl = proxiedStreamUrl(url, referer);
