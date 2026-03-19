@@ -45,8 +45,8 @@
         }
 
         /* Hide native captions in the browser to avoid double subtitles with custom overlay. */
-        /* BUT allow them in native iOS fullscreen by removing this rule's scope via .ios-native-player class. */
-        body:not(.ios-native-player) video::-webkit-media-text-track-container {
+        /* BUT allow them in native iOS devices for system HUD menu to work. */
+        body:not(.is-ios) video::-webkit-media-text-track-container {
             display: none !important;
         }
 
@@ -5859,9 +5859,6 @@
 
         function silenceNativeTracks() {
             // On iOS when the native player is active, we must NOT silence tracks.
-            // NEW STRATEGY: We keep the active track in 'showing' mode even when inline, 
-            // but we hide the browser's native rendering of it using CSS. This ensures 
-            // the System Player (AVKit) already has the track active when entering fullscreen.
             if (_iosNativePlayerActive) return;
             if (!video || !video.textTracks) return;
 
@@ -5884,28 +5881,24 @@
             setTimeout(() => { _suppressNativeTrackChange = false; }, 50);
         }
 
-        // Switch subtitle tracks to 'showing' for iOS native player
-        function activateTracksForIOSNativePlayer() {
+        function activateTracksForIOSNativePlayer(showNative = true) {
             if (!video || !video.textTracks) return;
             const tracks = Array.from(video.textTracks);
-            console.log(`[sub] iOS Native Handoff: ${tracks.length} tracks, activeIdx=${activeSubtitleTrackIndex}`);
             
-            const runActivation = () => {
-                tracks.forEach((t, i) => {
-                    const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
-                    if (shouldBeActive) {
-                        t.mode = 'showing';
-                    } else {
-                        t.mode = 'disabled';
-                    }
-                });
-            };
+            // To avoid double subtitles in the browser (inline), we set mode to 'hidden' (still loads but doesn't render).
+            // When in native fullscreen, we set it to 'showing'.
+            const targetMode = showNative ? 'showing' : 'hidden';
 
-            // Run immediately and again with increasing delays to catch the native transition
-            runActivation();
-            setTimeout(runActivation, 300);
-            setTimeout(runActivation, 800);
-            setTimeout(runActivation, 1500);
+            console.log(`[sub] iOS Native Handoff: ${tracks.length} tracks, targetMode=${targetMode}, activeIdx=${activeSubtitleTrackIndex}`);
+            
+            tracks.forEach((t, i) => {
+                const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
+                if (shouldBeActive) {
+                    t.mode = targetMode;
+                } else {
+                    t.mode = 'disabled';
+                }
+            });
         }
 
         // Restore subtitle tracks to 'hidden'/'disabled' after iOS native player exits
@@ -6911,15 +6904,17 @@
             });
             video.addEventListener('webkitbeginfullscreen', () => {
                 document.body.classList.add('ios-native-player');
-                // Re-sync tracks just in case the native system probe missed them
-                setTimeout(activateTracksForIOSNativePlayer, 200);
+                // On iOS native fullscreen, our custom overlay is invisible, so we MUST use native tracks.
+                activateTracksForIOSNativePlayer(true);
             });
             video.addEventListener('webkitendfullscreen', () => {
                 document.body.classList.remove('ios-native-player');
+                // Back in the browser inline mode, we want to use our custom overlay and hide native ones to avoid double subs.
+                activateTracksForIOSNativePlayer(false);
             });
             // Backup listener for track propagation on iOS
             video.addEventListener('loadedmetadata', () => {
-                if (IS_IOS) activateTracksForIOSNativePlayer();
+                if (IS_IOS) activateTracksForIOSNativePlayer(document.webkitDisplayingFullscreen);
             });
             video.addEventListener('loadedmetadata', () => {
                 isSourceSwitching = false;
