@@ -1,4 +1,4 @@
-﻿
+
 // -----------------------------------------------------------------------
 //  CONFIG
 // -----------------------------------------------------------------------
@@ -107,8 +107,8 @@ async function fetchJsonWithRetry(url, timeoutMs = 10000, retryTimeoutMs = 15000
 
 // Provider pools
 const MOVIE_PROVIDERS = ['flixhq', 'goku', 'sflix', 'himovies', 'dramacool'];
-const ANIME_PROVIDERS = ['justanime', 'satoru', 'hianime', 'animesaturn'];
-const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime', 'hianime', 'animesaturn'];
+const ANIME_PROVIDERS = ['justanime', 'satoru', 'animesaturn'];
+const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime', 'animesaturn'];
 
 const params = new URLSearchParams(location.search);
 const TMDB_ID = params.get('id');
@@ -204,7 +204,6 @@ const ANIME_INFO_TIMEOUT_MS = 12000;
 const PROVIDER_TIMEOUT_OVERRIDES = {
     satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
     justanime: { subtitleFallback: 20000 },
-    hianime: { subtitleFallback: 18000 },
     dramacool: { watch: 12000, directWatch: 10000 }
 };
 
@@ -598,7 +597,6 @@ function buildAnimeInfoUrl(provider, animeId) {
 function buildAnimeWatchUrl(provider, episodeId) {
     const base = getAnimeProviderBase(provider);
     const url = new URL(`${base}/watch/${encodeURIComponent(episodeId)}`);
-    if (provider === 'hianime') url.searchParams.set('category', 'both');
     return url.toString();
 }
 

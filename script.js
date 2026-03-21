@@ -18,6 +18,55 @@ const FALLBACK_API = String(
 const PROD_API_HOST = (() => {
     try { return new URL(PROD_API).host; } catch (_) { return ''; }
 })();
+
+/* --- Watchlist Logic --- */
+let currentModalMovie = null;
+
+function getWatchlist() {
+    return JSON.parse(localStorage.getItem('streamverse_watchlist') || '[]');
+}
+
+function saveWatchlist(list) {
+    localStorage.setItem('streamverse_watchlist', JSON.stringify(list));
+    window.dispatchEvent(new Event('storage'));
+}
+
+function isInWatchlist(id) {
+    return getWatchlist().some(item => String(item.id) === String(id));
+}
+
+function handleWatchlistToggle(id, type, provider) {
+    if (!currentModalMovie) return;
+    
+    let list = getWatchlist();
+    const index = list.findIndex(item => String(item.id) === String(id));
+    const btn = document.getElementById('modal-watchlist-btn');
+
+    if (index > -1) {
+        list.splice(index, 1);
+        if (btn) {
+            btn.innerHTML = '<i class="fa-solid fa-plus"></i> Add to List';
+            btn.classList.add('btn-secondary', 'btn-glass-secondary');
+            btn.classList.remove('btn-success', 'btn-glass-success');
+        }
+    } else {
+        const item = {
+            id, type, provider,
+            title: getTitle(currentModalMovie),
+            poster: getPoster(currentModalMovie),
+            year: getYear(currentModalMovie),
+            rating: getRating(currentModalMovie),
+            addedAt: Date.now()
+        };
+        list.unshift(item); // Change push to unshift, to show newest first
+        if (btn) {
+            btn.innerHTML = '<i class="fa-solid fa-check"></i> In Your List';
+            btn.classList.add('btn-success', 'btn-glass-success');
+            btn.classList.remove('btn-secondary', 'btn-glass-secondary');
+        }
+    }
+    saveWatchlist(list);
+}
 const FALLBACK_API_HOST = (() => {
     try { return new URL(FALLBACK_API).host; } catch (_) { return ''; }
 })();
@@ -147,6 +196,9 @@ const header = document.getElementById('main-header');
 const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
 // const mobileNav = document.getElementById('mobile-nav'); // Removed
 const dramasGrid = document.getElementById('dramas-grid');
+const continueWatchingSection = document.getElementById('continue-watching-section');
+const continueWatchingGrid = document.getElementById('continue-watching-grid');
+
 
 // ------------------ STATE -------------------------------------------------
 let heroItems = [];
@@ -168,6 +220,7 @@ header.classList.toggle('scrolled', window.scrollY > 50);
 // ------------------ INIT --------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
     updateSwitcherState();
+    loadContinueWatching();
     fetchTrending();
     fetchSection('movie', popularMoviesGrid, 'movie');
     fetchDramas();
@@ -262,13 +315,13 @@ function getCover(item) {
 function getType(item) {
     if (!item) return 'movie';
     const t = String(item.type || item.media_type || item.format || '').toLowerCase();
-    
+
     // Explicit indicators
     if (['tv series', 'tv', 'tv_series', 'show', 'special', 'ova', 'ona', 'tv_short'].includes(t)) {
         return 'tv';
     }
     if (t === 'movie' || t === 'film' || t === 'movie_short') return 'movie';
-    
+
     // Fallback: Only infer TV if we have multiple episodes or any seasons
     // This prevents movies (which sometimes have 1 'episode' entry) from being called TV shows.
     const hasSeasons = Array.isArray(item.seasons) && item.seasons.length > 0;
@@ -278,7 +331,7 @@ function getType(item) {
     if (hasSeasons || hasManyEps || hasHighTotal) {
         return 'tv';
     }
-    
+
     return 'movie';
 }
 
@@ -328,6 +381,96 @@ function writeDetailCache(id, type, provider = '', data) {
     }
 }
 
+// ------------------ CONTINUE WATCHING -------------------------------------
+function loadContinueWatching() {
+    if (!continueWatchingGrid || !continueWatchingSection) return;
+
+    const raw = localStorage.getItem('sv_continue_watching');
+    if (!raw) {
+        continueWatchingSection.style.display = 'none';
+        return;
+    }
+
+    try {
+        const items = JSON.parse(raw);
+        if (!Array.isArray(items) || items.length === 0) {
+            continueWatchingSection.style.display = 'none';
+            return;
+        }
+
+        renderContinueWatching(items);
+    } catch (e) {
+        console.error('Error loading continue watching:', e);
+        continueWatchingSection.style.display = 'none';
+    }
+}
+
+function renderContinueWatching(items) {
+    continueWatchingGrid.innerHTML = '';
+    continueWatchingSection.style.display = 'block';
+
+    items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'movie-card continue-card';
+
+        const watchedPercent = Math.min(100, (item.currentTime / item.duration) * 100) || 0;
+        const timeLeft = Math.max(0, item.duration - item.currentTime);
+
+        const formatTime = (seconds) => {
+            if (!seconds || seconds < 0) return '0:00';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        };
+
+        const lastWatchedDate = new Date(item.lastUpdated).toLocaleDateString();
+
+        const getPrettyAudio = (token) => {
+            if (!token) return 'SUB';
+            const low = token.toLowerCase();
+            if (low.includes('hindi')) return 'HINDI';
+            if (low.includes('japan') || low.includes('jpn') || low.includes('jp')) return 'JPN';
+            if (low.includes('eng') || low.includes('en')) return 'ENG';
+            if (low.includes('tam')) return 'TAMIL';
+            if (low.includes('tel')) return 'TEL';
+            if (low.includes('dub')) return 'DUB';
+            return token.toUpperCase().substring(0, 5);
+        };
+        const audioLabel = getPrettyAudio(item.audio);
+        
+        card.innerHTML = `
+            <img src="${item.poster}" alt="${item.title}" loading="lazy"
+                 onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Image'">
+            <div class="audio-badge">
+                <span class="audio-dot"></span>
+                ${audioLabel}
+            </div>
+            <div class="continue-play-overlay">
+                <i class="fa-solid fa-play"></i>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar" style="width: ${watchedPercent}%"></div>
+            </div>
+            <div class="movie-card-info">
+                <h3 class="movie-card-title">${item.title}${item.type === 'tv' ? ` - E${item.episode + 1}` : ''}</h3>
+                <div class="continue-meta">
+                    <span>${formatTime(item.currentTime)} watched • ${formatTime(timeLeft)} left</span>
+                    <span>Last watched: ${lastWatchedDate}</span>
+                </div>
+            </div>
+        `;
+
+        card.onclick = () => {
+            const url = `player.html?id=${encodeURIComponent(item.id)}&type=${item.type}&provider=${item.provider || ''}${item.type === 'tv' ? `&season=${item.season + 1}&episode=${item.episode + 1}` : ''}&t=${Math.floor(item.currentTime)}&audio=${encodeURIComponent(item.audio || '')}`;
+            window.location.href = url;
+        };
+
+        continueWatchingGrid.appendChild(card);
+    });
+}
+
 function normalizeDetailPayload(payload, id) {
     let movie = payload;
     if (movie?.data) movie = movie.data;
@@ -338,14 +481,14 @@ function normalizeDetailPayload(payload, id) {
         movie = movie[0];
     }
     if (!movie || typeof movie !== 'object') throw new Error('Empty response');
-    
+
     // Error handling for API returned messages
     if (movie.message && !movie.id && !movie.title && !movie.name) {
         throw new Error(movie.message);
     }
-    
+
     if (!movie.id) movie.id = id;
-    
+
     // Ensure title field is always populated for getTitle() to work
     if (!movie.title && !movie.name) {
         movie.title = movie.originalTitle || movie.original_title ||
@@ -416,54 +559,107 @@ async function fetchDetails(id, type, provider = '') {
     }
 }
 
+function getGenreInfo(genre) {
+    const g = genre.toLowerCase();
+    let icon = 'fa-tag', color = '#94a3b8';
+    
+    if (g.includes('action')) { icon = 'fa-fire'; color = '#ff4d4d'; }
+    else if (g.includes('adventure')) { icon = 'fa-compass'; color = '#4ade80'; }
+    else if (g.includes('animation')) { icon = 'fa-palette'; color = '#f472b6'; }
+    else if (g.includes('comedy')) { icon = 'fa-face-laugh'; color = '#fbbf24'; }
+    else if (g.includes('crime')) { icon = 'fa-mask'; color = '#94a3b8'; }
+    else if (g.includes('documentary')) { icon = 'fa-video'; color = '#0ea5e9'; }
+    else if (g.includes('drama')) { icon = 'fa-masks-theater'; color = '#a78bfa'; }
+    else if (g.includes('family')) { icon = 'fa-house-user'; color = '#22c55e'; }
+    else if (g.includes('fantasy')) { icon = 'fa-wand-sparkles'; color = '#f43f5e'; }
+    else if (g.includes('history')) { icon = 'fa-book-atlas'; color = '#d97706'; }
+    else if (g.includes('horror')) { icon = 'fa-ghost'; color = '#e11d48'; }
+    else if (g.includes('music')) { icon = 'fa-music'; color = '#c084fc'; }
+    else if (g.includes('mystery')) { icon = 'fa-magnifying-glass'; color = '#6366f1'; }
+    else if (g.includes('romance')) { icon = 'fa-heart'; color = '#ec4899'; }
+    else if (g.includes('sci-fi') || g.includes('science')) { icon = 'fa-shuttle-space'; color = '#22d3ee'; }
+    else if (g.includes('thriller')) { icon = 'fa-bolt'; color = '#fb7185'; }
+    else if (g.includes('war')) { icon = 'fa-shield-halved'; color = '#b91c1c'; }
+    else if (g.includes('western')) { icon = 'fa-hat-cowboy'; color = '#f59e0b'; }
+    else if (g.includes('anime')) { icon = 'fa-dragon'; color = '#f472b6'; }
+    else if (g.includes('kids')) { icon = 'fa-child'; color = '#60a5fa'; }
+    else if (g.includes('news')) { icon = 'fa-newspaper'; color = '#ef4444'; }
+
+    return { icon, color };
+}
+
 function renderDetailsModal(movie, id, type, provider = '') {
+    currentModalMovie = movie;
+    const isAdded = isInWatchlist(id);
     const title = getTitle(movie);
     const cover = getCover(movie);
     const poster = getPoster(movie);
     const year = getYear(movie);
     const rating = getRating(movie);
-    
+
     const runtimeVal = Number(movie.duration || movie.runtime || 0);
-    const runtime = type === 'movie'
-        ? (runtimeVal > 0 ? `${runtimeVal} min` : 'N/A')
-        : `${(movie.totalEpisodes || movie.episodes?.length || 0) || 'N/A'} Episodes`;
-    
+    let runtime = 'N/A';
+    if (type === 'movie' && runtimeVal > 0) {
+        const h = Math.floor(runtimeVal / 60);
+        const m = runtimeVal % 60;
+        runtime = h > 0 ? `${h}h ${m}m` : `${m}m`;
+    } else if (type === 'tv') {
+        runtime = `${(movie.totalEpisodes || movie.episodes?.length || 0) || 'N/A'} Episodes`;
+    }
+
     const genresList = Array.isArray(movie.genres) ? movie.genres : (movie.genres || 'N/A').split(',').map(g => g.trim());
     const desc = movie.description || movie.overview || 'No overview available.';
 
     modalBody.innerHTML = `
-        <div class="modal-header" style="background-image:url('${cover}')">
-            <div class="modal-header-overlay"></div>
-        </div>
-        <div class="modal-details modal-details-fit">
-            <div class="modal-top">
+        <div class="modal-header-container">
+            <div class="modal-header-bg" style="background-image:url('${cover}')">
+                <div class="modal-header-overlay-vignette"></div>
+            </div>
+            <div class="modal-poster-wrapper">
                 <img class="modal-poster" src="${poster}" alt="${title}"
                      onerror="this.src='https://placehold.co/200x300/1a1a2e/e50914?text=No+Poster'">
-                <div class="modal-main">
-                    <h2 class="modal-title">${title}</h2>
-                    <div class="hero-meta modal-meta">
-                        <span><i class="fa-solid fa-star rating"></i> ${rating}</span>
-                        <span>${runtime}</span>
-                        <span>${year}</span>
-                    </div>
-                    <div class="modal-tags">
-                        ${genresList.map(g => `<span class="modal-tag">${g}</span>`).join('')}
-                    </div>
-                    
-                    <div class="hero-btns modal-actions">
-                        <button class="btn btn-primary btn-glass-primary" onclick="watchNow('${id}','${type}', '${provider}')">
-                            <i class="fa-solid fa-play"></i> Watch Now
-                        </button>
-                        <button class="btn btn-secondary btn-glass-secondary">
-                            <i class="fa-solid fa-plus"></i> Add to List
-                        </button>
-                    </div>
+            </div>
+        </div>
+        
+        <div class="modal-content-details">
+            <div class="modal-main-info">
+                <h2 class="modal-title">${title}</h2>
+                
+                <div class="modal-meta-pills">
+                    <span class="meta-pill rating-pill"><i class="fa-solid fa-star"></i> ${rating}</span>
+                    <span class="meta-pill" style="border-color:#38bdf833">
+                        <i class="fa-solid fa-${type === 'movie' ? 'clock' : 'tv'}" style="color:#38bdf8"></i> ${runtime}
+                    </span>
+                    <span class="meta-pill" style="border-color:#4ade8033">
+                        <i class="fa-solid fa-calendar-days" style="color:#4ade80"></i> ${year}
+                    </span>
+                </div>
 
-                    <div class="modal-desc-wrapper">
-                        <p id="modal-desc-text" class="modal-desc ${desc.length > 160 ? 'truncated' : ''}">${desc}</p>
-                        ${desc.length > 160 ? `
-                        <div id="desc-toggle-btn" class="description-toggle" onclick="toggleDescription()">
-                           more..
+                <div class="modal-genres">
+                    ${genresList.map(g => {
+                        const info = getGenreInfo(g);
+                        return `<span class="genre-pill" style="border-color:${info.color}33; background:rgba(255,255,255,0.03)">
+                                    <i class="fa-solid ${info.icon}" style="color:${info.color}"></i> ${g}
+                                </span>`;
+                    }).join('')}
+                </div>
+                
+                <div class="modal-action-buttons">
+                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}', '${provider}')">
+                        <i class="fa-solid fa-play"></i> Watch Now
+                    </button>
+                    <button id="modal-watchlist-btn" class="btn btn-list ${isAdded ? 'btn-in-list' : 'btn-add-list'}" 
+                            onclick="handleWatchlistToggle('${id}', '${type}', '${provider}')">
+                        <i class="fa-solid fa-${isAdded ? 'check' : 'plus'}"></i> ${isAdded ? 'In Your List' : 'Add to List'}
+                    </button>
+                </div>
+
+                <div class="modal-description-section">
+                    <div class="modal-desc-container">
+                        <p id="modal-desc-text" class="modal-desc ${desc.length > 200 ? 'truncated' : ''}">${desc}</p>
+                        ${desc.length > 200 ? `
+                        <div id="desc-toggle-btn" class="description-more" onclick="toggleDescription()">
+                           Read More <i class="fa-solid fa-chevron-down"></i>
                         </div>` : ''}
                     </div>
                 </div>
@@ -494,7 +690,7 @@ async function fetchTrending() {
         if (cached?.results?.length) {
             const cachedItems = (cached.results || []).slice(0, 12);
             heroItems = cachedItems.slice(0, 5);
-            if (heroItems.length) {
+            if (heroItems.length && typeof displayHero === 'function') {
                 displayHero(heroItems[0]);
                 startHeroRotation();
             }
@@ -508,8 +704,10 @@ async function fetchTrending() {
         if (!items.length) return;
 
         heroItems = items.slice(0, 5);
-        displayHero(heroItems[0]);
-        startHeroRotation();
+        if (heroItems.length) {
+            displayHero(heroItems[0]);
+            startHeroRotation();
+        }
         displayGrid(items, trendingGrid);
     } catch (err) {
         console.error('Trending error:', err?.message || err);
@@ -638,7 +836,7 @@ async function hydrateGridCard(item, card) {
                 const metaSpan = card.querySelector('.movie-card-meta span:first-child');
                 if (metaSpan) metaSpan.textContent = yearVal;
             }
-            
+
             // Also rescue the title if it was "Unknown" in the initial search results
             const titleEl = card.querySelector('.movie-title');
             const currentTitle = titleEl ? titleEl.textContent.trim() : '';
@@ -652,6 +850,7 @@ async function hydrateGridCard(item, card) {
 // ------------------ HERO ---------------------------------------------------
 function displayHero(item) {
     if (!item) return;
+    if (!heroSection || !heroContainer) return;
     const title = getTitle(item);
     const year = getYear(item);
     const rating = getRating(item);
@@ -713,7 +912,7 @@ function displayGrid(items, container, forcedType = null) {
                     const itemData = JSON.parse(card.dataset.item || '{}');
                     const itemType = card.dataset.type;
                     const itemProv = card.dataset.provider;
-                    
+
                     if (card.dataset.hydrated !== 'true') {
                         card.dataset.hydrated = 'true';
                         hydrateGridCard(itemData, card);
@@ -756,7 +955,7 @@ function displayGrid(items, container, forcedType = null) {
         card.addEventListener('mouseenter', () => prefetchDetails(id, type, provider), { once: true });
         card.addEventListener('touchstart', () => prefetchDetails(id, type, provider), { once: true, passive: true });
         card.addEventListener('pointerdown', () => prefetchDetails(id, type, provider), { once: true, passive: true });
-        
+
         container.appendChild(card);
         hydrationObserver.observe(card);
     });
@@ -791,6 +990,10 @@ async function triggerSearch(immediate = false) {
     heroSection.style.display = 'none';
     contentRows.style.display = 'none';
     searchPage.style.display = 'block';
+    
+    // Auto-scroll to top to prevent being thrown down the page
+    if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'instant' });
+
     searchTitle.textContent = `Searching for "${q}"...`;
     searchPageGrid.innerHTML = `
         <div style="grid-column: 1/-1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 4rem 0;">
@@ -817,15 +1020,15 @@ async function triggerSearch(immediate = false) {
 
 // Attach listeners with improved robustness for paste/enter
 searchInput.addEventListener('input', () => triggerSearch(false));
-searchInput.addEventListener('keydown', e => { 
+searchInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
         e.preventDefault();
-        triggerSearch(true); 
+        triggerSearch(true);
     }
 });
-searchInput.addEventListener('paste', () => { 
+searchInput.addEventListener('paste', () => {
     // Small timeout to allow input value to update before triggering
-    setTimeout(() => triggerSearch(true), 20); 
+    setTimeout(() => triggerSearch(true), 20);
 });
 const searchBtn = document.getElementById('search-btn');
 if (searchBtn) searchBtn.addEventListener('click', () => triggerSearch(true));
@@ -846,12 +1049,12 @@ function displaySearchResults(results, query) {
 
 // ------------------ DETAILS MODAL HANDLERS --------------------------------
 closeModal.onclick = () => {
-    movieModal.style.display = 'none';
+    movieModal.classList.remove('active');
     document.body.classList.remove('modal-open');
 };
 window.onclick = e => {
     if (e.target === movieModal) {
-        movieModal.style.display = 'none';
+        movieModal.classList.remove('active');
         document.body.classList.remove('modal-open');
     }
 };
@@ -969,7 +1172,7 @@ function updateSwitcherState() {
 
 // Fast modal override: render immediately from seed/cache, then hydrate full details.
 async function openDetails(id, type, provider = '', seedItem = null) {
-    movieModal.style.display = 'block';
+    movieModal.classList.add('active');
     document.body.classList.add('modal-open');
     const requestId = ++activeModalRequestId;
 
@@ -999,7 +1202,7 @@ async function openDetails(id, type, provider = '', seedItem = null) {
         }
 
         if (requestId !== activeModalRequestId) return;
-        
+
         // Merge with initial data (from search results) to ensure we don't lose title/poster
         // if the info hydration is partial or returns "Unknown" due to TMDB proxy lag
         if (initial) {
@@ -1023,9 +1226,9 @@ async function openDetails(id, type, provider = '', seedItem = null) {
                     if (isBad(movie.image)) { movie.image = tmdb.image || tmdb.poster_path; changed = true; }
                     if (isBad(movie.cover)) { movie.cover = tmdb.cover || tmdb.backdrop_path; changed = true; }
                     if (!movie.rating || movie.rating == 0) { movie.rating = tmdb.rating || tmdb.vote_average; changed = true; }
-                    if (!movie.description || movie.description.includes('Dramacool lovers')) { 
-                        movie.description = tmdb.description || tmdb.overview; 
-                        changed = true; 
+                    if (!movie.description || movie.description.includes('Dramacool lovers')) {
+                        movie.description = tmdb.description || tmdb.overview;
+                        changed = true;
                     }
                     if (changed) renderDetailsModal(movie, id, type, provider);
                 }
@@ -1051,12 +1254,12 @@ function toggleDescription() {
     const desc = document.getElementById('modal-desc-text');
     const btn = document.getElementById('desc-toggle-btn');
     if (!desc || !btn) return;
-    
+
     if (desc.classList.contains('truncated')) {
         desc.classList.remove('truncated');
-        btn.innerHTML = 'less';
+        btn.innerHTML = 'Read Less <i class="fa-solid fa-chevron-up"></i>';
     } else {
         desc.classList.add('truncated');
-        btn.innerHTML = 'more..';
+        btn.innerHTML = 'Read More <i class="fa-solid fa-chevron-down"></i>';
     }
 }

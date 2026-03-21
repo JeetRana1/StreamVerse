@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>My List | StreamVerse</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="logo.png">
+    <style>
+        .watchlist-container {
+            padding-top: 100px;
+            min-height: 80vh;
+        }
+        .empty-watchlist {
+            text-align: center;
+            padding: 100px 20px;
+            color: var(--text-muted);
+        }
+        .empty-watchlist i {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            opacity: 0.3;
+        }
+        .empty-watchlist h2 {
+            font-family: 'Outfit', sans-serif;
+            color: white;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <header id="main-header">
+        <div class="container container-header">
+            <div class="logo">
+                <a href="/">
+                    <span class="logo-accent">Stream</span>Verse
+                </a>
+            </div>
+            <nav class="desktop-nav">
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="index.html#movies">Movies</a></li>
+                    <li><a href="index.html#tv">TV Shows</a></li>
+                    <li><a href="manga.html">Manga</a></li>
+                    <li><a href="add-to-list.html" class="active">My List</a></li>
+                </ul>
+            </nav>
+            <div class="header-actions">
+                <div class="search-bar" id="search-container">
+                    <input type="text" id="search-input" placeholder="Search my list...">
+                    <button id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="watchlist-container container">
+        <h1 class="section-title">My Watchlist</h1>
+        <div id="watchlist-grid" class="movie-grid">
+            <!-- Watchlist items will be rendered here -->
+        </div>
+    </main>
+
+    <div id="movie-modal" class="modal">
+        <div class="modal-content">
+            <button class="close-modal"><i class="fa-solid fa-xmark"></i></button>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            renderWatchlist();
+            
+            // Search filter for watchlist
+            const searchInput = document.getElementById('search-input');
+            searchInput.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                const cards = document.querySelectorAll('.movie-card');
+                cards.forEach(card => {
+                    const title = card.querySelector('h3').textContent.toLowerCase();
+                    card.style.display = title.includes(term) ? 'block' : 'none';
+                });
+            });
+        });
+
+        function renderWatchlist() {
+            const grid = document.getElementById('watchlist-grid');
+            const watchlist = JSON.parse(localStorage.getItem('streamverse_watchlist') || '[]');
+            
+            if (watchlist.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-watchlist">
+                        <i class="fa-solid fa-bookmark"></i>
+                        <h2>Your list is empty</h2>
+                        <p>Movies and TV shows you add will appear here.</p>
+                        <a href="/" class="btn btn-primary" style="margin-top: 2rem; display: inline-flex;">Browse Movies</a>
+                    </div>
+                `;
+                grid.style.display = 'block';
+                return;
+            }
+
+            grid.innerHTML = watchlist.map(item => `
+                <div class="movie-card" onclick="openDetails('${item.id}', '${item.type}', '${item.provider || ''}')">
+                    <img src="${item.poster}" alt="${item.title}" loading="lazy" onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Poster'">
+                    <span class="quality-badge">HD</span>
+                    <div class="movie-card-info">
+                        <h3 class="movie-card-title">${item.title}</h3>
+                        <div class="movie-card-meta">
+                            <span>${item.year}</span>
+                            <span><i class="fa-solid fa-star rating"></i> ${item.rating}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Listen for storage changes to refresh list if modal removes item
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'streamverse_watchlist') {
+                renderWatchlist();
+            }
+        });
+    </script>
+</body>
+
+</html>

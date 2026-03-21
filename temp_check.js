@@ -92,8 +92,8 @@ async function fetchJsonWithApiFallback(url, options = {}) {
     }
     // Provider pools
     const MOVIE_PROVIDERS = ['flixhq', 'goku', 'sflix', 'himovies', 'dramacool'];
-    const ANIME_PROVIDERS = ['justanime', 'satoru', 'hianime', 'animesaturn'];
-    const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime', 'hianime', 'animesaturn'];
+    const ANIME_PROVIDERS = ['justanime', 'satoru', 'animesaturn'];
+    const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime', 'animesaturn'];
     const params = new URLSearchParams(location.search);
     const TMDB_ID = params.get('id');
     const MEDIA_TYPE = (params.get('type') || 'movie').toLowerCase();
@@ -186,7 +186,6 @@ async function fetchJsonWithApiFallback(url, options = {}) {
     const PROVIDER_TIMEOUT_OVERRIDES = {
         satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
         justanime: { subtitleFallback: 20000 },
-        hianime: { subtitleFallback: 18000 },
         dramacool: { watch: 12000, directWatch: 10000 }
     };
     const getProviderTimeout = (provider, key, fallbackMs) => {
@@ -1875,7 +1874,7 @@ async function init() {
         }
     }, 60000);
     try {
-        const isAnimeOnlyProvider = ['satoru', 'justanime', 'hianime', 'animesaturn'].includes(FORCED_PROVIDER);
+        const isAnimeOnlyProvider = ['satoru', 'justanime', 'animesaturn'].includes(FORCED_PROVIDER);
         const infoUrl = (FORCED_PROVIDER && !isAnimeOnlyProvider)
             ? `${API_BASE.replace('/meta/tmdb', '/movies/' + FORCED_PROVIDER)}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`
             : `${API_BASE}/info/${TMDB_ID}?type=${MEDIA_TYPE}`;

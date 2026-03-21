@@ -7,7 +7,7 @@
     <title>StreamVerse | Unlimited Movies & TV Shows</title>
     <meta name="description"
         content="Watch your favorite movies and TV shows for free in high quality with multi-audio support.">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="dns-prefetch" href="//image.tmdb.org">
@@ -42,6 +42,7 @@
                     <li><a href="#tv" onclick="filterType('tv')">TV Shows</a></li>
                     <li><a href="#dramas" onclick="filterType('dramas')">K-Dramas</a></li>
                     <li><a href="manga.html">Manga</a></li>
+                    <li><a href="add-to-list.html">My List</a></li>
                     <li><a href="#trending" onclick="filterType('trending')">Trending</a></li>
                 </ul>
             </nav>
@@ -68,8 +69,8 @@
                 <li><a href="#dramas" onclick="filterType('dramas')"><i class="fa-solid fa-masks-theater"></i>
                         K-Dramas</a></li>
                 <li><a href="manga.html"><i class="fa-solid fa-book-open"></i> Manga</a></li>
-                <li><a href="#trending" onclick="filterType('trending')"><i class="fa-solid fa-fire"></i> Trending</a>
-                </li>
+                <li><a href="add-to-list.html"><i class="fa-solid fa-bookmark"></i> My List</a></li>
+                <li><a href="#trending" onclick="filterType('trending')"><i class="fa-solid fa-fire"></i> Trending</a></li>
             </ul>
         </div>
 
@@ -80,6 +81,7 @@
                 <li><a href="#tv" onclick="filterType('tv')">TV Shows</a></li>
                 <li><a href="#dramas" onclick="filterType('dramas')">K-Dramas</a></li>
                 <li><a href="manga.html">Manga</a></li>
+                <li><a href="add-to-list.html">My List</a></li>
                 <li><a href="#trending" onclick="filterType('trending')">Trending</a></li>
             </ul>
         </nav>
@@ -100,6 +102,14 @@
                     <!-- Dynamic Hero Content -->
                     <div class="skeleton skeleton-hero"></div>
                 </div>
+            </div>
+        </section>
+
+        <!-- Continue Watching Section -->
+        <section class="container row-section" id="continue-watching-section" style="display: none; padding-top: 20px;">
+            <h2 class="section-title">Continue Watching</h2>
+            <div class="movie-grid" id="continue-watching-grid">
+                <!-- Progress cards will be injected here -->
             </div>
         </section>
 
@@ -147,7 +157,7 @@
     <!-- Movie Modal / Detail View Overlay -->
     <div id="movie-modal" class="modal">
         <div class="modal-content">
-            <span class="close-modal">&times;</span>
+            <span class="close-modal"><i class="fa-solid fa-xmark"></i></span>
             <div id="modal-body"></div>
         </div>
     </div>
