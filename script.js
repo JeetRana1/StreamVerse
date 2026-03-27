@@ -1,19 +1,35 @@
 // ------------------ API CONFIGURATION -------------------------------------
 const RUNTIME_CONFIG = window.__STREAMVERSE_CONFIG__ || {};
+
+function normalizeMetaApiBase(value, fallback) {
+    const raw = String(value || '').trim();
+    if (!raw) return String(fallback || '').trim();
+    const cleaned = raw.replace(/\/+$/, '');
+    if (/\/meta\/tmdb$/i.test(cleaned)) return cleaned;
+    return `${cleaned}/meta/tmdb`;
+}
+
 const LOCAL_API = String(
-    RUNTIME_CONFIG.LOCAL_META_API_BASE ||
-    RUNTIME_CONFIG.LOCAL_API_BASE ||
-    'http://localhost:3001/meta/tmdb'
+    normalizeMetaApiBase(
+        RUNTIME_CONFIG.LOCAL_META_API_BASE ||
+        RUNTIME_CONFIG.LOCAL_API_BASE,
+        'http://localhost:3001/meta/tmdb'
+    )
 );
 const PROD_API = String(
-    RUNTIME_CONFIG.PROD_META_API_BASE ||
-    RUNTIME_CONFIG.API_BASE ||
-    RUNTIME_CONFIG.META_API_BASE ||
-    'https://streamverse-api.ddns.net/meta/tmdb'
+    normalizeMetaApiBase(
+        RUNTIME_CONFIG.PROD_META_API_BASE ||
+        RUNTIME_CONFIG.PROD_API_BASE ||
+        RUNTIME_CONFIG.META_API_BASE ||
+        RUNTIME_CONFIG.API_BASE,
+        'https://streamverse-api.ddns.net/meta/tmdb'
+    )
 );
 const FALLBACK_API = String(
-    RUNTIME_CONFIG.FALLBACK_API_BASE ||
-    'https://consumet-api.vercel.app/meta/tmdb'
+    normalizeMetaApiBase(
+        RUNTIME_CONFIG.FALLBACK_API_BASE,
+        'https://consumet-api.vercel.app/meta/tmdb'
+    )
 );
 const PROD_API_HOST = (() => {
     try { return new URL(PROD_API).host; } catch (_) { return ''; }
@@ -131,7 +147,11 @@ function getDefaultApiSource() {
 
 function getCurrentApiSource() {
     const saved = String(localStorage.getItem('api_source') || '').toLowerCase();
-    return saved === 'local' || saved === 'prod' ? saved : getDefaultApiSource();
+    const source = saved === 'local' || saved === 'prod' ? saved : getDefaultApiSource();
+    const host = String(window.location.hostname || '').toLowerCase();
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+    if (!isLocalHost && source === 'local') return 'prod';
+    return source;
 }
 
 let BASE_URL = getCurrentApiSource() === 'local' ? LOCAL_API : PROD_API;
