@@ -2479,7 +2479,7 @@
         const LOCAL_META_API = String(
             RUNTIME_CONFIG.LOCAL_META_API_BASE ||
             RUNTIME_CONFIG.LOCAL_API_BASE ||
-            'http://localhost:3000/meta/tmdb'
+            'http://localhost:3003/meta/tmdb'
         );
         const PROD_META_API = String(
             RUNTIME_CONFIG.PROD_META_API_BASE ||
@@ -2487,14 +2487,19 @@
             RUNTIME_CONFIG.META_API_BASE ||
             'https://streamverse-api.ddns.net/meta/tmdb'
         );
+        const FALLBACK_META_API = String(
+            RUNTIME_CONFIG.FALLBACK_META_API_BASE ||
+            'https://consumet-api.vercel.app/meta/tmdb'
+        );
         const DEFAULT_META_API = PROD_META_API;
         const PARAMS_BOOT = new URLSearchParams(location.search);
         const requestedApiSource = String(PARAMS_BOOT.get('apiSource') || '').toLowerCase();
         const storedApiSource = String(localStorage.getItem('api_source') || '').toLowerCase();
+        const autoDefaultApiSource = /localhost|127\.0\.0\.1/i.test(location.hostname || '') ? 'local' : 'prod';
         const effectiveApiSource =
             requestedApiSource === 'local' || requestedApiSource === 'prod'
                 ? requestedApiSource
-                : (storedApiSource === 'local' || storedApiSource === 'prod' ? storedApiSource : 'prod');
+            : (storedApiSource === 'local' || storedApiSource === 'prod' ? storedApiSource : autoDefaultApiSource);
         const selectedMetaApi = effectiveApiSource === 'local' ? LOCAL_META_API : PROD_META_API;
         const API_BASE = selectedMetaApi || DEFAULT_META_API;
         const IS_MOBILE_CLIENT =
@@ -2504,11 +2509,22 @@
         const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         const IS_PWA = (IS_IOS && navigator.standalone) || window.matchMedia('(display-mode: standalone)').matches;
 
-        // Keep local/prod fully isolated (no cross-mixing).
-        const API_BASE_CANDIDATES = (effectiveApiSource === 'local'
-            ? [LOCAL_META_API || 'http://localhost:3000/meta/tmdb']
-            : [PROD_META_API || DEFAULT_META_API]
-        ).filter(b => b && String(b).startsWith('http'));
+        // Prefer selected source first, but always keep a remote/local fallback.
+        const API_BASE_CANDIDATES = (() => {
+            const preferred = effectiveApiSource === 'local'
+                ? [LOCAL_META_API || 'http://localhost:3003/meta/tmdb', PROD_META_API || DEFAULT_META_API, FALLBACK_META_API]
+                : [PROD_META_API || DEFAULT_META_API, FALLBACK_META_API, LOCAL_META_API || 'http://localhost:3003/meta/tmdb'];
+
+            const deduped = [];
+            const seen = new Set();
+            for (const base of preferred) {
+                const normalized = String(base || '').trim().replace(/\/$/, '');
+                if (!normalized || !/^https?:\/\//i.test(normalized) || seen.has(normalized)) continue;
+                seen.add(normalized);
+                deduped.push(normalized);
+            }
+            return deduped;
+        })();
 
         const IS_LOCAL_API = /localhost|127\.0\.0\.1/i.test(API_BASE);
         let activeApiBase = API_BASE;
@@ -2535,8 +2551,16 @@
 
         async function fetchJsonWithApiFallback(url, options = {}) {
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-            const shouldRetryStatus = (status) => status === 404 || status === 429 || status >= 500;
             const hasCallerSignal = !!options?.signal;
+            const allowCrossBaseFallback = /\/meta\/tmdb(?:\/|$)/i.test(String(url || ''));
+            const preferredBase = String(API_BASE_CANDIDATES?.[0] || activeApiBase || API_BASE || '').trim();
+            const requestBases = allowCrossBaseFallback
+                ? API_BASE_CANDIDATES
+                : (preferredBase ? [preferredBase] : [activeApiBase]).filter(Boolean);
+            const shouldRetryStatus = (status) =>
+                status === 429 ||
+                status >= 500 ||
+                (allowCrossBaseFallback && status === 404);
             const isRetriableError = (err) => {
                 const msg = String(err?.message || err || '').toLowerCase();
                 return (
@@ -2576,17 +2600,21 @@
             };
 
             let lastErr = null;
-            for (const candidate of API_BASE_CANDIDATES) {
+            for (const candidate of requestBases) {
                 try {
                     const result = await attemptFetch(candidate, 2);
+                    if (!allowCrossBaseFallback && !result.res.ok) {
+                        return result;
+                    }
                     // If result is 500/404/etc, and it's NOT the last candidate, keep trying others
-                    if (!result.res.ok && candidate !== API_BASE_CANDIDATES[API_BASE_CANDIDATES.length - 1]) {
+                    if (!result.res.ok && candidate !== requestBases[requestBases.length - 1]) {
                         console.warn(`API ${candidate} returned ${result.res.status}, trying next fallback...`);
                         continue;
                     }
                     return result;
                 } catch (e) {
                     lastErr = e;
+                    if (!allowCrossBaseFallback) throw e;
                     console.warn(`API ${candidate} failed completely, trying next fallback...`, e);
                 }
             }
@@ -2598,7 +2626,7 @@
         }
 
         // Provider pools
-        const MOVIE_PROVIDERS = ['flixhq', 'goku', 'sflix', 'himovies', 'dramacool'];
+        const MOVIE_PROVIDERS = ['flixhq', 'animesalt', 'justanime', 'dramacool'];
         const ANIME_PROVIDERS = ['animesalt', 'justanime', 'satoru'];
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime'];
 
@@ -2694,6 +2722,9 @@
         let activeSatoruTrackIndex = -1; // -1 means none, or index in satoruAudioSources
         const ANIME_PROVIDER_INFO_CACHE_TTL_MS = 30 * 60 * 1000;
         const animeProviderInfoCache = new Map();
+        const providerEpisodeIdCache = new Map();
+        const STREAM_SOURCE_CACHE_PREFIX = 'sv_stream_source_v1';
+        const STREAM_SOURCE_CACHE_TTL_MS = 15 * 60 * 1000;
         const REQ_TIMEOUT = {
             animeSearch: 5000,
             animeInfo: 5000,
@@ -2702,16 +2733,15 @@
             directWatch: 10000,
             subtitleFallback: 15000,
         };
+        const MAX_EXTERNAL_SUBTITLE_TRACKS = 6;
         const ANIME_WATCH_TIMEOUT_MS = 20000;
         const ANIME_INFO_TIMEOUT_MS = 12000;
         const PROVIDER_TIMEOUT_OVERRIDES = {
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
             dramacool: { watch: 15000, directWatch: 12000 },
-            flixhq: { watch: 22000, metaInfo: 15000 },
-            himovies: { watch: 22000, metaInfo: 15000 },
-            sflix: { watch: 22000, metaInfo: 15000 },
-            goku: { watch: 22000, metaInfo: 15000 },
+            // FlixHQ upstream can be slow for some titles; keep watch timeout generous.
+            flixhq: { animeSearch: 20000, animeInfo: 30000, watch: 70000, metaInfo: 30000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
@@ -2763,6 +2793,8 @@
         let sameSourceRecoverCount = 0;
         let currentStreamUrl = '';
         let currentStreamReferer = null;
+        let currentStreamProvider = '';
+        let skipInitialCanplaySeekOnce = false;
         let hlsFragErrorBurst = 0;
         let hlsSessionIsFragile = false;
         let audioSwitchInFlightUntil = 0;
@@ -3318,6 +3350,7 @@
                 console.log('MANIFEST_PARSED - audio tracks:', hls.audioTracks?.length || 0);
                 hlsFragErrorBurst = 0;
                 hlsSessionIsFragile = false;
+                nonFatalLevelErrorCount = 0;
                 if (startTime > 0 && video) video.currentTime = startTime;
                 svApplyPreferredAudioToHls(hls);
                 if (onParsedAction) onParsedAction();
@@ -3362,6 +3395,7 @@
 
             // Track media error state for better recovery
             let mediaErrorCount = 0;
+            let nonFatalLevelErrorCount = 0;
             let lastStallNudgeAt = 0;
             let consecutiveBufferErrors = 0;
             let consecutiveFragErrors = 0;
@@ -3549,6 +3583,13 @@
                     return;
                 }
                 if (!d.fatal && (isFragLoad || isLevelLoad)) {
+                    nonFatalLevelErrorCount += 1;
+                    if (nonFatalLevelErrorCount >= 4 && typeof onErrorFallback === 'function') {
+                        console.warn('[hls] repeated non-fatal level/frag load timeouts, escalating fallback');
+                        nonFatalLevelErrorCount = 0;
+                        onErrorFallback('level_timeout_repeated');
+                        return;
+                    }
                     // Non-fatal: let HLS.js retry itself, just kick loading
                     setTimeout(() => { try { if (hls) hls.startLoad(); } catch (_) { } }, 200);
                     return;
@@ -4512,6 +4553,46 @@
             return `${MEDIA_INFO_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_TYPE}:${TMDB_ID}`;
         }
 
+        function getSourceCacheKey(provider = 'flixhq') {
+            const providerPart = String(provider || 'auto').toLowerCase();
+            if (MEDIA_TYPE === 'tv') {
+                const seasonNo = Number(tvSeasons?.[curSeason]?.seasonNo || (curSeason + 1) || 1);
+                const episodeNo = Number(tvSeasons?.[curSeason]?.episodes?.[curEpisode]?.episode || (curEpisode + 1) || 1);
+                return `${STREAM_SOURCE_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_TYPE}:${TMDB_ID}:s${seasonNo}:e${episodeNo}`;
+            }
+            return `${STREAM_SOURCE_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_TYPE}:${TMDB_ID}`;
+        }
+
+        function readCachedProviderSources(provider = 'flixhq') {
+            try {
+                const raw = localStorage.getItem(getSourceCacheKey(provider));
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                const expiresAt = Number(parsed?.expiresAt || 0);
+                if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return [];
+                const sources = Array.isArray(parsed?.sources) ? parsed.sources : [];
+                return sources.filter((src) => {
+                    const url = String(src?.url || '').trim();
+                    if (!url) return false;
+                    return !isBrokenEmbedUrl(url) && !isLikelyPlaceholderSource(url);
+                });
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function writeCachedProviderSources(provider = 'flixhq', sources = []) {
+            try {
+                const payload = {
+                    expiresAt: Date.now() + STREAM_SOURCE_CACHE_TTL_MS,
+                    sources: Array.isArray(sources) ? sources.slice(0, 3) : [],
+                };
+                localStorage.setItem(getSourceCacheKey(provider), JSON.stringify(payload));
+            } catch (_) {
+                // ignore storage failures
+            }
+        }
+
         function readCachedMediaInfo(allowStale = false) {
             try {
                 const keys = [getMediaInfoCacheKey(true), getMediaInfoCacheKey(false)];
@@ -4667,7 +4748,8 @@
                 for (const term of searchTerms) {
                     if (!term || term.length < 2) continue;
                     try {
-                        const searchUrl = `${base}/${encodeURIComponent(term)}`;
+                        const typeParam = isMovieContext ? 'movie' : 'tv';
+                        const searchUrl = `${base}/${encodeURIComponent(term)}?type=${encodeURIComponent(typeParam)}`;
                         const { res: searchRes } = await fetchJsonWithApiFallback(searchUrl, { signal: AbortSignal.timeout(timeoutMs) });
                         if (!searchRes.ok) continue;
                         const searchData = await searchRes.json();
@@ -4799,7 +4881,7 @@
             return Number.isFinite(y) && y > 1900 ? y : null;
         }
 
-        async function resolveMovieProviderEpisodeIdBySearch(provider, mediaType, mediaTitle, seasonNo, episodeNo) {
+        async function resolveMovieProviderEpisodeIdBySearch(provider, mediaType, mediaTitle, seasonNo, episodeNo, allowTypeFallback = true) {
             const normalizeLoose = (v) =>
                 String(v || '')
                     .toLowerCase()
@@ -4814,16 +4896,32 @@
             const title = String(mediaTitle || '').trim();
             if (!title) return { info: null, episodeId: null };
 
+            const cacheKey = [
+                String(provider || '').toLowerCase(),
+                String(mediaType || '').toLowerCase(),
+                String(TMDB_ID || ''),
+                safeNo(seasonNo, 1),
+                safeNo(episodeNo, 1),
+            ].join('|');
+            if (providerEpisodeIdCache.has(cacheKey)) {
+                const cached = providerEpisodeIdCache.get(cacheKey);
+                return { info: cached?.info || null, episodeId: cached?.episodeId || null };
+            }
+
             const movieProviderBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
             const terms = Array.from(
                 new Set([
                     title,
                     title.replace(/\(\d{4}\)/g, '').trim(),
                     title.replace(/[:\-].*$/, '').trim(),
+                    title.replace(/\bagent\b/gi, '').trim(),
+                    title.split(/\s+/).slice(-2).join(' ').trim(),
+                    title.split(/\s+/).slice(-1).join(' ').trim(),
                 ].filter(Boolean)),
             );
             const wanted = normalizeLoose(title);
             const yearHint = Number(getPreferredMediaYear() || 0);
+            const wantedType = String(mediaType || '').toLowerCase() === 'tv' ? 'tv' : 'movie';
 
             for (const term of terms) {
                 const searchUrl = `${movieProviderBase}/${encodeURIComponent(term)}?page=1`;
@@ -4833,14 +4931,21 @@
                 if (!sRes.ok) continue;
 
                 const payload = await sRes.json();
-                const rows = Array.isArray(payload?.results) ? payload.results : [];
+                const rows = Array.isArray(payload?.results)
+                    ? payload.results
+                    : Array.isArray(payload?.data)
+                        ? payload.data
+                        : [];
                 if (!rows.length) continue;
 
                 const scored = rows.map((r) => {
                     const rt = normalizeLoose(r?.title || r?.name || r?.id || '');
+                    const rowType = String(r?.type || r?.mediaType || '').toLowerCase();
                     let score = 0;
                     if (rt === wanted) score += 100;
                     if (rt.includes(wanted) || wanted.includes(rt)) score += 50;
+                    if (rowType === wantedType) score += 80;
+                    else if (rowType) score -= 120;
                     const releaseYear = Number(
                         String(r?.releaseDate || '').match(/\b(19|20)\d{2}\b/)?.[0] || 0,
                     );
@@ -4851,7 +4956,9 @@
                 const picked = scored[0]?.row || rows[0];
                 if (!picked?.id) continue;
 
-                const infoUrl = `${movieProviderBase}/info?id=${encodeURIComponent(picked.id)}`;
+                const pickedId = picked.id;
+
+                const infoUrl = `${movieProviderBase}/info?id=${encodeURIComponent(pickedId)}`;
                 const { res: iRes } = await fetchJsonWithApiFallback(infoUrl, {
                     signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeInfo', 12000)),
                 });
@@ -4872,7 +4979,10 @@
                         episodes.find((ep) => toNo(ep) === eNo) ||
                         episodes[Math.max(0, Math.min(episodes.length - 1, eNo - 1))];
                     const episodeId = pickedEpisode?.id || pickedEpisode?.episodeId || pickedEpisode?.url || null;
-                    if (episodeId) return { info, episodeId };
+                    if (episodeId) {
+                        providerEpisodeIdCache.set(cacheKey, { info, episodeId });
+                        return { info, episodeId };
+                    }
                 } else {
                     const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
                     const episodeId =
@@ -4881,7 +4991,35 @@
                         episodes?.[0]?.url ||
                         info?.id ||
                         null;
-                    if (episodeId) return { info, episodeId };
+                    if (episodeId) {
+                        providerEpisodeIdCache.set(cacheKey, { info, episodeId });
+                        return { info, episodeId };
+                    }
+                }
+            }
+
+            const providerLower = String(provider || '').toLowerCase();
+            const supportsMovieToTvFallback = !['flixhq', 'dramacool'].includes(providerLower);
+            if (
+                allowTypeFallback &&
+                supportsMovieToTvFallback &&
+                String(mediaType || '').toLowerCase() === 'movie'
+            ) {
+                try {
+                    const tvFallback = await resolveMovieProviderEpisodeIdBySearch(
+                        provider,
+                        'tv',
+                        mediaTitle,
+                        safeNo(seasonNo, 1),
+                        safeNo(episodeNo, 1),
+                        false,
+                    );
+                    if (tvFallback?.episodeId) {
+                        providerEpisodeIdCache.set(cacheKey, tvFallback);
+                        return tvFallback;
+                    }
+                } catch (_) {
+                    // keep null fallback below
                 }
             }
 
@@ -5333,12 +5471,46 @@
             });
 
             const seen = new Set();
-            return out.filter((t) => {
+            const deduped = out.filter((t) => {
                 const key = `${t.src}|${t.srclang}`;
                 if (seen.has(key)) return false;
                 seen.add(key);
                 return true;
             });
+
+            const scoreSubtitle = (track) => {
+                const label = String(track?.label || '').toLowerCase();
+                const lang = String(track?.srclang || '').toLowerCase();
+                let score = 0;
+                if (lang === 'en') score += 100;
+                if (label.includes('english')) score += 80;
+                if (label.includes('sdh') || label.includes('cc')) score -= 5;
+                if (label.includes('forced')) score += 10;
+                return score;
+            };
+
+            const providerName = String(provider || '').toLowerCase();
+            const maxTracks = providerName === 'flixhq' ? 2 : MAX_EXTERNAL_SUBTITLE_TRACKS;
+
+            return deduped
+                .sort((a, b) => scoreSubtitle(b) - scoreSubtitle(a))
+                .slice(0, maxTracks);
+        }
+
+        function shouldUsePreviewHls(sourceUrl, sourceProvider) {
+            const provider = String(sourceProvider || '').toLowerCase();
+            const raw = String(sourceUrl || '').toLowerCase();
+            // FlixHQ direct hosts often become unstable with dual HLS sessions (main + preview).
+            if (provider === 'flixhq') return false;
+            if (
+                raw.includes('bluehorizon') ||
+                raw.includes('mistwolf') ||
+                raw.includes('silvercloud') ||
+                raw.includes('megafiles.store')
+            ) {
+                return false;
+            }
+            return true;
         }
 
         async function resolveSubtitleTrackSrc(sub) {
@@ -5608,6 +5780,16 @@
             setTimeout(() => {
                 bindSubtitleCueListeners();
                 bindNativeTrackChangeListener();
+
+                const currentProvider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
+                if (currentProvider === 'flixhq') {
+                    // FlixHQ subtitle endpoints are often unstable/slow. Keep subtitles off by default
+                    // so startup buffering is prioritized for video playback.
+                    selectSubtitleTrack(-1);
+                    updateCaptionsButtonVisibility();
+                    buildCaptionsMenu();
+                    return;
+                }
 
                 const preferredLabel = localStorage.getItem('preferredSubtitleLabel');
                 const tracks = Array.from(videoEl.textTracks || []);
@@ -6292,6 +6474,17 @@
                 return;
             }
 
+            const seasonRef = tvSeasons?.[Number(curSeason || 0)] || null;
+            const episodeRef = seasonRef?.episodes?.[Number(curEpisode || 0)] || null;
+            const seasonNoRaw = Number(seasonRef?.seasonNo);
+            const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw > 0
+                ? seasonNoRaw
+                : (Number(curSeason || 0) + 1);
+            const episodeNoRaw = Number(episodeRef?.episode || episodeRef?.number || episodeRef?.episodeNum);
+            const episodeNo = Number.isFinite(episodeNoRaw) && episodeNoRaw > 0
+                ? episodeNoRaw
+                : (Number(curEpisode || 0) + 1);
+
             const item = {
                 id: TMDB_ID,
                 type: MEDIA_TYPE,
@@ -6301,8 +6494,10 @@
                 duration: duration,
                 lastUpdated: now,
                 provider: FORCED_PROVIDER || lastSuccessfulProvider || '',
-                season: Number(curSeason || 0),
-                episode: Number(curEpisode || 0),
+                seasonNo,
+                episodeNo,
+                seasonIndex: Number(curSeason || 0),
+                episodeIndex: Number(curEpisode || 0),
                 audio: preferredAudioToken || ''
             };
 
@@ -7158,11 +7353,14 @@
                 hideBufferingOverlaySoon(80);
                 if (!initialSeekDone) {
                     const tFromUrl = parseFloat(PARAMS_BOOT.get('t'));
-                    const seekTo = (lastRequestedPlaybackTarget > 0) ? lastRequestedPlaybackTarget : tFromUrl;
+                    const seekTo = skipInitialCanplaySeekOnce
+                        ? 0
+                        : ((lastRequestedPlaybackTarget > 0) ? lastRequestedPlaybackTarget : tFromUrl);
                     if (isFinite(seekTo) && seekTo > 0) {
                         console.log('[video] Initial/Resume seek to:', seekTo);
                         video.currentTime = seekTo;
                     }
+                    skipInitialCanplaySeekOnce = false;
                     initialSeekDone = true;
                 }
             });
@@ -8281,8 +8479,11 @@
                 if (previewVideo.readyState < 1) return;
                 if (window.previewSeekInFlight) return;
 
-                // ENHANCED: Skip preview HLS if we've forcefully switched to canvas fallback
+                // ENHANCED: Canvas-only fallback for unstable preview pipelines.
                 if (window.previewUseCanvasFallbackOnly) {
+                    const rounded = Math.round(Number(window.previewTargetTime || 0));
+                    const frameData = captureFromMainVideo(rounded);
+                    if (frameData) cachePreviewFrame(rounded, frameData);
                     return;
                 }
 
@@ -8884,7 +9085,8 @@
 
             try {
                 const isAnimeOnlyProvider = ['satoru', 'justanime', 'animesalt'].includes(FORCED_PROVIDER);
-                const infoUrls = (FORCED_PROVIDER && !isAnimeOnlyProvider)
+                const providerNeedsMetaInfo = false;
+                const infoUrls = (FORCED_PROVIDER && !isAnimeOnlyProvider && !providerNeedsMetaInfo)
                     ? [
                         `${API_BASE.replace('/meta/tmdb', '/movies/' + FORCED_PROVIDER)}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`,
                     ]
@@ -8958,18 +9160,18 @@
                 aniSkipFetchStatus = 'none';
                 resetAnimeSkipState();
 
-                // Reset active providers pool based on content type, regardless of FORCED_PROVIDER
-                // This allows fallbacks to work even when a specific provider is requested via URL
-                if (isLikelyAnime) {
-                    activeProviders = [...new Set([...ANIME_PROVIDERS, ...MOVIE_PROVIDERS])];
+                // Provider pool selection:
+                // - Forced provider: run only that provider.
+                // - Movie mode: never mix anime providers.
+                // - Anime mode: prefer anime providers first, then movie providers as fallback.
+                if (FORCED_PROVIDER) {
+                    activeProviders = [FORCED_PROVIDER];
                 } else if (MEDIA_TYPE === 'movie') {
-                    activeProviders = [...new Set([...MOVIE_PROVIDERS, ...ANIME_PROVIDERS])];
+                    activeProviders = [...MOVIE_PROVIDERS];
+                } else if (isLikelyAnime) {
+                    activeProviders = [...new Set([...ANIME_PROVIDERS, ...MOVIE_PROVIDERS])];
                 } else {
                     activeProviders = [...MOVIE_PROVIDERS];
-                }
-                // If a forced provider is set but not in the standard list, add it to the pool
-                if (FORCED_PROVIDER && !activeProviders.includes(FORCED_PROVIDER)) {
-                    activeProviders.unshift(FORCED_PROVIDER);
                 }
                 buildChips();
 
@@ -8979,8 +9181,9 @@
                     document.getElementById('media-meta').textContent = 'Movie';
                     if (customEpisodeBtn) customEpisodeBtn.style.display = 'none';
                     if (nextEpisodeBtn) nextEpisodeBtn.style.display = 'none';
-                    const epId = info.episodeId || info.id;
-                    if (!epId) throw new Error('No ID found in API response');
+                    const epId = info?.episodeId || info?.id || null;
+                    // Some provider-specific TMDB info responses omit episodeId/id.
+                    // fetchSources() resolves provider episode IDs independently via search/info paths.
                     await fetchSources(epId);
                 }
             } catch (err) {
@@ -9000,7 +9203,7 @@
             const animeSeriesTitle = normalizeAnimeSearchQuery(
                 info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || '',
             );
-            if (currentIsLikelyAnime && animeSeriesTitle) {
+            if (currentIsLikelyAnime && animeSeriesTitle && FORCED_PROVIDER === 'satoru') {
                 try {
                     const { res: seriesRes } = await fetchJsonWithApiFallback(
                         buildSatoruSeriesUrl(animeSeriesTitle, preferredYear),
@@ -9622,19 +9825,8 @@
                     .reduce((sum, season) => sum + (Array.isArray(season?.episodes) ? season.episodes.length : 0), 0),
             ) + (curEpisode + 1);
 
-            // Always prefetch subtitles from JustAnime fallback for anime content,
-            // even if a forced provider (e.g. satoru) is active — since satoru has no subtitles.
+            // Defer subtitle fallback prefetch so primary provider can start playback first.
             const forcedProviderHasOwnSubs = FORCED_PROVIDER === 'justanime';
-            const subtitlePrefetchPromise = currentIsLikelyAnime && !forcedProviderHasOwnSubs
-                ? fetchAnimeSubtitleFallback()
-                    .then((subs) => {
-                        if (!Array.isArray(subs) || !subs.length) return [];
-                        externalSubtitleTracks = mergeSubtitleTrackLists(externalSubtitleTracks, subs);
-                        if (video) applyExternalSubtitlesToVideo(video);
-                        return subs;
-                    })
-                    .catch(() => [])
-                : Promise.resolve([]);
 
             activeProviders.forEach(p => chipState(p, ''));
 
@@ -9691,13 +9883,25 @@
                 }
             };
 
+            // Fast boot: if we recently played this media with FlixHQ, start immediately from cache.
+            const preferProviderForFastBoot = FORCED_PROVIDER || (MEDIA_TYPE === 'movie' ? 'flixhq' : '');
+            if (preferProviderForFastBoot) {
+                const cachedSources = readCachedProviderSources(preferProviderForFastBoot);
+                if (cachedSources.length) {
+                    providerResults[preferProviderForFastBoot] = cachedSources;
+                    chipState(preferProviderForFastBoot, 'success');
+                    setLoader('Loading cached stream...', 'Refreshing sources in background');
+                    updateSourceList();
+                }
+            }
+
             const processProvider = async (provider) => {
                 chipState(provider, 'trying');
                 try {
                     let info, provEpisodeId;
                     let satoruResolvedExactly = false;
                     const isAnimeProvider = ['satoru', 'justanime', 'animesalt'].includes(provider);
-                    const isNetMirrorProvider = ['flixhq', 'goku', 'viewvault', 'netmirror'].some(v => String(provider || '').toLowerCase().includes(v));
+                    const isNetMirrorProvider = ['flixhq', 'viewvault', 'netmirror'].some(v => String(provider || '').toLowerCase().includes(v));
 
                     if (isAnimeProvider) {
                         const mediaTitle = normalizeAnimeSearchQuery(currentMediaInfo?.title || currentMediaInfo?.name || TMDB_ID);
@@ -9769,16 +9973,20 @@
                         }
                     } else {
                         // Movie/TV Providers (FlixHQ, etc.)
-                        if (provider === 'dramacool') {
+                        const isFlixhqMovie = provider === 'flixhq' && MEDIA_TYPE === 'movie';
+                        if (isFlixhqMovie) {
+                            // Fast path: backend TMDB watch can resolve FlixHQ source ids from TMDB id directly.
+                            // Avoid extra search/info lookups here to reduce cold-start latency.
+                        } else if (provider === 'dramacool') {
                             const resolved = await resolveDramacoolEpisodeId(currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo, getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo));
                             provEpisodeId = resolved?.episodeId;
                         }
-                        if (!provEpisodeId) {
+                        if (!provEpisodeId && !isFlixhqMovie) {
                             const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, MEDIA_TYPE, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
                             provEpisodeId = resolved?.episodeId;
                             if (resolved?.info) info = resolved.info;
                         }
-                        if (!provEpisodeId) {
+                        if (!provEpisodeId && !isFlixhqMovie) {
                             const { res: infoRes } = await fetchJsonWithApiFallback(`${API_BASE}/info/${TMDB_ID}?type=${MEDIA_TYPE}&provider=${provider}`, { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) });
                             if (infoRes.ok) { 
                                 let d = await infoRes.json(); info = d.data || d; 
@@ -9793,35 +10001,78 @@
                         }
                     }
 
-                    if (!provEpisodeId) throw new Error('No episode ID found');
+                    const canResolveOnWatch = provider === 'flixhq' && MEDIA_TYPE === 'movie';
+                    if (!provEpisodeId && !canResolveOnWatch) throw new Error('No episode ID found');
 
-                    // Watch
-                    let watchUrl = isAnimeProvider ? buildAnimeWatchUrl(provider, provEpisodeId) : `${API_BASE}/watch/${encodeURIComponent(provEpisodeId)}?id=${info?.id || ''}&provider=${provider}${DIRECT_ONLY ? '&directOnly=true' : ''}`;
-                    let { res: watchRes } = await fetchJsonWithApiFallback(watchUrl, { signal: AbortSignal.timeout(isAnimeProvider ? ANIME_WATCH_TIMEOUT_MS : getProviderTimeout(provider, 'watch', REQ_TIMEOUT.watch)) });
-                    
-                    let data = null;
-                    if (watchRes.ok) {
-                        data = await watchRes.json();
+                    // Watch (try TMDB provider watch first so backend can resolve missing TV episode IDs)
+                    const watchCandidates = [];
+                    if (isAnimeProvider) {
+                        watchCandidates.push(buildAnimeWatchUrl(provider, provEpisodeId));
                     } else {
-                        // Fallback Watch
-                        let directUrl = null;
-                        if (provider === 'dramacool') directUrl = `${API_BASE.replace('/meta/tmdb', '/movies/dramacool')}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`;
-                        else if (isNetMirrorProvider) {
-                             const nmEpisodeId = normalizeNetMirrorId(provEpisodeId);
-                             const nmMediaId = normalizeNetMirrorId(info?.id || provEpisodeId);
-                             directUrl = `${API_BASE.replace('/meta/tmdb', `/movies/${provider}`)}/watch?episodeId=${encodeURIComponent(nmEpisodeId)}&mediaId=${encodeURIComponent(nmMediaId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`;
+                        const tmdbWatchParams = new URLSearchParams();
+                        tmdbWatchParams.set('id', String(TMDB_ID || ''));
+                        tmdbWatchParams.set('type', String(MEDIA_TYPE || 'movie'));
+                        tmdbWatchParams.set('provider', String(provider || ''));
+                        if (MEDIA_TYPE === 'tv') {
+                            tmdbWatchParams.set('season', String(selectedSeasonNo || 1));
+                            tmdbWatchParams.set('episode', String(selectedEpisodeNo || 1));
                         }
-                        if (directUrl) {
-                            const { res: directRes } = await fetchJsonWithApiFallback(directUrl, { signal: AbortSignal.timeout(REQ_TIMEOUT.directWatch) });
-                            if (directRes.ok) data = await directRes.json();
+                        if (provEpisodeId) tmdbWatchParams.set('episodeId', String(provEpisodeId));
+                        if (DIRECT_ONLY) tmdbWatchParams.set('directOnly', 'true');
+                        watchCandidates.push(`${API_BASE}/watch?${tmdbWatchParams.toString()}`);
+
+                        const movieBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
+                        if (provider === 'dramacool') {
+                            watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
+                        } else {
+                            if (provEpisodeId) {
+                                const mediaIdRaw = String(info?.id || provEpisodeId || '').trim();
+                                const episodeIdRaw = String(provEpisodeId || '').trim();
+                                const mediaId = isNetMirrorProvider ? normalizeNetMirrorId(mediaIdRaw) : mediaIdRaw;
+                                const episodeId = isNetMirrorProvider ? normalizeNetMirrorId(episodeIdRaw) : episodeIdRaw;
+                                watchCandidates.push(
+                                    `${movieBase}/watch?episodeId=${encodeURIComponent(episodeId)}&mediaId=${encodeURIComponent(mediaId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`,
+                                );
+                            }
                         }
                     }
 
+                    let data = null;
+                    let lastWatchErr = null;
+                    for (const watchUrl of watchCandidates) {
+                        try {
+                            const { res: watchRes } = await fetchJsonWithApiFallback(watchUrl, {
+                                signal: AbortSignal.timeout(
+                                    isAnimeProvider
+                                        ? ANIME_WATCH_TIMEOUT_MS
+                                        : getProviderTimeout(provider, 'watch', REQ_TIMEOUT.watch),
+                                ),
+                            });
+                            if (!watchRes.ok) {
+                                lastWatchErr = new Error(`HTTP ${watchRes.status}`);
+                                continue;
+                            }
+                            data = await watchRes.json();
+                            if (data?.sources?.length) break;
+                            lastWatchErr = new Error('No sources');
+                        } catch (watchErr) {
+                            lastWatchErr = watchErr;
+                        }
+                    }
+
+                    if (!data?.sources?.length && lastWatchErr) throw lastWatchErr;
+
                     if (!data?.sources?.length) throw new Error('No sources');
 
-                    const providerSources = data.sources.filter(src => src.url && !isBrokenEmbedUrl(src.url) && !isLikelyPlaceholderSource(src.url)).map((src, i) => {
+                    const providerSources = data.sources
+                    .filter((src) => {
+                        const url = String(src?.url || '');
+                        if (!url || isBrokenEmbedUrl(url) || isLikelyPlaceholderSource(url)) return false;
+                        return true;
+                    })
+                    .map((src, i) => {
                         const low = String(src.url).toLowerCase();
-                        const isM3U8 = src.isM3U8 || low.includes('.m3u8') || low.includes('m3u8-proxy');
+                        const isM3U8 = src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8');
                         const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
                         return {
                             label: `${providerLabel(provider)} - ${src.quality || `Source ${i + 1}`}`,
@@ -9835,6 +10086,7 @@
 
                     if (providerSources.length > 0) {
                         providerResults[provider] = providerSources;
+                        writeCachedProviderSources(provider, providerSources);
                         chipState(provider, 'success');
                         
                         // Background tasks
@@ -9854,8 +10106,43 @@
                 }
             };
 
-            // Start all tasks in parallel
-            await Promise.all(orderedProviders.map(p => processProvider(p)));
+            // For movie playback, prefer FlixHQ first. Only fall back to other providers if FlixHQ fails.
+            const shouldPreferFlixhqFirst =
+                !FORCED_PROVIDER &&
+                MEDIA_TYPE === 'movie' &&
+                orderedProviders.includes('flixhq');
+
+            const shouldPreferAnimeSaltFirst =
+                !FORCED_PROVIDER &&
+                currentIsLikelyAnime &&
+                orderedProviders.includes('animesalt');
+
+            if (shouldPreferAnimeSaltFirst) {
+                await processProvider('animesalt');
+
+                if (allSources.length > 0) {
+                    const backgroundProviders = orderedProviders.filter((p) => p !== 'animesalt');
+                    Promise.all(backgroundProviders.map((p) => processProvider(p))).catch((err) => {
+                        console.warn('[anime background providers] failed:', err?.message || err);
+                    });
+                } else {
+                    const fallbackProviders = orderedProviders.filter((p) => p !== 'animesalt');
+                    await Promise.all(fallbackProviders.map((p) => processProvider(p)));
+                }
+            } else if (shouldPreferFlixhqFirst) {
+                await processProvider('flixhq');
+                if (allSources.length === 0) {
+                    const fallbackProviders = orderedProviders.filter((p) => p !== 'flixhq');
+                    await Promise.all(fallbackProviders.map((p) => processProvider(p)));
+                } else {
+                    const backgroundProviders = orderedProviders.filter((p) => p !== 'flixhq');
+                    Promise.all(backgroundProviders.map((p) => processProvider(p))).catch((err) => {
+                        console.warn('[movie background providers] failed:', err?.message || err);
+                    });
+                }
+            } else {
+                await Promise.all(orderedProviders.map(p => processProvider(p)));
+            }
 
             if (allSources.length === 0) {
                 showError('No Streams Found', `None of the providers could find a stream for this title.\n\nDetails:\n- ${failReasons.slice(0, 5).join('\n- ')}`);
@@ -9867,9 +10154,6 @@
         function providerLabel(p) {
             const map = {
                 flixhq: 'FlixHQ',
-                goku: 'Goku',
-                sflix: 'SFlix',
-                himovies: 'HiMovies',
                 dramacool: 'DramaCool',
                 satoru: 'Satoru',
                 justanime: 'JustAnime',
@@ -10144,12 +10428,81 @@
 
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) {
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
+            const sourceProvider = String(allSources?.[srcIdx]?.provider || '').toLowerCase();
+            const resumeTargetTime = Math.max(0, Number(startTime || 0));
+            const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 20;
+            let nextSourceFallbackUsed = false;
+            let flixhqAltServerAttempted = false;
+            const failoverToNextSource = (reason = 'unknown') => {
+                if (nextSourceFallbackUsed) return false;
+                const nextIdx = Array.isArray(allSources)
+                    ? allSources.findIndex((_, i) => i > srcIdx)
+                    : -1;
+                if (nextIdx < 0) return false;
+                nextSourceFallbackUsed = true;
+                console.warn(`[stream-failover] Switching to next source idx=${nextIdx} reason=${reason}`);
+                try {
+                    selectSource(nextIdx);
+                    return true;
+                } catch (_) {
+                    return false;
+                }
+            };
+            const tryAlternateFlixhqServer = async (reason = 'unknown') => {
+                if (flixhqAltServerAttempted) return false;
+                if (String(sourceProvider || '').toLowerCase() !== 'flixhq') return false;
+                if (String(MEDIA_TYPE || '').toLowerCase() !== 'movie') return false;
+                flixhqAltServerAttempted = true;
+                const candidateServers = ['vidcloud', 'upcloud'];
+                for (const serverName of candidateServers) {
+                    try {
+                        const watchUrl = `${API_BASE}/watch?id=${encodeURIComponent(String(TMDB_ID || ''))}&type=movie&provider=flixhq&directOnly=true&server=${encodeURIComponent(serverName)}`;
+                        const { res } = await fetchJsonWithApiFallback(watchUrl, {
+                            signal: AbortSignal.timeout(30000),
+                        });
+                        if (!res.ok) continue;
+                        const payload = await res.json();
+                        const rows = Array.isArray(payload?.sources) ? payload.sources : [];
+                        const mapped = rows
+                            .filter((src) => {
+                                const srcUrl = String(src?.url || '');
+                                if (!srcUrl || isBrokenEmbedUrl(srcUrl) || isLikelyPlaceholderSource(srcUrl)) return false;
+                                return srcUrl !== String(url || '');
+                            })
+                            .map((src, i) => {
+                                const low = String(src.url || '').toLowerCase();
+                                const isM3U8 = src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8');
+                                const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
+                                return {
+                                    label: `FlixHQ - ${serverName} backup ${i + 1}`,
+                                    url: src.url,
+                                    isM3U8,
+                                    isEmbed,
+                                    referer: src.referer || payload?.headers?.Referer || null,
+                                    provider: 'flixhq',
+                                };
+                            });
+                        if (!mapped.length) continue;
+                        allSources.push(...mapped);
+                        buildSourcePanel();
+                        sourceBtn.style.display = 'flex';
+                        console.warn(`[stream-failover] Injected FlixHQ ${serverName} backup source(s) due to ${reason}`);
+                        selectSource(allSources.length - mapped.length);
+                        return true;
+                    } catch (_) {
+                        // try next server candidate
+                    }
+                }
+                return false;
+            };
+            const effectiveStartTime = useWarmStartResume ? 0 : resumeTargetTime;
+            skipInitialCanplaySeekOnce = useWarmStartResume;
             window.previewSeeking = false;
             isSourceSwitching = true;
             hlsFragErrorBurst = 0;
             hlsSessionIsFragile = false;
             initialSeekDone = false;
-            lastRequestedPlaybackTarget = Math.max(0, Number(startTime || 0));
+            lastRequestedPlaybackTarget = effectiveStartTime;
             jumpCooldownUntil = 0;
             jumpInFlightUntil = 0;
             pendingJumpTarget = null;
@@ -10172,16 +10525,17 @@
             if (previewVideo) previewVideo.muted = true;
 
             // Check if we can seek instead of reloading for the same source
-            if (hlsInst && url === currentStreamUrl && isM3U8 && Hls.isSupported() && video && isFinite(video.duration) && startTime > 0 && startTime < video.duration) {
-                console.log('Seamless seek: seeking to', startTime, 'without reloading HLS');
+            if (hlsInst && url === currentStreamUrl && isM3U8 && Hls.isSupported() && video && isFinite(video.duration) && effectiveStartTime > 0 && effectiveStartTime < video.duration) {
+                console.log('Seamless seek: seeking to', effectiveStartTime, 'without reloading HLS');
                 isSourceSwitching = false;
-                video.currentTime = startTime;
+                video.currentTime = effectiveStartTime;
                 hideLoader();
                 return;
             }
 
             currentStreamUrl = String(url || '');
             currentStreamReferer = referer || null;
+            currentStreamProvider = sourceProvider;
 
             // Visual Bridge: capture current frame before we wipe anything.
             // Skip on the very first load — the #loader (with cover art) is already
@@ -10233,7 +10587,7 @@
             video = document.getElementById('player-video');
             if (video) { video.volume = savedVolume; video.muted = savedMuted; } // Restore volume across switches
 
-            let startT = startTime;
+            let startT = effectiveStartTime;
             let overlayHidden = false;
             const hideOverlay = () => {
                 if (overlayHidden) return;
@@ -10333,7 +10687,7 @@
                 // Capture last visible frame immediately to prevent black screen flash during rebuild
                 try { captureVideoFrameToOverlay(); } catch (_) { }
 
-                const maxAttempts = reason === 'fatal_network_error' ? 1 : 40;
+                const maxAttempts = reason === 'fatal_network_error' ? 1 : 8;
 
                 if (hlsInst && isM3U8 && sameSourceRecoverCount <= maxAttempts) {
                     try {
@@ -10370,10 +10724,16 @@
 
                 // Exhausted all recovery attempts
                 sameSourceRecoveryLock = false;
-                showError(
-                    'Stream Decode Error',
-                    'Playback could not recover. Please choose another server manually.'
-                );
+                if (failoverToNextSource(`same_source_exhausted:${reason}`)) {
+                    return;
+                }
+                tryAlternateFlixhqServer(`same_source_exhausted:${reason}`).then((switched) => {
+                    if (switched) return;
+                    showError(
+                        'Stream Decode Error',
+                        'Playback could not recover. Please choose another server manually.'
+                    );
+                });
             };
 
             const isMPD = String(url || '').toLowerCase().includes('.mpd');
@@ -10429,12 +10789,63 @@
                             return;
                         }
                     }
+
+                    // Repeated timeout-like stalls should failover to the next available source quickly.
+                    const timeoutLikeReason = String(reason || '').includes('watchdog') || String(reason || '').includes('timeout') || String(reason || '').includes('network');
+                    if (timeoutLikeReason && sameSourceRecoverCount >= 2) {
+                        if (failoverToNextSource(`timeout_like:${reason}`)) {
+                            sameSourceRecoveryLock = false;
+                            return;
+                        }
+                        tryAlternateFlixhqServer(`timeout_like:${reason}`).then((switched) => {
+                            if (switched) return;
+                            recoverSameSource(reason);
+                        });
+                        return;
+                    }
                     recoverSameSource(reason);
                 };
 
-                hlsInst = svCreateHlsInstance(startTime);
-                svAttachHlsListeners(hlsInst, startTime, () => {
+                // Startup watchdog: if this source remains stuck in waiting state, try next source.
+                let hlsStartupHasProgress = false;
+                const markHlsProgress = () => {
+                    if (!video) return;
+                    if ((video.currentTime || 0) > 0.2) {
+                        hlsStartupHasProgress = true;
+                        clearHlsStartupWatchdog();
+                    }
+                };
+                video && video.addEventListener('timeupdate', markHlsProgress);
+                video && video.addEventListener('playing', markHlsProgress);
+                const hlsStartupWatchdog = setTimeout(() => {
+                    if (hlsStartupHasProgress) return;
+                    if (currentIdx !== srcIdx) return;
+                    console.warn('[hls] startup timeout: source did not begin playback, attempting failover');
+                    const switched = failoverToNextSource('hls_startup_timeout');
+                    if (!switched) {
+                        tryAlternateFlixhqServer('hls_startup_timeout').then((altSwitched) => {
+                            if (!altSwitched) recoverSameSourceWithDirectFallback('hls_startup_timeout');
+                        });
+                    }
+                }, 18000);
+                const clearHlsStartupWatchdog = () => {
+                    clearTimeout(hlsStartupWatchdog);
+                    video && video.removeEventListener('timeupdate', markHlsProgress);
+                    video && video.removeEventListener('playing', markHlsProgress);
+                };
+
+                hlsInst = svCreateHlsInstance(effectiveStartTime);
+                svAttachHlsListeners(hlsInst, effectiveStartTime, () => {
                     initPlyr();
+                    if (useWarmStartResume && resumeTargetTime > 0) {
+                        setTimeout(() => {
+                            if (!video || !isFinite(video.duration)) return;
+                            if (resumeTargetTime >= video.duration) return;
+                            if (Math.abs(Number(video.currentTime || 0) - resumeTargetTime) < 1) return;
+                            console.log('[flixhq] warm-start resume seek ->', resumeTargetTime);
+                            applyGuardedJump(resumeTargetTime, 'resume');
+                        }, 1200);
+                    }
                     // On first load, wait for real video frames before hiding the loader
                     // so the cover-art loader stays visible the whole time instead of
                     // showing a black gap between loader and first frame.
@@ -10447,6 +10858,7 @@
                         video && video.addEventListener('timeupdate', onFirstFrame);
                         // Safety: hide after 10s no matter what
                         setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
+                        setTimeout(clearHlsStartupWatchdog, 30000);
                     }
                 if (!IS_IOS) {
                     video.play().catch(() => {
@@ -10468,7 +10880,25 @@
                 video.preload = 'auto';
 
                 const previewVideo = document.getElementById('previewVideo');
+                const currentSourceProvider = String(allSources?.[srcIdx]?.provider || '').toLowerCase();
+                const usePreviewHls = shouldUsePreviewHls(url, currentSourceProvider);
                 if (previewVideo) {
+                    window.previewUseCanvasFallbackOnly = !usePreviewHls;
+
+                    if (!usePreviewHls) {
+                        try {
+                            if (window.previewHlsInst) {
+                                window.previewHlsInst.stopLoad();
+                                window.previewHlsInst.detachMedia();
+                                window.previewHlsInst.destroy();
+                            }
+                        } catch (_) { }
+                        window.previewHlsInst = null;
+                        window.previewHlsErrorCount = 0;
+                        window.previewHlsIsUnhealthy = true;
+                        console.log('[preview] Using canvas-only preview mode for stream stability.');
+                        warmupPreviewVideo(previewVideo);
+                    } else {
                     window.previewHlsInst = svCreateHlsInstance(0, true);
                     window.previewHlsInst.on(Hls.Events.MANIFEST_LOADED, () => {
                         // ENHANCED: Use level 1 (if available) instead of always lowest for better quality
@@ -10544,6 +10974,7 @@
                     window.previewHlsIsUnhealthy = false;
 
                     warmupPreviewVideo(previewVideo);
+                    }
                 }
 
             } else if (isM3U8 && (

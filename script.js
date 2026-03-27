@@ -3,7 +3,7 @@ const RUNTIME_CONFIG = window.__STREAMVERSE_CONFIG__ || {};
 const LOCAL_API = String(
     RUNTIME_CONFIG.LOCAL_META_API_BASE ||
     RUNTIME_CONFIG.LOCAL_API_BASE ||
-    'http://localhost:3000/meta/tmdb'
+    'http://localhost:3001/meta/tmdb'
 );
 const PROD_API = String(
     RUNTIME_CONFIG.PROD_META_API_BASE ||
@@ -18,6 +18,55 @@ const FALLBACK_API = String(
 const PROD_API_HOST = (() => {
     try { return new URL(PROD_API).host; } catch (_) { return ''; }
 })();
+
+// Genre mapping for TMDB genre IDs to names
+const GENRE_MAP = {
+    // Movie genres
+    28: 'Action',
+    12: 'Adventure',
+    16: 'Animation',
+    35: 'Comedy',
+    80: 'Crime',
+    99: 'Documentary',
+    18: 'Drama',
+    10751: 'Family',
+    14: 'Fantasy',
+    36: 'History',
+    27: 'Horror',
+    10402: 'Music',
+    9648: 'Mystery',
+    10749: 'Romance',
+    878: 'Science Fiction',
+    10770: 'TV Movie',
+    53: 'Thriller',
+    10752: 'War',
+    37: 'Western',
+    // TV genres
+    10759: 'Action & Adventure',
+    10762: 'Kids',
+    10763: 'News',
+    10764: 'Reality',
+    10765: 'Sci-Fi & Fantasy',
+    10766: 'Soap',
+    10767: 'Talk',
+    10768: 'War & Politics'
+};
+
+function getGenreNames(genres) {
+    if (!genres) return [];
+    if (Array.isArray(genres)) {
+        return genres.map(g => {
+            if (typeof g === 'string') return g.toLowerCase().trim();
+            if (typeof g === 'object' && g.name) return g.name.toLowerCase().trim();
+            if (typeof g === 'number') return (GENRE_MAP[g] || '').toLowerCase().trim();
+            return '';
+        }).filter(g => g);
+    }
+    if (typeof genres === 'string') {
+        return genres.split(',').map(g => g.trim().toLowerCase());
+    }
+    return [];
+}
 
 /* --- Watchlist Logic --- */
 let currentModalMovie = null;
@@ -439,6 +488,27 @@ function renderContinueWatching(items) {
             return token.toUpperCase().substring(0, 5);
         };
         const audioLabel = getPrettyAudio(item.audio);
+        const seasonNoRaw = Number(item?.seasonNo);
+        const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw > 0
+            ? seasonNoRaw
+            : (() => {
+                const legacySeasonIndex = Number(item?.seasonIndex);
+                if (Number.isFinite(legacySeasonIndex) && legacySeasonIndex >= 0) return legacySeasonIndex + 1;
+                const legacySeason = Number(item?.season);
+                if (Number.isFinite(legacySeason) && legacySeason >= 0) return legacySeason + 1;
+                return 1;
+            })();
+        const episodeNoRaw = Number(item?.episodeNo);
+        const episodeNo = Number.isFinite(episodeNoRaw) && episodeNoRaw > 0
+            ? episodeNoRaw
+            : (() => {
+                const legacyEpisodeIndex = Number(item?.episodeIndex);
+                if (Number.isFinite(legacyEpisodeIndex) && legacyEpisodeIndex >= 0) return legacyEpisodeIndex + 1;
+                const legacyEpisode = Number(item?.episode);
+                if (Number.isFinite(legacyEpisode) && legacyEpisode >= 0) return legacyEpisode + 1;
+                return 1;
+            })();
+        const tvLabel = item.type === 'tv' ? ` - S${seasonNo}E${episodeNo}` : '';
         
         card.innerHTML = `
             <img src="${item.poster}" alt="${item.title}" loading="lazy"
@@ -454,7 +524,7 @@ function renderContinueWatching(items) {
                 <div class="progress-bar" style="width: ${watchedPercent}%"></div>
             </div>
             <div class="movie-card-info">
-                <h3 class="movie-card-title">${item.title}${item.type === 'tv' ? ` - E${item.episode + 1}` : ''}</h3>
+                <h3 class="movie-card-title">${item.title}${tvLabel}</h3>
                 <div class="continue-meta">
                     <span>${formatTime(item.currentTime)} watched • ${formatTime(timeLeft)} left</span>
                     <span>Last watched: ${lastWatchedDate}</span>
@@ -463,7 +533,9 @@ function renderContinueWatching(items) {
         `;
 
         card.onclick = () => {
-            const url = `player.html?id=${encodeURIComponent(item.id)}&type=${item.type}&provider=${item.provider || ''}${item.type === 'tv' ? `&season=${item.season + 1}&episode=${item.episode + 1}` : ''}&t=${Math.floor(item.currentTime)}&audio=${encodeURIComponent(item.audio || '')}`;
+            const providerPart = item.provider ? `&provider=${encodeURIComponent(item.provider)}` : '';
+            const seasonEpisodePart = item.type === 'tv' ? `&season=${seasonNo}&episode=${episodeNo}` : '';
+            const url = `player.html?id=${encodeURIComponent(item.id)}&type=${item.type}${providerPart}${seasonEpisodePart}&t=${Math.floor(item.currentTime)}&audio=${encodeURIComponent(item.audio || '')}`;
             window.location.href = url;
         };
 
@@ -588,6 +660,78 @@ function getGenreInfo(genre) {
     return { icon, color };
 }
 
+// Reverse genre map for name to ID
+const GENRE_NAME_TO_ID = {};
+Object.entries(GENRE_MAP).forEach(([id, name]) => {
+    GENRE_NAME_TO_ID[name.toLowerCase()] = parseInt(id);
+});
+
+async function fetchSimilar(id, type, provider = '') {
+    try {
+        // Get current movie details to get genres
+        const currentMovie = await fetchDetails(id, type, provider);
+        const currentGenres = getGenreNames(currentMovie.genres || currentMovie.genre_ids);
+
+        // Get trending movies
+        const trendingUrl = `${BASE_URL}/trending?type=${type}&timePeriod=day`;
+        const trendingData = await fetchJsonWithFallback(trendingUrl, 8000);
+        const trendingMovies = trendingData?.results || [];
+
+        // Filter trending movies by genre match
+        const similar = trendingMovies
+            .filter(movie => {
+                if (movie.id == id) return false;
+                const movieGenres = getGenreNames(movie.genres || movie.genre_ids || []);
+                const hasMatch = currentGenres.some(cg => movieGenres.some(mg => 
+                    mg.includes(cg) || cg.includes(mg) || mg === cg
+                ));
+                return hasMatch;
+            })
+            .slice(0, 6);
+
+        // If we found genre matches, return them
+        if (similar.length > 0) {
+            return similar;
+        }
+
+        // Otherwise, return some trending movies excluding current
+        return trendingMovies.filter(movie => movie.id != id).slice(0, 6);
+    } catch (fallbackErr) {
+        console.error('Similar movies fetch failed:', fallbackErr);
+        return [];
+    }
+}
+
+// Simple Levenshtein distance for fuzzy matching
+function levenshteinDistance(a, b) {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) {
+        matrix[i] = [i];
+    }
+    for (let j = 0; j <= a.length; j++) {
+        matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // substitution
+                    matrix[i][j - 1] + 1,     // insertion
+                    matrix[i - 1][j] + 1      // deletion
+                );
+            }
+        }
+    }
+
+    return matrix[b.length][a.length];
+}
+
 function renderDetailsModal(movie, id, type, provider = '') {
     currentModalMovie = movie;
     const isAdded = isInWatchlist(id);
@@ -663,6 +807,13 @@ function renderDetailsModal(movie, id, type, provider = '') {
                         </div>` : ''}
                     </div>
                 </div>
+
+                <div class="modal-similar-section">
+                    <h3 class="similar-title">Similar Finds</h3>
+                    <div id="similar-movies-grid" class="movie-grid">
+                        <div class="similar-loading">Loading similar movies...</div>
+                    </div>
+                </div>
             </div>
         </div>
     `;
@@ -680,6 +831,64 @@ function renderDetailsModal(movie, id, type, provider = '') {
             }
         }
     }, 100);
+
+    // Load similar movies
+    fetchSimilar(id, type, provider).then(similarMovies => {
+        const grid = document.getElementById('similar-movies-grid');
+        if (!grid) return;
+
+        if (similarMovies.length === 0) {
+            grid.innerHTML = '<div class="no-similar">No similar movies found</div>';
+            return;
+        }
+
+        // Initially show 3, with option to show more
+        let showCount = 3;
+        const totalCount = similarMovies.length;
+
+        function renderSimilarGrid(count) {
+            const moviesToShow = similarMovies.slice(0, count);
+            grid.innerHTML = moviesToShow.map(movie => {
+                const title = getTitle(movie);
+                const poster = getPoster(movie);
+                const year = getYear(movie);
+                const rating = getRating(movie);
+                const movieId = movie.id;
+                const movieType = movie.type || type;
+                const movieProvider = movie.provider || provider;
+
+                return `
+                    <div class="movie-card" onclick="openDetails('${movieId}', '${movieType}', '${movieProvider}')">
+                        <img src="${poster}" alt="${title}" onerror="this.src='https://placehold.co/200x300/1a1a2e/e50914?text=No+Poster'">
+                        <div class="movie-card-info">
+                            <h3 class="movie-card-title">${title}</h3>
+                            <div class="movie-card-meta">
+                                <span>${year}</span>
+                                <span><i class="fa-solid fa-star"></i> ${rating}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Add "More..." button if there are more movies
+            if (count < totalCount) {
+                grid.innerHTML += `<button id="similar-more-btn" class="similar-more-btn" onclick="showMoreSimilar(${totalCount})">More...</button>`;
+            }
+        }
+
+        // Initially show 3
+        renderSimilarGrid(showCount);
+
+        // Make showMoreSimilar available globally
+        window.showMoreSimilar = function(total) {
+            showCount = total;
+            renderSimilarGrid(showCount);
+        };
+    }).catch(() => {
+        const grid = document.getElementById('similar-movies-grid');
+        if (grid) grid.innerHTML = '<div class="no-similar">Failed to load similar movies</div>';
+    });
 }
 
 // ------------------ FETCH TRENDING -----------------------------------------

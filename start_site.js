@@ -1,12 +1,14 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
 const { spawn } = require('child_process');
 
-const PORT = 8080;
+const DEFAULT_SITE_PORT = 8080;
 const SITE_DIR = 'C:\\Users\\Jeet\\Music\\WTEHMOVIESCONSUMETAPITEST';
 const API_DIR = 'C:\\Users\\Jeet\\Videos\\fewfwewfd\\api.consumet.org';
 const ENV_PATH = path.join(SITE_DIR, '.env');
+const API_ENV_PATH = path.join(API_DIR, '.env');
 
 function parseDotEnv(filePath) {
     if (!fs.existsSync(filePath)) return {};
@@ -34,7 +36,9 @@ for (const [k, v] of Object.entries(envFromFile)) {
     }
 }
 
-const SITE_API_BASE = process.env.SITE_API_BASE || 'http://127.0.0.1:3000';
+const apiEnvFromFile = parseDotEnv(API_ENV_PATH);
+const API_PORT = Number(process.env.API_PORT || apiEnvFromFile.PORT || 3000);
+const SITE_API_BASE = process.env.SITE_API_BASE || `http://127.0.0.1:${API_PORT}`;
 const SITE_META_API_BASE = process.env.SITE_META_API_BASE || `${SITE_API_BASE.replace(/\/$/, '')}/meta/tmdb`;
 const WIREGUARD_ENDPOINT = process.env.WIREGUARD_ENDPOINT || '';
 const START_LOCAL_API = String(process.env.START_LOCAL_API || 'false').toLowerCase() === 'true';
@@ -47,6 +51,8 @@ function buildClientConfigScript() {
     return `window.__STREAMVERSE_CONFIG__ = {
   API_BASE: ${asJsString(SITE_API_BASE)},
   META_API_BASE: ${asJsString(SITE_META_API_BASE)},
+  LOCAL_API_BASE: ${asJsString(SITE_META_API_BASE)},
+  LOCAL_META_API_BASE: ${asJsString(SITE_META_API_BASE)},
   WIREGUARD_ENDPOINT: ${asJsString(WIREGUARD_ENDPOINT)}
 };
 `;
@@ -72,7 +78,26 @@ const MIME_TYPES = {
 
 let apiProc = null;
 
-function startApiServer() {
+function isPortInUse(port, host = '127.0.0.1') {
+    return new Promise((resolve) => {
+        const socket = new net.Socket();
+        socket.setTimeout(600);
+        socket.once('connect', () => {
+            socket.destroy();
+            resolve(true);
+        });
+        socket.once('timeout', () => {
+            socket.destroy();
+            resolve(false);
+        });
+        socket.once('error', () => {
+            resolve(false);
+        });
+        socket.connect(port, host);
+    });
+}
+
+async function startApiServer() {
     if (!START_LOCAL_API) {
         console.log('[INFO] START_LOCAL_API=false, skipping local Consumet startup.');
         return;
@@ -83,9 +108,19 @@ function startApiServer() {
         return;
     }
 
-    console.log('[INFO] Starting Consumet API on port 3000...');
+    const alreadyRunning = await isPortInUse(API_PORT);
+    if (alreadyRunning) {
+        console.log(`[INFO] API port ${API_PORT} already in use. Assuming API is already running.`);
+        return;
+    }
+
+    console.log(`[INFO] Starting Consumet API on port ${API_PORT}...`);
     apiProc = spawn('npm', ['start'], {
         cwd: API_DIR,
+        env: {
+            ...process.env,
+            PORT: String(API_PORT),
+        },
         stdio: 'inherit',
         shell: true,
     });
@@ -116,9 +151,11 @@ process.on('SIGTERM', () => {
     process.exit(0);
 });
 
-startApiServer();
+startApiServer().catch((err) => {
+    console.error('[ERROR] Failed to initialize API startup:', err);
+});
 
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
     if (req.url === '/config.js') {
         res.writeHead(200, {
             'Content-Type': 'application/javascript; charset=utf-8',
@@ -142,11 +179,35 @@ http.createServer((req, res) => {
                 res.end(`Server Error: ${error.code}`);
             }
         } else {
-            res.writeHead(200, { 'Content-Type': contentType });
+            const headers = { 'Content-Type': contentType };
+            if (extname === '.html') {
+                headers['Cache-Control'] = 'no-store, no-cache, must-revalidate';
+                headers['Pragma'] = 'no-cache';
+                headers['Expires'] = '0';
+            }
+            res.writeHead(200, headers);
             res.end(content, 'utf-8');
         }
     });
-}).listen(PORT);
+});
 
-console.log(`Site running at http://localhost:${PORT}`);
-console.log(`API expected at ${SITE_META_API_BASE}`);
+function listenSite(startPort) {
+    server.listen(startPort, () => {
+        console.log(`Site running at http://localhost:${startPort}`);
+        console.log(`API expected at ${SITE_META_API_BASE}`);
+    });
+
+    server.once('error', (err) => {
+        if (err && err.code === 'EADDRINUSE') {
+            const nextPort = startPort + 1;
+            console.warn(`[WARN] Port ${startPort} is in use, retrying on ${nextPort}...`);
+            listenSite(nextPort);
+            return;
+        }
+        console.error('[ERROR] Failed to start site server:', err);
+        process.exit(1);
+    });
+}
+
+const sitePort = Number(process.env.SITE_PORT) || DEFAULT_SITE_PORT;
+listenSite(sitePort);

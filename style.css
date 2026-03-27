@@ -1005,6 +1005,91 @@ header.scrolled {
     text-decoration: underline;
 }
 
+.modal-similar-section {
+    width: 100%;
+    margin-top: 2rem;
+}
+
+.similar-title {
+    color: #fff;
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.similar-title::before {
+    content: '';
+    width: 4px;
+    height: 20px;
+    background: linear-gradient(135deg, #e50914, #ff6b6b);
+    border-radius: 2px;
+}
+
+.similar-loading, .no-similar {
+    color: #cbd5e1;
+    text-align: center;
+    padding: 2rem;
+    font-style: italic;
+}
+
+.similar-more-btn {
+    background: rgba(229, 9, 20, 0.1);
+    border: 1px solid rgba(229, 9, 20, 0.3);
+    color: #e50914;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    margin-top: 1rem;
+    width: 100%;
+    max-width: 200px;
+}
+
+.similar-more-btn:hover {
+    background: rgba(229, 9, 20, 0.2);
+    border-color: #e50914;
+}
+
+/* Mobile Overrides for Similar Section */
+@media (max-width: 768px) {
+    .modal-similar-section .movie-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 0.75rem;
+    }
+
+    .modal-similar-section .movie-card img {
+        height: 220px;
+    }
+
+    .modal-similar-section .movie-card-info {
+        padding: 0.5rem;
+    }
+
+    .modal-similar-section .movie-card-title {
+        font-size: 0.8rem;
+    }
+
+    .modal-similar-section .movie-card-meta {
+        font-size: 0.75rem;
+    }
+}
+
+/* Desktop overrides for similar section to fit 3 in a row */
+@media (min-width: 769px) {
+    .modal-similar-section .movie-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 1rem;
+    }
+
+    .modal-similar-section .movie-card img {
+        height: 240px;
+    }
+}
+
 /* Mobile Overrides (Optimized for Card Style on Mobile) */
 @media (max-width: 768px) {
     .modal-content {
@@ -1582,4 +1667,4 @@ footer {
         min-width: 140px;
         justify-content: center;
     }
-}
+}
