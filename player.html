@@ -2479,7 +2479,7 @@
         const LOCAL_META_API = String(
             RUNTIME_CONFIG.LOCAL_META_API_BASE ||
             RUNTIME_CONFIG.LOCAL_API_BASE ||
-            'http://localhost:3003/meta/tmdb'
+            'http://localhost:3010/meta/tmdb'
         );
         const PROD_META_API = String(
             RUNTIME_CONFIG.PROD_META_API_BASE ||
@@ -2512,8 +2512,8 @@
         // Prefer selected source first, but always keep a remote/local fallback.
         const API_BASE_CANDIDATES = (() => {
             const preferred = effectiveApiSource === 'local'
-                ? [LOCAL_META_API || 'http://localhost:3003/meta/tmdb', PROD_META_API || DEFAULT_META_API, FALLBACK_META_API]
-                : [PROD_META_API || DEFAULT_META_API, FALLBACK_META_API, LOCAL_META_API || 'http://localhost:3003/meta/tmdb'];
+                ? [LOCAL_META_API || 'http://localhost:3010/meta/tmdb', PROD_META_API || DEFAULT_META_API, FALLBACK_META_API]
+                : [PROD_META_API || DEFAULT_META_API, FALLBACK_META_API, LOCAL_META_API || 'http://localhost:3010/meta/tmdb'];
 
             const deduped = [];
             const seen = new Set();
@@ -2552,7 +2552,9 @@
         async function fetchJsonWithApiFallback(url, options = {}) {
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
             const hasCallerSignal = !!options?.signal;
-            const allowCrossBaseFallback = /\/meta\/tmdb(?:\/|$)/i.test(String(url || ''));
+            const retryBaseDelayMs = hasCallerSignal ? 0 : 250;
+            const isWatchRequest = /\/(?:meta\/tmdb\/watch|movies\/[a-z0-9_-]+\/watch)(?:\?|$)/i.test(String(url || ''));
+            const allowCrossBaseFallback = /\/meta\/tmdb(?:\/|$)/i.test(String(url || '')) && !isWatchRequest;
             const preferredBase = String(API_BASE_CANDIDATES?.[0] || activeApiBase || API_BASE || '').trim();
             const requestBases = allowCrossBaseFallback
                 ? API_BASE_CANDIDATES
@@ -2580,7 +2582,7 @@
                     try {
                         const res = await fetch(reqUrl, options);
                         if (shouldRetryStatus(res.status) && i < maxAttempts - 1) {
-                            await sleep(1000 + i * 1200);
+                            await sleep(retryBaseDelayMs + i * 350);
                             continue;
                         }
                         if (res.ok) {
@@ -2590,7 +2592,7 @@
                     } catch (err) {
                         lastErr = err;
                         if (isRetriableError(err) && i < maxAttempts - 1) {
-                            await sleep(1000 + i * 1200);
+                            await sleep(retryBaseDelayMs + i * 350);
                             continue;
                         }
                         throw err;
@@ -2627,7 +2629,7 @@
 
         // Provider pools
         const MOVIE_PROVIDERS = ['flixhq', 'animesalt', 'justanime', 'dramacool'];
-        const ANIME_PROVIDERS = ['animesalt', 'justanime', 'satoru'];
+        const ANIME_PROVIDERS = ['satoru', 'animesalt', 'justanime'];
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime'];
 
         const params = new URLSearchParams(location.search);
@@ -2639,7 +2641,34 @@
         const URL_SEASON_TITLE = String(params.get('seasonTitle') || '').trim();
         const URL_SEASON_KEY = String(params.get('seasonKey') || '').trim().toLowerCase();
         const URL_EPISODE = Number(params.get('episode') || params.get('ep') || 0);
+        const URL_TIME = Number(params.get('t') || 0);
+        const URL_DISABLE_RESUME = String(params.get('resume') || '').trim() === '0';
         const URL_AUDIO = String(params.get('audio') || '').trim().toLowerCase();
+
+        function readContinueWatchingEntry(id, type) {
+            try {
+                const raw = localStorage.getItem('sv_continue_watching');
+                if (!raw) return null;
+                const items = JSON.parse(raw);
+                if (!Array.isArray(items)) return null;
+                const found = items.find((row) =>
+                    String(row?.id || '') === String(id || '') &&
+                    String(row?.type || '').toLowerCase() === String(type || '').toLowerCase()
+                );
+                return found || null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        const CONTINUE_ENTRY = readContinueWatchingEntry(TMDB_ID, MEDIA_TYPE);
+        const RESUME_TIME_FALLBACK = Number(CONTINUE_ENTRY?.currentTime || 0);
+        const RESUME_SEASON_FALLBACK = Number(CONTINUE_ENTRY?.seasonNo || 0);
+        const RESUME_EPISODE_FALLBACK = Number(CONTINUE_ENTRY?.episodeNo || 0);
+        let pendingEpisodeStartTime = null;
+
+        // Debug logging
+        console.log('Player loaded with TMDB_ID:', TMDB_ID, 'MEDIA_TYPE:', MEDIA_TYPE, 'FORCED_PROVIDER:', FORCED_PROVIDER);
 
         // -----------------------------------------------------------------------
         //  DOM
@@ -2696,13 +2725,19 @@
         const subtitleBlobCache = new Map(); // Cache processed VTT text by source URL to avoid redundant fetches and proxy hits
         let subtitleApplyVersion = 0;
         let activeSubtitleTrackIndex = -1;
+
         let _iosNativePlayerActive = false; // Tracks whether iOS native player is currently in fullscreen
         let currentIdx = 0;
         let currentMediaInfo = null;
+        let currentAnimeCanonicalInfo = null;
+        let currentAnimeCanonicalInfoPromise = null;
+        let currentAnimeCanonicalInfoKey = '';
         let currentCoverUrl = null; // poster/backdrop used as transition overlay background
         let isFirstLoad = true;     // true until the very first stream produces real frames
 
         let tvSeasons = [];
+        let providerSeasonCatalog = new Map();
+        let activeMenuProvider = '';
         let curSeason = 0;
         let curEpisode = 0;
         let curEpisodeId = null;
@@ -2723,6 +2758,33 @@
         const ANIME_PROVIDER_INFO_CACHE_TTL_MS = 30 * 60 * 1000;
         const animeProviderInfoCache = new Map();
         const providerEpisodeIdCache = new Map();
+
+        // Force clear all anime caches on page load to prevent cross-contamination
+        justanimeAnimeIdCache.clear();
+        animeProviderInfoCache.clear();
+        animeSubtitleCache.clear();
+
+        // Clear any cached media info that doesn't match current TMDB_ID
+        try {
+            const mediaInfoKeys = Object.keys(localStorage).filter(key => key.startsWith('sv_media_info:'));
+            for (const key of mediaInfoKeys) {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                    try {
+                        const parsed = JSON.parse(raw);
+                        const cachedId = String(parsed?.info?.id || parsed?.info?.tmdbId || '').trim();
+                        if (cachedId && cachedId !== String(TMDB_ID).trim()) {
+                            localStorage.removeItem(key);
+                        }
+                    } catch (e) {
+                        // Invalid cache entry, remove it
+                        localStorage.removeItem(key);
+                    }
+                }
+            }
+        } catch (e) {
+            // Ignore localStorage errors
+        }
         const STREAM_SOURCE_CACHE_PREFIX = 'sv_stream_source_v1';
         const STREAM_SOURCE_CACHE_TTL_MS = 15 * 60 * 1000;
         const REQ_TIMEOUT = {
@@ -2740,8 +2802,8 @@
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
             dramacool: { watch: 15000, directWatch: 12000 },
-            // FlixHQ upstream can be slow for some titles; keep watch timeout generous.
-            flixhq: { animeSearch: 20000, animeInfo: 30000, watch: 70000, metaInfo: 30000 },
+            // Keep FlixHQ responsive: fail fast enough to allow quick fallback.
+            flixhq: { animeSearch: 8000, animeInfo: 12000, watch: 18000, metaInfo: 12000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
@@ -2793,6 +2855,7 @@
         let sameSourceRecoverCount = 0;
         let currentStreamUrl = '';
         let currentStreamReferer = null;
+        let startT = 0; // Global start time for continue watching resume
         let currentStreamProvider = '';
         let skipInitialCanplaySeekOnce = false;
         let hlsFragErrorBurst = 0;
@@ -2853,7 +2916,8 @@
             syncUrlState();
         }
 
-        function syncUrlState() {
+        function syncUrlState(options = {}) {
+            const { preserveTime = true } = options;
             const u = new URL(location.href);
             if (MEDIA_TYPE === 'tv') {
                 const seasonRef = tvSeasons?.[Number(curSeason || 0)];
@@ -2878,11 +2942,18 @@
             if (audioVal) u.searchParams.set('audio', audioVal);
             else u.searchParams.delete('audio');
 
-            if (video && isFinite(video.currentTime) && initialSeekDone) {
+            if (preserveTime && video && isFinite(video.currentTime) && initialSeekDone) {
                 u.searchParams.set('t', Math.floor(video.currentTime));
+            } else {
+                u.searchParams.delete('t');
             }
 
             history.replaceState(null, '', u.toString());
+        }
+
+        function getActiveAnimeProviderName() {
+            if (!currentIsLikelyAnime) return '';
+            return String(FORCED_PROVIDER || currentStreamProvider || lastSuccessfulProvider || currentAudioSource || '').trim().toLowerCase();
         }
 
         function rememberProviderPreference(providerName) {
@@ -2995,6 +3066,22 @@
                 const readyEnough  = video.readyState >= 3;
                 if (isPlayingWell || readyEnough) hideTransitionOverlay();
             }, delay);
+        }
+
+        function clearOverlaysOnPlaybackProgress(minProgress = 0.2) {
+            if (!video) return;
+            const progressed = Number(video.currentTime || 0) >= Number(minProgress || 0);
+            const readyEnough = Number(video.readyState || 0) >= 2;
+            if (!progressed && !readyEnough) return;
+
+            if (waitingOverlayTimer) {
+                clearTimeout(waitingOverlayTimer);
+                waitingOverlayTimer = null;
+            }
+
+            isSourceSwitching = false;
+            hideLoader();
+            hideTransitionOverlay();
         }
 
         function maybeShowSeekBufferingOverlay(delay = 260) {
@@ -3397,6 +3484,7 @@
             let mediaErrorCount = 0;
             let nonFatalLevelErrorCount = 0;
             let lastStallNudgeAt = 0;
+            let repeatedStallErrorCount = 0;
             let consecutiveBufferErrors = 0;
             let consecutiveFragErrors = 0;
             let lastBufferFlushAt = 0;
@@ -3537,6 +3625,7 @@
                         d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
                         d.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
                     ) {
+                            repeatedStallErrorCount++;
                             const now = Date.now();
                             if (now - lastStallNudgeAt < 800) return;
                             lastStallNudgeAt = now;
@@ -3551,6 +3640,12 @@
                                     Promise.resolve(video.play()).catch(() => { });
                                 } catch (_) { }
                             }
+                            if (repeatedStallErrorCount >= 4 && typeof onErrorFallback === 'function') {
+                                console.warn('[hls] Repeated buffer stall errors, escalating to source recovery');
+                                repeatedStallErrorCount = 0;
+                                onErrorFallback('buffer_stall_repeated');
+                                return;
+                            }
                         }
                         if (isBufferAppend) {
                             consecutiveBufferErrors++;
@@ -3560,6 +3655,9 @@
                             }
                         } else if (!isBufferFull) {
                             consecutiveBufferErrors = 0;
+                        }
+                        if (!isFragLoad && !isLevelLoad && !isBufferAppend && !isBufferFull && !detailText.includes('stalled')) {
+                            repeatedStallErrorCount = 0;
                         }
                         if (!isFragParsing && !isBufferAppend) hlsFragErrorBurst = 0;
                     }
@@ -3845,8 +3943,8 @@
         }
 
 
-        function updateEpisodeUrlState() {
-            syncUrlState();
+        function updateEpisodeUrlState(preserveTime = false) {
+            syncUrlState({ preserveTime });
         }
 
         function getInitialTvPositionFromUrl(seasons) {
@@ -3882,6 +3980,11 @@
                 } else {
                     si = Math.max(0, Math.min(safeSeasons.length - 1, URL_SEASON - 1));
                 }
+            } else if (Number.isFinite(RESUME_SEASON_FALLBACK) && RESUME_SEASON_FALLBACK > 0 && !matchedExplicitSeasonRef) {
+                const byResumeSeasonNo = safeSeasons.findIndex((s) => Number(s?.seasonNo || 0) === RESUME_SEASON_FALLBACK);
+                if (byResumeSeasonNo >= 0) {
+                    si = byResumeSeasonNo;
+                }
             }
             const eps = safeSeasons[si]?.episodes || [];
             if (Number.isFinite(URL_EPISODE) && URL_EPISODE > 0) {
@@ -3893,6 +3996,14 @@
                     ei = byEpisodeNo;
                 } else {
                     ei = Math.max(0, Math.min(eps.length - 1, URL_EPISODE - 1));
+                }
+            } else if (Number.isFinite(RESUME_EPISODE_FALLBACK) && RESUME_EPISODE_FALLBACK > 0) {
+                const byResumeEpisodeNo = eps.findIndex((ep) => {
+                    const n = Number(ep?.episode || ep?.number || ep?.episodeNum || 0);
+                    return Number.isFinite(n) && n === RESUME_EPISODE_FALLBACK;
+                });
+                if (byResumeEpisodeNo >= 0) {
+                    ei = byResumeEpisodeNo;
                 }
             }
             return { seasonIndex: si, episodeIndex: ei };
@@ -4003,6 +4114,103 @@
             }
 
             return [];
+        }
+
+        function buildSeasonDisplayNameForMenu(season, index, isAnime) {
+            const seasonNo = Number(season?.seasonNo || (index + 1));
+            const rawName = String(season?.name || '').trim();
+            const isGeneric = /^(season|part)\s+\d+$/i.test(rawName);
+            let label = rawName && !isGeneric
+                ? rawName
+                : (Number.isFinite(seasonNo) && seasonNo > 0 ? `Season ${seasonNo}` : `Season ${index + 1}`);
+            return label.replace(/\s+/g, ' ').trim();
+        }
+
+        function buildSeasonEpisodeSignature(season) {
+            const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
+            return episodes.map((ep, i) => {
+                const epNo = Number(ep?.episode || ep?.number || ep?.episodeNum || (i + 1));
+                const epId = String(ep?.id || '').trim().toLowerCase();
+                const epTitle = normalizeTitleForMatch(String(ep?.title || '')).slice(0, 80);
+                return `${Number.isFinite(epNo) ? epNo : (i + 1)}:${epId || epTitle}`;
+            }).join('|');
+        }
+
+        function pickRicherSeasonEntry(a, b) {
+            const score = (row) => {
+                const episodes = Array.isArray(row?.episodes) ? row.episodes : [];
+                const idCount = episodes.filter((ep) => String(ep?.id || '').trim()).length;
+                const nonGenericName = /^(season|part)\s+\d+$/i.test(String(row?.name || '').trim()) ? 0 : 1;
+                return (episodes.length * 2) + (idCount * 5) + nonGenericName;
+            };
+            return score(b) > score(a) ? b : a;
+        }
+
+        function getSeasonEpisodeIdentitySet(season) {
+            const out = new Set();
+            const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
+            episodes.forEach((ep, idx) => {
+                const epNo = Number(ep?.episode || ep?.number || ep?.episodeNum || (idx + 1));
+                const epId = String(ep?.id || '').trim().toLowerCase();
+                const epTitle = normalizeTitleForMatch(String(ep?.title || '')).slice(0, 90);
+                if (epId) out.add(`id:${epId}`);
+                out.add(`n:${Number.isFinite(epNo) ? epNo : (idx + 1)}:${epTitle}`);
+            });
+            return out;
+        }
+
+        function seasonEpisodeOverlapRatio(a, b) {
+            const aSet = getSeasonEpisodeIdentitySet(a);
+            const bSet = getSeasonEpisodeIdentitySet(b);
+            if (!aSet.size || !bSet.size) return 0;
+            let same = 0;
+            for (const token of aSet) {
+                if (bSet.has(token)) same += 1;
+            }
+            return same / Math.max(aSet.size, bSet.size);
+        }
+
+        function preferCanonicalSeasonName(primary, secondary, index, isAnime) {
+            const primaryLabel = buildSeasonDisplayNameForMenu(primary, index, isAnime);
+            const secondaryLabel = buildSeasonDisplayNameForMenu(secondary, index, isAnime);
+            const primaryGeneric = /^(season|part)\s+\d+$/i.test(primaryLabel);
+            const secondaryGeneric = /^(season|part)\s+\d+$/i.test(secondaryLabel);
+            if (primaryGeneric && !secondaryGeneric) return primaryLabel;
+            if (secondaryGeneric && !primaryGeneric) return secondaryLabel;
+            return primaryLabel.length <= secondaryLabel.length ? primaryLabel : secondaryLabel;
+        }
+
+        function dedupeTvSeasonEntries(seasons, isAnime) {
+            const list = Array.isArray(seasons) ? seasons : [];
+            if (!list.length) return [];
+
+            const deduped = [];
+            list.forEach((season, idx) => {
+                const seasonNo = Number(season?.seasonNo || (idx + 1));
+                const matchIdx = deduped.findIndex((existing) => {
+                    const existingSeasonNo = Number(existing?.seasonNo || 0);
+                    const sameSeasonNo = Number.isFinite(seasonNo) && seasonNo > 0 && existingSeasonNo === seasonNo;
+                    if (!sameSeasonNo) return false;
+                    const overlap = seasonEpisodeOverlapRatio(existing, season);
+                    return overlap >= 0.65;
+                });
+
+                if (matchIdx === -1) {
+                    deduped.push({ ...season, episodes: [...(season?.episodes || [])] });
+                    return;
+                }
+
+                const existing = deduped[matchIdx];
+                const chosen = pickRicherSeasonEntry(existing, season);
+                const chosenName = preferCanonicalSeasonName(existing, season, matchIdx, isAnime);
+                deduped[matchIdx] = {
+                    ...chosen,
+                    name: chosenName,
+                    episodes: [...(chosen?.episodes || [])],
+                };
+            });
+
+            return deduped;
         }
 
         function buildAnimeFillerSlugCandidates(title) {
@@ -4564,6 +4772,8 @@
         }
 
         function readCachedProviderSources(provider = 'flixhq') {
+            // Disabled caching to prevent cross-contamination
+            return [];
             try {
                 const raw = localStorage.getItem(getSourceCacheKey(provider));
                 if (!raw) return [];
@@ -4594,6 +4804,8 @@
         }
 
         function readCachedMediaInfo(allowStale = false) {
+            // Disabled caching to prevent cross-contamination
+            return null;
             try {
                 const keys = [getMediaInfoCacheKey(true), getMediaInfoCacheKey(false)];
                 for (const key of keys) {
@@ -4636,7 +4848,12 @@
 
         async function fetchJsonWithRetry(url, timeoutMs = 12000, retryTimeoutMs = 25000) {
             const tryFetch = async (ms) => {
-                const { res } = await fetchJsonWithApiFallback(url, { signal: AbortSignal.timeout(ms) });
+                // Check if AbortSignal.timeout is available
+                const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+                    ? AbortSignal.timeout(ms)
+                    : undefined;
+                const options = signal ? { signal } : {};
+                const { res } = await fetchJsonWithApiFallback(url, options);
                 if (!res.ok) throw new Error(`Info fetch failed (${res.status})`);
                 return res.json();
             };
@@ -4667,7 +4884,7 @@
         }
 
         function normalizeAnimeSearchQuery(raw) {
-            return String(raw || '')
+            return String(getAnimeTitleText(raw) || '')
                 .replace(/[_-]+/g, ' ')
                 .replace(/[:\-!?,.]/g, ' ') // Strip common punctuation for search
                 .replace(/\s+/g, ' ')
@@ -4697,7 +4914,7 @@
         /**
          * Constructs an AnimeSalt episode ID directly from the series slug + season/episode numbers.
          * AnimeSalt episode IDs follow the pattern: {seriesSlug}-{seasonNo}x{episodeNo}
-         * e.g. 'jujutsu-kaisen' + S3E5 => 'jujutsu-kaisen-3x5'
+         * e.g. 'series-slug' + S3E5 => 'series-slug-3x5'
          */
         function buildAnimesaltEpisodeId(seriesSlug, seasonNo, episodeNo) {
             const slug = String(seriesSlug || '').trim();
@@ -4717,8 +4934,41 @@
          * 3. Constructing episode ID directly as {slug}-{seasonNo}x{episodeNo}
          * 
          * AnimeSalt slugs the ENTIRE series regardless of arcs/seasons, so searching
-         * for 'jujutsu kaisen' finds all seasons even if TMDB calls it 'The Culling Game'.
+         * for the base series title can find episodes across multiple seasons.
          */
+        async function resolveAnilistEpisodeId(resolvedContext, timeoutMs) {
+            const base = getAnimeProviderBase('anilist');
+            const { mediaTitle, seasonNo, episodeNo, episodeOffset } = resolvedContext;
+            const finalEpisodeNo = episodeNo + (episodeOffset || 0);
+            const normTitle = normalizeAnimeSearchQuery(mediaTitle);
+
+            // Search AniList for the title
+            const searchUrl = `${base}/${encodeURIComponent(normTitle)}`;
+            const { res: searchRes } = await fetchJsonWithApiFallback(searchUrl, { signal: AbortSignal.timeout(timeoutMs) });
+            if (!searchRes.ok) return null;
+            const searchData = await searchRes.json();
+            const results = getAnimeSearchResults(searchData);
+            if (!results.length) return null;
+
+            // Pick the best result
+            const picked = pickAnimeResultByTitle(results, normTitle, null, 1, '', false);
+            if (!picked?.id) return null;
+            const anilistId = picked.id;
+
+            // Get info to find the episode
+            const infoUrl = `${base}/info?id=${encodeURIComponent(anilistId)}`;
+            const { res: infoRes } = await fetchJsonWithApiFallback(infoUrl, { signal: AbortSignal.timeout(timeoutMs) });
+            if (!infoRes.ok) return null;
+            const infoData = await infoRes.json();
+            const episodes = infoData.episodes || [];
+
+            // Find the episode by finalEpisodeNo
+            const episode = episodes.find(ep => ep.number === finalEpisodeNo);
+            if (!episode?.id) return null;
+
+            return episode.id; // AniList episode ID
+        }
+
         async function resolveAnimesaltEpisodeId(resolvedContext, timeoutMs) {
             const base = getAnimeProviderBase('animesalt');
             const { mediaTitle, seasonNo, episodeNo, preferredYear, episodeOffset, seasonNoOverride } = resolvedContext;
@@ -4736,9 +4986,6 @@
                 const searchTerms = Array.from(new Set([
                     baseTitle,
                     baseTitle.replace(/ (Season|Arc|Part|Cour) \d+/gi, ''),
-                    // Try known alternate titles
-                    baseTitle.replace(/\bkimetsu no yaiba\b/gi, 'demon slayer'),
-                    baseTitle.replace(/\bdemon slayer\b/gi, 'kimetsu no yaiba'),
                     baseTitle.split(' ').slice(0, 4).join(' '), // first 4 words
                     baseTitle.split(' ').slice(0, 3).join(' '), // first 3 words
                     baseTitle.split(' ').slice(0, 2).join(' '), // first 2 words
@@ -4793,7 +5040,7 @@
 
             if (!seriesSlug) return null;
 
-            // For movies, AnimeSalt search returns IDs like "movie:jujutsu-kaisen-0".
+            // For movies, AnimeSalt search returns IDs like "movie:series-slug-0".
             // The watch endpoint expects this ID directly — NOT the series slug-SxE pattern.
             if (isMovieContext || seriesSlug.startsWith('movie:')) {
                 const movieId = seriesSlug.startsWith('movie:') ? seriesSlug : `movie:${seriesSlug}`;
@@ -4801,36 +5048,72 @@
                 return movieId;
             }
 
-            // Series: build episode ID as {slug}-{seasonNo}x{episodeNo}
+            // Series: prefer info endpoint episode IDs (authoritative), then fall back
+            // to slug pattern construction if info lookup is unavailable.
             const finalSeasonNo = seasonNoOverride !== undefined ? seasonNoOverride : seasonNo;
             const finalEpisodeNo = episodeNo + (episodeOffset || 0);
 
+            try {
+                const { res: infoRes } = await fetchJsonWithApiFallback(
+                    buildAnimeInfoUrl('animesalt', seriesSlug),
+                    { signal: AbortSignal.timeout(timeoutMs) },
+                );
+                if (infoRes.ok) {
+                    let info = await infoRes.json();
+                    if (info?.data) info = info.data;
+                    const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
+                    const bySeasonEpisode = episodes.find((ep) => {
+                        const id = String(ep?.id || '').trim().toLowerCase();
+                        const m = id.match(/-(\d+)x(\d+)$/);
+                        if (!m) return false;
+                        return Number(m[1]) === Number(finalSeasonNo) && Number(m[2]) === Number(finalEpisodeNo);
+                    });
+                    if (bySeasonEpisode?.id) {
+                        console.log(`[animesalt] resolved by info id: slug=${seriesSlug}, episode=${bySeasonEpisode.id}`);
+                        return String(bySeasonEpisode.id).trim();
+                    }
+
+                    if (Number(finalSeasonNo) <= 1) {
+                        const byEpisodeNumber = episodes.find((ep) => Number(ep?.number || ep?.episode || 0) === Number(finalEpisodeNo));
+                        if (byEpisodeNumber?.id) {
+                            console.log(`[animesalt] resolved by info number: slug=${seriesSlug}, episode=${byEpisodeNumber.id}`);
+                            return String(byEpisodeNumber.id).trim();
+                        }
+                    }
+                }
+            } catch (_) {
+                // Fall through to deterministic slug mapping below.
+            }
+
             const episodeId = buildAnimesaltEpisodeId(seriesSlug, finalSeasonNo, finalEpisodeNo);
-            console.log(`[animesalt] resolved: slug=${seriesSlug}, episode=${episodeId}`);
+            console.log(`[animesalt] resolved by pattern: slug=${seriesSlug}, episode=${episodeId}`);
             return episodeId;
         }
 
         function buildSatoruResolveUrl(title, seasonNo, episodeNo, seasonLabel = '', preferredYear = null) {
             const base = getAnimeProviderBase('satoru');
             const url = new URL(`${base}/resolve`);
-            url.searchParams.set('title', String(title || ''));
+            url.searchParams.set('title', getAnimeTitleText(title));
             url.searchParams.set('season', String(seasonNo || 1));
             url.searchParams.set('episode', String(episodeNo || 1));
             if (seasonLabel) url.searchParams.set('seasonTitle', seasonLabel);
             if (preferredYear) url.searchParams.set('year', String(preferredYear));
+            // Add cache-busting timestamp to force fresh backend responses
+            url.searchParams.set('_t', String(Date.now()));
             return url.toString();
         }
 
         function buildSatoruSeriesUrl(title, preferredYear = null) {
             const base = getAnimeProviderBase('satoru');
             const url = new URL(`${base}/series`);
-            url.searchParams.set('title', String(title || ''));
+            url.searchParams.set('title', getAnimeTitleText(title));
             if (preferredYear) url.searchParams.set('year', String(preferredYear));
             return url.toString();
         }
 
         async function resolveExactSatoruEpisode(mediaTitle, seasonNo, episodeNo, seasonLabel = '', preferredYear = null) {
             try {
+                console.log('Satoru resolve for:', { mediaTitle, seasonNo, episodeNo, seasonLabel, preferredYear, TMDB_ID });
                 const resolveUrl = buildSatoruResolveUrl(
                     mediaTitle,
                     seasonNo,
@@ -4838,20 +5121,42 @@
                     seasonLabel,
                     preferredYear,
                 );
+                console.log('Satoru resolve URL:', resolveUrl);
                 const { res } = await fetchJsonWithApiFallback(resolveUrl, {
                     signal: AbortSignal.timeout(getProviderTimeout('satoru', 'animeInfo', ANIME_INFO_TIMEOUT_MS)),
                 });
-                if (!res.ok) return null;
+                if (!res.ok) {
+                    console.log('Satoru resolve failed:', res.status, res.statusText);
+                    return null;
+                }
                 const resolved = await res.json();
+                console.log('Satoru resolved response:', resolved);
                 const animeId = String(resolved?.anime?.id || '').trim();
                 const episodeId = String(resolved?.episode?.id || '').trim();
-                if (!animeId || !episodeId) return null;
-                return {
+                const resolvedAnimeTitle = String(resolved?.anime?.title || '').trim();
+                if (!animeId || !episodeId) {
+                    console.log('Satoru resolve missing IDs:', { animeId, episodeId });
+                    return null;
+                }
+                
+                // Validate that the resolved anime title matches the requested title
+                const normalizedRequested = normalizeAnimeSearchQuery(getAnimeTitleText(mediaTitle)).toLowerCase();
+                const normalizedResolved = normalizeAnimeSearchQuery(getAnimeTitleText(resolvedAnimeTitle)).toLowerCase();
+                const titleMatches = normalizedRequested.includes(normalizedResolved) || normalizedResolved.includes(normalizedRequested);
+                if (!titleMatches) {
+                    console.log('Satoru resolve title mismatch:', { requested: mediaTitle, resolved: resolvedAnimeTitle, normalizedRequested, normalizedResolved });
+                    return null;
+                }
+                
+                const result = {
                     animeId,
                     episodeId,
-                    animeTitle: String(resolved?.anime?.title || '').trim(),
+                    animeTitle: resolvedAnimeTitle,
                 };
-            } catch (_) {
+                console.log('Satoru returning:', result);
+                return result;
+            } catch (e) {
+                console.log('Satoru resolve error:', e);
                 return null;
             }
         }
@@ -4860,6 +5165,7 @@
             const base = getAnimeProviderBase(provider);
             const url = new URL(`${base}/watch/${encodeURIComponent(episodeId)}`);
             if (provider === 'animesalt') url.searchParams.set('category', 'both');
+            if (provider === 'satoru') url.searchParams.set('_t', String(Date.now())); // Cache-busting for satoru
             return url.toString();
         }
 
@@ -4868,6 +5174,15 @@
             if (Array.isArray(searchData?.data?.results)) return searchData.data.results;
             if (Array.isArray(searchData?.data)) return searchData.data;
             return Array.isArray(searchData) ? searchData : [];
+        }
+
+        function pickAnimeResultByAniListId(results, anilistId) {
+            const targetId = String(anilistId || '').trim();
+            if (!targetId || !Array.isArray(results) || !results.length) return null;
+            return results.find((result) => {
+                const resultAniListId = String(result?.anilistId || result?.anilist || result?.anilist_id || '').trim();
+                return resultAniListId === targetId;
+            }) || null;
         }
 
         function getPreferredMediaYear() {
@@ -4879,6 +5194,108 @@
                 '';
             const y = Number(String(yearRaw).slice(0, 4));
             return Number.isFinite(y) && y > 1900 ? y : null;
+        }
+
+        function getAnimeTitleText(value) {
+            if (!value) return '';
+            if (typeof value === 'string') return value.trim();
+            if (typeof value === 'number') return String(value).trim();
+            if (Array.isArray(value)) {
+                return value.map(getAnimeTitleText).find(Boolean) || '';
+            }
+            if (typeof value === 'object') {
+                return (
+                    getAnimeTitleText(value.english) ||
+                    getAnimeTitleText(value.romaji) ||
+                    getAnimeTitleText(value.native) ||
+                    getAnimeTitleText(value.title) ||
+                    getAnimeTitleText(value.name) ||
+                    ''
+                );
+            }
+            return String(value || '').trim();
+        }
+
+        async function getCanonicalAnimeInfo() {
+            if (!currentIsLikelyAnime) return null;
+            const mediaTitle = getAnimeTitleText(currentMediaInfo?.title || currentMediaInfo?.name || TMDB_ID || '');
+            console.log('Canonical mediaTitle:', mediaTitle, 'from currentMediaInfo:', currentMediaInfo?.title);
+            // Skip canonical resolution if TMDB failed and we only have a generic fallback title
+            if (mediaTitle === 'Unknown' || mediaTitle === 'Unknown Title') return null;
+            const requestKey = [
+                String(currentMediaInfo?.anilistId || '').trim(),
+                mediaTitle.toLowerCase(),
+                String(TMDB_ID || '').trim(),
+            ].join('::');
+
+            // Check if cached info is still relevant to current media
+            if (currentAnimeCanonicalInfo && currentAnimeCanonicalInfoKey !== requestKey) {
+                console.warn('Cached anime canonical info key mismatch, clearing');
+                currentAnimeCanonicalInfo = null;
+                currentAnimeCanonicalInfoKey = '';
+            }
+
+            if (currentAnimeCanonicalInfo && currentAnimeCanonicalInfoKey === requestKey) return currentAnimeCanonicalInfo;
+            if (currentAnimeCanonicalInfoPromise) return currentAnimeCanonicalInfoPromise;
+
+            const anilistBase = API_BASE.replace('/meta/tmdb', '/meta/anilist');
+            const title = normalizeAnimeSearchQuery(mediaTitle);
+            const cachedId = String(currentMediaInfo?.anilistId || '').trim();
+
+            currentAnimeCanonicalInfoPromise = (async () => {
+                try {
+                    let animeId = cachedId;
+
+                    if (!animeId && title) {
+                        const { res: searchRes } = await fetchJsonWithApiFallback(
+                            `${anilistBase}/${encodeURIComponent(title)}`,
+                            { signal: AbortSignal.timeout(REQ_TIMEOUT.animeSearch) },
+                        );
+                        if (searchRes.ok) {
+                            const searchData = await searchRes.json();
+                            const results = getAnimeSearchResults(searchData);
+                            const picked = pickAnimeResultByTitle(
+                                results,
+                                title,
+                                getPreferredMediaYear(),
+                                1,
+                                '',
+                                false,
+                            );
+                            animeId = String(picked?.id || '').trim();
+                        }
+                    }
+
+                    if (!animeId) return null;
+
+                    let info = null;
+                    try {
+                        const { res: dataRes } = await fetchJsonWithApiFallback(
+                            `${anilistBase}/data/${encodeURIComponent(animeId)}`,
+                            { signal: AbortSignal.timeout(REQ_TIMEOUT.animeInfo) },
+                        );
+                        if (dataRes.ok) {
+                            const payload = await dataRes.json();
+                            info = payload?.data || payload || null;
+                        }
+                    } catch {
+                        // Fall back to a minimal canonical object below.
+                    }
+
+                    if (!info) {
+                        info = { id: animeId, title: title || getAnimeTitleText(currentMediaInfo?.title || currentMediaInfo?.name || '') };
+                    }
+                    currentAnimeCanonicalInfo = info;
+                    currentAnimeCanonicalInfoKey = requestKey;
+                    return info;
+                } catch {
+                    return null;
+                } finally {
+                    currentAnimeCanonicalInfoPromise = null;
+                }
+            })();
+
+            return currentAnimeCanonicalInfoPromise;
         }
 
         async function resolveMovieProviderEpisodeIdBySearch(provider, mediaType, mediaTitle, seasonNo, episodeNo, allowTypeFallback = true) {
@@ -5055,14 +5472,8 @@
                 return Array.from(new Set(terms.filter(Boolean)));
             }
 
-            // If season 2+, priority is finding the specific entry
+            // If season 2+, prioritize finding the specific entry.
             if (seasonNo > 1) {
-                // Specific Arc Support for major series (e.g., JJK)
-                if (base.toLowerCase().includes('jujutsu kaisen')) {
-                    if (seasonNo === 2) terms.push(`${base} shibuya incident`);
-                    if (seasonNo === 3) terms.push(`${base} culling game`);
-                }
-
                 terms.push(`${base} season ${seasonNo}`);
                 terms.push(`${base} ${seasonNo}`);
                 terms.push(`${base} S${seasonNo}`);
@@ -5071,29 +5482,6 @@
             if (normalizedSeasonLabel) {
                 terms.push(`${base} ${normalizedSeasonLabel}`);
                 terms.push(normalizedSeasonLabel);
-            }
-
-            if (base.toLowerCase().includes('demon slayer') || base.toLowerCase().includes('kimetsu no yaiba')) {
-                if (normalizedSeasonLabel.includes('mugen train')) {
-                    terms.push(`${base} mugen train arc`);
-                    terms.push('demon slayer mugen train arc');
-                    terms.push('kimetsu no yaiba mugen train arc');
-                }
-                if (normalizedSeasonLabel.includes('entertainment district')) {
-                    terms.push(`${base} entertainment district arc`);
-                    terms.push('demon slayer entertainment district arc');
-                    terms.push('kimetsu no yaiba entertainment district arc');
-                }
-                if (normalizedSeasonLabel.includes('swordsmith village')) {
-                    terms.push(`${base} swordsmith village arc`);
-                    terms.push('demon slayer swordsmith village arc');
-                    terms.push('kimetsu no yaiba swordsmith village arc');
-                }
-                if (normalizedSeasonLabel.includes('hashira training')) {
-                    terms.push(`${base} hashira training arc`);
-                    terms.push('demon slayer hashira training arc');
-                    terms.push('kimetsu no yaiba hashira training arc');
-                }
             }
 
             if (preferredYear) terms.push(`${base} ${preferredYear}`);
@@ -5116,17 +5504,11 @@
                 return Number(m[1]);
             }
             // Title-based inference for popular anime
-            if (t.includes('culling game')) return 3;
-            if (t.includes('shibuya incident')) return 2;
             if (t.includes('cour 2')) return 2;
             if (t.includes('part 2')) return 2;
             if (t.includes('part 3')) return 3;
-            if (t.includes('mugen train')) return 2;
-            if (t.includes('entertainment district')) return 2;
-            if (t.includes('swordsmith village')) return 3;
-            if (t.includes('hashira training')) return 4;
 
-            // Standalone number at end or with hyphen? e.g. "Jujutsu Kaisen 2" or "Jujutsu Kaisen - 2"
+            // Standalone number at end or with hyphen.
             const m2 = t.match(/[\-\s](\d+)$/);
             if (m2) return Number(m2[1]);
             return null;
@@ -5170,7 +5552,7 @@
 
         function getProviderAnimeResolutionContext(provider, mediaTitle, seasonNo, episodeNo, seasonLabel, isMovie = false) {
             const resolved = {
-                mediaTitle: normalizeAnimeSearchQuery(mediaTitle),
+                mediaTitle: normalizeAnimeSearchQuery(getAnimeTitleText(mediaTitle)),
                 seasonNo: Number(seasonNo || 1),
                 episodeNo: Number(episodeNo || 1),
                 seasonLabel: normalizeSeasonSearchLabel(seasonLabel),
@@ -5188,57 +5570,12 @@
 
                 // AnimeSalt groups sections differently for some shows.
                 // Default: strip season-specific suffixes to find the main series slug.
-                let baseTitle = resolved.mediaTitle
+                const baseTitle = resolved.mediaTitle
                     .replace(/\b(season|part|cour|arc)\s*\d+\b/gi, '')
                     .replace(/\b(part|cour)\s+[ivxlc]+\b/gi, '')
-                    .replace(/\b(TV|Specials|Recaps|The Culling Game|Hidden Inventory|Shibuya|Entertainment District|Swordsmith Village|Hashira Training)\b/gi, '')
+                    .replace(/\b(TV|Specials|Recaps)\b/gi, '')
                     .replace(/\s+/g, ' ')
                     .trim();
-
-                let lowerBase = baseTitle.toLowerCase();
-                let lowerLabel = resolved.seasonLabel.toLowerCase();
-
-                // ── Special Normalization for Major Titles ──────────────────────────
-                if (lowerBase.includes('demon slayer') || lowerBase.includes('kimetsu no yaiba')) {
-                    baseTitle = 'Demon Slayer: Kimetsu no Yaiba';
-                } else if (lowerBase.includes('jujutsu kaisen')) {
-                    baseTitle = 'Jujutsu Kaisen';
-                } else if (lowerBase.includes('mushoku tensei')) {
-                    baseTitle = 'Mushoku Tensei: Jobless Reincarnation';
-                }
-                
-                // Refresh lowerBase after normalization
-                lowerBase = baseTitle.toLowerCase();
-
-                // ── Jujutsu Kaisen ───────────────────────────────────────────────────
-                if (lowerBase.includes('jujutsu kaisen')) {
-                    // Season 2 in TMDB:
-                    // 1-5: Hidden Inventory / Premature Death
-                    // 6: Recap
-                    // 7-23: Shibuya Incident
-                    if (resolved.seasonNo === 2) {
-                        // Offsets etc could be handled here if needed
-                    }
-                }
-
-                // ── Demon Slayer ─────────────────────────────────────────────────────
-                if (lowerBase.includes('demon slayer') || lowerBase.includes('kimetsu no yaiba')) {
-                    // TMDB Season 2 includes Mugen Train (7 eps) + Entertainment District (11 eps)
-                    // AnimeSalt usually treats these as separate seasons OR total offset.
-                    if (lowerLabel.includes('entertainment district')) {
-                        resolved.seasonNoOverride = 3; // Entertainment District is often S3 in tracker-based lists
-                        if (resolved.episodeNo >= 8) {
-                           // If it's part of TMDB S2, ep 8+ is Ent District
-                           resolved.episodeNo = resolved.episodeNo - 7;
-                        }
-                    } else if (lowerLabel.includes('mugen train')) {
-                        resolved.seasonNoOverride = 2;
-                    } else if (lowerLabel.includes('swordsmith village')) {
-                        resolved.seasonNoOverride = 4;
-                    } else if (lowerLabel.includes('hashira training')) {
-                        resolved.seasonNoOverride = 5;
-                    }
-                }
 
                 resolved.mediaTitle = baseTitle || resolved.mediaTitle;
                 resolved.seasonLabel = ''; // AnimeSalt doesn't use season labels in its IDs
@@ -5246,39 +5583,17 @@
             }
 
             if (provider !== 'justanime') return resolved;
-
-            const base = resolved.mediaTitle.toLowerCase();
-            const label = resolved.seasonLabel.toLowerCase();
-            const isDemonSlayer = base.includes('demon slayer') || base.includes('kimetsu no yaiba');
-
-            if (!isDemonSlayer) return resolved;
-
-            if (label.includes('entertainment district')) {
-                resolved.seasonLabel = 'Kimetsu no Yaiba Entertainment District Arc';
-                if (resolved.episodeNo >= 8) {
-                    resolved.episodeNo = resolved.episodeNo - 7;
-                }
-                resolved.animeIdOverride = '142329';
-            } else if (label.includes('mugen train')) {
-                resolved.seasonLabel = 'Kimetsu no Yaiba Entertainment District Arc';
-                resolved.episodeNo = resolved.episodeNo + 4;
-                resolved.animeIdOverride = '142329';
-            } else if (label.includes('swordsmith village')) {
-                resolved.seasonLabel = 'Kimetsu no Yaiba Swordsmith Village Arc';
-                resolved.animeIdOverride = '145139';
-            } else if (label.includes('hashira training')) {
-                resolved.seasonLabel = 'Kimetsu no Yaiba Hashira Training Arc';
-                resolved.animeIdOverride = '166240';
-            }
-
             return resolved;
         }
 
         function getProviderAnimeCacheScope(provider, mediaTitle, preferredYear, seasonLabel = '') {
-            const baseKey = `${normalizeAnimeSearchQuery(mediaTitle).toLowerCase()}::${preferredYear || ''}`;
-            if (provider !== 'justanime') return `${provider}::v2::${baseKey}`;
+            const canonicalId = String(currentAnimeCanonicalInfo?.id || currentMediaInfo?.anilistId || '').trim();
+            const baseKey = canonicalId
+                ? `anilist::${canonicalId}`
+                : `${normalizeAnimeSearchQuery(getAnimeTitleText(mediaTitle)).toLowerCase()}::${preferredYear || ''}`;
             const scopedLabel = normalizeSeasonSearchLabel(seasonLabel).toLowerCase();
-            return `${provider}::v3::${baseKey}::${scopedLabel}`;
+            // Include season label for every provider to avoid cross-season anime ID reuse.
+            return `${provider}::v4::${baseKey}::${scopedLabel}`;
         }
 
         async function resolveJustAnimeOverrideEpisodeId(animeId, episodeNo, timeoutMs) {
@@ -5394,16 +5709,10 @@
                     else score -= 220;
                 }
 
-                // Specific Arc / Part Support for anime
-                if (normTitle.includes('culling game') && itemTitle.includes('culling game')) score += 180;
-                if (normTitle.includes('shibuya incident') && itemTitle.includes('shibuya incident')) score += 180;
+                // Specific Part/Cour support for anime
                 if (normTitle.includes('part 2') && itemTitle.includes('part 2')) score += 140;
                 if (normTitle.includes('part 3') && itemTitle.includes('part 3')) score += 140;
                 if (normTitle.includes('cour 2') && itemTitle.includes('cour 2')) score += 140;
-                if (normalizedSeasonLabel.includes('mugen train') && itemTitle.includes('mugen train')) score += 220;
-                if (normalizedSeasonLabel.includes('entertainment district') && itemTitle.includes('entertainment district')) score += 220;
-                if (normalizedSeasonLabel.includes('swordsmith village') && itemTitle.includes('swordsmith village')) score += 220;
-                if (normalizedSeasonLabel.includes('hashira training') && itemTitle.includes('hashira training')) score += 220;
 
                 const itemYear = parseYear(r);
                 if (preferredYear && itemYear) {
@@ -5824,7 +6133,14 @@
 
         async function fetchAnimeSubtitleFallback() {
             if (!currentIsLikelyAnime) return [];
-            const mediaTitle = normalizeAnimeSearchQuery(currentMediaInfo?.title || currentMediaInfo?.name || '');
+            const canonicalAnimeInfo = currentAnimeCanonicalInfo || await getCanonicalAnimeInfo();
+            const mediaTitle = normalizeAnimeSearchQuery(
+                canonicalAnimeInfo?.title ||
+                canonicalAnimeInfo?.name ||
+                currentMediaInfo?.title ||
+                currentMediaInfo?.name ||
+                '',
+            );
             const preferredYear = getPreferredMediaYear();
             if (!mediaTitle) return [];
             const absoluteEpisodeNo = Number(
@@ -7190,6 +7506,7 @@
                 video.addEventListener(evt, () => console.warn(`[video] State event: ${evt}`));
             });
             video.addEventListener('timeupdate', () => {
+                clearOverlaysOnPlaybackProgress(0.2);
                 syncTimeUI();
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(false);
@@ -7237,12 +7554,23 @@
             });
             video.addEventListener('loadedmetadata', () => {
                 isSourceSwitching = false;
+                clearOverlaysOnPlaybackProgress(0.01);
                 syncTimeUI();
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(false);
                 updateCaptionsButtonVisibility();
                 bindSubtitleCueListeners();
                 buildCaptionsMenu();
+                
+                // Fallback seek for continue watching if canplay didn't work
+                if (!initialSeekDone && startT > 0 && video) {
+                    console.log('[loadedmetadata] Fallback resume seek to:', startT);
+                    video.currentTime = startT;
+                    initialSeekDone = true;
+                }
+            });
+            video.addEventListener('loadeddata', () => {
+                clearOverlaysOnPlaybackProgress(0.01);
             });
             if (video.textTracks && typeof video.textTracks.addEventListener === 'function') {
                 video.textTracks.addEventListener('addtrack', (e) => {
@@ -7307,6 +7635,8 @@
                 isSourceSwitching = false;
                 isUserSeeking = false;
                 if (bufferingRecoveryTimer) clearTimeout(bufferingRecoveryTimer);
+                hideLoader();
+                hideTransitionOverlay();
                 hideBufferingOverlaySoon(120);
             });
             video.addEventListener('seeking', () => {
@@ -7337,8 +7667,16 @@
                     }, 800);
                 } else {
                     if (waitingOverlayTimer) clearTimeout(waitingOverlayTimer);
-                    showBufferingOverlay();
-                    kickHlsLoadNearCurrentTime();
+                    waitingOverlayTimer = setTimeout(() => {
+                        waitingOverlayTimer = null;
+                        if (!video) return;
+                        const hasProgress = Number(video.currentTime || 0) > 0.2;
+                        const stalled = video.paused || video.readyState < 2;
+                        if (stalled || !hasProgress) {
+                            showBufferingOverlay();
+                            kickHlsLoadNearCurrentTime();
+                        }
+                    }, 380);
                 }
             });
             video.addEventListener('stalled', () => {
@@ -7350,15 +7688,26 @@
                 kickHlsLoadNearCurrentTime();
             });
             video.addEventListener('canplay', () => {
+                clearOverlaysOnPlaybackProgress(0.01);
                 hideBufferingOverlaySoon(80);
                 if (!initialSeekDone) {
-                    const tFromUrl = parseFloat(PARAMS_BOOT.get('t'));
-                    const seekTo = skipInitialCanplaySeekOnce
-                        ? 0
-                        : ((lastRequestedPlaybackTarget > 0) ? lastRequestedPlaybackTarget : tFromUrl);
-                    if (isFinite(seekTo) && seekTo > 0) {
+                    console.log('[canplay] Checking seek - startT:', startT, 'lastRequestedPlaybackTarget:', lastRequestedPlaybackTarget, 'skipInitialCanplaySeekOnce:', skipInitialCanplaySeekOnce);
+                    let seekTo = 0;
+                    if (skipInitialCanplaySeekOnce) {
+                        seekTo = lastRequestedPlaybackTarget;
+                        console.log('[canplay] Using lastRequestedPlaybackTarget due to skipInitialCanplaySeekOnce');
+                    } else if (lastRequestedPlaybackTarget > 0) {
+                        seekTo = lastRequestedPlaybackTarget;
+                        console.log('[canplay] Using lastRequestedPlaybackTarget');
+                    } else if (startT > 0) {
+                        seekTo = startT;
+                        console.log('[canplay] Using startT from URL');
+                    }
+                    if (seekTo > 0 && video) {
                         console.log('[video] Initial/Resume seek to:', seekTo);
                         video.currentTime = seekTo;
+                    } else {
+                        console.log('[canplay] No seek performed - seekTo:', seekTo);
                     }
                     skipInitialCanplaySeekOnce = false;
                     initialSeekDone = true;
@@ -7795,6 +8144,41 @@
                     });
                 });
             }
+        }
+
+        let skipAccumulator = 0;
+        let skipAccumulatorSide = null;
+        let skipAccumulationTimer = null;
+        const tapThreshold = 300;
+
+        function registerSkipPulse(side, step = 10) {
+            if (skipAccumulatorSide !== side) skipAccumulator = 0;
+            skipAccumulatorSide = side;
+            skipAccumulator += step;
+            playRipple(side, skipAccumulator);
+
+            clearTimeout(skipAccumulationTimer);
+            skipAccumulationTimer = setTimeout(() => {
+                skipAccumulator = 0;
+                skipAccumulatorSide = null;
+            }, tapThreshold + 150);
+        }
+
+        function playRipple(side, amount = 10) {
+            const el = document.getElementById(`ripple-${side}`);
+            if (!el) return;
+
+            const label = el.querySelector('span');
+            if (label) {
+                label.textContent = side === 'left' ? `-${amount}s` : `+${amount}s`;
+            }
+
+            el.classList.remove('animate');
+            void el.offsetWidth; // trigger reflow
+            el.classList.add('animate');
+
+            if (el.rippleTimeout) clearTimeout(el.rippleTimeout);
+            el.rippleTimeout = setTimeout(() => el.classList.remove('animate'), 700);
         }
 
         function initCustomControls() {
@@ -8681,29 +9065,11 @@
             const vBrightnessOverlay = document.getElementById('video-brightness-overlay');
 
             let lastTap = 0;
-            const tapThreshold = 300;
             let startX = 0, startY = 0, startTime = 0;
             let startVal = 0;
             let isGesturing = false;
             let gestureType = null;
             let bLevel = 1.0;
-
-            let skipAccumulator = 0;
-            let skipAccumulatorSide = null;
-            let skipAccumulationTimer = null;
-
-            function registerSkipPulse(side, step = 10) {
-                if (skipAccumulatorSide !== side) skipAccumulator = 0;
-                skipAccumulatorSide = side;
-                skipAccumulator += step;
-                playRipple(side, skipAccumulator);
-
-                clearTimeout(skipAccumulationTimer);
-                skipAccumulationTimer = setTimeout(() => {
-                    skipAccumulator = 0;
-                    skipAccumulatorSide = null;
-                }, tapThreshold + 150);
-            }
 
             controlSurface.addEventListener('touchstart', (e) => {
                 if (e.touches.length > 1) return;
@@ -9048,23 +9414,6 @@
             });
 
             // All control interactions are now handled by blockInteractionsWhenHidden
-
-            function playRipple(side, amount = 10) {
-                const el = document.getElementById(`ripple-${side}`);
-                if (!el) return;
-
-                const label = el.querySelector('span');
-                if (label) {
-                    label.textContent = side === 'left' ? `-${amount}s` : `+${amount}s`;
-                }
-
-                el.classList.remove('animate');
-                void el.offsetWidth; // trigger reflow
-                el.classList.add('animate');
-
-                if (el.rippleTimeout) clearTimeout(el.rippleTimeout);
-                el.rippleTimeout = setTimeout(() => el.classList.remove('animate'), 700);
-            }
         }
 
         // -----------------------------------------------------------------------
@@ -9097,14 +9446,22 @@
 
                 let info = readCachedMediaInfo();
                 if (info) {
-                    setLoader('Fetching media info...', 'Loaded from local cache');
-                    for (const infoUrl of infoUrls) {
-                        fetchJsonWithRetry(infoUrl, 10000, 18000)
-                            .then((fresh) => {
-                                const payload = fresh?.data || fresh;
-                                if (payload && typeof payload === 'object') writeCachedMediaInfo(payload);
-                            })
-                            .catch(() => { });
+                    // Verify cached info matches current TMDB_ID to prevent cross-contamination
+                    if (String(info.id || info.tmdbId || '').trim() !== String(TMDB_ID).trim()) {
+                        console.warn('Cached media info ID mismatch, clearing cache');
+                        localStorage.removeItem(getMediaInfoCacheKey(true));
+                        localStorage.removeItem(getMediaInfoCacheKey(false));
+                        info = null;
+                    } else {
+                        setLoader('Fetching media info...', 'Loaded from local cache');
+                        for (const infoUrl of infoUrls) {
+                            fetchJsonWithRetry(infoUrl, 10000, 18000)
+                                .then((fresh) => {
+                                    const payload = fresh?.data || fresh;
+                                    if (payload && typeof payload === 'object') writeCachedMediaInfo(payload);
+                                })
+                                .catch(() => { });
+                        }
                     }
                 } else {
                     let parsed = null;
@@ -9118,21 +9475,44 @@
                         }
                     }
                     info = parsed?.data || parsed;
-                    if (!info) {
-                        // Final rescue: allow stale cache when API is down with 500s/timeouts.
-                        const stale = readCachedMediaInfo(true);
-                        if (stale) {
-                            info = stale;
-                            setLoader('Fetching media info...', 'Loaded stale cache (API unavailable)');
-                        } else {
-                            throw lastErr || new Error('Failed to load media info');
-                        }
-                    } else {
-                        writeCachedMediaInfo(info);
+                    if (!info || info.title === 'Unknown' || info.message === 'TMDB metadata fetch failed') {
+                        console.warn('No valid info received, using fallback');
+                        // Provide fallback info to prevent crashes
+                        info = {
+                            id: TMDB_ID,
+                            title: 'Unknown Title',
+                            name: 'Unknown Title',
+                            type: MEDIA_TYPE,
+                            genres: [],
+                            original_language: 'en'
+                        };
+                        setLoader('Fetching media info...', 'Using fallback data (API unavailable)');
                     }
                 }
                 currentMediaInfo = info;
+                console.log('currentMediaInfo.title:', currentMediaInfo?.title, 'TMDB_ID:', TMDB_ID);
+                currentAnimeCanonicalInfo = null;
+                currentAnimeCanonicalInfoPromise = null;
+                currentAnimeCanonicalInfoKey = '';
+                // Clear anime caches when loading new media to prevent cross-contamination
+                justanimeAnimeIdCache.clear();
+                animeProviderInfoCache.clear();
+                animeSubtitleCache.clear();
                 clearTimeout(safetyTimer);
+
+                // Safety check: ensure info is valid
+                if (!info || typeof info !== 'object') {
+                    console.error('Invalid info object:', info);
+                    // Create emergency fallback
+                    info = {
+                        id: TMDB_ID,
+                        title: 'Unknown Title',
+                        name: 'Unknown Title',
+                        type: MEDIA_TYPE,
+                        genres: [],
+                        original_language: 'en'
+                    };
+                }
 
                 const title = info.title || info.name || 'Unknown Title';
                 document.title = `Watching: ${title} | StreamVerse`;
@@ -9160,6 +9540,10 @@
                 aniSkipFetchStatus = 'none';
                 resetAnimeSkipState();
 
+                if (currentIsLikelyAnime) {
+                    await getCanonicalAnimeInfo();
+                }
+
                 // Provider pool selection:
                 // - Forced provider: run only that provider.
                 // - Movie mode: never mix anime providers.
@@ -9169,10 +9553,11 @@
                 } else if (MEDIA_TYPE === 'movie') {
                     activeProviders = [...MOVIE_PROVIDERS];
                 } else if (isLikelyAnime) {
-                    activeProviders = [...new Set([...ANIME_PROVIDERS, ...MOVIE_PROVIDERS])];
+                    activeProviders = [...ANIME_PROVIDERS];
                 } else {
                     activeProviders = [...MOVIE_PROVIDERS];
                 }
+                console.log('activeProviders:', activeProviders, 'FORCED_PROVIDER:', FORCED_PROVIDER);
                 buildChips();
 
                 if (isTv) {
@@ -9199,95 +9584,215 @@
         async function initTv(info) {
             setLoader('Loading series...', 'Building episode list');
             tvSeasons = buildTvSeasonsFromInfo(info);
+            providerSeasonCatalog = new Map();
+            activeMenuProvider = '';
             const preferredYear = getPreferredMediaYear();
             const animeSeriesTitle = normalizeAnimeSearchQuery(
                 info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || '',
             );
-            if (currentIsLikelyAnime && animeSeriesTitle && FORCED_PROVIDER === 'satoru') {
-                try {
-                    const { res: seriesRes } = await fetchJsonWithApiFallback(
-                        buildSatoruSeriesUrl(animeSeriesTitle, preferredYear),
-                        { signal: AbortSignal.timeout(12000) },
-                    );
-                    if (seriesRes.ok) {
-                        const seriesData = await seriesRes.json();
-                        const entries = Array.isArray(seriesData?.entries) ? seriesData.entries : [];
-                        const mapped = Array.from(
-                            entries
-                                .map((entry, index) => {
-                                    let entryTitle = String(entry?.title || `Part ${index + 1}`);
-                                    if (/^season\s+\d+$/i.test(entryTitle)) {
-                                        entryTitle = entryTitle.replace(/season/i, 'Part');
-                                    }
-                                    const entryId = String(entry?.id || '').trim();
-                                    const inferredSeasonNo = Number(
-                                        extractSeasonNumberFromTitle(entryTitle)
-                                        || extractSeasonNumberFromTitle(entryId)
-                                        || 0,
-                                    );
-                                    const rawSeasonNo = Number(entry?.season || 0);
-                                    const seasonNo = Number.isFinite(inferredSeasonNo) && inferredSeasonNo > 0
-                                        ? inferredSeasonNo
-                                        : (Number.isFinite(rawSeasonNo) && rawSeasonNo > 0 ? rawSeasonNo : index + 1);
-                                    const seasonPartNo = Number(
-                                        extractPartNumberFromTitle(entryTitle)
-                                        || extractPartNumberFromTitle(entryId)
-                                        || 0,
-                                    ) || 0;
-                                    const normalizedNameKey = String(entryTitle)
-                                        .toLowerCase()
-                                        .replace(/[^a-z0-9]+/g, ' ')
-                                        .replace(/\bseason\s+\d+\b/g, ' ')
-                                        .replace(/\bpart\s+\d+\b/g, ' ')
-                                        .replace(/\s+/g, ' ')
-                                        .trim();
-                                    return {
-                                        seasonNo,
-                                        seasonPartNo,
-                                        sourceOrder: index,
-                                        dedupeKey: `${seasonNo}::${seasonPartNo || 0}`,
-                                        name: entryTitle,
-                                        providerAnimeId: entryId || null,
-                                        episodes: (Array.isArray(entry?.episodes) ? entry.episodes : []).map((ep, epIndex) => ({
-                                            id: ep?.id || null,
-                                            episode: ep?.number || epIndex + 1,
-                                            number: ep?.number || epIndex + 1,
-                                            episodeNum: ep?.number || epIndex + 1,
-                                            title: String(ep?.title || `Episode ${epIndex + 1}`),
-                                        })),
-                                    };
-                                })
-                                .filter((season) => season.episodes.length > 0)
-                                .sort((a, b) => {
-                                    const seasonDiff = Number(a?.seasonNo || 0) - Number(b?.seasonNo || 0);
-                                    if (seasonDiff !== 0) return seasonDiff;
-                                    const partDiff = Number(a?.seasonPartNo || 0) - Number(b?.seasonPartNo || 0);
-                                    if (partDiff !== 0) return partDiff;
-                                    return Number(a?.sourceOrder || 0) - Number(b?.sourceOrder || 0);
-                                })
-                                .reduce((acc, season) => {
-                                    const existing = acc.find((row) => row.dedupeKey === season.dedupeKey);
-                                    if (!existing) {
-                                        acc.push(season);
-                                        return acc;
-                                    }
-                                    if ((season?.episodes?.length || 0) > (existing?.episodes?.length || 0)) {
-                                        existing.episodes = season.episodes;
-                                    }
-                                    if (!existing.providerAnimeId && season.providerAnimeId) {
-                                        existing.providerAnimeId = season.providerAnimeId;
-                                    }
-                                    return acc;
-                                }, [])
-                        );
-                        if (mapped.length) {
-                            tvSeasons = mapped;
+            if (currentIsLikelyAnime && animeSeriesTitle) {
+                const makeSeasonKey = (seasonNo, partNo = 0) => `${Number(seasonNo || 0)}::${Number(partNo || 0)}`;
+                const isGenericSeasonName = (value) => /^\s*(season|part)\s*\d+\s*$/i.test(String(value || '').trim());
+                const toEpisodeNumber = (ep, fallbackIndex) => {
+                    const raw = Number(ep?.number || ep?.episode || ep?.episodeNum || 0);
+                    if (Number.isFinite(raw) && raw > 0) return raw;
+                    const idMatch = String(ep?.id || '').match(/(?:-|\b)(\d+)x(\d+)$/i);
+                    if (idMatch?.[2]) return Number(idMatch[2]);
+                    return fallbackIndex + 1;
+                };
+                const toSeasonNumber = (ep, fallbackSeason) => {
+                    const raw = Number(ep?.season || ep?.seasonNumber || ep?.season_number || ep?.seasonNo || 0);
+                    if (Number.isFinite(raw) && raw > 0) return raw;
+                    const idMatch = String(ep?.id || '').match(/(?:-|\b)(\d+)x(\d+)$/i);
+                    if (idMatch?.[1]) return Number(idMatch[1]);
+                    return fallbackSeason;
+                };
+                const buildSeasonListFromEpisodes = (provider, providerAnimeId, providerTitle, episodes) => {
+                    const buckets = new Map();
+                    (Array.isArray(episodes) ? episodes : []).forEach((ep, index) => {
+                        if (!ep || typeof ep !== 'object') return;
+                        const seasonNo = toSeasonNumber(ep, 1);
+                        const seasonPartNo = Number(ep?.part || ep?.partNo || ep?.seasonPart || 0) || 0;
+                        const key = makeSeasonKey(seasonNo, seasonPartNo);
+                        const episodeNo = toEpisodeNumber(ep, index);
+                        const episodeTitle = String(ep?.title || `Episode ${episodeNo}`);
+                        if (!buckets.has(key)) {
+                            buckets.set(key, {
+                                seasonNo,
+                                seasonPartNo,
+                                sourceOrder: index,
+                                dedupeKey: key,
+                                name: seasonPartNo > 0 ? `Part ${seasonPartNo}` : `Season ${seasonNo}`,
+                                providerAnimeId: providerAnimeId || null,
+                                episodes: [],
+                                provider,
+                                providerTitle: String(providerTitle || '').trim(),
+                            });
+                        }
+                        const bucket = buckets.get(key);
+                        bucket.episodes.push({
+                            id: String(ep?.id || '').trim() || null,
+                            episode: episodeNo,
+                            number: episodeNo,
+                            episodeNum: episodeNo,
+                            title: episodeTitle,
+                        });
+                        if (!bucket.providerAnimeId && providerAnimeId) bucket.providerAnimeId = providerAnimeId;
+                    });
+
+                    return Array.from(buckets.values())
+                        .map((season) => ({
+                            ...season,
+                            episodes: season.episodes.sort((a, b) => Number(a.episode || 0) - Number(b.episode || 0)),
+                        }))
+                        .sort((a, b) => {
+                            const seasonDiff = Number(a.seasonNo || 0) - Number(b.seasonNo || 0);
+                            if (seasonDiff !== 0) return seasonDiff;
+                            const partDiff = Number(a.seasonPartNo || 0) - Number(b.seasonPartNo || 0);
+                            if (partDiff !== 0) return partDiff;
+                            return Number(a.sourceOrder || 0) - Number(b.sourceOrder || 0);
+                        });
+                };
+                const mergeSeasonLists = (baseList, extraList) => {
+                    const merged = [...(Array.isArray(baseList) ? baseList : [])];
+                    for (const season of (Array.isArray(extraList) ? extraList : [])) {
+                        const key = makeSeasonKey(season?.seasonNo, season?.seasonPartNo);
+                        const existing = merged.find((row) => makeSeasonKey(row?.seasonNo, row?.seasonPartNo) === key);
+                        if (!existing) {
+                            merged.push({ ...season, episodes: [...(season?.episodes || [])] });
+                            continue;
+                        }
+                        if ((season?.episodes?.length || 0) > (existing?.episodes?.length || 0)) {
+                            existing.episodes = [...season.episodes];
+                        }
+                        if (!existing.providerAnimeId && season.providerAnimeId) existing.providerAnimeId = season.providerAnimeId;
+                        if (isGenericSeasonName(existing.name) && !isGenericSeasonName(season.name) && season.name) {
+                            existing.name = season.name;
                         }
                     }
-                } catch (_) {
-                    // Keep TMDB-derived season buckets if Satoru season metadata is unavailable.
+                    return merged.sort((a, b) => {
+                        const seasonDiff = Number(a?.seasonNo || 0) - Number(b?.seasonNo || 0);
+                        if (seasonDiff !== 0) return seasonDiff;
+                        const partDiff = Number(a?.seasonPartNo || 0) - Number(b?.seasonPartNo || 0);
+                        if (partDiff !== 0) return partDiff;
+                        return Number(a?.sourceOrder || 0) - Number(b?.sourceOrder || 0);
+                    });
+                };
+                const hydrateAnimeProviderSeasons = async (provider) => {
+                    const providerName = String(provider || '').toLowerCase();
+                    const timeoutMs = 12000;
+
+                    if (providerName === 'satoru') {
+                        const { res: seriesRes } = await fetchJsonWithApiFallback(
+                            buildSatoruSeriesUrl(animeSeriesTitle, preferredYear),
+                            { signal: AbortSignal.timeout(timeoutMs) },
+                        );
+                        if (!seriesRes.ok) return [];
+                        const seriesData = await seriesRes.json();
+                        const entries = Array.isArray(seriesData?.entries) ? seriesData.entries : [];
+                        return entries.flatMap((entry, index) => {
+                            const entryTitle = String(entry?.title || `Part ${index + 1}`).trim();
+                            const entryId = String(entry?.id || '').trim();
+                            const seasonNo = Number(
+                                extractSeasonNumberFromTitle(entryTitle)
+                                || extractSeasonNumberFromTitle(entryId)
+                                || entry?.season
+                                || entry?.seasonNo
+                                || index + 1,
+                            ) || (index + 1);
+                            const seasonPartNo = Number(
+                                extractPartNumberFromTitle(entryTitle)
+                                || extractPartNumberFromTitle(entryId)
+                                || 0,
+                            ) || 0;
+                            const episodes = Array.isArray(entry?.episodes) ? entry.episodes : [];
+                            if (!episodes.length) return [];
+                            return [{
+                                seasonNo,
+                                seasonPartNo,
+                                sourceOrder: index,
+                                dedupeKey: makeSeasonKey(seasonNo, seasonPartNo),
+                                name: /^season\s+\d+$/i.test(entryTitle) ? entryTitle.replace(/season/i, 'Part') : entryTitle,
+                                providerAnimeId: entryId || null,
+                                episodes: episodes.map((ep, epIndex) => ({
+                                    id: ep?.id || null,
+                                    episode: ep?.number || epIndex + 1,
+                                    number: ep?.number || epIndex + 1,
+                                    episodeNum: ep?.number || epIndex + 1,
+                                    title: String(ep?.title || `Episode ${epIndex + 1}`),
+                                })),
+                                provider: providerName,
+                            }];
+                        });
+                    }
+
+                    const searchTerms = getAnimeSearchTerms(animeSeriesTitle, preferredYear, 1, '', false);
+                    let bestResult = null;
+                    for (const term of searchTerms) {
+                        const typeHint = providerName === 'animesalt' ? '?type=tv' : '';
+                        const { res: searchRes } = await fetchJsonWithApiFallback(
+                            `${API_BASE.replace('/meta/tmdb', '/anime/' + providerName)}/${encodeURIComponent(term)}${typeHint}`,
+                            { signal: AbortSignal.timeout(timeoutMs) },
+                        );
+                        if (!searchRes.ok) continue;
+                        const searchData = await searchRes.json();
+                        const results = getAnimeSearchResults(searchData);
+                        const filteredResults = results.filter((row) => {
+                            const rowId = String(row?.id || '').toLowerCase();
+                            const rowType = String(row?.type || row?.format || '').toLowerCase();
+                            if (rowId.startsWith('movie:')) return false;
+                            if (rowType.includes('movie') || rowType === 'film') return false;
+                            return true;
+                        });
+                        const searchPool = filteredResults.length ? filteredResults : results;
+                        bestResult =
+                            pickAnimeResultByAniListId(searchPool, String((currentAnimeCanonicalInfo || await getCanonicalAnimeInfo())?.id || currentMediaInfo?.anilistId || '').trim()) ||
+                            findExactProviderSeasonMatch(providerName, searchPool, '') ||
+                            pickAnimeResultByTitle(searchPool, animeSeriesTitle, preferredYear, 1, '', false);
+                        if (bestResult?.id) break;
+                    }
+                    if (!bestResult?.id) return [];
+
+                    const { res: infoRes } = await fetchJsonWithApiFallback(
+                        buildAnimeInfoUrl(providerName, bestResult.id),
+                        { signal: AbortSignal.timeout(timeoutMs) },
+                    );
+                    if (!infoRes.ok) return [];
+                    let providerInfo = await infoRes.json();
+                    if (providerInfo?.data) providerInfo = providerInfo.data;
+                    const episodes = Array.isArray(providerInfo?.episodes) ? providerInfo.episodes : [];
+                    if (!episodes.length) return [];
+                    return buildSeasonListFromEpisodes(providerName, String(bestResult.id), providerInfo?.title || animeSeriesTitle, episodes);
+                };
+
+                const hydrateProviders = Array.from(new Set([
+                    ...(FORCED_PROVIDER ? [FORCED_PROVIDER] : []),
+                    ...ANIME_PROVIDERS,
+                ]))
+                    .map((p) => String(p || '').toLowerCase())
+                    .filter((p) => ['satoru', 'animesalt', 'justanime'].includes(p));
+
+                for (const provider of hydrateProviders) {
+                    try {
+                        const hydrated = await hydrateAnimeProviderSeasons(provider);
+                        if (hydrated.length) {
+                            const normalizedHydrated = dedupeTvSeasonEntries(hydrated, true);
+                            providerSeasonCatalog.set(provider, normalizedHydrated);
+                            tvSeasons = mergeSeasonLists(tvSeasons, normalizedHydrated);
+                        }
+                    } catch (err) {
+                        console.warn('[initTv] Anime provider hydration failed for', provider, err);
+                    }
+                }
+
+                const preferredMenuProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
+                if (preferredMenuProvider && providerSeasonCatalog.has(preferredMenuProvider)) {
+                    activeMenuProvider = preferredMenuProvider;
+                } else {
+                    activeMenuProvider = Array.from(providerSeasonCatalog.keys())[0] || '';
                 }
             }
+
             episodeFillerStatus = new Map();
             fillerLookupState = 'loading';
             if (!tvSeasons.length) {
@@ -9316,6 +9821,8 @@
                 console.warn('[initTv] No episodes in info payload. Using URL-based fallback season/episode map.');
             }
 
+            tvSeasons = dedupeTvSeasonEntries(tvSeasons, currentIsLikelyAnime);
+
             buildEpPanel();
             epBtn.style.display = 'flex';
             if (customEpisodeBtn) customEpisodeBtn.style.display = 'inline-flex';
@@ -9337,7 +9844,189 @@
                     updateEpUI(curSeason, curEpisode);
                 });
             const initialPos = getInitialTvPositionFromUrl(tvSeasons);
-            await playTvEp(initialPos.seasonIndex, initialPos.episodeIndex);
+            await playTvEp(initialPos.seasonIndex, initialPos.episodeIndex, null);
+        }
+
+        function getActiveEpisodeMenuProvider() {
+            if (!currentIsLikelyAnime) return '';
+            const pinnedProvider = String(activeMenuProvider || '').trim().toLowerCase();
+            if (pinnedProvider && providerSeasonCatalog.has(pinnedProvider)) return pinnedProvider;
+            const activeSourceProvider = String(allSources?.[currentIdx]?.provider || '').trim().toLowerCase();
+            const forcedProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
+            const provider = activeSourceProvider || forcedProvider;
+            if (!provider) return '';
+            const seasons = providerSeasonCatalog.get(provider);
+            return Array.isArray(seasons) && seasons.length ? provider : '';
+        }
+
+        function getEpisodeMenuSeasons() {
+            const scopedProvider = getActiveEpisodeMenuProvider();
+            if (scopedProvider) {
+                const scoped = providerSeasonCatalog.get(scopedProvider);
+                if (Array.isArray(scoped) && scoped.length) {
+                    const providerScoped = scopedProvider === 'animesalt'
+                        ? mergeMenuSeasonsBySeasonNo(scoped)
+                        : scoped;
+                    return cloneAndSortMenuSeasons(providerScoped);
+                }
+            }
+            if (currentIsLikelyAnime) {
+                // Strict mode for anime: do not show merged/global list when active provider
+                // catalog is unavailable, because it causes mixed/incorrect ordering/titles.
+                return [];
+            }
+            return cloneAndSortMenuSeasons(tvSeasons);
+        }
+
+        function mergeMenuSeasonsBySeasonNo(seasons) {
+            const list = Array.isArray(seasons) ? seasons : [];
+            const grouped = new Map();
+            list.forEach((season, idx) => {
+                const seasonNoRaw = Number(season?.seasonNo);
+                const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw > 0 ? seasonNoRaw : (idx + 1);
+                if (!grouped.has(seasonNo)) {
+                    const initialName = String(season?.name || '').trim();
+                    grouped.set(seasonNo, {
+                        ...season,
+                        seasonNo,
+                        seasonPartNo: 0,
+                        name: initialName || `Season ${seasonNo}`,
+                        episodes: [],
+                    });
+                }
+                const bucket = grouped.get(seasonNo);
+                const add = Array.isArray(season?.episodes) ? season.episodes : [];
+                bucket.episodes.push(...add);
+                const candidateName = String(season?.name || '').trim();
+                const bucketName = String(bucket?.name || '').trim();
+                const bucketGeneric = /^(season|part)\s+\d+$/i.test(bucketName);
+                const candidateGeneric = /^(season|part)\s+\d+$/i.test(candidateName);
+                if ((!bucketName || bucketGeneric) && candidateName && !candidateGeneric) {
+                    bucket.name = candidateName;
+                }
+            });
+            return Array.from(grouped.values());
+        }
+
+        function getEpisodeOrdinalForMenu(ep, fallback = 0) {
+            const numeric = Number(ep?.episode || ep?.number || ep?.episodeNum || 0);
+            if (Number.isFinite(numeric) && numeric > 0) return numeric;
+
+            const idMatch = String(ep?.id || '').match(/-(\d+)x(\d+)$/i);
+            if (idMatch?.[2]) {
+                const fromId = Number(idMatch[2]);
+                if (Number.isFinite(fromId) && fromId > 0) return fromId;
+            }
+
+            const title = String(ep?.title || '');
+            const taggedMatch = title.match(/(?:episode|ep)\s*\.?\s*(\d+)/i);
+            if (taggedMatch?.[1]) {
+                const fromTaggedTitle = Number(taggedMatch[1]);
+                if (Number.isFinite(fromTaggedTitle) && fromTaggedTitle > 0) return fromTaggedTitle;
+            }
+            const leadingMatch = title.match(/^\s*(\d+)\b/);
+            if (leadingMatch?.[1]) {
+                const fromLeadingTitle = Number(leadingMatch[1]);
+                if (Number.isFinite(fromLeadingTitle) && fromLeadingTitle > 0) return fromLeadingTitle;
+            }
+
+            return fallback;
+        }
+
+        function normalizeAndSortMenuEpisodes(episodes) {
+            const rows = Array.isArray(episodes) ? episodes : [];
+            const ordered = rows
+                .map((ep, idx) => {
+                    const episodeNo = getEpisodeOrdinalForMenu(ep, idx + 1);
+                    const normalizedTitle = normalizeTitleForMatch(String(ep?.title || ''));
+                    return {
+                        ...ep,
+                        _menuEpisodeNo: episodeNo,
+                        _menuOrder: idx,
+                        _menuNormalizedTitle: normalizedTitle,
+                    };
+                })
+                .sort((a, b) => {
+                    if (a._menuEpisodeNo !== b._menuEpisodeNo) return a._menuEpisodeNo - b._menuEpisodeNo;
+                    const titleCmp = String(a._menuNormalizedTitle || '').localeCompare(String(b._menuNormalizedTitle || ''));
+                    if (titleCmp !== 0) return titleCmp;
+                    return Number(a._menuOrder || 0) - Number(b._menuOrder || 0);
+                });
+
+            const deduped = [];
+            const seen = new Set();
+            ordered.forEach((ep) => {
+                const epId = String(ep?.id || '').trim().toLowerCase();
+                const key = epId || `${Number(ep?._menuEpisodeNo || 0)}::${String(ep?._menuNormalizedTitle || '')}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                deduped.push({
+                    ...ep,
+                    episode: ep._menuEpisodeNo,
+                    number: ep._menuEpisodeNo,
+                    episodeNum: ep._menuEpisodeNo,
+                });
+            });
+            return deduped;
+        }
+
+        function cloneAndSortMenuSeasons(seasons) {
+            const list = Array.isArray(seasons) ? seasons : [];
+            return list
+                .map((season, seasonIndex) => {
+                    const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
+                    return {
+                        ...season,
+                        _menuSeasonIndex: seasonIndex,
+                        episodes: normalizeAndSortMenuEpisodes(episodes),
+                    };
+                })
+                .sort((a, b) => {
+                    const aSeason = Number(a?.seasonNo || 0);
+                    const bSeason = Number(b?.seasonNo || 0);
+                    if (aSeason !== bSeason) return aSeason - bSeason;
+                    const aPart = Number(a?.seasonPartNo || a?.part || a?.partNo || 0);
+                    const bPart = Number(b?.seasonPartNo || b?.part || b?.partNo || 0);
+                    if (aPart !== bPart) return aPart - bPart;
+                    return Number(a?._menuSeasonIndex || 0) - Number(b?._menuSeasonIndex || 0);
+                });
+        }
+
+        function resolveGlobalEpisodeIndices(menuSeason, menuEpisode, fallbackSeasonIndex, fallbackEpisodeIndex) {
+            const episodeId = String(menuEpisode?.id || '').trim().toLowerCase();
+            if (episodeId) {
+                for (let si = 0; si < tvSeasons.length; si += 1) {
+                    const eps = Array.isArray(tvSeasons[si]?.episodes) ? tvSeasons[si].episodes : [];
+                    const ei = eps.findIndex((ep) => String(ep?.id || '').trim().toLowerCase() === episodeId);
+                    if (ei >= 0) return { seasonIndex: si, episodeIndex: ei };
+                }
+            }
+
+            const seasonNoRaw = Number(menuSeason?.seasonNo);
+            const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw > 0 ? seasonNoRaw : (fallbackSeasonIndex + 1);
+            const episodeNoRaw = Number(menuEpisode?.episode || menuEpisode?.number || menuEpisode?.episodeNum);
+            const episodeNo = Number.isFinite(episodeNoRaw) && episodeNoRaw > 0 ? episodeNoRaw : (fallbackEpisodeIndex + 1);
+            const menuTitle = normalizeTitleForMatch(String(menuEpisode?.title || ''));
+
+            const seasonIndexByNo = tvSeasons.findIndex((s) => Number(s?.seasonNo || 0) === seasonNo);
+            if (seasonIndexByNo >= 0) {
+                const eps = Array.isArray(tvSeasons[seasonIndexByNo]?.episodes) ? tvSeasons[seasonIndexByNo].episodes : [];
+                const byNumber = eps.findIndex((ep) => Number(ep?.episode || ep?.number || ep?.episodeNum || 0) === episodeNo);
+                if (byNumber >= 0) return { seasonIndex: seasonIndexByNo, episodeIndex: byNumber };
+                const byTitle = menuTitle ? eps.findIndex((ep) => normalizeTitleForMatch(String(ep?.title || '')) === menuTitle) : -1;
+                if (byTitle >= 0) return { seasonIndex: seasonIndexByNo, episodeIndex: byTitle };
+            }
+
+            for (let si = 0; si < tvSeasons.length; si += 1) {
+                const eps = Array.isArray(tvSeasons[si]?.episodes) ? tvSeasons[si].episodes : [];
+                const byNumber = eps.findIndex((ep) => Number(ep?.episode || ep?.number || ep?.episodeNum || 0) === episodeNo);
+                if (byNumber >= 0) return { seasonIndex: si, episodeIndex: byNumber };
+            }
+
+            const safeSeasonIndex = Math.max(0, Math.min(tvSeasons.length - 1, Number(fallbackSeasonIndex || 0)));
+            const safeEpisodes = Array.isArray(tvSeasons[safeSeasonIndex]?.episodes) ? tvSeasons[safeSeasonIndex].episodes : [];
+            const safeEpisodeIndex = Math.max(0, Math.min(Math.max(0, safeEpisodes.length - 1), Number(fallbackEpisodeIndex || 0)));
+            return { seasonIndex: safeSeasonIndex, episodeIndex: safeEpisodeIndex };
         }
 
         function buildEpPanel() {
@@ -9352,36 +10041,34 @@
             `;
             epPanel.appendChild(legend);
 
-            tvSeasons.forEach((s, si) => {
+            const menuSeasons = getEpisodeMenuSeasons();
+            if (!menuSeasons.length) {
+                const empty = document.createElement('div');
+                empty.className = 'audio-item';
+                empty.textContent = 'Episode list not available for active server yet.';
+                epPanel.appendChild(empty);
+                return;
+            }
+            menuSeasons.forEach((s, si) => {
                 const lbl = document.createElement('div');
                 lbl.className = 'ep-season';
-                const seasonNo = Number(s?.seasonNo || si + 1);
-                const rawSeasonName = String(s?.name || '').trim();
-                const genericSeasonName = /^season\s+\d+$/i.test(rawSeasonName);
-                
-                let textContent = '';
-                if (rawSeasonName && !genericSeasonName) {
-                    textContent = rawSeasonName;
-                } else {
-                    textContent = Number.isFinite(seasonNo) && seasonNo > 0
-                        ? `Season ${seasonNo}`
-                        : String(rawSeasonName || `Season ${si + 1}`);
-                }
-                
-                if (currentIsLikelyAnime) {
-                    textContent = textContent.replace(/^Season /i, 'Part ');
-                }
-                
-                lbl.textContent = textContent;
+                lbl.textContent = buildSeasonDisplayNameForMenu(s, si, currentIsLikelyAnime);
                 epPanel.appendChild(lbl);
 
+                const renderedEpisodeKeys = new Set();
+
                 (s.episodes || []).forEach((ep, ei) => {
+                    const mapped = resolveGlobalEpisodeIndices(s, ep, si, ei);
+                    const mappedKey = `${mapped.seasonIndex}:${mapped.episodeIndex}`;
+                    if (renderedEpisodeKeys.has(mappedKey)) return;
+                    renderedEpisodeKeys.add(mappedKey);
+
                     const item = document.createElement('div');
                     item.className = 'ep-item';
                     const epNo = Number(ep.episode || ep.number || ep.episodeNum || (ei + 1));
                     const epTitle = ep.title || `Episode ${epNo}`;
 
-                    const displayEpNo = currentIsLikelyAnime ? (ei + 1) : epNo;
+                    const displayEpNo = epNo;
 
                     const fillerStatus = episodeFillerStatus.get(epNo);
                     let fillerBadge = '';
@@ -9404,11 +10091,11 @@
                         ${fillerBadge}
                     `;
 
-                    item.dataset.si = si;
-                    item.dataset.ei = ei;
+                    item.dataset.si = mapped.seasonIndex;
+                    item.dataset.ei = mapped.episodeIndex;
                     item.onclick = () => {
                         epPanel.classList.remove('open');
-                        playTvEp(si, ei);
+                        playTvEp(mapped.seasonIndex, mapped.episodeIndex, 0);
                     };
                     epPanel.appendChild(item);
                 });
@@ -9416,10 +10103,21 @@
         }
 
         function updateEpUI(si, ei) {
+            const matches = [];
             epPanel.querySelectorAll('.ep-item').forEach(el => {
-                el.classList.toggle('active', +el.dataset.si === si && +el.dataset.ei === ei);
+                const isMatch = +el.dataset.si === si && +el.dataset.ei === ei;
+                el.classList.toggle('active', isMatch);
+                if (isMatch) matches.push(el);
             });
-            const sel = epPanel.querySelector('.ep-item.active');
+
+            // If duplicate mapped rows exist for any reason, keep only one selected.
+            if (matches.length > 1) {
+                for (let i = 1; i < matches.length; i += 1) {
+                    matches[i].classList.remove('active');
+                }
+            }
+
+            const sel = matches[0] || epPanel.querySelector('.ep-item.active');
             if (sel) sel.scrollIntoView({ block: 'center' });
         }
 
@@ -9551,24 +10249,89 @@
             if (!video || !Number.isFinite(target)) return;
 
             const clampedTarget = Math.max(0, target);
-            video.currentTime = clampedTarget;
 
-            const pct = video.duration > 0 ? (clampedTarget / video.duration) * 100 : 0;
-            if (seekBar) {
-                seekBar.value = pct;
-                seekBar.style.setProperty('--seek-percent', pct + '%');
+            // ENHANCED: Flush audio buffer before seeking to prevent robotic/distorted audio
+            if (hlsInst && attempt === 0) {
+                try {
+                    // Stop loading momentarily to allow clean buffer flush
+                    hlsInst.stopLoad();
+
+                    // Force a small audio buffer flush by temporarily disabling/re-enabling audio
+                    if (video.audioTracks && video.audioTracks.length > 0) {
+                        // Try to cycle through audio tracks briefly to reset decoder
+                        const originalEnabled = [];
+                        for (let i = 0; i < video.audioTracks.length; i++) {
+                            originalEnabled[i] = video.audioTracks[i].enabled;
+                            if (originalEnabled[i]) {
+                                video.audioTracks[i].enabled = false;
+                            }
+                        }
+
+                        // Re-enable after a brief moment
+                        setTimeout(() => {
+                            if (video && video.audioTracks) {
+                                for (let i = 0; i < video.audioTracks.length; i++) {
+                                    if (originalEnabled[i]) {
+                                        video.audioTracks[i].enabled = true;
+                                    }
+                                }
+                            }
+                        }, 50);
+                    }
+
+                    // Also try to reset HLS audio track if available
+                    if (hlsInst.audioTrack !== undefined && hlsInst.audioTrack >= 0) {
+                        const currentAudioTrack = hlsInst.audioTrack;
+                        // Temporarily switch to a different track and back
+                        setTimeout(() => {
+                            if (hlsInst && hlsInst.audioTracks && hlsInst.audioTracks.length > 1) {
+                                // Switch to another track briefly
+                                const altTrack = (currentAudioTrack + 1) % hlsInst.audioTracks.length;
+                                hlsInst.audioTrack = altTrack;
+
+                                // Switch back after a moment
+                                setTimeout(() => {
+                                    if (hlsInst) {
+                                        hlsInst.audioTrack = currentAudioTrack;
+                                    }
+                                }, 100);
+                            }
+                        }, 25);
+                    }
+
+                    // Resume loading from target position
+                    setTimeout(() => {
+                        if (hlsInst) {
+                            try { hlsInst.startLoad(Math.max(0, clampedTarget - 0.5)); } catch (_) { }
+                        }
+                    }, 100);
+                } catch (_) { }
             }
 
-            const reachedTarget = Math.abs((video.currentTime || 0) - clampedTarget) <= 0.75;
-            if (reachedTarget || attempt >= 4) return;
+            // ENHANCED: Add small delay for audio reset to take effect before seeking
+            const seekDelay = (hlsInst && attempt === 0) ? 150 : 0;
 
             setTimeout(() => {
                 if (!video) return;
-                const stillOffTarget = Math.abs((video.currentTime || 0) - clampedTarget) > 0.75;
-                if (stillOffTarget) {
-                    forceVideoSeek(clampedTarget, attempt + 1);
+                video.currentTime = clampedTarget;
+
+                const pct = video.duration > 0 ? (clampedTarget / video.duration) * 100 : 0;
+                if (seekBar) {
+                    seekBar.value = pct;
+                    seekBar.style.setProperty('--seek-percent', pct + '%');
                 }
-            }, 120 + (attempt * 80));
+
+                const reachedTarget = Math.abs((video.currentTime || 0) - clampedTarget) <= 0.75;
+                if (reachedTarget || attempt >= 4) return;
+
+                setTimeout(() => {
+                    if (!video) return;
+                    const stillOffTarget = Math.abs((video.currentTime || 0) - clampedTarget) > 0.75;
+                    if (stillOffTarget) {
+                        forceVideoSeek(clampedTarget, attempt + 1);
+                    }
+                }, 120 + (attempt * 80));
+            }, seekDelay);
         }
 
         function performSkipJump(type, manual = false) {
@@ -9757,12 +10520,13 @@
         async function goToNextEpisode() {
             const next = getNextEpisodeRef();
             if (!next) return;
-            await playTvEp(next.seasonIndex, next.episodeIndex);
+            await playTvEp(next.seasonIndex, next.episodeIndex, 0);
         }
 
-        async function playTvEp(si, ei) {
+        async function playTvEp(si, ei, startTime = null) {
             curSeason = si; curEpisode = ei;
-            updateEpisodeUrlState(si, ei);
+            pendingEpisodeStartTime = Number.isFinite(startTime) ? Number(startTime) : null;
+            updateEpisodeUrlState(false);
             const season = tvSeasons[si];
             const ep = (season?.episodes || [])[ei];
             if (!ep) return;
@@ -9770,9 +10534,7 @@
             updateNextEpisodeButton(false);
 
             updateEpUI(si, ei);
-            const epNo = currentIsLikelyAnime
-                ? (ei + 1)
-                : Number(ep.episode || ep.number || ep.episodeNum || (ei + 1));
+            const epNo = Number(ep.episode || ep.number || ep.episodeNum || (ei + 1));
             const epTitle = String(ep.title || '').trim();
             let seasonTitle = String(season?.name || `Season ${si + 1}`).trim();
             if (currentIsLikelyAnime) {
@@ -9803,7 +10565,7 @@
             const selectedSeason = tvSeasons?.[curSeason];
             const selectedEpisode = selectedSeason?.episodes?.[curEpisode];
             const selectedSeasonNoRaw = Number(selectedSeason?.seasonNo);
-            const selectedSeasonNo = Number.isFinite(selectedSeasonNoRaw) && selectedSeasonNoRaw > 0
+            let selectedSeasonNo = Number.isFinite(selectedSeasonNoRaw) && selectedSeasonNoRaw > 0
                 ? selectedSeasonNoRaw
                 : (curSeason + 1);
             const selectedEpisodeNoRaw = Number(
@@ -9819,6 +10581,17 @@
             if (currentIsLikelyAnime && curSeason > 0 && selectedEpisodeNo > 15) {
                 selectedEpisodeNo = curEpisode + 1;
             }
+
+            // If the selected episode already carries a provider-style SxE id,
+            // trust that mapping over derived season/episode counters.
+            const selectedEpisodeId = String(selectedEpisode?.id || '').trim();
+            const selectedEpisodeIdMatch = selectedEpisodeId.match(/-(\d+)x(\d+)$/i);
+            if (currentIsLikelyAnime && selectedEpisodeIdMatch) {
+                const idSeasonNo = Number(selectedEpisodeIdMatch[1]);
+                const idEpisodeNo = Number(selectedEpisodeIdMatch[2]);
+                if (Number.isFinite(idSeasonNo) && idSeasonNo > 0) selectedSeasonNo = idSeasonNo;
+                if (Number.isFinite(idEpisodeNo) && idEpisodeNo > 0) selectedEpisodeNo = idEpisodeNo;
+            }
             const selectedAbsoluteEpisodeNo = Number(
                 tvSeasons
                     .slice(0, Math.max(0, curSeason))
@@ -9832,12 +10605,27 @@
 
             const failReasons = [];
             const providerResults = {};
-            const providersToRun = FORCED_PROVIDER ? [FORCED_PROVIDER] : activeProviders;
+            const providersToRun = FORCED_PROVIDER
+                ? [FORCED_PROVIDER]
+                : (
+                    MEDIA_TYPE === 'movie' && !currentIsLikelyAnime
+                        ? activeProviders.filter((p) => !['animesalt', 'justanime', 'satoru', 'dramacool'].includes(String(p || '').toLowerCase()))
+                        : activeProviders
+                  );
             const orderedProviders = providersToRun;
             providersToRun.forEach(p => providerResults[p] = []);
 
             let isFirstLoaded = false;
-            const startT = parseFloat(PARAMS_BOOT.get('t')) || 0;
+            if (pendingEpisodeStartTime !== null) {
+                startT = Math.max(0, Number(pendingEpisodeStartTime || 0));
+            } else {
+                startT = Number.isFinite(URL_TIME) && URL_TIME > 0 ? URL_TIME : 0;
+                if (!startT && !URL_DISABLE_RESUME && Number.isFinite(RESUME_TIME_FALLBACK) && RESUME_TIME_FALLBACK > 5) {
+                    startT = RESUME_TIME_FALLBACK;
+                }
+            }
+            pendingEpisodeStartTime = null;
+            console.log('[init] startT set to:', startT, 'url t:', URL_TIME, 'resume fallback:', RESUME_TIME_FALLBACK);
 
             const updateSourceList = () => {
                 const newAllSources = [];
@@ -9871,7 +10659,16 @@
                         if (syncedIdx >= 0) currentIdx = syncedIdx;
                     }
 
+                    const currentProvider = String(allSources?.[currentIdx]?.provider || '').trim().toLowerCase();
+                    if (currentProvider && providerSeasonCatalog.has(currentProvider)) {
+                        activeMenuProvider = currentProvider;
+                    }
+
                     buildSourcePanel();
+                    if (MEDIA_TYPE === 'tv') {
+                        buildEpPanel();
+                        updateEpUI(curSeason, curEpisode);
+                    }
                     sourceBtn.style.display = 'flex';
                     showPlyrSourceBtn = true;
 
@@ -9896,6 +10693,7 @@
             }
 
             const processProvider = async (provider) => {
+                console.log('Processing provider:', provider);
                 chipState(provider, 'trying');
                 try {
                     let info, provEpisodeId;
@@ -9904,89 +10702,131 @@
                     const isNetMirrorProvider = ['flixhq', 'viewvault', 'netmirror'].some(v => String(provider || '').toLowerCase().includes(v));
 
                     if (isAnimeProvider) {
-                        const mediaTitle = normalizeAnimeSearchQuery(currentMediaInfo?.title || currentMediaInfo?.name || TMDB_ID);
+                        const canonicalAnimeInfo = currentAnimeCanonicalInfo || await getCanonicalAnimeInfo();
+                        const canonicalAnimeId = String(canonicalAnimeInfo?.id || currentMediaInfo?.anilistId || '').trim();
+                        const rawTitle = canonicalAnimeInfo?.title ||
+                                canonicalAnimeInfo?.name ||
+                                currentMediaInfo?.title ||
+                                currentMediaInfo?.name ||
+                                TMDB_ID;
+                        // If TMDB failed and we have a generic fallback title, try to use TMDB_ID for searching
+                        const searchTitle = (rawTitle === 'Unknown Title' || rawTitle === 'Unknown') ? TMDB_ID : rawTitle;
+                        const mediaTitle = normalizeAnimeSearchQuery(getAnimeTitleText(searchTitle));
                         const selectedSeasonMeta =
                             tvSeasons?.[Math.max(0, Number(curSeason || 0))] ||
                             currentMediaInfo?.seasons?.find?.((s) => Number(s?.season || s?.seasonNumber || s?.number || 0) === selectedSeasonNo) ||
                             null;
                         const seasonLabel = normalizeSeasonSearchLabel(selectedSeasonMeta?.name || selectedSeasonMeta?.title || '');
-
-                        if (provider === 'satoru' && MEDIA_TYPE === 'tv' && selectedSeason?.providerAnimeId && selectedEpisode?.id) {
-                            provEpisodeId = String(selectedEpisode.id).trim();
-                            satoruResolvedExactly = true;
-                            const { res: infoRes } = await fetchJsonWithApiFallback(buildAnimeInfoUrl(provider, String(selectedSeason.providerAnimeId)), { signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS)) });
-                            if (infoRes.ok) { let d = await infoRes.json(); info = d.data || d; }
-                        }
-
-                        // AnimeSalt Fast-Path (Series AND Movies)
-                        // AnimeSalt uses resolveAnimesaltEpisodeId for both movies and series.
-                        // For movies it returns `movie:slug`, for series `slug-SxE`.
-                        if (provider === 'animesalt' && !provEpisodeId) {
-                            const asEpisodeId = await resolveAnimesaltEpisodeId({ mediaTitle, seasonNo: selectedSeasonNo, episodeNo: selectedEpisodeNo, seasonLabel, isMovie: MEDIA_TYPE === 'movie', preferredYear: getPreferredMediaYear() }, getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS));
-                            if (asEpisodeId) provEpisodeId = asEpisodeId;
-                            // If not found, fall through to generic search fallback
-                        }
-
                         if (!provEpisodeId) {
                             // Generic Anime Resolution
                             const resContext = getProviderAnimeResolutionContext(provider, mediaTitle, selectedSeasonNo, selectedEpisodeNo, seasonLabel, MEDIA_TYPE === 'movie');
+                            if (provider === 'satoru') {
+                                const resolved = await resolveExactSatoruEpisode(
+                                    resContext.mediaTitle,
+                                    resContext.seasonNo,
+                                    resContext.episodeNo,
+                                    resContext.seasonLabel,
+                                    getPreferredMediaYear(),
+                                );
+                                if (!resolved?.episodeId) {
+                                    throw new Error('Satoru exact resolve failed');
+                                }
+                                provEpisodeId = resolved.episodeId;
+                            }
+                            if (provider === 'animesalt') {
+                                // Best-case path: AnimeSalt ids include explicit season/episode (slug-SxE).
+                                // If the clicked row already has this id, use it directly to prevent cross-season drift.
+                                const selectedEpisodeId = String(selectedEpisode?.id || '').trim();
+                                if (selectedEpisodeId && /-\d+x\d+$/i.test(selectedEpisodeId)) {
+                                    provEpisodeId = selectedEpisodeId;
+                                }
+                            }
+
+                            if (!provEpisodeId && provider === 'animesalt') {
+                                provEpisodeId = await resolveAnimesaltEpisodeId(
+                                    {
+                                        ...resContext,
+                                        preferredYear: getPreferredMediaYear(),
+                                        isMovie: MEDIA_TYPE === 'movie',
+                                    },
+                                    getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS),
+                                );
+                            }
                             if (provider === 'justanime' && resContext.animeIdOverride) {
                                 provEpisodeId = await resolveJustAnimeOverrideEpisodeId(resContext.animeIdOverride, MEDIA_TYPE === 'tv' ? resContext.episodeNo : 1, getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS));
                             }
                             
-                            if (!provEpisodeId) {
-                                if (provider === 'satoru' && MEDIA_TYPE === 'tv') {
-                                    const resolveUrl = buildSatoruResolveUrl(resContext.mediaTitle, selectedSeasonNo, selectedEpisodeNo, resContext.seasonLabel, getPreferredMediaYear());
-                                    const { res: resolveRes } = await fetchJsonWithApiFallback(resolveUrl, { signal: AbortSignal.timeout(ANIME_INFO_TIMEOUT_MS) });
-                                    if (resolveRes.ok) {
-                                        const resolved = await resolveRes.json();
-                                        provEpisodeId = String(resolved?.episode?.id || '').trim() || null;
-                                        satoruResolvedExactly = !!provEpisodeId;
-                                    }
-                                    if (!satoruResolvedExactly) throw new Error('exact match failed');
-                                } else {
-                                    // Search fallback
-                                    const searchTerms = getAnimeSearchTerms(resContext.mediaTitle, getPreferredMediaYear(), resContext.seasonNo, resContext.seasonLabel, MEDIA_TYPE === 'movie');
-                                    let bestAnime = null;
-                                    for (const term of searchTerms) {
-                                        const { res: searchRes } = await fetchJsonWithApiFallback(`${API_BASE.replace('/meta/tmdb', '/anime/' + provider)}/${encodeURIComponent(term)}`, { signal: AbortSignal.timeout(REQ_TIMEOUT.animeSearch) });
-                                        if (!searchRes.ok) continue;
-                                        const searchData = await searchRes.json();
-                                        const results = getAnimeSearchResults(searchData);
-                                        bestAnime = findExactProviderSeasonMatch(provider, results, resContext.seasonLabel) || pickAnimeResultByTitle(results, resContext.mediaTitle, getPreferredMediaYear(), resContext.seasonNo, resContext.seasonLabel, MEDIA_TYPE === 'movie');
-                                        if (bestAnime?.id) break;
-                                    }
-                                    if (!bestAnime) throw new Error('title not found');
-                                    const { res: infoRes } = await fetchJsonWithApiFallback(buildAnimeInfoUrl(provider, bestAnime.id), { signal: AbortSignal.timeout(ANIME_INFO_TIMEOUT_MS) });
-                                    if (infoRes.ok) { let d = await infoRes.json(); info = d.data || d; }
+                            if (!provEpisodeId && provider !== 'satoru') {
+                                // Search fallback with canonical AniList id preference.
+                                const searchTerms = getAnimeSearchTerms(resContext.mediaTitle, getPreferredMediaYear(), resContext.seasonNo, resContext.seasonLabel, MEDIA_TYPE === 'movie');
+                                let bestAnime = null;
+                                for (const term of searchTerms) {
+                                    const typeHint = MEDIA_TYPE === 'tv' && provider === 'animesalt' ? '?type=tv' : '';
+                                    const { res: searchRes } = await fetchJsonWithApiFallback(`${API_BASE.replace('/meta/tmdb', '/anime/' + provider)}/${encodeURIComponent(term)}${typeHint}`, { signal: AbortSignal.timeout(REQ_TIMEOUT.animeSearch) });
+                                    if (!searchRes.ok) continue;
+                                    const searchData = await searchRes.json();
+                                    const results = getAnimeSearchResults(searchData);
+                                    const isTvContext = MEDIA_TYPE === 'tv';
+                                    const filteredResults = isTvContext
+                                        ? results.filter((row) => {
+                                            const rowId = String(row?.id || '').toLowerCase();
+                                            const rowType = String(row?.type || row?.format || '').toLowerCase();
+                                            if (rowId.startsWith('movie:')) return false;
+                                            if (rowType.includes('movie') || rowType === 'film') return false;
+                                            return true;
+                                        })
+                                        : results;
+                                    const searchPool = filteredResults.length ? filteredResults : results;
+                                    bestAnime =
+                                        pickAnimeResultByAniListId(searchPool, canonicalAnimeId) ||
+                                        findExactProviderSeasonMatch(provider, searchPool, resContext.seasonLabel) ||
+                                        pickAnimeResultByTitle(searchPool, resContext.mediaTitle, getPreferredMediaYear(), resContext.seasonNo, resContext.seasonLabel, MEDIA_TYPE === 'movie');
+                                    if (bestAnime?.id) break;
                                 }
+                                if (!bestAnime) throw new Error('title not found');
+                                const { res: infoRes } = await fetchJsonWithApiFallback(buildAnimeInfoUrl(provider, bestAnime.id), { signal: AbortSignal.timeout(ANIME_INFO_TIMEOUT_MS) });
+                                if (infoRes.ok) { let d = await infoRes.json(); info = d.data || d; }
                             }
 
                             if (!provEpisodeId && info) {
                                 const episodes = info.episodes || [];
-                                const target = episodes.find(ep => Number(ep.season || 0) === selectedSeasonNo && Number(ep.number || ep.episode || 0) === selectedEpisodeNo)
-                                    || episodes.find(ep => Number(ep.number || ep.episode || 0) === selectedEpisodeNo)
-                                    || episodes[selectedEpisodeNo - 1] || episodes[0];
+                                const exactSeasonEpisode = episodes.find(ep => Number(ep.season || 0) === selectedSeasonNo && Number(ep.number || ep.episode || 0) === selectedEpisodeNo);
+                                const allowCrossSeasonFallback = !(provider === 'animesalt' && Number(selectedSeasonNo) > 1);
+                                const byEpisodeNumber = allowCrossSeasonFallback
+                                    ? episodes.find(ep => Number(ep.number || ep.episode || 0) === selectedEpisodeNo)
+                                    : null;
+                                const positionalFallback = allowCrossSeasonFallback ? (episodes[selectedEpisodeNo - 1] || episodes[0]) : null;
+                                const target = exactSeasonEpisode || byEpisodeNumber || positionalFallback;
                                 provEpisodeId = target?.id;
+
+                                if (!provEpisodeId && provider === 'animesalt') {
+                                    const infoSlug = String(info?.id || '').trim().replace(/^movie:/i, '');
+                                    if (infoSlug) {
+                                        provEpisodeId = buildAnimesaltEpisodeId(infoSlug, selectedSeasonNo, selectedEpisodeNo);
+                                    }
+                                }
                                 if (provider === 'justanime' && info.id) provEpisodeId = provEpisodeId || `${info.id}$episode$${MEDIA_TYPE === 'tv' ? selectedEpisodeNo : 1}`;
                             }
                         }
                     } else {
                         // Movie/TV Providers (FlixHQ, etc.)
-                        const isFlixhqMovie = provider === 'flixhq' && MEDIA_TYPE === 'movie';
-                        if (isFlixhqMovie) {
-                            // Fast path: backend TMDB watch can resolve FlixHQ source ids from TMDB id directly.
-                            // Avoid extra search/info lookups here to reduce cold-start latency.
+                        const isFlixhqProvider = provider === 'flixhq' && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv');
+                        if (isFlixhqProvider) {
+                            // Fast path: let backend resolve FlixHQ source IDs during watch.
+                            // If current episode already has a provider id, use it directly.
+                            if (MEDIA_TYPE === 'tv' && selectedEpisode?.id) {
+                                provEpisodeId = String(selectedEpisode.id).trim();
+                            }
                         } else if (provider === 'dramacool') {
                             const resolved = await resolveDramacoolEpisodeId(currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo, getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo));
                             provEpisodeId = resolved?.episodeId;
                         }
-                        if (!provEpisodeId && !isFlixhqMovie) {
+                        if (!provEpisodeId && !isFlixhqProvider) {
                             const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, MEDIA_TYPE, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
                             provEpisodeId = resolved?.episodeId;
                             if (resolved?.info) info = resolved.info;
                         }
-                        if (!provEpisodeId && !isFlixhqMovie) {
+                        if (!provEpisodeId && !isFlixhqProvider) {
                             const { res: infoRes } = await fetchJsonWithApiFallback(`${API_BASE}/info/${TMDB_ID}?type=${MEDIA_TYPE}&provider=${provider}`, { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) });
                             if (infoRes.ok) { 
                                 let d = await infoRes.json(); info = d.data || d; 
@@ -10001,7 +10841,7 @@
                         }
                     }
 
-                    const canResolveOnWatch = provider === 'flixhq' && MEDIA_TYPE === 'movie';
+                    const canResolveOnWatch = provider === 'flixhq' && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv');
                     if (!provEpisodeId && !canResolveOnWatch) throw new Error('No episode ID found');
 
                     // Watch (try TMDB provider watch first so backend can resolve missing TV episode IDs)
@@ -10009,6 +10849,13 @@
                     if (isAnimeProvider) {
                         watchCandidates.push(buildAnimeWatchUrl(provider, provEpisodeId));
                     } else {
+                        const movieBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
+
+                        // For FlixHQ with a known provider episode ID, hit direct provider watch first.
+                        if (provider === 'flixhq' && provEpisodeId) {
+                            watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
+                        }
+
                         const tmdbWatchParams = new URLSearchParams();
                         tmdbWatchParams.set('id', String(TMDB_ID || ''));
                         tmdbWatchParams.set('type', String(MEDIA_TYPE || 'movie'));
@@ -10020,8 +10867,6 @@
                         if (provEpisodeId) tmdbWatchParams.set('episodeId', String(provEpisodeId));
                         if (DIRECT_ONLY) tmdbWatchParams.set('directOnly', 'true');
                         watchCandidates.push(`${API_BASE}/watch?${tmdbWatchParams.toString()}`);
-
-                        const movieBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
                         if (provider === 'dramacool') {
                             watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
                         } else {
@@ -10109,7 +10954,7 @@
             // For movie playback, prefer FlixHQ first. Only fall back to other providers if FlixHQ fails.
             const shouldPreferFlixhqFirst =
                 !FORCED_PROVIDER &&
-                MEDIA_TYPE === 'movie' &&
+                !currentIsLikelyAnime &&
                 orderedProviders.includes('flixhq');
 
             const shouldPreferAnimeSaltFirst =
@@ -10134,7 +10979,7 @@
                 if (allSources.length === 0) {
                     const fallbackProviders = orderedProviders.filter((p) => p !== 'flixhq');
                     await Promise.all(fallbackProviders.map((p) => processProvider(p)));
-                } else {
+                } else if (MEDIA_TYPE !== 'movie') {
                     const backgroundProviders = orderedProviders.filter((p) => p !== 'flixhq');
                     Promise.all(backgroundProviders.map((p) => processProvider(p))).catch((err) => {
                         console.warn('[movie background providers] failed:', err?.message || err);
@@ -10330,6 +11175,15 @@
             // Also remember the provider preference
             if (src.provider) {
                 FORCED_PROVIDER = src.provider;
+                const scopedProvider = String(src.provider || '').trim().toLowerCase();
+                if (providerSeasonCatalog.has(scopedProvider)) {
+                    activeMenuProvider = scopedProvider;
+                }
+            }
+
+            if (MEDIA_TYPE === 'tv') {
+                buildEpPanel();
+                updateEpUI(curSeason, curEpisode);
             }
 
             playSource(idx, savedTime);
@@ -10625,6 +11479,7 @@
                     autoplay: !IS_IOS,
                     muted: video.muted,
                     clickToPlay: false,
+                    keyboard: false,
                     controls: [
                         'play-large',
                         'play',
@@ -10636,11 +11491,12 @@
                         'mute',
                         'volume',
                         'settings',
+                        'captions',
                         'pip',
                         'airplay',
                         'fullscreen'
                     ],
-                    captions: { active: false, update: false, language: 'auto' },
+                    captions: { active: false, update: true, language: 'auto' },
                     quality: qualities.length
                         ? { default: maxH, options: [0, ...qualities], forced: true, onChange: changeQuality }
                         : {},
@@ -10652,15 +11508,14 @@
                 updateCaptionsButtonVisibility();
                 showControlSurface();
 
+                // Load subtitles after player is ready
+                plyr.on('ready', async () => {
+                    // Hide loader on iOS or if not first load
+                    if (!isFirstLoad || IS_IOS) hideLoader();
+                });
+
                 // Sync play icon in case video was already playing when Plyr initialized
                 if (video && !video.paused) setPlayIcon(true);
-
-                const hideIfReady = () => { 
-                    // On iOS, we don't autoplay, so we MUST hide the loader when ready 
-                    // to show the play button. On other platforms, we wait for 'playing'.
-                    if (!isFirstLoad || IS_IOS) hideLoader(); 
-                };
-                plyr.on('ready', hideIfReady);
                 plyr.on('canplay', hideIfReady);
                 plyr.on('playing', () => {
                     isFirstLoad = false;
@@ -11237,6 +12092,42 @@
             } else {
                 showError('Unsupported Browser', 'Your browser does not support HLS streaming.');
             }
+        }
+
+        // Keyboard controls for PC/laptop/Mac users only
+        if (!IS_MOBILE_CLIENT) {
+            document.addEventListener('keydown', (e) => {
+                // Skip if focused on input/textarea
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                
+                switch (e.key) {
+                    case ' ':
+                        e.preventDefault();
+                        // Toggle play/pause
+                        if (video && video.paused) video.play();
+                        else if (video) video.pause();
+                        break;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        // Skip back 10 seconds
+                        if (video) { 
+                            holdControlsVisible(0);
+                            registerSkipPulse('left', 10);
+                            requestSeekToTime(Math.max(0, (video.currentTime || 0) - 10), true);
+                        }
+                        break;
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        // Skip forward 10 seconds
+                        if (video) {
+                            holdControlsVisible(0);
+                            registerSkipPulse('right', 10);
+                            if (isFinite(video.duration)) requestSeekToTime(Math.min(video.duration, (video.currentTime || 0) + 10), true);
+                            else requestSeekToTime((video.currentTime || 0) + 10, true);
+                        }
+                        break;
+                }
+            });
         }
 
         function changeQuality(q) {

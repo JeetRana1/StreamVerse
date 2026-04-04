@@ -14,14 +14,14 @@ const checks = [
     {
         name: 'Script.js Fallback Port',
         file: 'C:\\Users\\Jeet\\Music\\WTEHMOVIESCONSUMETAPITEST\\script.js',
-        check: (content) => content.includes("'http://localhost:3001/meta/tmdb'") && !content.includes("'http://localhost:3000/meta/tmdb'"),
-        desc: 'Hardcoded fallback uses port 3001'
+        check: (content) => content.includes("'http://localhost:3010/meta/tmdb'") && !content.includes("'http://localhost:3000/meta/tmdb'"),
+        desc: 'Hardcoded fallback uses port 3010'
     },
     {
-        name: 'Config.js Port 3001',
+        name: 'Config.js Port 3010',
         file: 'C:\\Users\\Jeet\\Music\\WTEHMOVIESCONSUMETAPITEST\\config.js',
-        check: (content) => (content.match(/localhost:3001/g) || []).length >= 4,
-        desc: 'All API endpoints set to port 3001'
+        check: (content) => (content.match(/127\.0\.0\.1:3010/g) || []).length >= 2,
+        desc: 'All API endpoints set to port 3010'
     },
     {
         name: 'Start_site.js Config Gen',
@@ -32,14 +32,14 @@ const checks = [
     {
         name: 'API .env PORT Setting',
         file: 'c:\\Users\\Jeet\\Videos\\fewfwewfd\\api.consumet.org\\.env',
-        check: (content) => /^PORT=3001/m.test(content),
-        desc: 'API configured for port 3001'
+        check: (content) => /^PORT=3010/m.test(content),
+        desc: 'API configured for port 3010'
     },
     {
         name: 'Frontend .env API Base',
         file: 'C:\\Users\\Jeet\\Music\\WTEHMOVIESCONSUMETAPITEST\\.env',
-        check: (content) => content.includes('SITE_API_BASE=http://localhost:3001'),
-        desc: 'Frontend configured to use port 3001 API'
+        check: (content) => content.includes('SITE_API_BASE=http://127.0.0.1:3010'),
+        desc: 'Frontend configured to use port 3010 API'
     }
 ];
 

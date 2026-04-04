@@ -3,11 +3,11 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1.0">
     <title>StreamVerse | Unlimited Movies & TV Shows</title>
     <meta name="description"
         content="Watch your favorite movies and TV shows for free in high quality with multi-audio support.">
-    <link rel="stylesheet" href="style.css?v=2.0">
+    <link rel="stylesheet" href="style.css?v=2.2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="dns-prefetch" href="//image.tmdb.org">
@@ -103,18 +103,37 @@
                     <div class="skeleton skeleton-hero"></div>
                 </div>
             </div>
-        </section>
-
-        <!-- Continue Watching Section -->
-        <section class="container row-section" id="continue-watching-section" style="display: none; padding-top: 20px;">
-            <h2 class="section-title">Continue Watching</h2>
-            <div class="movie-grid" id="continue-watching-grid">
-                <!-- Progress cards will be injected here -->
+            <div class="hero-controls" id="hero-controls" aria-label="Hero slider controls">
+                <div class="hero-dots" id="hero-dots" aria-label="Hero slides"></div>
+                <div class="hero-nav">
+                    <button type="button" class="hero-nav-btn" id="hero-prev" aria-label="Previous slide">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <button type="button" class="hero-nav-btn" id="hero-next" aria-label="Next slide">
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
             </div>
         </section>
 
         <!-- Dynamic Content Rows -->
         <div id="content-rows" class="container">
+            <!-- Continue Watching Section -->
+            <section class="row-section" id="continue-watching-section" style="display: none;">
+                <div class="section-title-row">
+                    <h2 class="section-title">Continue Watching</h2>
+                    <div class="continue-actions" id="continue-actions">
+                        <button type="button" class="continue-action-btn" id="continue-clear-toggle">Clear</button>
+                        <button type="button" class="continue-action-btn continue-action-btn-danger" id="continue-clear-confirm" style="display:none;">Clear Selected</button>
+                        <button type="button" class="continue-action-btn continue-action-btn-danger" id="continue-clear-all" style="display:none;">Clear All</button>
+                        <button type="button" class="continue-action-btn" id="continue-clear-cancel" style="display:none;">Cancel</button>
+                    </div>
+                </div>
+                <div class="movie-grid" id="continue-watching-grid">
+                    <!-- Progress cards will be injected here -->
+                </div>
+            </section>
+
             <!-- Trending Now -->
             <section class="row-section" id="trending-section">
                 <h2 class="section-title">Trending Now</h2>
@@ -181,7 +200,7 @@
     </footer>
 
     <script src="/config.js"></script>
-    <script src="script.js"></script>
+    <script src="script.js?v=2.2"></script>
 </body>
 
 </html>
