@@ -268,6 +268,17 @@ const dramasGrid = document.getElementById('dramas-grid');
 const continueWatchingSection = document.getElementById('continue-watching-section');
 const continueWatchingGrid = document.getElementById('continue-watching-grid');
 const heroDotsEl = document.getElementById('hero-dots');
+const errorPage = document.getElementById('error-page');
+
+// ------------------ ERROR HANDLING ----------------------------------------
+function showErrorPage() {
+    // Hide main content
+    if (heroSection) heroSection.style.display = 'none';
+    if (contentRows) contentRows.style.display = 'none';
+    if (searchPage) searchPage.style.display = 'none';
+    // Show error page
+    if (errorPage) errorPage.style.display = 'flex';
+}
 const heroPrevBtn = document.getElementById('hero-prev');
 const heroNextBtn = document.getElementById('hero-next');
 const heroControls = document.getElementById('hero-controls');
@@ -305,17 +316,27 @@ window.addEventListener('scroll', () => {
 header.classList.toggle('scrolled', window.scrollY > 50);
 
 // ------------------ INIT --------------------------------------------------
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     updateSwitcherState();
     initHeroManualControls();
     initContinueWatchingControls();
     applyContinueGridLayout();
     loadContinueWatching();
-    fetchTrending();
-    fetchSection('movie', popularMoviesGrid, 'movie');
-    fetchDramas();
-    fetchSection('tv', popularTvGrid, 'tv');
-    fetchSection('movie', topRatedGrid, 'movie', 'week');
+
+    const promises = [
+        fetchTrending(),
+        fetchSection('movie', popularMoviesGrid, 'movie'),
+        fetchDramas(),
+        fetchSection('tv', popularTvGrid, 'tv'),
+        fetchSection('movie', topRatedGrid, 'movie', 'week')
+    ];
+
+    const results = await Promise.allSettled(promises);
+    const allFailed = results.every(result => result.status === 'rejected' || result.value === false);
+
+    if (allFailed) {
+        showErrorPage();
+    }
 });
 
 window.addEventListener('resize', () => {
@@ -808,9 +829,10 @@ function normalizeDetailPayload(payload, id) {
 
 function getDetailsUrl(id, type, provider = '') {
     const canonicalId = provider ? id : normalizeTmdbId(id);
+    const safeType = (String(type || '').trim().toLowerCase() === 'tv') ? 'tv' : 'movie';
     return provider
         ? `${BASE_URL.replace('/meta/tmdb', '/movies/' + provider)}/info?id=${encodeURIComponent(canonicalId)}`
-        : `${BASE_URL}/info/${canonicalId}?type=${type}`;
+        : `${BASE_URL}/info/${canonicalId}?type=${safeType}`;
 }
 
 async function fetchDetails(id, type, provider = '') {
@@ -1642,7 +1664,7 @@ async function fetchTrending() {
         const data = await fetchJsonWithFallback('/trending');
         writeCache(cacheKey, data);
         const items = (data.results || []).slice(0, 12);
-        if (!items.length) return;
+        if (!items.length) return true;
 
         heroItems = items.slice(0, 5);
         if (heroItems.length) {
@@ -1650,14 +1672,16 @@ async function fetchTrending() {
             startHeroRotation();
         }
         displayGrid(items, trendingGrid);
+        return true;
     } catch (err) {
         console.error('Trending error:', err?.message || err);
+        return false;
     }
 }
 
 // ------------------ FETCH SECTION ------------------------------------------
 async function fetchSection(type, grid, mediaType, timePeriod = 'day') {
-    if (!grid) return;
+    if (!grid) return true;
     const cacheKey = `trending:${type}:${timePeriod}`;
     // Explicitly using the full trending path for categories
     const url = `/trending?type=${type}&timePeriod=${timePeriod}`;
@@ -1670,14 +1694,16 @@ async function fetchSection(type, grid, mediaType, timePeriod = 'day') {
         const data = await fetchJsonWithFallback(url);
         writeCache(cacheKey, data);
         displayGrid((data.results || []).slice(0, 12), grid, mediaType);
+        return true;
     } catch (err) {
         console.error(`Error fetching ${type}:`, err?.message || err);
+        return false;
     }
 }
 
 // ------------------ FETCH DRAMAS -------------------------------------------
 async function fetchDramas() {
-    if (!dramasGrid) return;
+    if (!dramasGrid) return true;
     const cacheKey = 'dramacool:popular';
     try {
         const dcBase = BASE_URL.replace('/meta/tmdb', '/movies/dramacool');
@@ -1726,8 +1752,10 @@ async function fetchDramas() {
             });
         }, 200);
 
+        return true;
     } catch (err) {
         console.error('Error fetching dramas:', err?.message || err);
+        return false;
     }
 }
 
@@ -2324,9 +2352,10 @@ function closeTrailer() {
 async function watchNow(id, type, provider = '') {
     const apiSource = getCurrentApiSource();
     const params = new URLSearchParams();
-    params.set('id', String(id));
-    params.set('type', String(type));
-    params.set('apiSource', String(apiSource));
+    params.set('id', String(id || ''));
+    const safeType = (String(type || '').trim().toLowerCase() === 'tv') ? 'tv' : 'movie';
+    params.set('type', safeType);
+    params.set('apiSource', String(apiSource || ''));
 
     const continueEntry = (() => {
         try {

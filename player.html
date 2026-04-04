@@ -2634,7 +2634,8 @@
 
         const params = new URLSearchParams(location.search);
         const TMDB_ID = params.get('id');
-        const MEDIA_TYPE = (params.get('type') || 'movie').toLowerCase();
+        const rawType = (params.get('type') || 'movie').toLowerCase();
+        const MEDIA_TYPE = (rawType === 'undefined' || !rawType) ? 'movie' : rawType;
         let FORCED_PROVIDER = params.get('provider') || '';
         const DIRECT_ONLY = (params.get('directOnly') || 'true').toLowerCase() !== 'false';
         const URL_SEASON = Number(params.get('season') || 0);
