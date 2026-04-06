@@ -2552,7 +2552,8 @@
         async function fetchJsonWithApiFallback(url, options = {}) {
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
             const hasCallerSignal = !!options?.signal;
-            const retryBaseDelayMs = hasCallerSignal ? 0 : 250;
+            const perFetchTimeout = options?.timeoutMs;
+            const retryBaseDelayMs = (hasCallerSignal || perFetchTimeout) ? 0 : 250;
             const isWatchRequest = /\/(?:meta\/tmdb\/watch|movies\/[a-z0-9_-]+\/watch)(?:\?|$)/i.test(String(url || ''));
             const allowCrossBaseFallback = /\/meta\/tmdb(?:\/|$)/i.test(String(url || '')) && !isWatchRequest;
             const preferredBase = String(API_BASE_CANDIDATES?.[0] || activeApiBase || API_BASE || '').trim();
@@ -2576,11 +2577,29 @@
             };
             const attemptFetch = async (base, attempts = 2) => {
                 let lastErr = null;
-                const maxAttempts = hasCallerSignal ? 1 : attempts;
+                const maxAttempts = (hasCallerSignal || perFetchTimeout) ? 1 : attempts;
                 for (let i = 0; i < maxAttempts; i += 1) {
                     const reqUrl = withApiBase(url, base);
+                    
+                    const fetchOpts = { ...options };
+                    let abortController = null;
+                    let abortTimer = null;
+                    if (perFetchTimeout && !hasCallerSignal) {
+                        try {
+                            if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+                                fetchOpts.signal = AbortSignal.timeout(perFetchTimeout);
+                            } else if (typeof AbortController !== 'undefined') {
+                                abortController = new AbortController();
+                                fetchOpts.signal = abortController.signal;
+                                abortTimer = setTimeout(() => abortController.abort(), perFetchTimeout);
+                            }
+                        } catch (e) {}
+                        delete fetchOpts.timeoutMs;
+                    }
+
                     try {
-                        const res = await fetch(reqUrl, options);
+                        const res = await fetch(reqUrl, fetchOpts);
+                        if (abortTimer) clearTimeout(abortTimer);
                         if (shouldRetryStatus(res.status) && i < maxAttempts - 1) {
                             await sleep(retryBaseDelayMs + i * 350);
                             continue;
@@ -2590,6 +2609,7 @@
                         }
                         return { res, usedBase: base };
                     } catch (err) {
+                        if (abortTimer) clearTimeout(abortTimer);
                         lastErr = err;
                         if (isRetriableError(err) && i < maxAttempts - 1) {
                             await sleep(retryBaseDelayMs + i * 350);
@@ -4579,13 +4599,13 @@
         async function fetchFillerViaConsumetMeta(provider, title) {
             try {
                 const metaBase = API_BASE.replace('/meta/tmdb', `/meta/${provider}`);
-                const searchRes = await fetchJsonWithRetry(`${metaBase}/${encodeURIComponent(title)}?page=1`, 9000, 15000);
+                const searchRes = await fetchJsonWithRetry(`${metaBase}/${encodeURIComponent(title)}?page=1`, 15000, 20000);
                 const searchResults = toArrayPayload(searchRes);
                 const best = pickBestMalSearchResult(title, searchResults);
                 const contentId = best?.id || best?.anilistId || best?.malId || best?._id;
                 if (!contentId) return new Map();
 
-                const infoRes = await fetchJsonWithRetry(`${metaBase}/info/${encodeURIComponent(String(contentId))}?fetchFiller=true`, 12000, 20000);
+                const infoRes = await fetchJsonWithRetry(`${metaBase}/info/${encodeURIComponent(String(contentId))}?fetchFiller=true`, 15000, 25000);
                 const parsed = parseFillerMapFromMetaMalInfo(infoRes);
                 if (parsed.size > 0) {
                     console.log('[filler] meta matched provider=', provider, 'id=', contentId, 'episodes=', parsed.size);
@@ -4849,11 +4869,7 @@
 
         async function fetchJsonWithRetry(url, timeoutMs = 12000, retryTimeoutMs = 25000) {
             const tryFetch = async (ms) => {
-                // Check if AbortSignal.timeout is available
-                const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout
-                    ? AbortSignal.timeout(ms)
-                    : undefined;
-                const options = signal ? { signal } : {};
+                const options = { timeoutMs: ms };
                 const { res } = await fetchJsonWithApiFallback(url, options);
                 if (!res.ok) throw new Error(`Info fetch failed (${res.status})`);
                 return res.json();
@@ -9456,7 +9472,7 @@
                     } else {
                         setLoader('Fetching media info...', 'Loaded from local cache');
                         for (const infoUrl of infoUrls) {
-                            fetchJsonWithRetry(infoUrl, 10000, 18000)
+                            fetchJsonWithRetry(infoUrl, 15000, 25000)
                                 .then((fresh) => {
                                     const payload = fresh?.data || fresh;
                                     if (payload && typeof payload === 'object') writeCachedMediaInfo(payload);
@@ -9469,7 +9485,7 @@
                     let lastErr = null;
                     for (const infoUrl of infoUrls) {
                         try {
-                            parsed = await fetchJsonWithRetry(infoUrl, 12000, 30000);
+                            parsed = await fetchJsonWithRetry(infoUrl, 20000, 30000);
                             if (parsed) break;
                         } catch (e) {
                             lastErr = e;
