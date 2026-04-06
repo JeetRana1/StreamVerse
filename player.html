@@ -2789,22 +2789,22 @@
         const STREAM_SOURCE_CACHE_PREFIX = 'sv_stream_source_v1';
         const STREAM_SOURCE_CACHE_TTL_MS = 15 * 60 * 1000;
         const REQ_TIMEOUT = {
-            animeSearch: 5000,
-            animeInfo: 5000,
-            metaInfo: 12000,
-            watch: 12000,
-            directWatch: 10000,
-            subtitleFallback: 15000,
+            animeSearch: 10000,
+            animeInfo: 15000,
+            metaInfo: 25000,
+            watch: 25000,
+            directWatch: 15000,
+            subtitleFallback: 20000,
         };
         const MAX_EXTERNAL_SUBTITLE_TRACKS = 6;
-        const ANIME_WATCH_TIMEOUT_MS = 20000;
-        const ANIME_INFO_TIMEOUT_MS = 12000;
+        const ANIME_WATCH_TIMEOUT_MS = 25000;
+        const ANIME_INFO_TIMEOUT_MS = 20000;
         const PROVIDER_TIMEOUT_OVERRIDES = {
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
-            dramacool: { watch: 15000, directWatch: 12000 },
-            // Keep FlixHQ responsive: fail fast enough to allow quick fallback.
-            flixhq: { animeSearch: 8000, animeInfo: 12000, watch: 18000, metaInfo: 12000 },
+            dramacool: { watch: 20000, directWatch: 15000 },
+            // Raised FlixHQ timeout to 25s because FlixHQ often experiences 15-20s TTFB right now
+            flixhq: { animeSearch: 15000, animeInfo: 15000, watch: 25000, metaInfo: 25000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
