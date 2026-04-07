@@ -13,7 +13,7 @@ const LOCAL_API = String(
     normalizeMetaApiBase(
         RUNTIME_CONFIG.LOCAL_META_API_BASE ||
         RUNTIME_CONFIG.LOCAL_API_BASE,
-        'http://localhost:3010/meta/tmdb'
+        'http://localhost:3000/meta/tmdb'
     )
 );
 const PROD_API = String(
@@ -33,6 +33,9 @@ const FALLBACK_API = String(
 );
 const PROD_API_HOST = (() => {
     try { return new URL(PROD_API).host; } catch (_) { return ''; }
+})();
+const FALLBACK_API_HOST = (() => {
+    try { return new URL(FALLBACK_API).host; } catch (_) { return ''; }
 })();
 
 // Genre mapping for TMDB genre IDs to names
@@ -132,14 +135,18 @@ function handleWatchlistToggle(id, type, provider) {
     }
     saveWatchlist(list);
 }
-const FALLBACK_API_HOST = (() => {
-    try { return new URL(FALLBACK_API).host; } catch (_) { return ''; }
-})();
 const IMG_BASE = 'https://image.tmdb.org/t/p/';
 const API_TIMEOUT_MS = 7000;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const CACHE_PREFIX = 'sv_cache_v1:';
 const DETAIL_CACHE_TTL_MS = 30 * 60 * 1000;
+
+// ------------------ API SWITCHER ------------------------------------------
+function toggleApi(source) {
+    const next = String(source || '').toLowerCase() === 'local' ? 'local' : 'prod';
+    localStorage.setItem('api_source', next);
+    window.location.reload();
+}
 
 function getDefaultApiSource() {
     return 'prod';
@@ -199,6 +206,12 @@ async function fetchJson(url, timeoutMs = API_TIMEOUT_MS) {
             const codeErr = new Error('API returned source code instead of JSON');
             codeErr.isSourceLeak = true;
             throw codeErr;
+        }
+        // Check for HTML responses
+        if (text.trim().startsWith('<') || text.includes('<html') || text.includes('<body')) {
+            const htmlErr = new Error('API returned HTML instead of JSON');
+            htmlErr.isHtmlResponse = true;
+            throw htmlErr;
         }
         try {
             return JSON.parse(text);
@@ -552,7 +565,7 @@ function applyContinueGridLayout() {
     continueWatchingGrid.style.setProperty('display', 'grid', 'important');
     continueWatchingGrid.style.setProperty('grid-template-columns', `repeat(${cols}, minmax(0, 1fr))`, 'important');
     continueWatchingGrid.style.setProperty('gap', '1.2rem', 'important');
-    continueWatchingGrid.style.setProperty('align-items', 'stretch', 'important');
+    continueWatchingGrid.style.setProperty('align-items', 'start', 'important');
     continueWatchingGrid.style.setProperty('grid-auto-flow', 'row', 'important');
 }
 
@@ -747,6 +760,10 @@ function createContinueWatchingCard(item) {
              onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Image'">
         ${continueSelectionMode ? `<button type="button" class="continue-select-toggle ${isSelected ? 'selected' : ''}" aria-label="Select item for clearing"><i class="fa-solid fa-check"></i></button>` : ''}
         ${seasonEpisodeBadge}
+        <div class="movie-card-meta-left">
+            <span class="meta-pill-left">${formatTime(item.currentTime)}</span>
+            <span class="meta-pill-left">${item.type === 'tv' ? 'TV' : 'Movie'}</span>
+        </div>
         <div class="audio-badge">
             <span class="audio-dot"></span>
             ${audioLabel}
@@ -1473,7 +1490,7 @@ function renderDetailsModal(movie, id, type, provider = '') {
         <div class="modal-header-container">
             <div class="modal-header-bg ${hasTrailer ? 'trailer-clickable' : ''}" style="background-image:url('${cover}')" ${hasTrailer ? `onclick="playTrailer('${trailerUrl}', '${cover}')" id="modal-hero-bg"` : ''}>
                 <div class="modal-header-overlay-vignette"></div>
-                ${hasTrailer ? '<div class="trailer-play-icon"><i class="fa-solid fa-play-circle"></i></div>' : ''}
+                ${hasTrailer ? '<div class="trailer-play-icon"><i class="fa-solid fa-play"></i></div>' : ''}
             </div>
             <div class="modal-trailer-container" id="modal-trailer-container" style="display: none;">
                 <iframe id="modal-trailer-iframe" 
@@ -1613,6 +1630,11 @@ function renderDetailsModal(movie, id, type, provider = '') {
                         <img src="${poster}" alt="${title}" onerror="this.src='https://placehold.co/200x300/1a1a2e/e50914?text=No+Poster'">
                         <span class="quality-badge">HD</span>
                         ${seasonEpisodeBadge}
+                        <div class="movie-card-meta-left">
+                            <span class="meta-pill-left">${rating}</span>
+                            <span class="meta-pill-left">${year}</span>
+                            <span class="meta-pill-left">${movieType === 'tv' ? 'TV' : 'Movie'}</span>
+                        </div>
                         <div class="movie-card-info">
                             <h3 class="movie-card-title">${title}</h3>
                             <div class="movie-card-meta">
@@ -1832,33 +1854,40 @@ function displayHero(item) {
     setTimeout(() => heroSection.classList.remove('is-switching'), 260);
 
     // Add Animation Class
-    heroContainer.classList.remove('animate-in');
-    void heroContainer.offsetWidth; // Trigger reflow
-    heroContainer.classList.add('animate-in');
+    const heroInfo = heroContainer.querySelector('.hero-info');
+    if (heroInfo) {
+        heroInfo.classList.remove('animate-in');
+        void heroInfo.offsetWidth; // Trigger reflow
+        heroInfo.classList.add('animate-in');
+    }
 
     heroContainer.innerHTML = `
-        <span class="hero-tagline">Now Streaming</span>
-        <h1 class="hero-title">${title}</h1>
-        <div class="hero-meta modal-meta-pills">
-            <span class="meta-pill rating-pill"><i class="fa-solid fa-star"></i> ${rating}</span>
-            <span class="meta-pill" style="border-color:#38bdf833">
-                <i class="fa-solid fa-calendar-days" style="color:#38bdf8"></i> ${year}
-            </span>
-            <span class="meta-pill" style="border-color:#4ade8033">
-                <i class="fa-solid fa-${type === 'tv' ? 'tv' : 'film'}" style="color:#4ade80"></i> ${type === 'tv' ? 'TV Series' : 'Movie'}
-            </span>
-        </div>
-        <p class="hero-description">${item.description || item.overview || ''}</p>
-        <div class="hero-btns">
-            <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}')">
-                <i class="fa-solid fa-play"></i> Watch Now
-            </button>
-            <button class="btn btn-more-info" onclick="openDetails('${id}','${type}')">
-                <i class="fa-solid fa-circle-info"></i> More Info
-            </button>
+        <div class="hero-info">
+            <div class="hero-content-main">
+                <span class="hero-tagline">Now Streaming</span>
+                <h1 class="hero-title">${title}</h1>
+                <div class="hero-meta">
+                    <span class="meta-pill rating-pill"><i class="fa-solid fa-star"></i> ${rating}</span>
+                    <span class="meta-pill" style="border-color:#38bdf833">
+                        <i class="fa-solid fa-calendar-days" style="color:#38bdf8"></i> ${year}
+                    </span>
+                    <span class="meta-pill" style="border-color:#4ade8033">
+                        <i class="fa-solid fa-${type === 'tv' ? 'tv' : 'film'}" style="color:#4ade80"></i> ${type === 'tv' ? 'TV' : 'Movie'}
+                    </span>
+                </div>
+                <p class="hero-description">${item.description || item.overview || ''}</p>
+                <div class="hero-btns">
+                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}')">
+                        <i class="fa-solid fa-play"></i> Watch Now
+                    </button>
+                    <button class="btn btn-more-info" onclick="openDetails('${id}','${type}')">
+                        <i class="fa-solid fa-circle-info"></i> More Info
+                    </button>
+                </div>
+            </div>
         </div>
     `;
-    const heroInfoBtn = heroContainer.querySelector('.btn-secondary');
+    const heroInfoBtn = heroContainer.querySelector('.btn-more-info');
     if (heroInfoBtn) {
         heroInfoBtn.addEventListener('mouseenter', () => prefetchDetails(id, type), { once: true });
         heroInfoBtn.addEventListener('touchstart', () => prefetchDetails(id, type), { once: true, passive: true });
@@ -2500,13 +2529,6 @@ function filterType(type) {
             });
         }, 100);
     }
-}
-
-// ------------------ API SWITCHER ------------------------------------------
-function toggleApi(source) {
-    const next = String(source || '').toLowerCase() === 'local' ? 'local' : 'prod';
-    localStorage.setItem('api_source', next);
-    window.location.reload();
 }
 
 function updateSwitcherState() {

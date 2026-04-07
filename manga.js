@@ -236,8 +236,8 @@ async function fetchJson(url, timeoutMs = 14000) {
 }
 
 async function discoverByProvider(provider) {
-  const seedQueries = ['one piece', 'naruto', 'bleach'];
-  const timeout = provider === 'mangakakalot' ? 5500 : provider === 'mangadex' ? 6500 : 7500;
+  const seedQueries = ['one piece'];
+  const timeout = provider === 'mangakakalot' ? 5500 : provider === 'mangadex' ? 3000 : 7500;
   const tasks = seedQueries.map(async (q) => {
     const data = await fetchJson(providerSearchUrl(provider, q), timeout);
     const rows = normalizeResults(data);
@@ -258,15 +258,28 @@ async function loadDiscover() {
   statusEl.textContent = 'Loading manga...';
   mangaGrid.innerHTML = '';
 
+  const cacheKey = `manga_discover_${selectedProvider}`;
+  const cached = localStorage.getItem(cacheKey);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (parsed.ts && Date.now() - parsed.ts < 60 * 60 * 1000) { // 1 hour
+        renderCards(parsed.rows);
+        statusEl.textContent = `${parsed.rows.length} manga loaded (cached)`;
+        return;
+      }
+    } catch {}
+  }
+
   try {
     let rows = [];
 
     if (selectedProvider === 'all') {
-      const picks = ['mangadex', 'mangapill', 'mangahere', 'mangakakalot'];
+      const picks = ['mangadex'];
       const settled = await Promise.allSettled(picks.map((p) => discoverByProvider(p)));
       const merged = [];
       for (const hit of settled) {
-        if (hit.status === 'fulfilled') merged.push(...hit.value.slice(0, 8));
+        if (hit.status === 'fulfilled') merged.push(...hit.value.slice(0, 36));
       }
       const seen = new Set();
       rows = merged.filter((item) => {
@@ -278,6 +291,9 @@ async function loadDiscover() {
     } else {
       rows = (await discoverByProvider(selectedProvider)).slice(0, 36);
     }
+
+    // Cache the results
+    localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), rows }));
 
     renderCards(rows);
     statusEl.textContent = `${rows.length} manga loaded`;
@@ -345,7 +361,8 @@ async function runSearch() {
 }
 
 async function openMangaInfo(item, provider) {
-  mangaModal.style.display = 'block';
+  mangaModal.classList.add('active');
+  document.body.classList.add('modal-open');
   mangaModalBody.innerHTML = '<p style="padding:20px">Loading manga info...</p>';
   try {
     const info = await fetchJson(providerInfoUrl(provider, item.id), 16000);
@@ -643,7 +660,7 @@ function renderReader(title, pages, sourceProvider) {
   };
 
   readerKeyHandler = (e) => {
-    if (readerModal.style.display !== 'block') return;
+    if (!readerModal.classList.contains('active')) return;
     if (e.key === 'ArrowLeft') setPage(pageIndex - 1);
     if (e.key === 'ArrowRight') setPage(pageIndex + 1);
   };
@@ -730,7 +747,8 @@ function setupFullscreenControlsAutoHide() {
 }
 
 async function openChapter({ provider, chapterId, title, mangaTitle, chapterNumber }) {
-  readerModal.style.display = 'block';
+  readerModal.classList.add('active');
+  document.body.classList.add('modal-open');
   readerBody.innerHTML = '<p style="padding:20px">Loading chapter...</p>';
 
   try {
@@ -786,15 +804,29 @@ async function toggleModalFullscreen(modalId) {
   }
 }
 
-document.getElementById('manga-modal-close').onclick = () => { mangaModal.style.display = 'none'; };
-document.getElementById('reader-modal-close').onclick = () => { readerModal.style.display = 'none'; cleanupReaderHandler(); };
+document.getElementById('manga-modal-close').onclick = () => { 
+  mangaModal.classList.remove('active'); 
+  document.body.classList.remove('modal-open'); 
+};
+document.getElementById('reader-modal-close').onclick = () => { 
+  readerModal.classList.remove('active'); 
+  document.body.classList.remove('modal-open'); 
+  cleanupReaderHandler(); 
+};
 const mangaModalFsBtn = document.getElementById('manga-modal-fs');
 if (mangaModalFsBtn) mangaModalFsBtn.onclick = () => toggleModalFullscreen('manga-modal');
 const readerModalFsBtn = document.getElementById('reader-modal-fs');
 if (readerModalFsBtn) readerModalFsBtn.onclick = () => toggleModalFullscreen('reader-modal');
 window.onclick = (e) => {
-  if (e.target === mangaModal) mangaModal.style.display = 'none';
-  if (e.target === readerModal) { readerModal.style.display = 'none'; cleanupReaderHandler(); }
+  if (e.target === mangaModal) { 
+    mangaModal.classList.remove('active'); 
+    document.body.classList.remove('modal-open'); 
+  }
+  if (e.target === readerModal) { 
+    readerModal.classList.remove('active'); 
+    document.body.classList.remove('modal-open'); 
+    cleanupReaderHandler(); 
+  }
 };
 
 searchBtn.addEventListener('click', runSearch);

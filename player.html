@@ -66,7 +66,7 @@
             align-items: center;
             justify-content: center;
             z-index: 9999;
-            transition: opacity .5s ease;
+            transition: opacity 0s;
             background-size: cover;
             background-position: center;
         }
@@ -2809,8 +2809,8 @@
         const STREAM_SOURCE_CACHE_PREFIX = 'sv_stream_source_v1';
         const STREAM_SOURCE_CACHE_TTL_MS = 15 * 60 * 1000;
         const REQ_TIMEOUT = {
-            animeSearch: 10000,
-            animeInfo: 15000,
+            animeSearch: 5000,
+            animeInfo: 8000,
             metaInfo: 25000,
             watch: 25000,
             directWatch: 15000,
@@ -2823,8 +2823,8 @@
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
             dramacool: { watch: 20000, directWatch: 15000 },
-            // Raised FlixHQ timeout to 25s because FlixHQ often experiences 15-20s TTFB right now
-            flixhq: { animeSearch: 15000, animeInfo: 15000, watch: 25000, metaInfo: 25000 },
+            // Optimized FlixHQ timeouts for faster fetching
+            flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 15000, metaInfo: 15000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
@@ -2906,7 +2906,7 @@
         }
         function hideLoader() {
             loader.style.opacity = '0';
-            setTimeout(() => loader.style.display = 'none', 500);
+            setTimeout(() => loader.style.display = 'none', 0);
         }
         function showError(title, msg) {
             hideLoader();
@@ -2997,18 +2997,20 @@
             return lastEstimatedBandwidth > 0 && lastEstimatedBandwidth < threshold;
         }
 
-        function svCreateHlsInstance(startTime, isThumbnail = false) {
+        function svCreateHlsInstance(startTime, isThumbnail = false, provider = '') {
             const mobileMain = IS_MOBILE_CLIENT && !isThumbnail;
             const isConstrained = !isThumbnail && estimateNetworkQuality();
+            const isFlixHq = String(provider || '').toLowerCase().includes('flixhq');
 
             // Dynamic buffer sizing — keep buffers modest to avoid bufferFullError cascades
             // (oversized buffers fill up, HLS.js panics → stall loop)
-            const backBufferLength = isThumbnail ? 2 : (mobileMain ? 8 : 12);
-            const maxBufferLength = isThumbnail ? 5 : (mobileMain ? 14 : 20);
-            const maxMaxBufferLength = isThumbnail ? 10 : (mobileMain ? 28 : 40);
+            // FlixHQ needs larger buffers to prevent stalling
+            const backBufferLength = isThumbnail ? 2 : (isFlixHq ? 20 : (mobileMain ? 8 : 12));
+            const maxBufferLength = isThumbnail ? 5 : (isFlixHq ? 35 : (mobileMain ? 14 : 20));
+            const maxMaxBufferLength = isThumbnail ? 10 : (isFlixHq ? 60 : (mobileMain ? 28 : 40));
             const maxBufferSize = isThumbnail
                 ? 6 * 1024 * 1024
-                : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000);
+                : (isFlixHq ? 50 * 1000 * 1000 : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000));
 
             return new Hls({
                 startPosition: startTime,
@@ -3032,7 +3034,7 @@
                 levelLoadingTimeOut: isThumbnail ? 3000 : 10000,
                 levelLoadingMaxRetry: 2,
                 levelLoadingRetryDelay: isThumbnail ? 200 : 300,
-                fragLoadingTimeOut: isThumbnail ? 3000 : 14000,
+                fragLoadingTimeOut: isThumbnail ? 3000 : (isFlixHq ? 15000 : 14000),
                 // Fewer fragment retries — fail fast so we can rebuild in-place instead of stalling
                 fragLoadingMaxRetry: isThumbnail ? 2 : 3,
                 fragLoadingRetryDelay: isThumbnail ? 200 : 500,
@@ -3046,13 +3048,15 @@
                 capLevelToPlayerSize: true,
                 capLevelOnFPSDrop: true,
                 appendErrorMaxRetry: 4,
+                audioCodec: isFlixHq ? 'mp4a.40.2' : undefined,
+                maxAudioFramesDrift: isFlixHq ? 1 : 2,
                 startFragPrefetch: !isThumbnail,
                 testBandwidth: !isThumbnail,
                 progressive: true,
-                maxStarvationDelay: isThumbnail ? 2 : 4,
-                maxLoadingDelay: isThumbnail ? 2 : 4,
+                maxStarvationDelay: isThumbnail ? 2 : (isFlixHq ? 8 : 4),
+                maxLoadingDelay: isThumbnail ? 2 : (isFlixHq ? 8 : 4),
                 xhrSetup: (xhr, url) => {
-                    xhr.timeout = isThumbnail ? 5000 : 18000;
+                    xhr.timeout = isThumbnail ? 5000 : (isFlixHq ? 18000 : 18000);
                 },
             });
         }
@@ -3894,7 +3898,7 @@
                     hlsInst.startLoad(Math.max(0, targetTime - 0.8));
                 } catch (_) { }
             } else {
-                hlsInst = svCreateHlsInstance(targetTime);
+                hlsInst = svCreateHlsInstance(targetTime, false, currentStreamProvider);
                 svAttachHlsListeners(hlsInst, targetTime, onReady);
                 hlsInst.loadSource(proxiedStreamUrl(url, referer));
                 hlsInst.attachMedia(video);
@@ -5255,6 +5259,20 @@
             if (currentAnimeCanonicalInfo && currentAnimeCanonicalInfoKey === requestKey) return currentAnimeCanonicalInfo;
             if (currentAnimeCanonicalInfoPromise) return currentAnimeCanonicalInfoPromise;
 
+            // Check localStorage cache
+            const cacheKey = `sv_anime_canonical_${requestKey}`;
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    if (parsed.ts && Date.now() - parsed.ts < 60 * 60 * 1000) { // 1 hour
+                        currentAnimeCanonicalInfo = parsed.data;
+                        currentAnimeCanonicalInfoKey = requestKey;
+                        return currentAnimeCanonicalInfo;
+                    }
+                } catch {}
+            }
+
             const anilistBase = API_BASE.replace('/meta/tmdb', '/meta/anilist');
             const title = normalizeAnimeSearchQuery(mediaTitle);
             const cachedId = String(currentMediaInfo?.anilistId || '').trim();
@@ -5304,6 +5322,8 @@
                     }
                     currentAnimeCanonicalInfo = info;
                     currentAnimeCanonicalInfoKey = requestKey;
+                    // Cache in localStorage
+                    localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: info }));
                     return info;
                 } catch {
                     return null;
@@ -5343,7 +5363,7 @@
             }
 
             const movieProviderBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
-            const terms = Array.from(
+            const allTerms = Array.from(
                 new Set([
                     title,
                     title.replace(/\(\d{4}\)/g, '').trim(),
@@ -5353,15 +5373,25 @@
                     title.split(/\s+/).slice(-1).join(' ').trim(),
                 ].filter(Boolean)),
             );
+            const terms = provider === 'flixhq' ? allTerms.slice(0, 3) : allTerms;
             const wanted = normalizeLoose(title);
             const yearHint = Number(getPreferredMediaYear() || 0);
             const wantedType = String(mediaType || '').toLowerCase() === 'tv' ? 'tv' : 'movie';
 
             for (const term of terms) {
-                const searchUrl = `${movieProviderBase}/${encodeURIComponent(term)}?page=1`;
-                const { res: sRes } = await fetchJsonWithApiFallback(searchUrl, {
+                let searchUrl;
+                let fetchOptions = {
                     signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeSearch', 8000)),
-                });
+                };
+                if (provider === 'flixhq') {
+                    searchUrl = `${movieProviderBase}/search`;
+                    fetchOptions.method = 'POST';
+                    fetchOptions.headers = { 'Content-Type': 'application/json' };
+                    fetchOptions.body = JSON.stringify({ query: term });
+                } else {
+                    searchUrl = `${movieProviderBase}/${encodeURIComponent(term)}?page=1`;
+                }
+                const { res: sRes } = await fetchJsonWithApiFallback(searchUrl, fetchOptions);
                 if (!sRes.ok) continue;
 
                 const payload = await sRes.json();
@@ -9472,7 +9502,7 @@
                     } else {
                         setLoader('Fetching media info...', 'Loaded from local cache');
                         for (const infoUrl of infoUrls) {
-                            fetchJsonWithRetry(infoUrl, 15000, 25000)
+                            fetchJsonWithRetry(infoUrl, 10000, 15000)
                                 .then((fresh) => {
                                     const payload = fresh?.data || fresh;
                                     if (payload && typeof payload === 'object') writeCachedMediaInfo(payload);
@@ -9485,7 +9515,7 @@
                     let lastErr = null;
                     for (const infoUrl of infoUrls) {
                         try {
-                            parsed = await fetchJsonWithRetry(infoUrl, 20000, 30000);
+                            parsed = await fetchJsonWithRetry(infoUrl, 10000, 15000);
                             if (parsed) break;
                         } catch (e) {
                             lastErr = e;
@@ -9697,7 +9727,18 @@
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const timeoutMs = 12000;
+                    const cacheKey = `anime_provider_seasons_${providerName}_${animeSeriesTitle}_${preferredYear}`;
+                    const cached = localStorage.getItem(cacheKey);
+                    if (cached) {
+                        try {
+                            const parsed = JSON.parse(cached);
+                            if (parsed.ts && Date.now() - parsed.ts < 60 * 60 * 1000) { // 1 hour
+                                return parsed.data;
+                            }
+                        } catch {}
+                    }
+
+                    const timeoutMs = 5000;
 
                     if (providerName === 'satoru') {
                         const { res: seriesRes } = await fetchJsonWithApiFallback(
@@ -9707,7 +9748,7 @@
                         if (!seriesRes.ok) return [];
                         const seriesData = await seriesRes.json();
                         const entries = Array.isArray(seriesData?.entries) ? seriesData.entries : [];
-                        return entries.flatMap((entry, index) => {
+                        const result = entries.flatMap((entry, index) => {
                             const entryTitle = String(entry?.title || `Part ${index + 1}`).trim();
                             const entryId = String(entry?.id || '').trim();
                             const seasonNo = Number(
@@ -9741,32 +9782,53 @@
                                 provider: providerName,
                             }];
                         });
+                        localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: result }));
+                        return result;
                     }
 
-                    const searchTerms = getAnimeSearchTerms(animeSeriesTitle, preferredYear, 1, '', false);
+                    const searchTerms = getAnimeSearchTerms(animeSeriesTitle, preferredYear, 1, '', false).slice(0, 1);
                     let bestResult = null;
-                    for (const term of searchTerms) {
-                        const typeHint = providerName === 'animesalt' ? '?type=tv' : '';
-                        const { res: searchRes } = await fetchJsonWithApiFallback(
-                            `${API_BASE.replace('/meta/tmdb', '/anime/' + providerName)}/${encodeURIComponent(term)}${typeHint}`,
-                            { signal: AbortSignal.timeout(timeoutMs) },
-                        );
-                        if (!searchRes.ok) continue;
-                        const searchData = await searchRes.json();
-                        const results = getAnimeSearchResults(searchData);
-                        const filteredResults = results.filter((row) => {
-                            const rowId = String(row?.id || '').toLowerCase();
-                            const rowType = String(row?.type || row?.format || '').toLowerCase();
-                            if (rowId.startsWith('movie:')) return false;
-                            if (rowType.includes('movie') || rowType === 'film') return false;
-                            return true;
-                        });
-                        const searchPool = filteredResults.length ? filteredResults : results;
-                        bestResult =
-                            pickAnimeResultByAniListId(searchPool, String((currentAnimeCanonicalInfo || await getCanonicalAnimeInfo())?.id || currentMediaInfo?.anilistId || '').trim()) ||
-                            findExactProviderSeasonMatch(providerName, searchPool, '') ||
-                            pickAnimeResultByTitle(searchPool, animeSeriesTitle, preferredYear, 1, '', false);
-                        if (bestResult?.id) break;
+
+                    // Check cache for previous search result
+                    const searchCacheKey = `anime_search_${providerName}_${animeSeriesTitle}_${preferredYear}`;
+                    const cachedSearch = localStorage.getItem(searchCacheKey);
+                    if (cachedSearch) {
+                        try {
+                            const parsed = JSON.parse(cachedSearch);
+                            if (parsed.ts && Date.now() - parsed.ts < 60 * 60 * 1000) { // 1 hour
+                                bestResult = parsed.data;
+                            }
+                        } catch {}
+                    }
+
+                    if (!bestResult) {
+                        for (const term of searchTerms) {
+                            const typeHint = providerName === 'animesalt' ? '?type=tv' : '';
+                            const { res: searchRes } = await fetchJsonWithApiFallback(
+                                `${API_BASE.replace('/meta/tmdb', '/anime/' + providerName)}/${encodeURIComponent(term)}${typeHint}`,
+                                { signal: AbortSignal.timeout(timeoutMs) },
+                            );
+                            if (!searchRes.ok) continue;
+                            const searchData = await searchRes.json();
+                            const results = getAnimeSearchResults(searchData);
+                            const filteredResults = results.filter((row) => {
+                                const rowId = String(row?.id || '').toLowerCase();
+                                const rowType = String(row?.type || row?.format || '').toLowerCase();
+                                if (rowId.startsWith('movie:')) return false;
+                                if (rowType.includes('movie') || rowType === 'film') return false;
+                                return true;
+                            });
+                            const searchPool = filteredResults.length ? filteredResults : results;
+                            bestResult =
+                                pickAnimeResultByAniListId(searchPool, String((currentAnimeCanonicalInfo || await getCanonicalAnimeInfo())?.id || currentMediaInfo?.anilistId || '').trim()) ||
+                                findExactProviderSeasonMatch(providerName, searchPool, '') ||
+                                pickAnimeResultByTitle(searchPool, animeSeriesTitle, preferredYear, 1, '', false);
+                            if (bestResult?.id) {
+                                // Cache the result
+                                localStorage.setItem(searchCacheKey, JSON.stringify({ ts: Date.now(), data: bestResult }));
+                                break;
+                            }
+                        }
                     }
                     if (!bestResult?.id) return [];
 
@@ -9779,26 +9841,37 @@
                     if (providerInfo?.data) providerInfo = providerInfo.data;
                     const episodes = Array.isArray(providerInfo?.episodes) ? providerInfo.episodes : [];
                     if (!episodes.length) return [];
-                    return buildSeasonListFromEpisodes(providerName, String(bestResult.id), providerInfo?.title || animeSeriesTitle, episodes);
+                    const result = buildSeasonListFromEpisodes(providerName, String(bestResult.id), providerInfo?.title || animeSeriesTitle, episodes);
+                    localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: result }));
+                    return result;
                 };
 
                 const hydrateProviders = Array.from(new Set([
                     ...(FORCED_PROVIDER ? [FORCED_PROVIDER] : []),
-                    ...ANIME_PROVIDERS,
+                    'satoru',
                 ]))
                     .map((p) => String(p || '').toLowerCase())
-                    .filter((p) => ['satoru', 'animesalt', 'justanime'].includes(p));
+                    .filter((p) => ['satoru'].includes(p));
 
-                for (const provider of hydrateProviders) {
+                // Run provider hydration in parallel
+                const hydrationPromises = hydrateProviders.map(async (provider) => {
                     try {
                         const hydrated = await hydrateAnimeProviderSeasons(provider);
                         if (hydrated.length) {
                             const normalizedHydrated = dedupeTvSeasonEntries(hydrated, true);
                             providerSeasonCatalog.set(provider, normalizedHydrated);
-                            tvSeasons = mergeSeasonLists(tvSeasons, normalizedHydrated);
+                            return normalizedHydrated;
                         }
                     } catch (err) {
                         console.warn('[initTv] Anime provider hydration failed for', provider, err);
+                    }
+                    return [];
+                });
+
+                const hydrationResults = await Promise.allSettled(hydrationPromises);
+                for (const result of hydrationResults) {
+                    if (result.status === 'fulfilled' && result.value.length) {
+                        tvSeasons = mergeSeasonLists(tvSeasons, result.value);
                     }
                 }
 
@@ -10537,6 +10610,7 @@
         async function goToNextEpisode() {
             const next = getNextEpisodeRef();
             if (!next) return;
+            setLoader('Loading next episode...', 'Please wait');
             await playTvEp(next.seasonIndex, next.episodeIndex, 0);
         }
 
@@ -10829,9 +10903,12 @@
                         // Movie/TV Providers (FlixHQ, etc.)
                         const isFlixhqProvider = provider === 'flixhq' && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv');
                         if (isFlixhqProvider) {
-                            // Fast path: let backend resolve FlixHQ source IDs during watch.
-                            // If current episode already has a provider id, use it directly.
-                            if (MEDIA_TYPE === 'tv' && selectedEpisode?.id) {
+                            // For movies, resolve FlixHQ ID first. For TV, use existing episode ID if available.
+                            if (MEDIA_TYPE === 'movie' || !selectedEpisode?.id) {
+                                const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, MEDIA_TYPE, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
+                                provEpisodeId = resolved?.episodeId;
+                                if (resolved?.info) info = resolved.info;
+                            } else if (MEDIA_TYPE === 'tv' && selectedEpisode?.id) {
                                 provEpisodeId = String(selectedEpisode.id).trim();
                             }
                         } else if (provider === 'dramacool') {
@@ -11628,7 +11705,7 @@
                     showBufferingOverlay();
                     try {
                         if (hlsInst) { hlsInst.stopLoad(); hlsInst.detachMedia(); hlsInst.destroy(); hlsInst = null; }
-                        hlsInst = svCreateHlsInstance(resumeTime);
+                        hlsInst = svCreateHlsInstance(resumeTime, false, currentStreamProvider);
                         svAttachHlsListeners(hlsInst, resumeTime, () => {
                             // If Plyr was never initialized (proxy failed before MANIFEST_PARSED),
                             // we must initialize it now so the player controls appear.
@@ -11706,7 +11783,7 @@
                     video && video.removeEventListener('playing', markHlsProgress);
                 };
 
-                hlsInst = svCreateHlsInstance(effectiveStartTime);
+                hlsInst = svCreateHlsInstance(effectiveStartTime, false, currentStreamProvider);
                 svAttachHlsListeners(hlsInst, effectiveStartTime, () => {
                     initPlyr();
                     if (useWarmStartResume && resumeTargetTime > 0) {

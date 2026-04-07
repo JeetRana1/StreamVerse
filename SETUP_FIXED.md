@@ -3,12 +3,12 @@
 ## Problem Resolved
 **Issue**: Frontend getting 404 errors on API calls
 **Root Cause**: Port 3000 was occupied by different application (Cooren API v3.0.0)
-**Solution**: Moved consumet API to port 3001 and updated frontend configuration
+**Solution**: Moved consumet API to port 3000 and updated frontend configuration
 
 ## Current Configuration
 
 ### API Server (Consumet)
-- **Port**: 3001
+- **Port**: 3000
 - **Status**: ✅ Running
 - **Location**: `c:\Users\Jeet\Videos\fewfwewfd\api.consumet.org`
 - **Started with**: `npm run dev`
@@ -17,7 +17,7 @@
 - **Port**: 8080
 - **Status**: ✅ Running
 - **Location**: `C:\Users\Jeet\Music\WTEHMOVIESCONSUMETAPITEST`
-- **API Base**: `http://localhost:3001`
+- **API Base**: `http://localhost:3000`
 
 ## Verified Working Endpoints
 
@@ -33,14 +33,14 @@
 
 1. **API Configuration**
    - `c:\Users\Jeet\Videos\fewfwewfd\api.consumet.org\.env`
-     - Changed `PORT=3000` → `PORT=3001`
+     - Changed `PORT=3000` → `PORT=3000`
 
 2. **Frontend Configuration**
    - `C:\Users\Jeet\Music\WTEHMOVIESCONSUMETAPITEST\.env`
-     - Changed `SITE_API_BASE=http://localhost:3000` → `http://localhost:3001`
+     - Changed `SITE_API_BASE=http://localhost:3000` → `http://localhost:3000`
    
    - `C:\Users\Jeet\Music\WTEHMOVIESCONSUMETAPITEST\config.js`
-     - Changed `LOCAL_API_BASE: 'http://localhost:3000/meta/tmdb'` → `http://localhost:3001/meta/tmdb`
+     - Changed `LOCAL_API_BASE: 'http://localhost:3000/meta/tmdb'` → `http://localhost:3000/meta/tmdb`
 
 ## What's Now Working
 
@@ -66,9 +66,9 @@
 
 ## How to Use
 
-1. **Backend running on port 3001** - Verify with:
+1. **Backend running on port 3000** - Verify with:
    ```bash
-   curl http://localhost:3001/movies/flixhq/
+   curl http://localhost:3000/movies/flixhq/
    ```
 
 2. **Frontend at http://localhost:8080** - Open in browser
@@ -94,7 +94,7 @@
 
 ```bash
 # Test API
-curl http://localhost:3001/movies/flixhq/Inception
+curl http://localhost:3000/movies/flixhq/Inception
 
 # Test Frontend
 # Open http://localhost:8080 in browser

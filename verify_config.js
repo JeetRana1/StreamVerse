@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verify that the config server correctly injects port 3001
+ * Verify that the config server correctly injects port 3000
  */
 const http = require('http');
 
@@ -31,7 +31,7 @@ async function test() {
         
         // Verify key values
         const checks = [
-            { key: 'localhost:3001', found: response.data.includes('localhost:3001'), desc: 'Port 3001 in config' },
+            { key: 'localhost:3000', found: response.data.includes('localhost:3000'), desc: 'Port 3000 in config' },
             { key: 'LOCAL_API_BASE', found: response.data.includes('LOCAL_API_BASE'), desc: 'LOCAL_API_BASE defined' },
             { key: 'LOCAL_META_API_BASE', found: response.data.includes('LOCAL_META_API_BASE'), desc: 'LOCAL_META_API_BASE defined' },
             { key: 'no-store', found: response.data.includes('no-store') || response.headers['cache-control']?.includes('no-store'), desc: 'No-cache header' }

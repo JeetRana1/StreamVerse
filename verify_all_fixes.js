@@ -77,7 +77,7 @@ if (failed === 0) {
     console.log('   2. Press Ctrl+Shift+R (or Cmd+Shift+R on Mac)');
     console.log('   3. Hard refresh to clear the JavaScript cache');
     console.log('   4. Check DevTools Console for any errors');
-    console.log('   5. Verify requests now go to localhost:3001\n');
+    console.log('   5. Verify requests now go to localhost:3000\n');
     console.log('✅ 404 errors should now be gone!');
 } else {
     console.log('⚠️  Some fixes may not be in place');

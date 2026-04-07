@@ -1,10 +1,10 @@
 # 🔧 Critical Fix Applied - Browser Cache Clear Required
 
 ## Problem Identified
-The browser console was showing 404 errors for all API requests to `localhost:3000` when the API is now running on `localhost:3001`.
+The browser console was showing 404 errors for all API requests to `localhost:3000` when the API is now running on `localhost:3000`.
 
 ## Root Cause
-The **frontend configuration has been updated** to use port 3001, but your **browser cached the old configuration** pointing to port 3000.
+The **frontend configuration has been updated** to use port 3000, but your **browser cached the old configuration** pointing to port 3000.
 
 ## ✅ What Was Fixed
 
@@ -14,17 +14,17 @@ The **frontend configuration has been updated** to use port 3001, but your **bro
 - **Result**: Dynamic config generation now includes all required variables
 
 ### 2. Static Config File (config.js)
-- **Updated**: `LOCAL_API_BASE: 'http://localhost:3001/meta/tmdb'`
-- **Updated**: `LOCAL_META_API_BASE: 'http://localhost:3001/meta/tmdb'`
+- **Updated**: `LOCAL_API_BASE: 'http://localhost:3000/meta/tmdb'`
+- **Updated**: `LOCAL_META_API_BASE: 'http://localhost:3000/meta/tmdb'`
 - **File**: `config.js`
 - **Result**: Fallback configuration has correct port
 
 ### 3. Backend API (.env)
-- **Confirmed**: `PORT=3001` in `/api.consumet.org/.env`
+- **Confirmed**: `PORT=3000` in `/api.consumet.org/.env`
 
 ### 4. Frontend Environment (.env)
-- **Confirmed**: `SITE_API_BASE=http://localhost:3001`
-- **Confirmed**: `SITE_META_API_BASE=http://localhost:3001/meta/tmdb`
+- **Confirmed**: `SITE_API_BASE=http://localhost:3000`
+- **Confirmed**: `SITE_META_API_BASE=http://localhost:3000/meta/tmdb`
 
 ## 🚨 REQUIRED ACTION: Clear Browser Cache
 
@@ -54,18 +54,18 @@ After clearing cache, check the browser console:
 4. Verify it shows:
    ```javascript
    {
-     API_BASE: "http://localhost:3001",
-     META_API_BASE: "http://localhost:3001/meta/tmdb",
-     LOCAL_API_BASE: "http://localhost:3001/meta/tmdb",
-     LOCAL_META_API_BASE: "http://localhost:3001/meta/tmdb",
+     API_BASE: "http://localhost:3000",
+     META_API_BASE: "http://localhost:3000/meta/tmdb",
+     LOCAL_API_BASE: "http://localhost:3000/meta/tmdb",
+     LOCAL_META_API_BASE: "http://localhost:3000/meta/tmdb",
      ...
    }
    ```
 
-5. Check for any 404 errors - there should be none with port 3001
+5. Check for any 404 errors - there should be none with port 3000
 
 ## 🎯 Expected Results After Fix
-- ✅ All API requests go to `localhost:3001`
+- ✅ All API requests go to `localhost:3000`
 - ✅ `/movies/dramacool/popular` loads without 404
 - ✅ `/meta/tmdb/info/...` calls succeed
 - ✅ Movie details and metadata load properly
@@ -76,9 +76,9 @@ After clearing cache, check the browser console:
 ```
 Port 8080: Frontend (start_site.js) → serves HTML/JS/CSS
   ↓ (on page load)
-  └→ Generates /config.js with port 3001 settings
+  └→ Generates /config.js with port 3000 settings
 
-Port 3001: Backend API (npm run dev)
+Port 3000: Backend API (npm run dev)
   ├─ /movies/dramacool → Provider endpoints
   ├─ /movies/flixhq → FlixHQ provider
   ├─ /meta/tmdb → TMDB metadata API
@@ -86,10 +86,10 @@ Port 3001: Backend API (npm run dev)
 
 Browser Script.js Flow:
 1. Loads config.js from port 8080
-2. Gets META_API_BASE: http://localhost:3001/meta/tmdb
+2. Gets META_API_BASE: http://localhost:3000/meta/tmdb
 3. Uses it as BASE_URL
 4. Replaces /meta/tmdb with /movies/{provider} for provider calls
-5. All requests go to port 3001
+5. All requests go to port 3000
 ```
 
 ## 📋 Troubleshooting
@@ -100,11 +100,11 @@ Browser Script.js Flow:
 - Check browser hasn't cached to disk - try Incognito/Private mode
 
 ### Getting different errors?
-- Check that API is actually running: `curl http://localhost:3001/`
-- Check port conflicts: `netstat -ano | findstr :3001` (Windows)
+- Check that API is actually running: `curl http://localhost:3000/`
+- Check port conflicts: `netstat -ano | findstr :3000` (Windows)
 - Restart frontend: Stop start_site.js and restart
 
-### API endpoint returns 404 even on 3001?
+### API endpoint returns 404 even on 3000?
 - Verify API build succeeded: Check for TypeScript errors
 - Restart API: `npm run dev` in api.consumet.org directory
 - Check FlixHQ provider is compiled
@@ -113,8 +113,8 @@ Browser Script.js Flow:
 | File | Change | Line(s) |
 |------|--------|---------|
 | `start_site.js` | Added LOCAL_API_BASE to config generation | 45-53 |
-| `config.js` | Updated all endpoints to port 3001 | All |
-| `.env` (API) | Confirmed PORT=3001 | - |
-| `.env` (Frontend) | Confirmed SITE_API_BASE=http://localhost:3001 | - |
+| `config.js` | Updated all endpoints to port 3000 | All |
+| `.env` (API) | Confirmed PORT=3000 | - |
+| `.env` (Frontend) | Confirmed SITE_API_BASE=http://localhost:3000 | - |
 
 **Status**: ✅ All backend fixes applied. Frontend ready. Awaiting browser cache clear.
