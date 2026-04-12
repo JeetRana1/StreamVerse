@@ -31,6 +31,12 @@ const FALLBACK_API = String(
         'https://consumet-api.vercel.app/meta/tmdb'
     )
 );
+const YOUTUBE_API_KEY = String(
+    RUNTIME_CONFIG.YOUTUBE_API_KEY ||
+    RUNTIME_CONFIG.YT_API_KEY ||
+    RUNTIME_CONFIG.GOOGLE_API_KEY ||
+    ''
+).trim();
 const PROD_API_HOST = (() => {
     try { return new URL(PROD_API).host; } catch (_) { return ''; }
 })();
@@ -149,7 +155,9 @@ function toggleApi(source) {
 }
 
 function getDefaultApiSource() {
-    return 'prod';
+    const host = String(window.location.hostname || '').toLowerCase();
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+    return isLocalHost ? 'local' : 'prod';
 }
 
 function getCurrentApiSource() {
@@ -431,13 +439,13 @@ function getRating(item) {
 }
 function getPoster(item) {
     // Aggregate all possible poster fields across different providers
-    const p = item.image || item.poster || item.img || item.thumbnail || item.poster_path ||
+    const p = item.poster_path || item.image || item.poster || item.img || item.thumbnail ||
         item.coverImage?.large || item.coverImage?.medium || item.bannerImage || '';
     return imgUrl(p);
 }
 function getCover(item) {
-    const c = item.cover || item.backdrop_path || item.bannerImage || item.image ||
-        item.poster || item.img || item.poster_path || item.coverImage?.extraLarge || '';
+    const c = item.poster_path || item.cover || item.backdrop_path || item.bannerImage || item.image ||
+        item.poster || item.img || item.coverImage?.extraLarge || '';
     return imgUrl(c, 'w1280');
 }
 function getType(item) {
@@ -450,13 +458,17 @@ function getType(item) {
     }
     if (t === 'movie' || t === 'film' || t === 'movie_short') return 'movie';
 
-    // Fallback: Only infer TV if we have multiple episodes or any seasons
-    // This prevents movies (which sometimes have 1 'episode' entry) from being called TV shows.
+    // TMDB-style date signals are more reliable than episode counters in mixed payloads.
+    const hasFirstAirDate = Boolean(item.first_air_date || item.firstAirDate);
+    const hasReleaseDate = Boolean(item.release_date || item.releaseDate);
+    if (hasFirstAirDate && !hasReleaseDate) return 'tv';
+    if (hasReleaseDate && !hasFirstAirDate) return 'movie';
+
+    // Conservative fallback: infer TV only from clear structural signals.
     const hasSeasons = Array.isArray(item.seasons) && item.seasons.length > 0;
     const hasManyEps = Array.isArray(item.episodes) && item.episodes.length > 1;
-    const hasHighTotal = Number(item.totalEpisodes || 0) > 1;
 
-    if (hasSeasons || hasManyEps || hasHighTotal) {
+    if (hasSeasons || hasManyEps) {
         return 'tv';
     }
 
@@ -1411,7 +1423,43 @@ function renderDetailsModal(movie, id, type, provider = '') {
     const year = getYear(movie);
     const rating = getRating(movie);
 
-    const runtimeVal = Number(movie.duration || movie.runtime || 0);
+    const parseRuntimeMinutes = (value) => {
+        if (value == null) return 0;
+        if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.round(value));
+
+        const str = String(value).trim();
+        if (!str) return 0;
+
+        // ISO-8601 duration like PT2H10M
+        const iso = str.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+        if (iso) {
+            const h = Number(iso[1] || 0);
+            const m = Number(iso[2] || 0);
+            const s = Number(iso[3] || 0);
+            return Math.max(0, (h * 60) + m + (s >= 30 ? 1 : 0));
+        }
+
+        // Formats like "2h 10m"
+        const hMatch = str.match(/(\d+)\s*h/i);
+        const mMatch = str.match(/(\d+)\s*m/i);
+        if (hMatch || mMatch) {
+            const h = Number(hMatch?.[1] || 0);
+            const m = Number(mMatch?.[1] || 0);
+            return Math.max(0, (h * 60) + m);
+        }
+
+        // Plain number-like strings or "130 min"
+        const num = Number((str.match(/\d+/) || [0])[0]);
+        return Number.isFinite(num) ? Math.max(0, num) : 0;
+    };
+
+    const runtimeVal = parseRuntimeMinutes(
+        movie.duration ??
+        movie.runtime ??
+        movie.runTime ??
+        movie.length ??
+        movie.tmdbRuntime
+    );
     let runtime = 'N/A';
     if (type === 'movie' && runtimeVal > 0) {
         const h = Math.floor(runtimeVal / 60);
@@ -1452,43 +1500,81 @@ function renderDetailsModal(movie, id, type, provider = '') {
 
     // Simplified trailer detection with filtration
     let trailerUrl = null;
-    
+
+    function normalizeTrailerUrl(candidate) {
+        if (!candidate) return null;
+
+        if (typeof candidate === 'string') {
+            const s = candidate.trim();
+            if (!s) return null;
+            if (s.includes('youtube.com') || s.includes('youtu.be')) {
+                return s.includes('/shorts/') ? null : s;
+            }
+            // Raw YouTube video id fallback
+            if (/^[a-zA-Z0-9_-]{6,}$/.test(s)) {
+                return `https://www.youtube.com/watch?v=${s}`;
+            }
+            return null;
+        }
+
+        if (typeof candidate === 'object') {
+            const url = candidate.url || candidate.link;
+            if (typeof url === 'string' && (url.includes('youtube.com') || url.includes('youtu.be')) && !url.includes('/shorts/')) {
+                return url;
+            }
+
+            const idOrKey = candidate.id || candidate.key || candidate.youtubeId || candidate.videoId;
+            if (typeof idOrKey === 'string' && idOrKey.length >= 6) {
+                return `https://www.youtube.com/watch?v=${idOrKey}`;
+            }
+        }
+
+        return null;
+    }
+
+    // Priority 1: direct trailer field
     if (movie.trailer) {
         if (typeof movie.trailer === 'string') {
-            // Direct string URL
-            if ((movie.trailer.includes('youtube.com') || movie.trailer.includes('youtu.be')) && !movie.trailer.includes('/shorts/')) {
-                trailerUrl = movie.trailer;
-            }
+            trailerUrl = normalizeTrailerUrl(movie.trailer);
         } else if (typeof movie.trailer === 'object' && !Array.isArray(movie.trailer)) {
-            // Single object with url/id property
-            if (isOfficialTrailer(movie.trailer)) {
-                if (movie.trailer.url && (movie.trailer.url.includes('youtube.com') || movie.trailer.url.includes('youtu.be')) && !movie.trailer.url.includes('/shorts/')) {
-                    trailerUrl = movie.trailer.url;
-                } else if (movie.trailer.id && typeof movie.trailer.id === 'string' && movie.trailer.id.length > 5) {
-                    trailerUrl = `https://www.youtube.com/watch?v=${movie.trailer.id}`;
-                }
+            if (isOfficialTrailer(movie.trailer) || !movie.trailer.type) {
+                trailerUrl = normalizeTrailerUrl(movie.trailer);
             }
         } else if (Array.isArray(movie.trailer) && movie.trailer.length > 0) {
-            // Array - find first official trailer
             for (const t of movie.trailer) {
-                if (t && typeof t === 'object' && isOfficialTrailer(t)) {
-                    if (t.id && typeof t.id === 'string' && t.id.length > 5) {
-                        trailerUrl = `https://www.youtube.com/watch?v=${t.id}`;
-                        break;
-                    } else if (t.url && (t.url.includes('youtube.com') || t.url.includes('youtu.be')) && !t.url.includes('/shorts/')) {
-                        trailerUrl = t.url;
-                        break;
-                    }
+                if (t && typeof t === 'object' && (isOfficialTrailer(t) || !t.type)) {
+                    trailerUrl = normalizeTrailerUrl(t);
+                    if (trailerUrl) break;
                 }
             }
         }
     }
+
+    // Priority 2: TMDB-style videos payload fallback
+    if (!trailerUrl && Array.isArray(movie.videos?.results)) {
+        for (const v of movie.videos.results) {
+            if (!v || typeof v !== 'object') continue;
+            if (!isOfficialTrailer(v) && (v.type || '').toLowerCase() !== 'trailer') continue;
+            trailerUrl = normalizeTrailerUrl(v);
+            if (trailerUrl) break;
+        }
+    }
+
+    // Priority 3: common alternate fields
+    if (!trailerUrl) {
+        trailerUrl = normalizeTrailerUrl(movie.trailer_url || movie.trailerUrl || movie.youtube_trailer || movie.youtubeTrailer);
+    }
+
+    // Do not synthesize a YouTube search URL here.
+    // We only show trailer CTA for embeddable/direct trailer links from APIs.
     
     const hasTrailer = Boolean(trailerUrl);
+    const safeTrailerUrl = hasTrailer ? encodeURIComponent(trailerUrl) : '';
+    const safeCover = encodeURIComponent(cover || '');
 
     modalBody.innerHTML = `
         <div class="modal-header-container">
-            <div class="modal-header-bg ${hasTrailer ? 'trailer-clickable' : ''}" style="background-image:url('${cover}')" ${hasTrailer ? `onclick="playTrailer('${trailerUrl}', '${cover}')" id="modal-hero-bg"` : ''}>
+            <div class="modal-header-bg ${hasTrailer ? 'trailer-clickable' : ''}" style="background-image:url('${cover}')" ${hasTrailer ? `id="modal-hero-bg" data-trailer-url="${safeTrailerUrl}" data-cover="${safeCover}"` : ''}>
                 <div class="modal-header-overlay-vignette"></div>
                 ${hasTrailer ? '<div class="trailer-play-icon"><i class="fa-solid fa-play"></i></div>' : ''}
             </div>
@@ -1558,6 +1644,19 @@ function renderDetailsModal(movie, id, type, provider = '') {
             </div>
         </div>
     `;
+
+    if (hasTrailer) {
+        const trailerTrigger = document.getElementById('modal-hero-bg');
+        if (trailerTrigger) {
+            trailerTrigger.addEventListener('click', () => {
+                const encodedTrailer = trailerTrigger.getAttribute('data-trailer-url') || '';
+                const encodedCover = trailerTrigger.getAttribute('data-cover') || '';
+                const decodedTrailer = decodeURIComponent(encodedTrailer);
+                const decodedCover = decodeURIComponent(encodedCover);
+                playTrailer(decodedTrailer, decodedCover);
+            });
+        }
+    }
 
     // Check if description actually needs a "More" button
     setTimeout(() => {
@@ -1673,7 +1772,7 @@ async function fetchTrending() {
     try {
         const cached = readCache(cacheKey);
         if (cached?.results?.length) {
-            const cachedItems = (cached.results || []).slice(0, 12);
+            const cachedItems = (cached.results || []).filter(item => typeof item.id === 'number').slice(0, 12);
             heroItems = cachedItems.slice(0, 5);
             if (heroItems.length && typeof displayHero === 'function') {
                 displayHero(heroItems[0]);
@@ -1685,7 +1784,7 @@ async function fetchTrending() {
         // Explicitly using the full path to ensure we hit the meta/tmdb trending
         const data = await fetchJsonWithFallback('/trending');
         writeCache(cacheKey, data);
-        const items = (data.results || []).slice(0, 12);
+        const items = (data.results || []).filter(item => typeof item.id === 'number').slice(0, 12);
         if (!items.length) return true;
 
         heroItems = items.slice(0, 5);
@@ -2103,7 +2202,9 @@ function displayGrid(items, container, forcedType = null) {
         card.addEventListener('pointerdown', () => prefetchDetails(id, type, provider), { once: true, passive: true });
 
         container.appendChild(card);
-        hydrationObserver.observe(card);
+        if (container !== trendingGrid && container !== popularTvGrid) {
+            hydrationObserver.observe(card);
+        }
     });
 }
 
@@ -2198,7 +2299,20 @@ function displaySearchResults(results, query) {
 // ------------------ DETAILS MODAL HANDLERS --------------------------------
 function closeDetailsModal() {
     movieModal.classList.remove('active');
+    
+    // Get the stored scroll position
+    const storedScrollY = window.storedScrollPosition || 0;
+    
+    // Remove modal-open class which removes overflow: hidden
     document.body.classList.remove('modal-open');
+    
+    // Immediately scroll to stored position before browser can reset it
+    window.scroll(0, storedScrollY);
+    
+    // Clean up stored position
+    setTimeout(() => {
+        delete window.storedScrollPosition;
+    }, 0);
 }
 
 function isTrailerPlaying() {
@@ -2276,7 +2390,28 @@ function showResumeChoiceDialog({ title, prettyTime, tvHint }) {
     });
 }
 
-function playTrailer(trailerUrl, coverImage) {
+async function resolveYouTubeVideoIdFromSearchUrl(trailerUrl) {
+    if (!trailerUrl || !YOUTUBE_API_KEY) return null;
+    try {
+        const url = new URL(trailerUrl);
+        const isYouTubeSearch =
+            url.hostname.includes('youtube.com') &&
+            (url.pathname === '/results' || url.pathname === '/results/');
+        if (!isYouTubeSearch) return null;
+
+        const query = url.searchParams.get('search_query') || url.searchParams.get('q') || '';
+        if (!query) return null;
+
+        const apiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&maxResults=1&q=${encodeURIComponent(query)}&key=${encodeURIComponent(YOUTUBE_API_KEY)}`;
+        const result = await fetchJson(apiUrl, 9000);
+        const videoId = result?.items?.[0]?.id?.videoId;
+        return (typeof videoId === 'string' && videoId.length >= 6) ? videoId : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+async function playTrailer(trailerUrl, coverImage) {
     if (!trailerUrl) {
         console.warn('No trailer URL provided');
         return;
@@ -2292,6 +2427,9 @@ function playTrailer(trailerUrl, coverImage) {
         // Try youtube.com v= parameter
         if (url.hostname.includes('youtube.com')) {
             videoId = url.searchParams.get('v');
+            if (!videoId && url.pathname.startsWith('/embed/')) {
+                videoId = url.pathname.split('/')[2] || null;
+            }
         }
         // Try youtu.be short format
         else if (url.hostname.includes('youtu.be')) {
@@ -2314,7 +2452,12 @@ function playTrailer(trailerUrl, coverImage) {
     }
     
     if (!videoId) {
-        // Fallback: open in new tab
+        // If trailer is a YouTube search URL, resolve to a concrete video via YouTube API key.
+        videoId = await resolveYouTubeVideoIdFromSearchUrl(trailerUrl);
+    }
+
+    if (!videoId) {
+        // Final fallback: open in new tab
         console.warn('Could not extract video ID from trailer URL:', trailerUrl);
         window.open(trailerUrl, '_blank');
         return;
@@ -2329,7 +2472,7 @@ function playTrailer(trailerUrl, coverImage) {
 
     if (heroBg && trailerContainer && trailerIframe) {
         // Set iframe source with autoplay
-        trailerIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&controls=1&fs=1&modestbranding=1&playsinline=1&iv_load_policy=3&disablekb=0`;
+        trailerIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&controls=1&fs=1&modestbranding=1&playsinline=1&iv_load_policy=3&disablekb=0`;
         
         // Hide hero and show trailer
         heroBg.style.display = 'none';
@@ -2543,6 +2686,9 @@ function updateSwitcherState() {
 
 // Fast modal override: render immediately from seed/cache, then hydrate full details.
 async function openDetails(id, type, provider = '', seedItem = null) {
+    // Store scroll position before opening modal
+    window.storedScrollPosition = window.scrollY;
+    
     movieModal.classList.add('active');
     document.body.classList.add('modal-open');
     const requestId = ++activeModalRequestId;
@@ -2561,15 +2707,14 @@ async function openDetails(id, type, provider = '', seedItem = null) {
     }
 
     try {
-        let movie = cached;
-        if (!movie) {
-            try {
-                movie = await fetchDetails(id, type, provider);
-            } catch (err) {
-                const stale = readStaleDetailCache(id, type, provider);
-                if (stale) movie = stale;
-                else throw err;
-            }
+        let movie = null;
+        try {
+            // Always revalidate against backend so newly-available trailer URLs are picked up.
+            movie = await fetchDetails(id, type, provider);
+        } catch (err) {
+            // If network fails, gracefully fall back to cached/stale payload.
+            movie = cached || readStaleDetailCache(id, type, provider);
+            if (!movie) throw err;
         }
 
         if (requestId !== activeModalRequestId) return;
