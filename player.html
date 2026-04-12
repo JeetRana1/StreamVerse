@@ -2649,7 +2649,7 @@
 
         // Provider pools
         const MOVIE_PROVIDERS = ['flixhq', 'animesalt', 'justanime', 'dramacool'];
-        const ANIME_PROVIDERS = ['satoru', 'animesalt', 'justanime'];
+        const ANIME_PROVIDERS = ['animesalt', 'animekai', 'satoru', 'justanime'];
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime'];
 
         const params = new URLSearchParams(location.search);
@@ -2759,6 +2759,7 @@
         let tvSeasons = [];
         let providerSeasonCatalog = new Map();
         let activeMenuProvider = '';
+        let pendingEpisodeSelectionHint = null;
         let curSeason = 0;
         let curEpisode = 0;
         let curEpisodeId = null;
@@ -2820,6 +2821,7 @@
         const ANIME_WATCH_TIMEOUT_MS = 25000;
         const ANIME_INFO_TIMEOUT_MS = 20000;
         const PROVIDER_TIMEOUT_OVERRIDES = {
+            animekai: { animeSearch: 9000, animeInfo: 14000, watch: 35000 },
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
             dramacool: { watch: 20000, directWatch: 15000 },
@@ -3001,16 +3003,17 @@
             const mobileMain = IS_MOBILE_CLIENT && !isThumbnail;
             const isConstrained = !isThumbnail && estimateNetworkQuality();
             const isFlixHq = String(provider || '').toLowerCase().includes('flixhq');
+            const isAnimeKai = String(provider || '').toLowerCase().includes('animekai');
 
             // Dynamic buffer sizing — keep buffers modest to avoid bufferFullError cascades
             // (oversized buffers fill up, HLS.js panics → stall loop)
             // FlixHQ needs larger buffers to prevent stalling
-            const backBufferLength = isThumbnail ? 2 : (isFlixHq ? 20 : (mobileMain ? 8 : 12));
-            const maxBufferLength = isThumbnail ? 5 : (isFlixHq ? 35 : (mobileMain ? 14 : 20));
-            const maxMaxBufferLength = isThumbnail ? 10 : (isFlixHq ? 60 : (mobileMain ? 28 : 40));
+            const backBufferLength = isThumbnail ? 2 : (isFlixHq ? 20 : (isAnimeKai ? (mobileMain ? 6 : 10) : (mobileMain ? 8 : 12)));
+            const maxBufferLength = isThumbnail ? 5 : (isFlixHq ? 35 : (isAnimeKai ? (mobileMain ? 10 : 16) : (mobileMain ? 14 : 20)));
+            const maxMaxBufferLength = isThumbnail ? 10 : (isFlixHq ? 60 : (isAnimeKai ? (mobileMain ? 20 : 28) : (mobileMain ? 28 : 40)));
             const maxBufferSize = isThumbnail
                 ? 6 * 1024 * 1024
-                : (isFlixHq ? 50 * 1000 * 1000 : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000));
+                : (isFlixHq ? 50 * 1000 * 1000 : (isAnimeKai ? (mobileMain ? 14 * 1000 * 1000 : 22 * 1000 * 1000) : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000)));
 
             return new Hls({
                 startPosition: startTime,
@@ -3021,7 +3024,7 @@
                 maxBufferLength: maxBufferLength,
                 maxMaxBufferLength: maxMaxBufferLength,
                 maxBufferSize: maxBufferSize,
-                maxBufferHole: isThumbnail ? 0.1 : 0.3,
+                maxBufferHole: isThumbnail ? 0.1 : (isAnimeKai ? 0.6 : 0.3),
                 // Longer watchdog period prevents false positive stall detections
                 highBufferWatchdogPeriod: isThumbnail ? 2 : 4,
                 nudgeOffset: isThumbnail ? 0.1 : 0.2,
@@ -3034,9 +3037,9 @@
                 levelLoadingTimeOut: isThumbnail ? 3000 : 10000,
                 levelLoadingMaxRetry: 2,
                 levelLoadingRetryDelay: isThumbnail ? 200 : 300,
-                fragLoadingTimeOut: isThumbnail ? 3000 : (isFlixHq ? 15000 : 14000),
+                fragLoadingTimeOut: isThumbnail ? 3000 : (isFlixHq ? 15000 : (isAnimeKai ? 18000 : 14000)),
                 // Fewer fragment retries — fail fast so we can rebuild in-place instead of stalling
-                fragLoadingMaxRetry: isThumbnail ? 2 : 3,
+                fragLoadingMaxRetry: isThumbnail ? 2 : (isAnimeKai ? 4 : 3),
                 fragLoadingRetryDelay: isThumbnail ? 200 : 500,
                 fragLoadingMaxRetryTimeout: isThumbnail ? 1000 : 6000,
                 startLevel: isThumbnail ? 0 : -1,
@@ -3050,13 +3053,13 @@
                 appendErrorMaxRetry: 4,
                 audioCodec: isFlixHq ? 'mp4a.40.2' : undefined,
                 maxAudioFramesDrift: isFlixHq ? 1 : 2,
-                startFragPrefetch: !isThumbnail,
+                startFragPrefetch: !isThumbnail && !isAnimeKai,
                 testBandwidth: !isThumbnail,
                 progressive: true,
                 maxStarvationDelay: isThumbnail ? 2 : (isFlixHq ? 8 : 4),
                 maxLoadingDelay: isThumbnail ? 2 : (isFlixHq ? 8 : 4),
                 xhrSetup: (xhr, url) => {
-                    xhr.timeout = isThumbnail ? 5000 : (isFlixHq ? 18000 : 18000);
+                    xhr.timeout = isThumbnail ? 5000 : (isAnimeKai ? 22000 : (isFlixHq ? 18000 : 18000));
                 },
             });
         }
@@ -4108,6 +4111,45 @@
 
             // Fallback for anime: If we have a long flat list and no season metadata, split every 24 episodes
             if (currentIsLikelyAnime && rawEpisodes.length > 26) {
+                const skeletonSeasons = Array.isArray(tvSeasons)
+                    ? tvSeasons.filter((season) => Number(season?.seasonNo || 0) > 0)
+                    : [];
+                const totalSkeletonEpisodes = skeletonSeasons.reduce(
+                    (sum, season) => sum + (Array.isArray(season?.episodes) ? season.episodes.length : 0),
+                    0,
+                );
+                if (skeletonSeasons.length > 1 && totalSkeletonEpisodes > 0) {
+                    const distributed = [];
+                    let cursor = 0;
+                    skeletonSeasons.forEach((season, index) => {
+                        const seasonNo = Number(season?.seasonNo || index + 1);
+                        const seasonPartNo = Number(season?.seasonPartNo || season?.part || season?.partNo || 0) || 0;
+                        const seasonCount = Math.max(0, Number(Array.isArray(season?.episodes) ? season.episodes.length : 0));
+                        const remaining = rawEpisodes.length - cursor;
+                        if (remaining <= 0) return;
+                        const take = index === skeletonSeasons.length - 1
+                            ? remaining
+                            : Math.min(seasonCount || remaining, remaining);
+                        if (take <= 0) return;
+                        const slice = rawEpisodes.slice(cursor, cursor + take);
+                        cursor += take;
+                        if (!slice.length) return;
+                        distributed.push({
+                            seasonNo,
+                            seasonPartNo,
+                            sourceOrder: index,
+                            dedupeKey: makeSeasonKey(seasonNo, seasonPartNo),
+                            name: String(season?.name || `Season ${seasonNo}`).trim(),
+                            providerAnimeId: providerAnimeId || null,
+                            episodes: slice,
+                            provider,
+                            providerTitle: String(providerTitle || '').trim(),
+                        });
+                    });
+                    if (distributed.length > 0) {
+                        return distributed;
+                    }
+                }
                 const chunks = [];
                 for (let i = 0; i < rawEpisodes.length; i += 24) {
                     const sNo = Math.floor(i / 24) + 1;
@@ -5168,6 +5210,19 @@
                     console.log('Satoru resolve title mismatch:', { requested: mediaTitle, resolved: resolvedAnimeTitle, normalizedRequested, normalizedResolved });
                     return null;
                 }
+
+                // Guard: when user requested base season-1 title, reject arc/part-specific
+                // resolves (common bad match: "... Culling Game Part 1").
+                const requestedHasArcMarker = /\b(part|cour|arc)\s*\d+\b/i.test(normalizedRequested);
+                const resolvedHasArcMarker = /\b(part|cour|arc)\s*\d+\b/i.test(normalizedResolved);
+                if (Number(seasonNo || 1) <= 1 && !requestedHasArcMarker && resolvedHasArcMarker) {
+                    console.log('Satoru resolve rejected arc/part mismatch:', {
+                        requested: mediaTitle,
+                        resolved: resolvedAnimeTitle,
+                        seasonNo,
+                    });
+                    return null;
+                }
                 
                 const result = {
                     animeId,
@@ -5182,11 +5237,12 @@
             }
         }
 
-        function buildAnimeWatchUrl(provider, episodeId) {
+        function buildAnimeWatchUrl(provider, episodeId, options = {}) {
             const base = getAnimeProviderBase(provider);
             const url = new URL(`${base}/watch/${encodeURIComponent(episodeId)}`);
             if (provider === 'animesalt') url.searchParams.set('category', 'both');
             if (provider === 'satoru') url.searchParams.set('_t', String(Date.now())); // Cache-busting for satoru
+            if (provider === 'animekai' && options?.dub) url.searchParams.set('dub', 'true');
             return url.toString();
         }
 
@@ -5629,6 +5685,22 @@
                 return resolved;
             }
 
+            // ── Satoru resolution ───────────────────────────────────────────────────
+            if (provider === 'satoru') {
+                // Satoru exact resolve should use the base series title + numeric season/episode.
+                // Arc-heavy labels (e.g. "The Culling Game Part 1") can push matching to the wrong entry.
+                const baseTitle = resolved.mediaTitle
+                    .replace(/\b(season|part|cour|arc)\s*\d+\b/gi, ' ')
+                    .replace(/\b(part|cour)\s+[ivxlc]+\b/gi, ' ')
+                    .replace(/\b(tv|specials|recaps)\b/gi, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                resolved.mediaTitle = baseTitle || resolved.mediaTitle;
+                resolved.seasonLabel = '';
+                return resolved;
+            }
+
             if (provider !== 'justanime') return resolved;
             return resolved;
         }
@@ -5846,7 +5918,7 @@
             };
 
             const providerName = String(provider || '').toLowerCase();
-            const maxTracks = providerName === 'flixhq' ? 2 : MAX_EXTERNAL_SUBTITLE_TRACKS;
+            const maxTracks = providerName === 'flixhq' ? 2 : (providerName === 'animekai' ? 4 : MAX_EXTERNAL_SUBTITLE_TRACKS);
 
             return deduped
                 .sort((a, b) => scoreSubtitle(b) - scoreSubtitle(a))
@@ -5858,6 +5930,8 @@
             const raw = String(sourceUrl || '').toLowerCase();
             // FlixHQ direct hosts often become unstable with dual HLS sessions (main + preview).
             if (provider === 'flixhq') return false;
+            // AnimeKai direct hosts are sensitive to parallel segment requests.
+            if (provider === 'animekai') return false;
             if (
                 raw.includes('bluehorizon') ||
                 raw.includes('mistwolf') ||
@@ -9480,7 +9554,7 @@
             }, 60000);
 
             try {
-                const isAnimeOnlyProvider = ['satoru', 'justanime', 'animesalt'].includes(FORCED_PROVIDER);
+                const isAnimeOnlyProvider = ['satoru', 'justanime', 'animesalt', 'animekai'].includes(FORCED_PROVIDER);
                 const providerNeedsMetaInfo = false;
                 const infoUrls = (FORCED_PROVIDER && !isAnimeOnlyProvider && !providerNeedsMetaInfo)
                     ? [
@@ -9654,11 +9728,38 @@
                     if (idMatch?.[1]) return Number(idMatch[1]);
                     return fallbackSeason;
                 };
-                const buildSeasonListFromEpisodes = (provider, providerAnimeId, providerTitle, episodes) => {
+                const buildSeasonListFromEpisodes = (provider, providerAnimeId, providerTitle, episodes, fallbackSeasonNo = 1) => {
+                    const rawEpisodes = Array.isArray(episodes) ? episodes : [];
                     const buckets = new Map();
-                    (Array.isArray(episodes) ? episodes : []).forEach((ep, index) => {
+
+                    const seasonSkeleton = Array.isArray(tvSeasons)
+                        ? tvSeasons.filter((season) => Number(season?.seasonNo || 0) > 0)
+                        : [];
+
+                    const buildSeasonBucket = (seasonNo, seasonPartNo, sourceOrder, name, episodeRows) => ({
+                        seasonNo,
+                        seasonPartNo,
+                        sourceOrder,
+                        dedupeKey: makeSeasonKey(seasonNo, seasonPartNo),
+                        name,
+                        providerAnimeId: providerAnimeId || null,
+                        episodes: episodeRows.map((ep, epIndex) => {
+                            const episodeNo = toEpisodeNumber(ep, epIndex);
+                            return {
+                                id: String(ep?.id || '').trim() || null,
+                                episode: episodeNo,
+                                number: episodeNo,
+                                episodeNum: episodeNo,
+                                title: String(ep?.title || `Episode ${episodeNo}`),
+                            };
+                        }),
+                        provider,
+                        providerTitle: String(providerTitle || '').trim(),
+                    });
+
+                    rawEpisodes.forEach((ep, index) => {
                         if (!ep || typeof ep !== 'object') return;
-                        const seasonNo = toSeasonNumber(ep, 1);
+                        const seasonNo = toSeasonNumber(ep, Number(fallbackSeasonNo || 1));
                         const seasonPartNo = Number(ep?.part || ep?.partNo || ep?.seasonPart || 0) || 0;
                         const key = makeSeasonKey(seasonNo, seasonPartNo);
                         const episodeNo = toEpisodeNumber(ep, index);
@@ -9686,6 +9787,60 @@
                         });
                         if (!bucket.providerAnimeId && providerAnimeId) bucket.providerAnimeId = providerAnimeId;
                     });
+
+                    const hasMeaningfulSeasonMetadata = rawEpisodes.some((ep) => Number(ep?.season || ep?.seasonNumber || ep?.season_number || ep?.seasonNum || 0) > 0);
+                    const explicitFallbackSeasonNo = Number(fallbackSeasonNo || 0);
+                    const hasExplicitTargetSeason = Number.isFinite(explicitFallbackSeasonNo) && explicitFallbackSeasonNo > 1;
+
+                    // If caller already resolved a concrete season (common for AnimeKai arc entries),
+                    // keep episodes in that season instead of spreading through the TMDB skeleton.
+                    if (currentIsLikelyAnime && rawEpisodes.length > 0 && !hasMeaningfulSeasonMetadata && hasExplicitTargetSeason) {
+                        return [buildSeasonBucket(
+                            explicitFallbackSeasonNo,
+                            0,
+                            0,
+                            `Season ${explicitFallbackSeasonNo}`,
+                            rawEpisodes,
+                        )];
+                    }
+                    if (currentIsLikelyAnime && rawEpisodes.length > 0 && !hasMeaningfulSeasonMetadata && seasonSkeleton.length > 1) {
+                        const totalSkeletonEpisodes = seasonSkeleton.reduce(
+                            (sum, season) => sum + (Array.isArray(season?.episodes) ? season.episodes.length : 0),
+                            0,
+                        );
+                        if (totalSkeletonEpisodes > 0) {
+                            const rebuilt = [];
+                            let cursor = 0;
+                            seasonSkeleton.forEach((season, index) => {
+                                const seasonNo = Number(season?.seasonNo || index + 1);
+                                const seasonPartNo = Number(season?.seasonPartNo || season?.part || season?.partNo || 0) || 0;
+                                const seasonCount = Math.max(0, Number(Array.isArray(season?.episodes) ? season.episodes.length : 0));
+                                const remaining = rawEpisodes.length - cursor;
+                                if (remaining <= 0) return;
+                                const take = index === seasonSkeleton.length - 1 ? remaining : Math.min(seasonCount || remaining, remaining);
+                                if (take <= 0) return;
+                                const slice = rawEpisodes.slice(cursor, cursor + take);
+                                cursor += take;
+                                if (!slice.length) return;
+                                rebuilt.push(buildSeasonBucket(
+                                    seasonNo,
+                                    seasonPartNo,
+                                    index,
+                                    String(season?.name || `Season ${seasonNo}`).trim(),
+                                    slice,
+                                ));
+                            });
+                            if (rebuilt.length > 0) {
+                                return rebuilt.sort((a, b) => {
+                                    const seasonDiff = Number(a.seasonNo || 0) - Number(b.seasonNo || 0);
+                                    if (seasonDiff !== 0) return seasonDiff;
+                                    const partDiff = Number(a.seasonPartNo || 0) - Number(b.seasonPartNo || 0);
+                                    if (partDiff !== 0) return partDiff;
+                                    return Number(a.sourceOrder || 0) - Number(b.sourceOrder || 0);
+                                });
+                            }
+                        }
+                    }
 
                     return Array.from(buckets.values())
                         .map((season) => ({
@@ -9727,13 +9882,25 @@
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const cacheKey = `anime_provider_seasons_${providerName}_${animeSeriesTitle}_${preferredYear}`;
+                    const seasonCacheVersion = 'v4';
+                    const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
                         try {
                             const parsed = JSON.parse(cached);
                             if (parsed.ts && Date.now() - parsed.ts < 60 * 60 * 1000) { // 1 hour
-                                return parsed.data;
+                                const cachedData = Array.isArray(parsed.data) ? parsed.data : [];
+                                // Ignore known stale AnimeKai cache shapes that collapse all episodes into one giant season.
+                                if (providerName === 'animekai') {
+                                    const firstLen = Number(cachedData?.[0]?.episodes?.length || 0);
+                                    if (cachedData.length <= 1 && firstLen > 35) {
+                                        localStorage.removeItem(cacheKey);
+                                    } else {
+                                        return cachedData;
+                                    }
+                                } else {
+                                    return cachedData;
+                                }
                             }
                         } catch {}
                     }
@@ -9786,11 +9953,25 @@
                         return result;
                     }
 
-                    const searchTerms = getAnimeSearchTerms(animeSeriesTitle, preferredYear, 1, '', false).slice(0, 1);
+                    const searchTerms = getAnimeSearchTerms(animeSeriesTitle, preferredYear, 1, '', false).slice(0, 5);
                     let bestResult = null;
+                    const animekaiCandidateMap = new Map();
+
+                    const normalizeLoose = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                    const wantedTitleNorm = normalizeLoose(animeSeriesTitle);
+                    const wantedTokens = wantedTitleNorm.split(' ').filter(Boolean);
+                    const looksLikeSameSeries = (title) => {
+                        const t = normalizeLoose(title);
+                        if (!t) return false;
+                        if (wantedTitleNorm && (t.includes(wantedTitleNorm) || wantedTitleNorm.includes(t))) return true;
+                        const tokens = t.split(' ').filter(Boolean);
+                        const shared = wantedTokens.filter((tok) => tokens.includes(tok)).length;
+                        return shared >= Math.min(2, wantedTokens.length);
+                    };
 
                     // Check cache for previous search result
-                    const searchCacheKey = `anime_search_${providerName}_${animeSeriesTitle}_${preferredYear}`;
+                    const searchCacheVersion = 'v4';
+                    const searchCacheKey = `anime_search_${searchCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cachedSearch = localStorage.getItem(searchCacheKey);
                     if (cachedSearch) {
                         try {
@@ -9801,7 +9982,8 @@
                         } catch {}
                     }
 
-                    if (!bestResult) {
+                    // AnimeKai must still run live search so we can aggregate all season-specific candidates.
+                    if (!bestResult || providerName === 'animekai') {
                         for (const term of searchTerms) {
                             const typeHint = providerName === 'animesalt' ? '?type=tv' : '';
                             const { res: searchRes } = await fetchJsonWithApiFallback(
@@ -9819,18 +10001,102 @@
                                 return true;
                             });
                             const searchPool = filteredResults.length ? filteredResults : results;
-                            bestResult =
+                            const picked =
                                 pickAnimeResultByAniListId(searchPool, String((currentAnimeCanonicalInfo || await getCanonicalAnimeInfo())?.id || currentMediaInfo?.anilistId || '').trim()) ||
                                 findExactProviderSeasonMatch(providerName, searchPool, '') ||
                                 pickAnimeResultByTitle(searchPool, animeSeriesTitle, preferredYear, 1, '', false);
-                            if (bestResult?.id) {
+
+                            if (!bestResult && picked?.id) {
+                                bestResult = picked;
                                 // Cache the result
                                 localStorage.setItem(searchCacheKey, JSON.stringify({ ts: Date.now(), data: bestResult }));
+                            }
+
+                            if (providerName === 'animekai') {
+                                searchPool
+                                    .filter((row) => looksLikeSameSeries(row?.title || row?.name || ''))
+                                    .slice(0, 8)
+                                    .forEach((row) => {
+                                        const rowId = String(row?.id || '').trim();
+                                        if (!rowId) return;
+                                        if (!animekaiCandidateMap.has(rowId)) {
+                                            animekaiCandidateMap.set(rowId, row);
+                                        }
+                                    });
+                            }
+
+                            if (bestResult?.id && providerName !== 'animekai') {
                                 break;
                             }
                         }
                     }
                     if (!bestResult?.id) return [];
+
+                    if (providerName === 'animekai') {
+                        if (!animekaiCandidateMap.size && bestResult?.id) {
+                            animekaiCandidateMap.set(String(bestResult.id), bestResult);
+                        }
+
+                        const animekaiCandidates = Array.from(animekaiCandidateMap.values()).slice(0, 10);
+                        let merged = [];
+
+                        const infoJobs = animekaiCandidates.map(async (candidate, index) => {
+                            const candidateId = String(candidate?.id || '').trim();
+                            if (!candidateId) return [];
+
+                            const { res: infoRes } = await fetchJsonWithApiFallback(
+                                buildAnimeInfoUrl(providerName, candidateId),
+                                { signal: AbortSignal.timeout(timeoutMs) },
+                            );
+                            if (!infoRes.ok) return [];
+
+                            let providerInfo = await infoRes.json();
+                            if (providerInfo?.data) providerInfo = providerInfo.data;
+                            const episodes = Array.isArray(providerInfo?.episodes) ? providerInfo.episodes : [];
+                            if (!episodes.length) return [];
+                            // Drop recap/special entries so they do not shift season inference
+                            // (e.g., one-off entries can incorrectly create tiny fake seasons like "Season 3: 2 eps").
+                            if (episodes.length < 8) return [];
+
+                            const explicitSeasonNo = Number(
+                                extractSeasonNumberFromTitle(candidate?.title || candidate?.name || '')
+                                || extractSeasonNumberFromTitle(providerInfo?.title || ''),
+                            ) || 0;
+
+                            let inferredSeasonNo = explicitSeasonNo;
+                            if (inferredSeasonNo <= 0 && Array.isArray(tvSeasons) && tvSeasons.length > 1) {
+                                const matchByEpisodeCount = tvSeasons.find((season) => {
+                                    const seasonNo = Number(season?.seasonNo || 0);
+                                    const seasonEpCount = Number(Array.isArray(season?.episodes) ? season.episodes.length : 0);
+                                    return seasonNo > 0 && seasonEpCount > 0 && seasonEpCount === episodes.length;
+                                });
+                                if (matchByEpisodeCount) {
+                                    inferredSeasonNo = Number(matchByEpisodeCount.seasonNo || 0);
+                                }
+                            }
+                            if (inferredSeasonNo <= 0) inferredSeasonNo = index + 1;
+
+                            return buildSeasonListFromEpisodes(
+                                providerName,
+                                candidateId,
+                                providerInfo?.title || candidate?.title || animeSeriesTitle,
+                                episodes,
+                                inferredSeasonNo,
+                            );
+                        });
+
+                        const infoResults = await Promise.allSettled(infoJobs);
+                        infoResults.forEach((job) => {
+                            if (job.status === 'fulfilled' && Array.isArray(job.value) && job.value.length) {
+                                merged = mergeSeasonLists(merged, job.value);
+                            }
+                        });
+
+                        if (merged.length) {
+                            localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: merged }));
+                            return merged;
+                        }
+                    }
 
                     const { res: infoRes } = await fetchJsonWithApiFallback(
                         buildAnimeInfoUrl(providerName, bestResult.id),
@@ -9848,10 +10114,10 @@
 
                 const hydrateProviders = Array.from(new Set([
                     ...(FORCED_PROVIDER ? [FORCED_PROVIDER] : []),
-                    'satoru',
+                    ...ANIME_PROVIDERS,
                 ]))
                     .map((p) => String(p || '').toLowerCase())
-                    .filter((p) => ['satoru'].includes(p));
+                    .filter((p) => ['animesalt', 'animekai', 'satoru', 'justanime'].includes(p));
 
                 // Run provider hydration in parallel
                 const hydrationPromises = hydrateProviders.map(async (provider) => {
@@ -9961,9 +10227,9 @@
                 }
             }
             if (currentIsLikelyAnime) {
-                // Strict mode for anime: do not show merged/global list when active provider
-                // catalog is unavailable, because it causes mixed/incorrect ordering/titles.
-                return [];
+                // Keep provider-first behavior for anime, but avoid an empty panel when
+                // provider catalog hydration fails (transient API/search mismatch).
+                return cloneAndSortMenuSeasons(tvSeasons);
             }
             return cloneAndSortMenuSeasons(tvSeasons);
         }
@@ -10083,40 +10349,112 @@
         }
 
         function resolveGlobalEpisodeIndices(menuSeason, menuEpisode, fallbackSeasonIndex, fallbackEpisodeIndex) {
+            const getSeasonPart = (row) => {
+                const raw = Number(row?.seasonPartNo || row?.part || row?.partNo || 0);
+                return Number.isFinite(raw) && raw > 0 ? raw : 0;
+            };
+
             const episodeId = String(menuEpisode?.id || '').trim().toLowerCase();
+            const seasonNoRaw = Number(menuSeason?.seasonNo);
+            const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw > 0 ? seasonNoRaw : (fallbackSeasonIndex + 1);
+            const seasonPart = getSeasonPart(menuSeason);
+            const menuSeasonProviderId = String(menuSeason?.providerAnimeId || '').trim().toLowerCase();
+            const episodeNoRaw = Number(menuEpisode?.episode || menuEpisode?.number || menuEpisode?.episodeNum);
+            const episodeNo = Number.isFinite(episodeNoRaw) && episodeNoRaw > 0 ? episodeNoRaw : (fallbackEpisodeIndex + 1);
+            const menuTitle = normalizeTitleForMatch(String(menuEpisode?.title || ''));
+            const isScopedAnimeMenu = currentIsLikelyAnime && !!getActiveEpisodeMenuProvider();
+
+            const rankedSeasonCandidates = [];
+            for (let si = 0; si < tvSeasons.length; si += 1) {
+                const season = tvSeasons[si] || {};
+                const tvSeasonNo = Number(season?.seasonNo || 0);
+                const tvSeasonPart = getSeasonPart(season);
+                const tvProviderId = String(season?.providerAnimeId || '').trim().toLowerCase();
+                let score = 0;
+                
+                // For anime with multi-season providers: exact season + provider match is highest priority
+                if (menuSeasonProviderId && tvProviderId && menuSeasonProviderId === tvProviderId) {
+                    score += 16;  // Doubled from 8 for scoped anime
+                    if (tvSeasonNo > 0 && seasonNo > 0 && tvSeasonNo === seasonNo) {
+                        score += 8;  // Strong bonus for season number match within same provider
+                    }
+                } else {
+                    // Only use season number if provider IDs don't match
+                    if (tvSeasonNo > 0 && seasonNo > 0 && tvSeasonNo === seasonNo) score += 4;
+                }
+                
+                if (seasonPart > 0 && tvSeasonPart > 0 && seasonPart === tvSeasonPart) score += 2;
+                if (score > 0) rankedSeasonCandidates.push({ seasonIndex: si, score });
+            }
+
+            rankedSeasonCandidates.sort((a, b) => b.score - a.score || a.seasonIndex - b.seasonIndex);
+            const candidateSeasonIndices = rankedSeasonCandidates.map((row) => row.seasonIndex);
+            if (!candidateSeasonIndices.length) {
+                const byNo = tvSeasons.findIndex((s) => Number(s?.seasonNo || 0) === seasonNo);
+                if (byNo >= 0) candidateSeasonIndices.push(byNo);
+            }
+
+            const safeSeasonIndex = Math.max(0, Math.min(tvSeasons.length - 1, Number(fallbackSeasonIndex || 0)));
+            if (!candidateSeasonIndices.includes(safeSeasonIndex)) candidateSeasonIndices.push(safeSeasonIndex);
+
+            // STRICT episode ID resolution for anime with provider-scoped episodes
             if (episodeId) {
-                for (let si = 0; si < tvSeasons.length; si += 1) {
+                // First pass: exact provider + season match (strongest constraint for multi-provider anime)
+                if (menuSeasonProviderId) {
+                    for (const si of candidateSeasonIndices) {
+                        const season = tvSeasons[si] || {};
+                        const tvProviderId = String(season?.providerAnimeId || '').trim().toLowerCase();
+                        if (tvProviderId !== menuSeasonProviderId) continue;  // Skip if provider doesn't match
+                        const eps = Array.isArray(season.episodes) ? season.episodes : [];
+                        const ei = eps.findIndex((ep) => String(ep?.id || '').trim().toLowerCase() === episodeId);
+                        if (ei >= 0) return { seasonIndex: si, episodeIndex: ei };
+                    }
+                }
+                // Second pass: candidate season list (scoped to ranked matches)
+                for (const si of candidateSeasonIndices) {
                     const eps = Array.isArray(tvSeasons[si]?.episodes) ? tvSeasons[si].episodes : [];
                     const ei = eps.findIndex((ep) => String(ep?.id || '').trim().toLowerCase() === episodeId);
                     if (ei >= 0) return { seasonIndex: si, episodeIndex: ei };
                 }
+                // Third pass: only for non-scoped anime, search all seasons
+                if (!isScopedAnimeMenu) {
+                    for (let si = 0; si < tvSeasons.length; si += 1) {
+                        const eps = Array.isArray(tvSeasons[si]?.episodes) ? tvSeasons[si].episodes : [];
+                        const ei = eps.findIndex((ep) => String(ep?.id || '').trim().toLowerCase() === episodeId);
+                        if (ei >= 0) return { seasonIndex: si, episodeIndex: ei };
+                    }
+                }
             }
 
-            const seasonNoRaw = Number(menuSeason?.seasonNo);
-            const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw > 0 ? seasonNoRaw : (fallbackSeasonIndex + 1);
-            const episodeNoRaw = Number(menuEpisode?.episode || menuEpisode?.number || menuEpisode?.episodeNum);
-            const episodeNo = Number.isFinite(episodeNoRaw) && episodeNoRaw > 0 ? episodeNoRaw : (fallbackEpisodeIndex + 1);
-            const menuTitle = normalizeTitleForMatch(String(menuEpisode?.title || ''));
-
-            const seasonIndexByNo = tvSeasons.findIndex((s) => Number(s?.seasonNo || 0) === seasonNo);
-            if (seasonIndexByNo >= 0) {
-                const eps = Array.isArray(tvSeasons[seasonIndexByNo]?.episodes) ? tvSeasons[seasonIndexByNo].episodes : [];
-                const byNumber = eps.findIndex((ep) => Number(ep?.episode || ep?.number || ep?.episodeNum || 0) === episodeNo);
-                if (byNumber >= 0) return { seasonIndex: seasonIndexByNo, episodeIndex: byNumber };
-                const byTitle = menuTitle ? eps.findIndex((ep) => normalizeTitleForMatch(String(ep?.title || '')) === menuTitle) : -1;
-                if (byTitle >= 0) return { seasonIndex: seasonIndexByNo, episodeIndex: byTitle };
-            }
-
-            for (let si = 0; si < tvSeasons.length; si += 1) {
+            for (const si of candidateSeasonIndices) {
                 const eps = Array.isArray(tvSeasons[si]?.episodes) ? tvSeasons[si].episodes : [];
+                const byNumberAndTitle = eps.findIndex((ep) => {
+                    const n = Number(ep?.episode || ep?.number || ep?.episodeNum || 0);
+                    if (n !== episodeNo) return false;
+                    if (!menuTitle) return true;
+                    return normalizeTitleForMatch(String(ep?.title || '')) === menuTitle;
+                });
+                if (byNumberAndTitle >= 0) return { seasonIndex: si, episodeIndex: byNumberAndTitle };
+
                 const byNumber = eps.findIndex((ep) => Number(ep?.episode || ep?.number || ep?.episodeNum || 0) === episodeNo);
                 if (byNumber >= 0) return { seasonIndex: si, episodeIndex: byNumber };
+
+                const byTitle = menuTitle ? eps.findIndex((ep) => normalizeTitleForMatch(String(ep?.title || '')) === menuTitle) : -1;
+                if (byTitle >= 0) return { seasonIndex: si, episodeIndex: byTitle };
             }
 
-            const safeSeasonIndex = Math.max(0, Math.min(tvSeasons.length - 1, Number(fallbackSeasonIndex || 0)));
-            const safeEpisodes = Array.isArray(tvSeasons[safeSeasonIndex]?.episodes) ? tvSeasons[safeSeasonIndex].episodes : [];
+            if (!isScopedAnimeMenu) {
+                for (let si = 0; si < tvSeasons.length; si += 1) {
+                    const eps = Array.isArray(tvSeasons[si]?.episodes) ? tvSeasons[si].episodes : [];
+                    const byNumber = eps.findIndex((ep) => Number(ep?.episode || ep?.number || ep?.episodeNum || 0) === episodeNo);
+                    if (byNumber >= 0) return { seasonIndex: si, episodeIndex: byNumber };
+                }
+            }
+
+            const fallbackSeason = candidateSeasonIndices[0] ?? safeSeasonIndex;
+            const safeEpisodes = Array.isArray(tvSeasons[fallbackSeason]?.episodes) ? tvSeasons[fallbackSeason].episodes : [];
             const safeEpisodeIndex = Math.max(0, Math.min(Math.max(0, safeEpisodes.length - 1), Number(fallbackEpisodeIndex || 0)));
-            return { seasonIndex: safeSeasonIndex, episodeIndex: safeEpisodeIndex };
+            return { seasonIndex: fallbackSeason, episodeIndex: safeEpisodeIndex };
         }
 
         function buildEpPanel() {
@@ -10184,6 +10522,18 @@
                     item.dataset.si = mapped.seasonIndex;
                     item.dataset.ei = mapped.episodeIndex;
                     item.onclick = () => {
+                        const menuProvider = String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase();
+                        const hintEpisodeNoRaw = Number(ep?.episode || ep?.number || ep?.episodeNum || displayEpNo);
+                        const hintSeasonNoRaw = Number(s?.seasonNo || 0);
+                        const hintSeasonPartRaw = Number(s?.seasonPartNo || s?.part || s?.partNo || 0);
+                        pendingEpisodeSelectionHint = {
+                            provider: menuProvider || null,
+                            episodeId: String(ep?.id || '').trim() || null,
+                            seasonNo: Number.isFinite(hintSeasonNoRaw) && hintSeasonNoRaw > 0 ? hintSeasonNoRaw : null,
+                            seasonPartNo: Number.isFinite(hintSeasonPartRaw) && hintSeasonPartRaw > 0 ? hintSeasonPartRaw : 0,
+                            episodeNo: Number.isFinite(hintEpisodeNoRaw) && hintEpisodeNoRaw > 0 ? hintEpisodeNoRaw : null,
+                            providerAnimeId: String(s?.providerAnimeId || '').trim() || null,
+                        };
                         epPanel.classList.remove('open');
                         playTvEp(mapped.seasonIndex, mapped.episodeIndex, 0);
                     };
@@ -10666,18 +11016,33 @@
                 ? selectedEpisodeNoRaw
                 : (curEpisode + 1);
 
-            // ANIME FIX: If we are in a later season, providers like Satoru/JustAnime expect 
-            // relative episode numbers (starting from 1 for each season entry).
-            // Absolute numbers (e.g. 50) fail to match. We force relative numbering for seasons > 1.
-            if (currentIsLikelyAnime && curSeason > 0 && selectedEpisodeNo > 15) {
-                selectedEpisodeNo = curEpisode + 1;
+            const selectionHint = pendingEpisodeSelectionHint;
+            pendingEpisodeSelectionHint = null;
+            const hintedProvider = String(selectionHint?.provider || '').trim().toLowerCase();
+            const forcedProviderRaw = String(FORCED_PROVIDER || '').trim().toLowerCase();
+            const effectiveForcedProvider = (() => {
+                if (!currentIsLikelyAnime) return forcedProviderRaw;
+                // Only honor explicit provider locks (URL/source selection),
+                // not inferred menu/stream provider context.
+                if (forcedProviderRaw) return forcedProviderRaw;
+                return forcedProviderRaw;
+            })();
+            if (effectiveForcedProvider && effectiveForcedProvider !== forcedProviderRaw) {
+                FORCED_PROVIDER = effectiveForcedProvider;
+            }
+            if (currentIsLikelyAnime && selectionHint) {
+                const hintSeasonNo = Number(selectionHint?.seasonNo || 0);
+                const hintEpisodeNo = Number(selectionHint?.episodeNo || 0);
+                if (Number.isFinite(hintSeasonNo) && hintSeasonNo > 0) selectedSeasonNo = hintSeasonNo;
+                if (Number.isFinite(hintEpisodeNo) && hintEpisodeNo > 0) selectedEpisodeNo = hintEpisodeNo;
             }
 
             // If the selected episode already carries a provider-style SxE id,
             // trust that mapping over derived season/episode counters.
-            const selectedEpisodeId = String(selectedEpisode?.id || '').trim();
+            const selectedEpisodeId = String(selectionHint?.episodeId || selectedEpisode?.id || '').trim();
             const selectedEpisodeIdMatch = selectedEpisodeId.match(/-(\d+)x(\d+)$/i);
-            if (currentIsLikelyAnime && selectedEpisodeIdMatch) {
+            const shouldTrustSxEId = hintedProvider === 'animesalt' || /(^|\b)animesalt\b/i.test(activeMenuProvider || '');
+            if (currentIsLikelyAnime && shouldTrustSxEId && selectedEpisodeIdMatch) {
                 const idSeasonNo = Number(selectedEpisodeIdMatch[1]);
                 const idEpisodeNo = Number(selectedEpisodeIdMatch[2]);
                 if (Number.isFinite(idSeasonNo) && idSeasonNo > 0) selectedSeasonNo = idSeasonNo;
@@ -10690,17 +11055,17 @@
             ) + (curEpisode + 1);
 
             // Defer subtitle fallback prefetch so primary provider can start playback first.
-            const forcedProviderHasOwnSubs = FORCED_PROVIDER === 'justanime';
+            const forcedProviderHasOwnSubs = effectiveForcedProvider === 'justanime';
 
             activeProviders.forEach(p => chipState(p, ''));
 
             const failReasons = [];
             const providerResults = {};
-            const providersToRun = FORCED_PROVIDER
-                ? [FORCED_PROVIDER]
+            const providersToRun = effectiveForcedProvider
+                ? [effectiveForcedProvider]
                 : (
                     MEDIA_TYPE === 'movie' && !currentIsLikelyAnime
-                        ? activeProviders.filter((p) => !['animesalt', 'justanime', 'satoru', 'dramacool'].includes(String(p || '').toLowerCase()))
+                        ? activeProviders.filter((p) => !['animesalt', 'animekai', 'justanime', 'satoru', 'dramacool'].includes(String(p || '').toLowerCase()))
                         : activeProviders
                   );
             const orderedProviders = providersToRun;
@@ -10789,7 +11154,7 @@
                 try {
                     let info, provEpisodeId;
                     let satoruResolvedExactly = false;
-                    const isAnimeProvider = ['satoru', 'justanime', 'animesalt'].includes(provider);
+                    const isAnimeProvider = ['satoru', 'justanime', 'animesalt', 'animekai'].includes(provider);
                     const isNetMirrorProvider = ['flixhq', 'viewvault', 'netmirror'].some(v => String(provider || '').toLowerCase().includes(v));
 
                     if (isAnimeProvider) {
@@ -10819,15 +11184,14 @@
                                     resContext.seasonLabel,
                                     getPreferredMediaYear(),
                                 );
-                                if (!resolved?.episodeId) {
-                                    throw new Error('Satoru exact resolve failed');
+                                if (resolved?.episodeId) {
+                                    satoruResolvedExactly = true;
+                                    provEpisodeId = resolved.episodeId;
                                 }
-                                provEpisodeId = resolved.episodeId;
                             }
                             if (provider === 'animesalt') {
                                 // Best-case path: AnimeSalt ids include explicit season/episode (slug-SxE).
                                 // If the clicked row already has this id, use it directly to prevent cross-season drift.
-                                const selectedEpisodeId = String(selectedEpisode?.id || '').trim();
                                 if (selectedEpisodeId && /-\d+x\d+$/i.test(selectedEpisodeId)) {
                                     provEpisodeId = selectedEpisodeId;
                                 }
@@ -10847,7 +11211,7 @@
                                 provEpisodeId = await resolveJustAnimeOverrideEpisodeId(resContext.animeIdOverride, MEDIA_TYPE === 'tv' ? resContext.episodeNo : 1, getProviderTimeout(provider, 'animeInfo', ANIME_INFO_TIMEOUT_MS));
                             }
                             
-                            if (!provEpisodeId && provider !== 'satoru') {
+                            if (!provEpisodeId) {
                                 // Search fallback with canonical AniList id preference.
                                 const searchTerms = getAnimeSearchTerms(resContext.mediaTitle, getPreferredMediaYear(), resContext.seasonNo, resContext.seasonLabel, MEDIA_TYPE === 'movie');
                                 let bestAnime = null;
@@ -10882,7 +11246,7 @@
                             if (!provEpisodeId && info) {
                                 const episodes = info.episodes || [];
                                 const exactSeasonEpisode = episodes.find(ep => Number(ep.season || 0) === selectedSeasonNo && Number(ep.number || ep.episode || 0) === selectedEpisodeNo);
-                                const allowCrossSeasonFallback = !(provider === 'animesalt' && Number(selectedSeasonNo) > 1);
+                                const allowCrossSeasonFallback = !((provider === 'animesalt' || provider === 'satoru') && Number(selectedSeasonNo) > 1);
                                 const byEpisodeNumber = allowCrossSeasonFallback
                                     ? episodes.find(ep => Number(ep.number || ep.episode || 0) === selectedEpisodeNo)
                                     : null;
@@ -11003,22 +11367,52 @@
 
                     if (!data?.sources?.length) throw new Error('No sources');
 
-                    const providerSources = data.sources
+                    // AnimeKai: fetch dub variant in background and merge as extra options.
+                    // This keeps initial playback fast while exposing dub sources once ready.
+                    let animekaiDubData = null;
+                    if (provider === 'animekai' && provEpisodeId) {
+                        try {
+                            const { res: dubWatchRes } = await fetchJsonWithApiFallback(
+                                buildAnimeWatchUrl(provider, provEpisodeId, { dub: true }),
+                                { signal: AbortSignal.timeout(Math.min(18000, getProviderTimeout(provider, 'watch', ANIME_WATCH_TIMEOUT_MS))) },
+                            );
+                            if (dubWatchRes.ok) {
+                                animekaiDubData = await dubWatchRes.json();
+                            }
+                        } catch (dubErr) {
+                            console.warn('[animekai] dub background fetch failed:', dubErr?.message || dubErr);
+                        }
+                    }
+
+                    const primarySources = Array.isArray(data?.sources) ? data.sources : [];
+                    const dubSourcesRaw = Array.isArray(animekaiDubData?.sources) ? animekaiDubData.sources : [];
+                    const mergedWatchSources = [...primarySources, ...dubSourcesRaw];
+
+                    const providerSources = mergedWatchSources
                     .filter((src) => {
                         const url = String(src?.url || '');
                         if (!url || isBrokenEmbedUrl(url) || isLikelyPlaceholderSource(url)) return false;
+                        if (provider === 'animekai') {
+                            const low = url.toLowerCase();
+                            // AnimeKai sometimes returns tokenized `list,<token>.m3u8` variants that
+                            // trigger frequent hls frag parse/audio corruption during switches.
+                            if (low.includes('/list,') && low.includes('.m3u8')) return false;
+                        }
                         return true;
                     })
                     .map((src, i) => {
                         const low = String(src.url).toLowerCase();
                         const isM3U8 = src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8');
                         const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
+                        const isDub = src.isDub === true || src.dub === true || /\bdub\b/i.test(String(src.quality || ''));
+                        const qualityLabel = src.quality || `Source ${i + 1}`;
                         return {
-                            label: `${providerLabel(provider)} - ${src.quality || `Source ${i + 1}`}`,
+                            label: `${providerLabel(provider)} - ${qualityLabel}${provider === 'animekai' && isDub ? ' (Dub)' : ''}`,
                             url: src.url,
                             isM3U8,
                             isEmbed,
                             referer: src.referer || data.headers?.Referer || null,
+                            isDub,
                             provider,
                         };
                     });
@@ -11030,7 +11424,11 @@
                         
                         // Background tasks
                         if (currentIsLikelyAnime) fetchAniSkipSegmentsForCurrentEpisode();
-                        const subs = normalizeSubtitleEntries(data.data || data, provider, data.headers?.Referer || null);
+                        const primarySubs = normalizeSubtitleEntries(data.data || data, provider, data.headers?.Referer || null);
+                        const dubSubs = animekaiDubData
+                            ? normalizeSubtitleEntries(animekaiDubData.data || animekaiDubData, provider, animekaiDubData?.headers?.Referer || null)
+                            : [];
+                        const subs = mergeSubtitleTrackLists(primarySubs, dubSubs);
                         if (subs.length) externalSubtitleTracks = mergeSubtitleTrackLists(externalSubtitleTracks, subs);
 
                         // Trigger UI update
@@ -11047,12 +11445,12 @@
 
             // For movie playback, prefer FlixHQ first. Only fall back to other providers if FlixHQ fails.
             const shouldPreferFlixhqFirst =
-                !FORCED_PROVIDER &&
+                !effectiveForcedProvider &&
                 !currentIsLikelyAnime &&
                 orderedProviders.includes('flixhq');
 
             const shouldPreferAnimeSaltFirst =
-                !FORCED_PROVIDER &&
+                !effectiveForcedProvider &&
                 currentIsLikelyAnime &&
                 orderedProviders.includes('animesalt');
 
@@ -11097,6 +11495,7 @@
                 satoru: 'Satoru',
                 justanime: 'JustAnime',
                 animesalt: 'AnimeSalt',
+                animekai: 'AnimeKai',
             };
             return map[p] || p;
         }
@@ -11327,15 +11726,16 @@
             loadStream(src.url, src.isM3U8, src.isEmbed, src.referer, idx, startTime);
         }
 
-        function proxiedStreamUrl(url, referer) {
+        function proxiedStreamUrl(url, referer, provider = '') {
             const rawUrl = String(url || '').trim();
+            const providerName = String(provider || '').toLowerCase();
             // Cinezo already returns proxy-wrapped HLS links; avoid double-proxying those.
             if (/\/m3u8-proxy\?/i.test(rawUrl)) {
                 return rawUrl;
             }
             // StreamRuby HLS often rejects server-side proxy requests (403) even with referer,
             // but plays directly in browser context.
-            if (/https?:\/\/[^/]*streamruby\.net\//i.test(rawUrl)) {
+            if (/https?:\/\/[^/]*streamruby\.net\//i.test(rawUrl) && providerName !== 'justanime') {
                 return rawUrl;
             }
             const apiBaseUrl = new URL(activeApiBase || API_BASE, location.href);
@@ -11377,6 +11777,7 @@
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) {
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
             const sourceProvider = String(allSources?.[srcIdx]?.provider || '').toLowerCase();
+            const proxyOnlyProvider = sourceProvider === 'justanime';
             const resumeTargetTime = Math.max(0, Number(startTime || 0));
             const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 20;
             let nextSourceFallbackUsed = false;
@@ -11690,13 +12091,14 @@
             // 1. HLS with hls.js
             if (isM3U8 && Hls.isSupported()) {
                 console.log('Branch: HLS.js');
-                const streamUrl = proxiedStreamUrl(url, referer);
+                const streamUrl = proxiedStreamUrl(url, referer, sourceProvider);
                 // Track whether we've already tried the raw (unproxied) URL.
                 // Some CDNs (e.g. satoru.one) block reverse-proxy user agents with 502/403
                 // but allow direct browser access, so we fall back to raw after proxy failure.
                 let hlsDirectFallbackAttempted = false;
 
                 const recoverWithDirectUrl = (resumeTime) => {
+                    if (proxyOnlyProvider) return false;
                     if (hlsDirectFallbackAttempted) return false;
                     hlsDirectFallbackAttempted = true;
                     const directUrl = String(url || '').trim();
@@ -11730,11 +12132,20 @@
 
                 // Wrap recoverSameSource to inject direct-URL step before giving up
                 const recoverSameSourceWithDirectFallback = (reason) => {
+                    const lowerReason = String(reason || '').toLowerCase();
+                    const isAnimeKaiStream = String(sourceProvider || '').toLowerCase() === 'animekai';
                     if (reason === 'fatal_network_error' && !hlsDirectFallbackAttempted) {
                         const resumeTime = Number(video?.currentTime || startTime || 0);
                         const tried = recoverWithDirectUrl(resumeTime);
                         if (tried) {
                             setTimeout(() => { sameSourceRecoveryLock = false; }, 600);
+                            return;
+                        }
+                    }
+
+                    if (isAnimeKaiStream && sameSourceRecoverCount >= 1 && (lowerReason.includes('frag_parse') || lowerReason.includes('watchdog_stall'))) {
+                        if (failoverToNextSource(`animekai_fast_failover:${reason}`)) {
+                            sameSourceRecoveryLock = false;
                             return;
                         }
                     }
@@ -11950,7 +12361,7 @@
                 setTimeout(() => { if (video) activateTracksForIOSNativePlayer(); }, 2000);
                 }
 
-                const proxiedUrl = proxiedStreamUrl(url, referer);
+                const proxiedUrl = proxiedStreamUrl(url, referer, sourceProvider);
                 const directUrl = url;
                 let fallbackStep = 0; // 0=proxy, 1=proxy-retry, 2=direct
 
@@ -11969,6 +12380,11 @@
                             video.play().catch(() => {});
                         }, 600);
                     } else if (fallbackStep === 2) {
+                        if (proxyOnlyProvider) {
+                            console.warn('Native HLS: direct fallback disabled for proxy-only provider');
+                            showError('Playback Error', 'Proxy stream failed after retry. Please try another source.');
+                            return;
+                        }
                         // Try direct URL (without proxy) — works when CDN allows browser access
                         console.warn('Native HLS: trying direct URL (no proxy)');
                         video.src = directUrl;
@@ -12056,7 +12472,7 @@
 
             } else if (isMPD && window.dashjs?.MediaPlayer) {
                 console.log('Branch: DASH.js');
-                const mpdUrl = proxiedStreamUrl(url, referer);
+                const mpdUrl = proxiedStreamUrl(url, referer, sourceProvider);
                 dashInst = window.dashjs.MediaPlayer().create();
                 dashInst.initialize(video, mpdUrl, true);
                 let dashErrCount = 0;
@@ -12126,11 +12542,12 @@
                         video.currentTime = startTime;
                     }, { once: true });
                 }
-                const proxiedMp4Url = proxiedStreamUrl(url, referer);
+                const proxiedMp4Url = proxiedStreamUrl(url, referer, sourceProvider);
                 const directMp4Url = url;
                 let triedDirectFallback = false;
 
                 const tryDirectMp4Fallback = () => {
+                    if (proxyOnlyProvider) return false;
                     if (triedDirectFallback) return false;
                     triedDirectFallback = true;
                     console.warn('Proxied MP4 failed, retrying with direct MP4 URL');
