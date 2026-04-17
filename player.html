@@ -1891,6 +1891,46 @@
             }
         }
 
+        .mute-status-toast {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%) scale(0.92);
+            min-width: 140px;
+            padding: 14px 18px 12px;
+            border-radius: 16px;
+            background: rgba(8, 8, 8, 0.78);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            backdrop-filter: blur(14px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            pointer-events: none;
+            z-index: 1600;
+            opacity: 0;
+            transition: opacity 0.18s ease, transform 0.2s ease;
+        }
+
+        .mute-status-toast.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .mute-status-toast i {
+            font-size: 1.8rem;
+            color: #fff;
+            text-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+        }
+
+        .mute-status-toast span {
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            color: rgba(255, 255, 255, 0.96);
+        }
+
         @media (max-width: 600px) {
             .header-info {
                 display: none;
@@ -2325,6 +2365,10 @@
         <div id="ripple-left" class="seek-ripple left"><i class="fa-solid fa-backward"></i><span>-10s</span></div>
         <div id="ripple-right" class="seek-ripple right"><i class="fa-solid fa-forward"></i><span>+10s</span></div>
     </div>
+    <div id="mute-status-toast" class="mute-status-toast" aria-hidden="true">
+        <i id="mute-status-icon" class="fa-solid fa-volume-high"></i>
+        <span id="mute-status-text">Unmuted</span>
+    </div>
 
     <div class="control-surface" id="controlSurface">
         <div class="control-center">
@@ -2467,7 +2511,7 @@
             Again</button>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.8/hls.min.js"></script>
     <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
     <script src="/config.js"></script>
@@ -2648,7 +2692,7 @@
         }
 
         // Provider pools
-        const MOVIE_PROVIDERS = ['flixhq', 'animesalt', 'justanime', 'dramacool'];
+        const MOVIE_PROVIDERS = ['flixhq', 'animekai', 'animesalt', 'justanime', 'dramacool'];
         const ANIME_PROVIDERS = ['animesalt', 'animekai', 'satoru', 'justanime'];
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime'];
 
@@ -2719,6 +2763,9 @@
         const preferencesBtn = document.getElementById('preferencesBtn');
         const fitBtn = document.getElementById('fitBtn');
         const muteBtn = document.getElementById('muteBtn');
+        const muteStatusToast = document.getElementById('mute-status-toast');
+        const muteStatusIcon = document.getElementById('mute-status-icon');
+        const muteStatusText = document.getElementById('mute-status-text');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
         const uiLockBtn = document.getElementById('uiLockBtn');
         const skipSegmentBtn = document.getElementById('skipSegmentBtn');
@@ -2746,6 +2793,7 @@
         const subtitleBlobCache = new Map(); // Cache processed VTT text by source URL to avoid redundant fetches and proxy hits
         let subtitleApplyVersion = 0;
         let activeSubtitleTrackIndex = -1;
+        let muteStatusToastTimer = null;
 
         let _iosNativePlayerActive = false; // Tracks whether iOS native player is currently in fullscreen
         let currentIdx = 0;
@@ -2872,6 +2920,7 @@
         let pendingJumpTarget = null;
         let jumpRecoveryTimer = null;
         let jumpInFlightUntil = 0;
+        let lastSeekBurstRebuildAt = 0;
         let recoveryQualityTimer = null;
         let lastRequestedPlaybackTarget = 0;
         let sameSourceRecoverKey = '';
@@ -2883,6 +2932,7 @@
         let skipInitialCanplaySeekOnce = false;
         let hlsFragErrorBurst = 0;
         let hlsSessionIsFragile = false;
+        let flixhqAltServerAttempted = false;
         let audioSwitchInFlightUntil = 0;
         let controlsHoldVisibleUntil = 0;
         let seekBufferOverlayTimer = null;
@@ -3001,6 +3051,7 @@
 
         function svCreateHlsInstance(startTime, isThumbnail = false, provider = '') {
             const mobileMain = IS_MOBILE_CLIENT && !isThumbnail;
+            const prefersFastStart = mobileMain || IS_IOS;
             const isConstrained = !isThumbnail && estimateNetworkQuality();
             const isFlixHq = String(provider || '').toLowerCase().includes('flixhq');
             const isAnimeKai = String(provider || '').toLowerCase().includes('animekai');
@@ -3042,17 +3093,21 @@
                 fragLoadingMaxRetry: isThumbnail ? 2 : (isAnimeKai ? 4 : 3),
                 fragLoadingRetryDelay: isThumbnail ? 200 : 500,
                 fragLoadingMaxRetryTimeout: isThumbnail ? 1000 : 6000,
-                startLevel: isThumbnail ? 0 : -1,
+                startLevel: isThumbnail ? 0 : (prefersFastStart ? 0 : -1),
                 abrEwmaDefaultEstimate: mobileMain ? 1000000 : 1500000,
+                abrEwmaFastVoD: mobileMain ? 2.5 : 3,
+                abrEwmaSlowVoD: mobileMain ? 9 : 10,
                 abrBandWidthFactor: mobileMain ? 0.7 : 0.8,
-                abrBandWidthUpFactor: mobileMain ? 0.35 : 0.5,
+                abrBandWidthUpFactor: mobileMain ? 0.28 : 0.45,
                 abrMaxWithRealBitrate: true,
                 ignoreDevicePixelRatio: true,
                 capLevelToPlayerSize: true,
                 capLevelOnFPSDrop: true,
                 appendErrorMaxRetry: 4,
-                audioCodec: isFlixHq ? 'mp4a.40.2' : undefined,
-                maxAudioFramesDrift: isFlixHq ? 1 : 2,
+                // Do not force a specific AAC profile. Some FlixHQ variants advertise
+                // different audio codecs and forcing mp4a.40.2 can produce robotic audio.
+                audioCodec: undefined,
+                maxAudioFramesDrift: isThumbnail ? 2 : (isFlixHq ? 3 : 1),
                 startFragPrefetch: !isThumbnail && !isAnimeKai,
                 testBandwidth: !isThumbnail,
                 progressive: true,
@@ -3161,6 +3216,13 @@
             } catch (_) { }
         }
 
+        function isCurrentFlixHqStream() {
+            const provider = String(
+                currentStreamProvider || allSources?.[currentIdx]?.provider || FORCED_PROVIDER || ''
+            ).toLowerCase();
+            return provider.includes('flixhq');
+        }
+
         function setTemporaryRecoveryQuality(ms = 4500) {
             if (!hlsInst || !Array.isArray(hlsInst.levels) || hlsInst.levels.length === 0) return;
             try {
@@ -3206,6 +3268,7 @@
             const clampedTarget = Math.max(0, Number(targetTime));
             const now = Date.now();
             const jumpDistance = Math.abs(clampedTarget - Number(video.currentTime || 0));
+            const isFlixHq = isCurrentFlixHqStream();
             pendingJumpTarget = { time: clampedTarget, reason };
             lastRequestedPlaybackTarget = clampedTarget;
 
@@ -3215,6 +3278,14 @@
             // ENHANCED: Faster burst seeking - reduced cooldown
             if (now < jumpCooldownUntil && seekBurstCount >= 8) {
                 schedulePendingJump(clampedTarget, reason);
+                return;
+            }
+
+            // FlixHQ can produce distorted audio if we spam seek nudges too quickly.
+            // During dense seek bursts, do a clean same-source rebuild at the target.
+            if (isFlixHq && !isSourceSwitching && now >= jumpInFlightUntil && seekBurstCount >= 10 && (now - lastSeekBurstRebuildAt) > 3200) {
+                lastSeekBurstRebuildAt = now;
+                performHotReloadJump(clampedTarget, 'seek_burst');
                 return;
             }
 
@@ -3287,7 +3358,10 @@
             seekBurstCount += 1;
             if (seekBurstCount >= 6) rapidSeekModeUntil = now + 9000;
             const elapsed = now - lastAppliedSeekAt;
-            const minGap = seekBurstCount >= 8 ? 100 : 40;
+            const isFlixHq = isCurrentFlixHqStream();
+            const minGap = isFlixHq
+                ? (seekBurstCount >= 8 ? 170 : 90)
+                : (seekBurstCount >= 8 ? 100 : 40);
             const delay = elapsed >= minGap ? 0 : (minGap - elapsed);
 
             seekApplyTimer = setTimeout(() => {
@@ -3303,50 +3377,19 @@
             }, delay);
         }
 
-        // ENHANCED: Flush audio buffer for smooth track switching
+        // Keep audio track changes lightweight. Aggressive SourceBuffer removals can corrupt decoding.
         function flushAudioBufferForTrackSwitch(hls) {
             if (!hls || !video) return;
             try {
-                // Stop loading momentarily to allow clean buffer flush
-                hls.stopLoad();
                 const currentTime = video.currentTime;
-
-                // Remove old audio data from buffer
-                if (video.buffered.length > 0) {
-                    const timeRanges = [];
-                    for (let i = 0; i < video.buffered.length; i++) {
-                        timeRanges.push({
-                            start: video.buffered.start(i),
-                            end: video.buffered.end(i)
-                        });
-                    }
-
-                    // Try to remove source buffer programmatically if available
-                    if (hls.media && hls.media.buffered && hls.media.sourceBuffers) {
-                        try {
-                            for (let i = 0; i < hls.media.sourceBuffers.length; i++) {
-                                const sb = hls.media.sourceBuffers[i];
-                                if (sb.buffered.length > 0) {
-                                    for (let j = 0; j < sb.buffered.length; j++) {
-                                        const start = sb.buffered.start(j);
-                                        const end = sb.buffered.end(j);
-                                        // Only remove old data, keep nearby buffer
-                                        if (currentTime - start > 2 || end - currentTime > 2) {
-                                            sb.remove(start, end);
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (_) { }
-                    }
-                }
-
-                // Resume loading from near current position
                 setTimeout(() => {
                     if (hls) {
-                        try { hls.startLoad(Math.max(0, currentTime - 0.5)); } catch (_) { }
+                        try {
+                            hls.stopLoad();
+                            hls.startLoad(Math.max(0, currentTime - 0.35));
+                        } catch (_) { }
                     }
-                }, 150);
+                }, 120);
             } catch (_) { }
         }
 
@@ -3515,7 +3558,66 @@
             let repeatedStallErrorCount = 0;
             let consecutiveBufferErrors = 0;
             let consecutiveFragErrors = 0;
+            let lastAudioPipelineResetAt = 0;
             let lastBufferFlushAt = 0;
+            let flixhqGlitchCount = 0;
+            let flixhqGlitchWindowStartAt = 0;
+            const markFlixhqAudioGlitch = (weight = 1) => {
+                const now = Date.now();
+                if (now - flixhqGlitchWindowStartAt > 10000) {
+                    flixhqGlitchWindowStartAt = now;
+                    flixhqGlitchCount = 0;
+                }
+                flixhqGlitchCount += weight;
+                return flixhqGlitchCount >= 2;
+            };
+            const getBufferedAheadSeconds = () => {
+                if (!video || !video.buffered || video.buffered.length === 0) return 0;
+                const t = Number(video.currentTime || 0);
+                for (let i = 0; i < video.buffered.length; i++) {
+                    const s = Number(video.buffered.start(i));
+                    const e = Number(video.buffered.end(i));
+                    if (t >= s && t <= e) return Math.max(0, e - t);
+                }
+                return 0;
+            };
+            const applyAdaptiveLevelCap = () => {
+                if (!hls || !Array.isArray(hls.levels) || hls.levels.length < 2) return;
+                const levelsCount = hls.levels.length;
+                const lowestSafeCap = Math.max(0, levelsCount - 2);
+                if (isBandwidthConstrained) {
+                    if (hls.autoLevelCapping !== lowestSafeCap) {
+                        hls.autoLevelCapping = lowestSafeCap;
+                    }
+                } else if (hls.autoLevelCapping !== -1) {
+                    hls.autoLevelCapping = -1;
+                }
+            };
+
+            hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
+                const bw = Number(data?.stats?.bwEstimate || 0);
+                if (!Number.isFinite(bw) || bw <= 0) return;
+                bandwidthSampleCount += 1;
+                if (lastEstimatedBandwidth <= 0) {
+                    lastEstimatedBandwidth = bw;
+                } else {
+                    // Smooth estimate to avoid rapid up/down capping churn.
+                    lastEstimatedBandwidth = (lastEstimatedBandwidth * 0.75) + (bw * 0.25);
+                }
+                const constrainedThreshold = IS_MOBILE_CLIENT ? 2000000 : 3200000;
+                const releaseThreshold = IS_MOBILE_CLIENT ? 3300000 : 5000000;
+                if (lastEstimatedBandwidth > 0 && lastEstimatedBandwidth < constrainedThreshold) {
+                    isBandwidthConstrained = true;
+                } else if (lastEstimatedBandwidth > releaseThreshold) {
+                    isBandwidthConstrained = false;
+                }
+                applyAdaptiveLevelCap();
+
+                // Decay glitch score when fresh fragments arrive cleanly.
+                if (isCurrentFlixHqStream() && flixhqGlitchCount > 0) {
+                    flixhqGlitchCount = Math.max(0, flixhqGlitchCount - 1);
+                }
+            });
 
             hls.on(Hls.Events.ERROR, function (_, d) {
                 console.log('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
@@ -3528,7 +3630,40 @@
                 const isBufferFull = d?.details === Hls.ErrorDetails.BUFFER_FULL_ERROR;
                 const isFragLoad = detailText.includes('fragloaderror') || d?.details === Hls.ErrorDetails.FRAG_LOAD_ERROR;
                 const isLevelLoad = detailText.includes('levelloadtimeout') || detailText.includes('levelloadererror') || d?.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR || d?.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT;
+                const isFlixHqStream = isCurrentFlixHqStream();
+                const isAudioPipelineIssue =
+                    detailText.includes('audio') ||
+                    d?.details === Hls.ErrorDetails.AUDIO_TRACK_LOAD_ERROR ||
+                    d?.details === Hls.ErrorDetails.AUDIO_TRACK_LOAD_TIMEOUT ||
+                    d?.details === Hls.ErrorDetails.AUDIO_TRACK_PARSING_ERROR ||
+                    d?.details === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR;
                 const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000;
+
+                if (isAudioPipelineIssue) {
+                    if (isFlixHqStream && !inRapidSeekMode) {
+                        const shouldEscalate = markFlixhqAudioGlitch(2);
+                        if (shouldEscalate && typeof onErrorFallback === 'function') {
+                            console.warn('[hls] FlixHQ audio glitch guard triggered, escalating failover.');
+                            onErrorFallback('audio_corruption_guard');
+                            return;
+                        }
+                    }
+
+                    const now = Date.now();
+                    if (now - lastAudioPipelineResetAt > 5000) {
+                        lastAudioPipelineResetAt = now;
+                        console.warn('[hls] Audio pipeline issue detected, resetting media pipeline near current position...');
+                        showBufferingOverlay();
+                        try {
+                            const t = Math.max(0, Number(video?.currentTime || 0) - 0.35);
+                            hls.stopLoad();
+                            hls.startLoad(t);
+                            hls.recoverMediaError();
+                            armFatalRecoveryTimer();
+                        } catch (_) { }
+                        return;
+                    }
+                }
 
                 // ── bufferFullError: flush stale back-buffer instead of spiralling ──
                 if (isBufferFull && !d.fatal) {
@@ -3573,6 +3708,15 @@
                 }
 
                 if (isFragParsing && !d.fatal) {
+                    if (isFlixHqStream && !inRapidSeekMode && (Date.now() - lastUserSeekAt) > 2500) {
+                        const shouldEscalate = markFlixhqAudioGlitch(1);
+                        if (shouldEscalate && typeof onErrorFallback === 'function') {
+                            console.warn('[hls] FlixHQ frag parse burst indicates probable audio corruption, escalating failover.');
+                            onErrorFallback('audio_corruption_guard');
+                            return;
+                        }
+                    }
+
                     hlsFragErrorBurst += 1;
                     fragParseBurstCount += 1;
                     const now = Date.now();
@@ -3643,7 +3787,12 @@
                                 if (isFinite(near) && near > 0) video.currentTime = near;
                                 setTemporaryRecoveryQuality(5000);
                                 tuneHlsForJump(near, jump, 'seek');
-                                hls.recoverMediaError();
+                                if (isFlixHqStream) {
+                                    hls.stopLoad();
+                                    hls.startLoad(Math.max(0, near - 0.2));
+                                } else {
+                                    hls.recoverMediaError();
+                                }
                             } catch (_) { }
                         }
                         return;
@@ -3742,11 +3891,26 @@
                         const preferredRecoveryTarget = pendingJumpTarget?.time ?? Number(video?.currentTime || 0);
                         const durableRecoveryTarget = Math.max(0, Number(lastRequestedPlaybackTarget ?? preferredRecoveryTarget ?? 0));
 
+                        if (isFlixHqStream && (isFragParsing || detailText.includes('decode') || detailText.includes('audio'))) {
+                            if (typeof onErrorFallback === 'function') {
+                                pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
+                                console.warn('[hls] FlixHQ media decode/audio failure detected, escalating to alternate source.');
+                                onErrorFallback('audio_corruption_guard');
+                                return;
+                            }
+                        }
+
                         if (inRapidSeekMode) {
                             if (isFragParsing && typeof onErrorFallback === 'function') {
                                 pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
                                 setTemporaryRecoveryQuality(6000);
                                 onErrorFallback('fatal_frag_parse_jump');
+                                return;
+                            }
+                            if (isFlixHqStream && typeof onErrorFallback === 'function') {
+                                pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
+                                setTemporaryRecoveryQuality(6000);
+                                onErrorFallback('fatal_media_error');
                                 return;
                             }
                             setTemporaryRecoveryQuality(5500);
@@ -3798,10 +3962,12 @@
                             hls.recoverMediaError();
                             armFatalRecoveryTimer();
                         } else if (mediaErrorCount === 2) {
-                            console.warn('[hls] Second media error, swapping codec...');
-                            hls.swapAudioCodec();
-                            hls.recoverMediaError();
-                            armFatalRecoveryTimer();
+                            console.warn('[hls] Second media error, rebuilding same source to prevent audio corruption...');
+                            clearFatalRecoveryTimer();
+                            if (typeof onErrorFallback === 'function') {
+                                pendingJumpTarget = { time: durableRecoveryTarget, reason: pendingJumpTarget?.reason || 'seek' };
+                                onErrorFallback('fatal_media_error');
+                            }
                         } else {
                             console.warn('[hls] Unrecoverable media error, requesting same-source recovery...');
                             clearFatalRecoveryTimer();
@@ -3828,7 +3994,9 @@
                     return;
                 }
                 const now = video.currentTime;
-                if (Math.abs(now - lastWatchdogTime) < 0.05) {
+                const bufferAhead = getBufferedAheadSeconds();
+                const likelyStarving = video.readyState < 3 || bufferAhead < 0.4;
+                if (Math.abs(now - lastWatchdogTime) < 0.05 && likelyStarving) {
                     watchdogStallCount++;
                     if (watchdogStallCount === 1) {
                         console.warn('[hls-watchdog] Stall detected, nudging startLoad...');
@@ -3844,7 +4012,7 @@
                             hls.stopLoad();
                             hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
                         } catch (_) { }
-                    } else if (watchdogStallCount >= 3) {
+                    } else if (watchdogStallCount >= 4) {
                         console.warn('[hls-watchdog] Persistent stall, attempting same-source recovery...');
                         watchdogStallCount = 0;
                         if (typeof onErrorFallback === 'function') onErrorFallback('watchdog_stall');
@@ -3853,7 +4021,7 @@
                     watchdogStallCount = 0;
                 }
                 lastWatchdogTime = now;
-            }, 2500);
+            }, 3000);
 
             // Clean up watchdog when hls is destroyed
             hls.on(Hls.Events.DESTROYING, () => {
@@ -4039,7 +4207,8 @@
 
         function buildTvSeasonsFromInfo(info) {
             const rawSeasons = Array.isArray(info?.seasons) ? info.seasons : [];
-            let rawEpisodes = Array.isArray(info?.episodes) ? info.episodes : [];
+            const rawProviderEpisodes = Array.isArray(info?.providerEpisodes) ? info.providerEpisodes : [];
+            let rawEpisodes = Array.isArray(info?.episodes) ? info.episodes : rawProviderEpisodes;
 
             const mapSNo = (v, fallback = 1) => {
                 const n = Number(v);
@@ -5293,6 +5462,58 @@
             return String(value || '').trim();
         }
 
+        async function detectLikelyAnimeMedia(info) {
+            const title = normalizeAnimeSearchQuery(
+                getAnimeTitleText(info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || ''),
+            );
+            if (!title) return false;
+
+            const genreNames = (Array.isArray(info?.genres) ? info.genres : [])
+                .map((g) => (typeof g === 'string' ? g : (g?.name || '')))
+                .map((g) => String(g).toLowerCase());
+            const originalLang = String(info?.original_language || info?.originalLanguage || '').toLowerCase();
+            const titleLower = title.toLowerCase();
+
+            const strongTitleSignals = [
+                'anime', 'manga', 'jujutsu', 'kaisen', 'naruto', 'one piece', 'bleach', 'attack on titan',
+                'demon slayer', 'kimetsu', 'my hero academia', 'boku no hero', 'chainsaw man', 'tokyo ghoul',
+                'hunter x hunter', 'dragon ball', 'sailor moon', 'spy x family', 'solo leveling', 'blue lock',
+                'black clover', 'fate', 're:zero', 'vinland', 'frieren', 'mashle', 'dandadan', 'kaiju',
+                'sakamoto days', 'pokemon', 'digimon', 'naruto shippuden', 'death note', 'one punch man',
+            ];
+
+            const titleLooksAnime = strongTitleSignals.some((signal) => titleLower.includes(signal));
+            const metadataLooksAnime =
+                originalLang === 'ja' ||
+                originalLang === 'jpn' ||
+                genreNames.includes('anime') ||
+                (genreNames.includes('animation') && !genreNames.includes('family') && !genreNames.includes('children'));
+
+            if (titleLooksAnime || metadataLooksAnime) return true;
+
+            if (MEDIA_TYPE !== 'tv') return false;
+
+            try {
+                const anilistUrl = `${API_BASE.replace('/meta/tmdb', '/meta/anilist')}/${encodeURIComponent(title)}`;
+                const { res } = await fetchJsonWithApiFallback(anilistUrl, {
+                    signal: AbortSignal.timeout(7000),
+                });
+                if (!res.ok) return false;
+                const payload = await res.json();
+                const results = getAnimeSearchResults(payload);
+                if (!Array.isArray(results) || !results.length) return false;
+
+                const picked = pickAnimeResultByTitle(results, title, getPreferredMediaYear(), 1, '', false)
+                    || results.find((row) => {
+                        const rowTitle = normalizeAnimeSearchQuery(String(row?.title || row?.name || '')).toLowerCase();
+                        return rowTitle.includes(titleLower) || titleLower.includes(rowTitle);
+                    });
+                return Boolean(picked?.id);
+            } catch {
+                return false;
+            }
+        }
+
         async function getCanonicalAnimeInfo() {
             if (!currentIsLikelyAnime) return null;
             const mediaTitle = getAnimeTitleText(currentMediaInfo?.title || currentMediaInfo?.name || TMDB_ID || '');
@@ -5435,22 +5656,42 @@
             const wantedType = String(mediaType || '').toLowerCase() === 'tv' ? 'tv' : 'movie';
 
             for (const term of terms) {
-                let searchUrl;
-                let fetchOptions = {
-                    signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeSearch', 8000)),
-                };
+                let payload = null;
                 if (provider === 'flixhq') {
-                    searchUrl = `${movieProviderBase}/search`;
-                    fetchOptions.method = 'POST';
-                    fetchOptions.headers = { 'Content-Type': 'application/json' };
-                    fetchOptions.body = JSON.stringify({ query: term });
-                } else {
-                    searchUrl = `${movieProviderBase}/${encodeURIComponent(term)}?page=1`;
-                }
-                const { res: sRes } = await fetchJsonWithApiFallback(searchUrl, fetchOptions);
-                if (!sRes.ok) continue;
+                    // Newer backends expose POST /search; older/local builds use GET /:query?page=1.
+                    const postSearchUrl = `${movieProviderBase}/search`;
+                    const postOptions = {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: term }),
+                        signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeSearch', 8000)),
+                    };
+                    try {
+                        const { res: postRes } = await fetchJsonWithApiFallback(postSearchUrl, postOptions);
+                        if (postRes.ok) {
+                            payload = await postRes.json();
+                        }
+                    } catch (_) {
+                        // Fall back to legacy GET route below.
+                    }
 
-                const payload = await sRes.json();
+                    if (!payload) {
+                        const legacySearchUrl = `${movieProviderBase}/${encodeURIComponent(term)}?page=1`;
+                        const { res: legacyRes } = await fetchJsonWithApiFallback(legacySearchUrl, {
+                            signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeSearch', 8000)),
+                        });
+                        if (!legacyRes.ok) continue;
+                        payload = await legacyRes.json();
+                    }
+                } else {
+                    const searchUrl = `${movieProviderBase}/${encodeURIComponent(term)}?page=1`;
+                    const { res: sRes } = await fetchJsonWithApiFallback(searchUrl, {
+                        signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeSearch', 8000)),
+                    });
+                    if (!sRes.ok) continue;
+                    payload = await sRes.json();
+                }
+
                 const rows = Array.isArray(payload?.results)
                     ? payload.results
                     : Array.isArray(payload?.data)
@@ -5484,15 +5725,26 @@
                 });
                 if (!iRes.ok) continue;
 
-                let info = await iRes.json();
-                if (info?.data) info = info.data;
+                const rawInfo = await iRes.json();
+                let info = rawInfo?.data || rawInfo;
+                // FlixHQ returns providerEpisodes separately; preserve them as episodes for matching.
+                if (
+                    String(provider || '').toLowerCase() === 'flixhq' &&
+                    Array.isArray(rawInfo?.providerEpisodes) &&
+                    rawInfo.providerEpisodes.length
+                ) {
+                    info = {
+                        ...(info || {}),
+                        episodes: rawInfo.providerEpisodes,
+                    };
+                }
                 if (!info) continue;
 
                 if (mediaType === 'tv') {
                     const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
                     const sNo = safeNo(seasonNo, 1);
                     const eNo = safeNo(episodeNo, 1);
-                    const toNo = (ep) => safeNo(ep?.number || ep?.episode || ep?.episodeNum, 0);
+                    const toNo = (ep) => safeNo(ep?.number || ep?.episode || ep?.episodeNum || ep?.episodeNumber, 0);
                     const toSeason = (ep) => safeNo(ep?.season || ep?.seasonNo || ep?.seasonNumber, 0);
                     const pickedEpisode =
                         episodes.find((ep) => toSeason(ep) === sNo && toNo(ep) === eNo) ||
@@ -6723,6 +6975,50 @@
             else muteBtn.innerHTML = '<i class="fa-solid fa-volume-high"></i>';
         }
 
+        function toggleMuteFromUser(showToast = false) {
+            if (!video) return;
+
+            const currentlyMuted = video.muted || video.volume === 0;
+            if (currentlyMuted) {
+                video.muted = false;
+                if (video.volume === 0) video.volume = 0.5;
+
+                // On some autoplay-muted sessions, unmute must also resume the audio pipeline.
+                try {
+                    if (audioCtx && audioCtx.state === 'suspended') {
+                        audioCtx.resume().catch(() => { });
+                    }
+                } catch (_) { }
+
+                // If gain was previously driven to 0, restore sane audible gain on unmute.
+                if (audioCtx && gainNode && Number(gainNode.gain?.value || 0) <= 0) {
+                    setVolumeBoost(Math.max(100, Number(volumeBoost || 100)));
+                }
+
+                Promise.resolve(video.play()).catch(() => { });
+            } else {
+                video.muted = true;
+            }
+
+            updateMuteIcon();
+            if (showToast) showMuteStatusToast();
+        }
+
+        function showMuteStatusToast() {
+            if (!video || !muteStatusToast || !muteStatusIcon || !muteStatusText) return;
+            const muted = video.muted || video.volume === 0;
+            muteStatusIcon.className = muted
+                ? 'fa-solid fa-volume-xmark'
+                : (video.volume < 0.5 ? 'fa-solid fa-volume-low' : 'fa-solid fa-volume-high');
+            muteStatusText.textContent = muted ? 'Muted' : 'Unmuted';
+            muteStatusToast.classList.add('show');
+            if (muteStatusToastTimer) clearTimeout(muteStatusToastTimer);
+            muteStatusToastTimer = setTimeout(() => {
+                muteStatusToast.classList.remove('show');
+                muteStatusToastTimer = null;
+            }, 900);
+        }
+
         function updateVolumeFromClientX(clientX, slider) {
             if (!slider || !Number.isFinite(clientX) || !video) return;
             if (!slider) return;
@@ -6755,9 +7051,7 @@
                 : '<i class="fa-solid fa-volume-high"></i>';
             toggle.onclick = (e) => {
                 e.stopPropagation();
-                video.muted = !video.muted;
-                if (!video.muted && video.volume === 0) video.volume = 0.5;
-                updateMuteIcon();
+                toggleMuteFromUser(false);
                 if (volumeSliderEl) {
                     const next = Math.round((video.muted ? 0 : video.volume) * 100);
                     volumeSliderEl.value = String(next);
@@ -8771,6 +9065,7 @@
                 requestSeekToTime((percent / 100) * (video?.duration || 0), true);
             });
 
+            let lastDragSeekCommitAt = 0;
             const commitSeekFromDrag = (e) => {
                 if (!isSeekDragging) return;
                 if (e && typeof e.pointerId === 'number' && seekBar.hasPointerCapture?.(e.pointerId)) {
@@ -8779,6 +9074,7 @@
                 const percent = Number.isFinite(pendingSeekPercent) ? pendingSeekPercent : parseFloat(seekBar.value || '0');
                 isSeekDragging = false;
                 pendingSeekPercent = null;
+                lastDragSeekCommitAt = Date.now();
                 requestSeekToTime((percent / 100) * (video?.duration || 0), true);
                 if (wasPlayingBeforeDragSeek && video) {
                     Promise.resolve(video.play()).catch(() => { });
@@ -8790,6 +9086,7 @@
             seekBar.addEventListener('change', () => {
                 // Keyboard/click commits (non-drag path)
                 if (!isSeekDragging) {
+                    if (Date.now() - lastDragSeekCommitAt < 280) return;
                     // If controls are hidden, don't seek
                     if (Date.now() >= controlsHoldVisibleUntil) {
                         holdControlsVisible(1500);
@@ -9610,8 +9907,40 @@
                         setLoader('Fetching media info...', 'Using fallback data (API unavailable)');
                     }
                 }
+
+                const needsTmdbFallback = MEDIA_TYPE === 'tv' && (
+                    !info ||
+                    !String(info.title || info.name || '').trim() ||
+                    String(info.title || info.name || '').toLowerCase() === 'unknown' ||
+                    !Array.isArray(info.seasons) ||
+                    info.seasons.length === 0
+                );
+                if (needsTmdbFallback) {
+                    try {
+                        const fallbackInfo = await fetchJsonWithRetry(`${API_BASE}/info/${encodeURIComponent(TMDB_ID)}?type=${encodeURIComponent(MEDIA_TYPE)}`, 10000, 15000);
+                        const fallbackPayload = fallbackInfo?.data || fallbackInfo;
+                        if (fallbackPayload && typeof fallbackPayload === 'object') {
+                            info = {
+                                ...(fallbackPayload || {}),
+                                ...(info || {}),
+                                title: String((info && (info.title || info.name)) || fallbackPayload.title || fallbackPayload.name || 'Unknown Title'),
+                                name: String((info && (info.name || info.title)) || fallbackPayload.name || fallbackPayload.title || 'Unknown Title'),
+                                seasons: Array.isArray(info?.seasons) && info.seasons.length ? info.seasons : (Array.isArray(fallbackPayload.seasons) ? fallbackPayload.seasons : []),
+                                episodes: Array.isArray(info?.episodes) && info.episodes.length ? info.episodes : (Array.isArray(fallbackPayload.episodes) ? fallbackPayload.episodes : []),
+                                original_language: info?.original_language || info?.originalLanguage || fallbackPayload.original_language || fallbackPayload.originalLanguage || 'en',
+                                media_type: info?.media_type || info?.type || fallbackPayload.media_type || fallbackPayload.type || MEDIA_TYPE,
+                                type: info?.type || fallbackPayload.type || MEDIA_TYPE,
+                            };
+                            console.warn('[init] Applied TMDB fallback metadata for TV seasons/episodes.');
+                        }
+                    } catch (fallbackErr) {
+                        console.warn('[init] TMDB fallback metadata fetch failed:', fallbackErr?.message || fallbackErr);
+                    }
+                }
+
                 currentMediaInfo = info;
                 console.log('currentMediaInfo.title:', currentMediaInfo?.title, 'TMDB_ID:', TMDB_ID);
+                flixhqAltServerAttempted = false;
                 currentAnimeCanonicalInfo = null;
                 currentAnimeCanonicalInfoPromise = null;
                 currentAnimeCanonicalInfoKey = '';
@@ -9647,16 +9976,7 @@
                     (info.type || '').toLowerCase().includes('tv') ||
                     (info.type || '').toLowerCase().includes('series');
 
-                const genreNames = (Array.isArray(info.genres) ? info.genres : [])
-                    .map(g => (typeof g === 'string' ? g : (g?.name || '')))
-                    .map(g => String(g).toLowerCase());
-                const originalLang = String(info.original_language || info.originalLanguage || '').toLowerCase();
-                const animeHint = String(info.title || info.name || '').toLowerCase();
-                const isLikelyAnime = (
-                    genreNames.includes('animation') ||
-                    originalLang === 'ja' ||
-                    animeHint.includes('anime')
-                );
+                const isLikelyAnime = await detectLikelyAnimeMedia(info);
                 currentIsLikelyAnime = isLikelyAnime;
                 aniSkipFetchStatus = 'none';
                 resetAnimeSkipState();
@@ -9673,10 +9993,8 @@
                     activeProviders = [FORCED_PROVIDER];
                 } else if (MEDIA_TYPE === 'movie') {
                     activeProviders = [...MOVIE_PROVIDERS];
-                } else if (isLikelyAnime) {
-                    activeProviders = [...ANIME_PROVIDERS];
                 } else {
-                    activeProviders = [...MOVIE_PROVIDERS];
+                    activeProviders = ['animesalt', 'flixhq', 'dramacool', ...ANIME_PROVIDERS.filter((p) => p !== 'animesalt')];
                 }
                 console.log('activeProviders:', activeProviders, 'FORCED_PROVIDER:', FORCED_PROVIDER);
                 buildChips();
@@ -10185,20 +10503,24 @@
             // Mark episode button for showing in Plyr control bar
             showPlyrEpBtn = true;
             const fillerTitle = info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || '';
-            fetchAnimeFillerStatusMap(fillerTitle)
-                .then((map) => {
-                    episodeFillerStatus = map;
-                    fillerLookupState = map.size > 0
-                        ? 'ready'
-                        : (fillerLookupState === 'fetch_failed' ? 'fetch_failed' : 'not_found');
-                    buildEpPanel();
-                    updateEpUI(curSeason, curEpisode);
-                })
-                .catch(() => {
-                    fillerLookupState = 'fetch_failed';
-                    buildEpPanel();
-                    updateEpUI(curSeason, curEpisode);
-                });
+            if (currentIsLikelyAnime) {
+                fetchAnimeFillerStatusMap(fillerTitle)
+                    .then((map) => {
+                        episodeFillerStatus = map;
+                        fillerLookupState = map.size > 0
+                            ? 'ready'
+                            : (fillerLookupState === 'fetch_failed' ? 'fetch_failed' : 'not_found');
+                        buildEpPanel();
+                        updateEpUI(curSeason, curEpisode);
+                    })
+                    .catch(() => {
+                        fillerLookupState = 'fetch_failed';
+                        buildEpPanel();
+                        updateEpUI(curSeason, curEpisode);
+                    });
+            } else {
+                fillerLookupState = 'not_found';
+            }
             const initialPos = getInitialTvPositionFromUrl(tvSeasons);
             await playTvEp(initialPos.seasonIndex, initialPos.episodeIndex, null);
         }
@@ -10689,71 +11011,31 @@
             if (!video || !Number.isFinite(target)) return;
 
             const clampedTarget = Math.max(0, target);
+            const seekDistance = Math.abs(clampedTarget - Number(video.currentTime || 0));
+            const inRapidSeekMode = Date.now() < rapidSeekModeUntil || seekBurstCount >= 6;
+            const lockedHlsAudioTrack = (hlsInst && Number.isInteger(hlsInst.audioTrack) && hlsInst.audioTrack >= 0)
+                ? hlsInst.audioTrack
+                : -1;
 
-            // ENHANCED: Flush audio buffer before seeking to prevent robotic/distorted audio
+            // During heavy seeking, avoid stopLoad/startLoad churn since it triggers emptied/waiting loops.
             if (hlsInst && attempt === 0) {
                 try {
-                    // Stop loading momentarily to allow clean buffer flush
-                    hlsInst.stopLoad();
-
-                    // Force a small audio buffer flush by temporarily disabling/re-enabling audio
-                    if (video.audioTracks && video.audioTracks.length > 0) {
-                        // Try to cycle through audio tracks briefly to reset decoder
-                        const originalEnabled = [];
-                        for (let i = 0; i < video.audioTracks.length; i++) {
-                            originalEnabled[i] = video.audioTracks[i].enabled;
-                            if (originalEnabled[i]) {
-                                video.audioTracks[i].enabled = false;
-                            }
-                        }
-
-                        // Re-enable after a brief moment
-                        setTimeout(() => {
-                            if (video && video.audioTracks) {
-                                for (let i = 0; i < video.audioTracks.length; i++) {
-                                    if (originalEnabled[i]) {
-                                        video.audioTracks[i].enabled = true;
-                                    }
-                                }
-                            }
-                        }, 50);
+                    if (!inRapidSeekMode && seekDistance > 12) {
+                        kickHlsLoadNearCurrentTime(clampedTarget, seekDistance > 24);
                     }
-
-                    // Also try to reset HLS audio track if available
-                    if (hlsInst.audioTrack !== undefined && hlsInst.audioTrack >= 0) {
-                        const currentAudioTrack = hlsInst.audioTrack;
-                        // Temporarily switch to a different track and back
-                        setTimeout(() => {
-                            if (hlsInst && hlsInst.audioTracks && hlsInst.audioTracks.length > 1) {
-                                // Switch to another track briefly
-                                const altTrack = (currentAudioTrack + 1) % hlsInst.audioTracks.length;
-                                hlsInst.audioTrack = altTrack;
-
-                                // Switch back after a moment
-                                setTimeout(() => {
-                                    if (hlsInst) {
-                                        hlsInst.audioTrack = currentAudioTrack;
-                                    }
-                                }, 100);
-                            }
-                        }, 25);
-                    }
-
-                    // Resume loading from target position
-                    setTimeout(() => {
-                        if (hlsInst) {
-                            try { hlsInst.startLoad(Math.max(0, clampedTarget - 0.5)); } catch (_) { }
-                        }
-                    }, 100);
                 } catch (_) { }
             }
 
-            // ENHANCED: Add small delay for audio reset to take effect before seeking
-            const seekDelay = (hlsInst && attempt === 0) ? 150 : 0;
+            const seekDelay = 0;
 
             setTimeout(() => {
                 if (!video) return;
                 video.currentTime = clampedTarget;
+
+                // Keep the selected HLS audio track stable across seek jumps.
+                if (hlsInst && lockedHlsAudioTrack >= 0 && hlsInst.audioTrack !== lockedHlsAudioTrack) {
+                    try { hlsInst.audioTrack = lockedHlsAudioTrack; } catch (_) { }
+                }
 
                 const pct = video.duration > 0 ? (clampedTarget / video.duration) * 100 : 0;
                 if (seekBar) {
@@ -10762,7 +11044,7 @@
                 }
 
                 const reachedTarget = Math.abs((video.currentTime || 0) - clampedTarget) <= 0.75;
-                if (reachedTarget || attempt >= 4) return;
+                if (reachedTarget || attempt >= 2 || isSourceSwitching) return;
 
                 setTimeout(() => {
                     if (!video) return;
@@ -11063,11 +11345,7 @@
             const providerResults = {};
             const providersToRun = effectiveForcedProvider
                 ? [effectiveForcedProvider]
-                : (
-                    MEDIA_TYPE === 'movie' && !currentIsLikelyAnime
-                        ? activeProviders.filter((p) => !['animesalt', 'animekai', 'justanime', 'satoru', 'dramacool'].includes(String(p || '').toLowerCase()))
-                        : activeProviders
-                  );
+                : activeProviders;
             const orderedProviders = providersToRun;
             providersToRun.forEach(p => providerResults[p] = []);
 
@@ -11154,7 +11432,9 @@
                 try {
                     let info, provEpisodeId;
                     let satoruResolvedExactly = false;
-                    const isAnimeProvider = ['satoru', 'justanime', 'animesalt', 'animekai'].includes(provider);
+                    const isAnimeProvider =
+                        ['satoru', 'justanime', 'animesalt'].includes(provider) ||
+                        (provider === 'animekai' && currentIsLikelyAnime);
                     const isNetMirrorProvider = ['flixhq', 'viewvault', 'netmirror'].some(v => String(provider || '').toLowerCase().includes(v));
 
                     if (isAnimeProvider) {
@@ -11266,14 +11546,24 @@
                     } else {
                         // Movie/TV Providers (FlixHQ, etc.)
                         const isFlixhqProvider = provider === 'flixhq' && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv');
+                        const isLikelyFlixhqProviderEpisodeId = (value) => {
+                            const raw = String(value || '').trim().toLowerCase();
+                            if (!raw) return false;
+                            if (raw.startsWith('tv-watch-') || raw.startsWith('movie-watch-')) return true;
+                            if (raw.includes('$episode$')) return true;
+                            return false;
+                        };
                         if (isFlixhqProvider) {
-                            // For movies, resolve FlixHQ ID first. For TV, use existing episode ID if available.
-                            if (MEDIA_TYPE === 'movie' || !selectedEpisode?.id) {
+                            // Always resolve provider-native IDs for FlixHQ when current episode ID
+                            // is not already a FlixHQ provider ID.
+                            const selectedEpisodeId = String(selectedEpisode?.id || '').trim();
+                            const canUseSelectedEpisodeId = isLikelyFlixhqProviderEpisodeId(selectedEpisodeId);
+                            if (MEDIA_TYPE === 'movie' || !canUseSelectedEpisodeId) {
                                 const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, MEDIA_TYPE, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
                                 provEpisodeId = resolved?.episodeId;
                                 if (resolved?.info) info = resolved.info;
-                            } else if (MEDIA_TYPE === 'tv' && selectedEpisode?.id) {
-                                provEpisodeId = String(selectedEpisode.id).trim();
+                            } else if (MEDIA_TYPE === 'tv' && canUseSelectedEpisodeId) {
+                                provEpisodeId = selectedEpisodeId;
                             }
                         } else if (provider === 'dramacool') {
                             const resolved = await resolveDramacoolEpisodeId(currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo, getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo));
@@ -11299,7 +11589,7 @@
                         }
                     }
 
-                    const canResolveOnWatch = provider === 'flixhq' && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv');
+                    const canResolveOnWatch = provider === 'flixhq' && MEDIA_TYPE === 'tv';
                     if (!provEpisodeId && !canResolveOnWatch) throw new Error('No episode ID found');
 
                     // Watch (try TMDB provider watch first so backend can resolve missing TV episode IDs)
@@ -11314,17 +11604,19 @@
                             watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
                         }
 
-                        const tmdbWatchParams = new URLSearchParams();
-                        tmdbWatchParams.set('id', String(TMDB_ID || ''));
-                        tmdbWatchParams.set('type', String(MEDIA_TYPE || 'movie'));
-                        tmdbWatchParams.set('provider', String(provider || ''));
-                        if (MEDIA_TYPE === 'tv') {
-                            tmdbWatchParams.set('season', String(selectedSeasonNo || 1));
-                            tmdbWatchParams.set('episode', String(selectedEpisodeNo || 1));
+                        if (provider !== 'flixhq' || (provider === 'flixhq' && MEDIA_TYPE === 'tv')) {
+                            const tmdbWatchParams = new URLSearchParams();
+                            tmdbWatchParams.set('id', String(TMDB_ID || ''));
+                            tmdbWatchParams.set('type', String(MEDIA_TYPE || 'movie'));
+                            tmdbWatchParams.set('provider', String(provider || ''));
+                            if (MEDIA_TYPE === 'tv') {
+                                tmdbWatchParams.set('season', String(selectedSeasonNo || 1));
+                                tmdbWatchParams.set('episode', String(selectedEpisodeNo || 1));
+                            }
+                            if (provEpisodeId) tmdbWatchParams.set('episodeId', String(provEpisodeId));
+                            if (DIRECT_ONLY) tmdbWatchParams.set('directOnly', 'true');
+                            watchCandidates.push(`${API_BASE}/watch?${tmdbWatchParams.toString()}`);
                         }
-                        if (provEpisodeId) tmdbWatchParams.set('episodeId', String(provEpisodeId));
-                        if (DIRECT_ONLY) tmdbWatchParams.set('directOnly', 'true');
-                        watchCandidates.push(`${API_BASE}/watch?${tmdbWatchParams.toString()}`);
                         if (provider === 'dramacool') {
                             watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
                         } else {
@@ -11647,8 +11939,12 @@
             sourcePanel.querySelectorAll('.src-item').forEach((el, i) => el.classList.toggle('active', i === idx));
         }
 
-        function selectSource(idx) {
-            const savedTime = (video && !video.ended) ? video.currentTime : 0;
+        function selectSource(idx, explicitStartTime = null) {
+            const explicitTime = Number(explicitStartTime);
+            const hasExplicitTime = Number.isFinite(explicitTime) && explicitTime >= 0;
+            const savedTime = hasExplicitTime
+                ? explicitTime
+                : ((video && !video.ended) ? video.currentTime : 0);
             currentIdx = idx;
             updateSourceUI(idx);
 
@@ -11781,7 +12077,20 @@
             const resumeTargetTime = Math.max(0, Number(startTime || 0));
             const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 20;
             let nextSourceFallbackUsed = false;
-            let flixhqAltServerAttempted = false;
+            const getFailoverResumeTime = () => {
+                const pendingTime = Number(pendingJumpTarget?.time);
+                const requestedTime = Number(lastRequestedPlaybackTarget);
+                const videoTime = Number(video?.currentTime || 0);
+                const startTimeNum = Number(startTime || 0);
+                const globalStartTime = Number(startT || 0);
+
+                if (Number.isFinite(pendingTime) && pendingTime > 0.25) return Math.max(0, pendingTime);
+                if (Number.isFinite(requestedTime) && requestedTime > 0.25) return Math.max(0, requestedTime);
+                if (Number.isFinite(videoTime) && videoTime > 0.25) return Math.max(0, videoTime);
+                if (Number.isFinite(startTimeNum) && startTimeNum > 0.25) return Math.max(0, startTimeNum);
+                if (Number.isFinite(globalStartTime) && globalStartTime > 0.25) return Math.max(0, globalStartTime);
+                return 0;
+            };
             const failoverToNextSource = (reason = 'unknown') => {
                 if (nextSourceFallbackUsed) return false;
                 const nextIdx = Array.isArray(allSources)
@@ -11789,9 +12098,15 @@
                     : -1;
                 if (nextIdx < 0) return false;
                 nextSourceFallbackUsed = true;
+                const resumeAt = getFailoverResumeTime();
+                if (resumeAt > 0) {
+                    pendingJumpTarget = { time: resumeAt, reason: 'server_failover' };
+                    lastRequestedPlaybackTarget = resumeAt;
+                    startT = resumeAt;
+                }
                 console.warn(`[stream-failover] Switching to next source idx=${nextIdx} reason=${reason}`);
                 try {
-                    selectSource(nextIdx);
+                    selectSource(nextIdx, resumeAt);
                     return true;
                 } catch (_) {
                     return false;
@@ -11800,12 +12115,35 @@
             const tryAlternateFlixhqServer = async (reason = 'unknown') => {
                 if (flixhqAltServerAttempted) return false;
                 if (String(sourceProvider || '').toLowerCase() !== 'flixhq') return false;
-                if (String(MEDIA_TYPE || '').toLowerCase() !== 'movie') return false;
-                flixhqAltServerAttempted = true;
+                const mediaType = String(MEDIA_TYPE || '').toLowerCase();
+                if (mediaType !== 'movie' && mediaType !== 'tv') return false;
                 const candidateServers = ['vidcloud', 'upcloud'];
                 for (const serverName of candidateServers) {
                     try {
-                        const watchUrl = `${API_BASE}/watch?id=${encodeURIComponent(String(TMDB_ID || ''))}&type=movie&provider=flixhq&directOnly=true&server=${encodeURIComponent(serverName)}`;
+                        const watchParams = new URLSearchParams();
+                        watchParams.set('id', String(TMDB_ID || ''));
+                        watchParams.set('type', mediaType);
+                        watchParams.set('provider', 'flixhq');
+                        watchParams.set('directOnly', 'true');
+                        watchParams.set('server', serverName);
+                        if (mediaType === 'tv') {
+                            const selectedSeason = tvSeasons?.[curSeason];
+                            const selectedEpisode = selectedSeason?.episodes?.[curEpisode];
+                            const selectedSeasonNoRaw = Number(selectedSeason?.seasonNo);
+                            const selectedEpisodeNoRaw = Number(
+                                selectedEpisode?.episode || selectedEpisode?.number || selectedEpisode?.episodeNum,
+                            );
+                            const selectedSeasonNo = Number.isFinite(selectedSeasonNoRaw) && selectedSeasonNoRaw > 0
+                                ? selectedSeasonNoRaw
+                                : (Number(curSeason) + 1);
+                            const selectedEpisodeNo = Number.isFinite(selectedEpisodeNoRaw) && selectedEpisodeNoRaw > 0
+                                ? selectedEpisodeNoRaw
+                                : (Number(curEpisode) + 1);
+                            watchParams.set('season', String(selectedSeasonNo));
+                            watchParams.set('episode', String(selectedEpisodeNo));
+                        }
+
+                        const watchUrl = `${API_BASE}/watch?${watchParams.toString()}`;
                         const { res } = await fetchJsonWithApiFallback(watchUrl, {
                             signal: AbortSignal.timeout(30000),
                         });
@@ -11832,16 +12170,27 @@
                                 };
                             });
                         if (!mapped.length) continue;
-                        allSources.push(...mapped);
+                        const existingUrls = new Set((Array.isArray(allSources) ? allSources : []).map((s) => String(s?.url || '')));
+                        const uniqueMapped = mapped.filter((s) => !existingUrls.has(String(s?.url || '')));
+                        if (!uniqueMapped.length) continue;
+                        allSources.push(...uniqueMapped);
                         buildSourcePanel();
                         sourceBtn.style.display = 'flex';
+                        const resumeAt = getFailoverResumeTime();
+                        if (resumeAt > 0) {
+                            pendingJumpTarget = { time: resumeAt, reason: 'server_failover' };
+                            lastRequestedPlaybackTarget = resumeAt;
+                            startT = resumeAt;
+                        }
+                        flixhqAltServerAttempted = true;
                         console.warn(`[stream-failover] Injected FlixHQ ${serverName} backup source(s) due to ${reason}`);
-                        selectSource(allSources.length - mapped.length);
+                        selectSource(allSources.length - uniqueMapped.length, resumeAt);
                         return true;
                     } catch (_) {
                         // try next server candidate
                     }
                 }
+                flixhqAltServerAttempted = true;
                 return false;
             };
             const effectiveStartTime = useWarmStartResume ? 0 : resumeTargetTime;
@@ -12134,6 +12483,7 @@
                 const recoverSameSourceWithDirectFallback = (reason) => {
                     const lowerReason = String(reason || '').toLowerCase();
                     const isAnimeKaiStream = String(sourceProvider || '').toLowerCase() === 'animekai';
+                    const isFlixHqStream = String(sourceProvider || '').toLowerCase() === 'flixhq';
                     if (reason === 'fatal_network_error' && !hlsDirectFallbackAttempted) {
                         const resumeTime = Number(video?.currentTime || startTime || 0);
                         const tried = recoverWithDirectUrl(resumeTime);
@@ -12141,6 +12491,17 @@
                             setTimeout(() => { sameSourceRecoveryLock = false; }, 600);
                             return;
                         }
+                    }
+
+                    if (isFlixHqStream && (lowerReason.includes('audio_corruption') || lowerReason.includes('frag_parse'))) {
+                        tryAlternateFlixhqServer(`flixhq_audio_guard:${reason}`).then((switched) => {
+                            if (switched) {
+                                sameSourceRecoveryLock = false;
+                                return;
+                            }
+                            recoverSameSource(reason);
+                        });
+                        return;
                     }
 
                     if (isAnimeKaiStream && sameSourceRecoverCount >= 1 && (lowerReason.includes('frag_parse') || lowerReason.includes('watchdog_stall'))) {
@@ -12417,9 +12778,10 @@
                         console.warn('Native HLS: Stalling at start, attempting fallback');
                         tryNextHlsStep('stall');
                     }
-                }, 12000);
+                }, 7000);
                 video.addEventListener('loadedmetadata', () => clearTimeout(hlsStallTimer), { once: true });
                 video.addEventListener('canplay', () => clearTimeout(hlsStallTimer), { once: true });
+                video.addEventListener('playing', () => clearTimeout(hlsStallTimer), { once: true });
 
                 // Refresh audio track UI once metadata is parsed — iOS populates
                 // video.audioTracks only AFTER loadedmetadata fires.
@@ -12610,15 +12972,16 @@
             document.addEventListener('keydown', (e) => {
                 // Skip if focused on input/textarea
                 if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                const key = String(e.key || '').toLowerCase();
                 
-                switch (e.key) {
+                switch (key) {
                     case ' ':
                         e.preventDefault();
                         // Toggle play/pause
                         if (video && video.paused) video.play();
                         else if (video) video.pause();
                         break;
-                    case 'ArrowLeft':
+                    case 'arrowleft':
                         e.preventDefault();
                         // Skip back 10 seconds
                         if (video) { 
@@ -12627,7 +12990,7 @@
                             requestSeekToTime(Math.max(0, (video.currentTime || 0) - 10), true);
                         }
                         break;
-                    case 'ArrowRight':
+                    case 'arrowright':
                         e.preventDefault();
                         // Skip forward 10 seconds
                         if (video) {
@@ -12635,6 +12998,12 @@
                             registerSkipPulse('right', 10);
                             if (isFinite(video.duration)) requestSeekToTime(Math.min(video.duration, (video.currentTime || 0) + 10), true);
                             else requestSeekToTime((video.currentTime || 0) + 10, true);
+                        }
+                        break;
+                    case 'm':
+                        e.preventDefault();
+                        if (video) {
+                            toggleMuteFromUser(true);
                         }
                         break;
                 }

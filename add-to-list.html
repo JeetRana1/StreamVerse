@@ -21,7 +21,7 @@
             padding: 100px 20px;
             color: var(--text-muted);
         }
-        .empty-watchlist i {
+        .empty-watchlist > i {
             font-size: 4rem;
             margin-bottom: 1.5rem;
             opacity: 0.3;
@@ -30,6 +30,23 @@
             font-family: 'Outfit', sans-serif;
             color: white;
             margin-bottom: 1rem;
+        }
+        .empty-watchlist .browse-watch-btn {
+            margin-top: 2rem;
+            display: inline-flex;
+            text-decoration: none;
+            justify-content: center;
+            align-items: center;
+            min-width: 160px;
+            padding: 10px 20px;
+            font-size: 0.9rem;
+            border-radius: 12px;
+            gap: 8px;
+        }
+        .empty-watchlist .browse-watch-btn i {
+            font-size: 0.92rem;
+            margin: 0;
+            opacity: 1;
         }
     </style>
 </head>
@@ -101,7 +118,7 @@
                         <i class="fa-solid fa-bookmark"></i>
                         <h2>Your list is empty</h2>
                         <p>Movies and TV shows you add will appear here.</p>
-                        <a href="/" class="btn btn-primary" style="margin-top: 2rem; display: inline-flex;">Browse Movies</a>
+                        <a href="/" class="btn-watch-now browse-watch-btn"><i class="fa-solid fa-clapperboard"></i> Browse Movies</a>
                     </div>
                 `;
                 grid.style.display = 'block';

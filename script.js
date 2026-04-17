@@ -77,6 +77,38 @@ const GENRE_MAP = {
     10768: 'War & Politics'
 };
 
+const TMDB_GENRE_FILTERS = [
+    { id: 28, name: 'Action', icon: 'fa-fire', color: '#ff4d4d', movieIds: [28], tvIds: [10759] },
+    { id: 12, name: 'Adventure', icon: 'fa-compass', color: '#22c55e', movieIds: [12], tvIds: [10759] },
+    { id: 16, name: 'Animation', icon: 'fa-palette', color: '#f472b6', movieIds: [16], tvIds: [16] },
+    { id: 35, name: 'Comedy', icon: 'fa-face-laugh', color: '#fbbf24', movieIds: [35], tvIds: [35] },
+    { id: 80, name: 'Crime', icon: 'fa-mask', color: '#94a3b8', movieIds: [80], tvIds: [80] },
+    { id: 99, name: 'Documentary', icon: 'fa-video', color: '#0ea5e9', movieIds: [99], tvIds: [99] },
+    { id: 18, name: 'Drama', icon: 'fa-masks-theater', color: '#a78bfa', movieIds: [18], tvIds: [18] },
+    { id: 10751, name: 'Family', icon: 'fa-house-user', color: '#22c55e', movieIds: [10751], tvIds: [10751] },
+    { id: 14, name: 'Fantasy', icon: 'fa-wand-sparkles', color: '#f43f5e', movieIds: [14], tvIds: [10765] },
+    { id: 36, name: 'History', icon: 'fa-book-atlas', color: '#d97706', movieIds: [36], tvIds: [] },
+    { id: 27, name: 'Horror', icon: 'fa-ghost', color: '#e11d48', movieIds: [27], tvIds: [] },
+    { id: 10402, name: 'Music', icon: 'fa-music', color: '#c084fc', movieIds: [10402], tvIds: [] },
+    { id: 9648, name: 'Mystery', icon: 'fa-magnifying-glass', color: '#6366f1', movieIds: [9648], tvIds: [9648] },
+    { id: 10749, name: 'Romance', icon: 'fa-heart', color: '#ec4899', movieIds: [10749], tvIds: [] },
+    { id: 878, name: 'Science Fiction', icon: 'fa-shuttle-space', color: '#22d3ee', movieIds: [878], tvIds: [10765] },
+    { id: 10770, name: 'TV Movie', icon: 'fa-tv', color: '#60a5fa', movieIds: [10770], tvIds: [] },
+    { id: 53, name: 'Thriller', icon: 'fa-bolt', color: '#fb7185', movieIds: [53], tvIds: [] },
+    { id: 10752, name: 'War', icon: 'fa-shield-halved', color: '#b91c1c', movieIds: [10752], tvIds: [10768] },
+    { id: 37, name: 'Western', icon: 'fa-hat-cowboy', color: '#f59e0b', movieIds: [37], tvIds: [] },
+    { id: 10759, name: 'Action & Adventure', icon: 'fa-person-running', color: '#ff4d4d', movieIds: [], tvIds: [10759] },
+    { id: 10762, name: 'Kids', icon: 'fa-child', color: '#60a5fa', movieIds: [], tvIds: [10762] },
+    { id: 10763, name: 'News', icon: 'fa-newspaper', color: '#ef4444', movieIds: [], tvIds: [10763] },
+    { id: 10764, name: 'Reality', icon: 'fa-film', color: '#f97316', movieIds: [], tvIds: [10764] },
+    { id: 10765, name: 'Sci-Fi & Fantasy', icon: 'fa-dragon', color: '#22d3ee', movieIds: [], tvIds: [10765] },
+    { id: 10766, name: 'Soap', icon: 'fa-heart', color: '#fb7185', movieIds: [], tvIds: [10766] },
+    { id: 10767, name: 'Talk', icon: 'fa-microphone', color: '#8b5cf6', movieIds: [], tvIds: [10767] },
+    { id: 10768, name: 'War & Politics', icon: 'fa-flag', color: '#b91c1c', movieIds: [], tvIds: [10768] }
+];
+
+const TMDB_GENRE_FILTER_BY_ID = new Map(TMDB_GENRE_FILTERS.map((entry) => [entry.id, entry]));
+
 function getGenreNames(genres) {
     if (!genres) return [];
     if (Array.isArray(genres)) {
@@ -275,6 +307,7 @@ const popularMoviesGrid = document.getElementById('popular-movies-grid');
 const popularTvGrid = document.getElementById('popular-tv-grid');
 const topRatedGrid = document.getElementById('top-rated-grid');
 const searchInput = document.getElementById('search-input');
+const searchContainer = document.getElementById('search-container');
 const searchPage = document.getElementById('search-page');
 const searchPageGrid = document.getElementById('search-page-grid');
 const searchTitle = document.getElementById('search-title');
@@ -284,6 +317,8 @@ const modalBody = document.getElementById('modal-body');
 const closeModal = document.querySelector('.close-modal');
 const header = document.getElementById('main-header');
 const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+const genreFilterBtn = document.getElementById('genre-filter-btn');
+const genreFilterPanel = document.getElementById('genre-filter-panel');
 // const mobileNav = document.getElementById('mobile-nav'); // Removed
 const dramasGrid = document.getElementById('dramas-grid');
 const continueWatchingSection = document.getElementById('continue-watching-section');
@@ -323,6 +358,19 @@ let searchVersion = 0;
 let hydrationObserver = null;
 let continueSelectionMode = false;
 let continueSelectedKeys = new Set();
+let activeGenreFilterId = null;
+let activeGenreFilterIds = [];
+let activeGenreTypeFilter = 'all';
+let activeGenreMatchMode = 'all';
+let activeGenreSortBy = 'popularity.desc';
+let activeGenreMinVotes = 20;
+let genreFilterPanelOpen = false;
+let genreFilterRequestVersion = 0;
+let genreResultsRequestVersion = 0;
+let activeGenreDiscoverState = null;
+let genreResultsObserver = null;
+const continuePosterCache = new Map();
+const continuePosterInFlight = new Map();
 
 const continueClearToggleBtn = document.getElementById('continue-clear-toggle');
 const continueClearConfirmBtn = document.getElementById('continue-clear-confirm');
@@ -338,6 +386,35 @@ header.classList.toggle('scrolled', window.scrollY > 50);
 
 // ------------------ INIT --------------------------------------------------
 document.addEventListener('DOMContentLoaded', async () => {
+    renderGenreFilterPanel();
+    updateGenreFilterButtonState();
+
+    if (genreFilterBtn) {
+        genreFilterBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleGenreFilterPanel();
+        });
+    }
+
+    if (genreFilterPanel) {
+        genreFilterPanel.addEventListener('click', (event) => {
+            event.stopPropagation();
+        });
+    }
+
+    document.addEventListener('click', (event) => {
+        if (!genreFilterPanelOpen) return;
+        if (genreFilterPanel && genreFilterPanel.contains(event.target)) return;
+        if (genreFilterBtn && genreFilterBtn.contains(event.target)) return;
+        closeGenreFilterPanel();
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && genreFilterPanelOpen) {
+            closeGenreFilterPanel();
+        }
+    });
+
     updateSwitcherState();
     initHeroManualControls();
     initContinueWatchingControls();
@@ -347,7 +424,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const promises = [
         fetchTrending(),
         fetchSection('movie', popularMoviesGrid, 'movie'),
-        fetchDramas(),
         fetchSection('tv', popularTvGrid, 'tv'),
         fetchSection('movie', topRatedGrid, 'movie', 'week')
     ];
@@ -437,6 +513,11 @@ function getRating(item) {
     if (n > 10) return (n / 10).toFixed(1);
     return n.toFixed(1);
 }
+
+function hasPositiveRating(item) {
+    return Number(getRating(item) || 0) > 0;
+}
+
 function getPoster(item) {
     // Aggregate all possible poster fields across different providers
     const p = item.poster_path || item.image || item.poster || item.img || item.thumbnail ||
@@ -551,17 +632,23 @@ function loadContinueWatching() {
 
     try {
         const items = JSON.parse(raw);
-        if (!Array.isArray(items) || items.length === 0) {
+        const validItems = Array.isArray(items)
+            ? items.filter((item) => item && String(item.id || '').trim() && String(item.type || '').trim())
+            : [];
+
+        if (validItems.length === 0) {
             continueWatchingSection.style.display = 'none';
+            continueWatchingGrid.innerHTML = '';
             updateContinueWatchingControls(0);
             return;
         }
 
-        renderContinueWatching(items);
-        updateContinueWatchingControls(items.length);
+        renderContinueWatching(validItems);
+        updateContinueWatchingControls(validItems.length);
     } catch (e) {
         console.error('Error loading continue watching:', e);
         continueWatchingSection.style.display = 'none';
+        continueWatchingGrid.innerHTML = '';
         updateContinueWatchingControls(0);
     }
 }
@@ -673,6 +760,13 @@ function toggleContinueSelection(item) {
 }
 
 function renderContinueWatching(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+        continueWatchingGrid.innerHTML = '';
+        continueWatchingSection.style.display = 'none';
+        updateContinueWatchingControls(0);
+        return;
+    }
+
     continueWatchingGrid.innerHTML = '';
     continueWatchingSection.style.display = 'block';
 
@@ -709,6 +803,89 @@ function renderContinueWatching(items) {
         };
 
         continueWatchingGrid.appendChild(moreButton);
+    }
+}
+
+function isBadContinuePoster(url) {
+    const value = String(url || '');
+    if (!value) return true;
+    const low = value.toLowerCase();
+    return low.includes('placehold.co') || low.includes('no+image') || low.includes('dramaool.png') || low.includes('default-poster') || low.includes('null');
+}
+
+function normalizeContinuePosterIdentity(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function isLikelySameContinueTitle(seedTitle, candidateTitle) {
+    const a = normalizeContinuePosterIdentity(seedTitle);
+    const b = normalizeContinuePosterIdentity(candidateTitle);
+    if (!a || !b) return false;
+    return a === b || a.includes(b) || b.includes(a);
+}
+
+async function resolveContinueWatchingTmdbPoster(item) {
+    const type = String(item?.type || 'movie').toLowerCase() === 'tv' ? 'tv' : 'movie';
+    const id = String(item?.id || '').trim();
+    const cacheKey = `${type}:${id}`;
+    if (!id) return '';
+
+    const cached = continuePosterCache.get(cacheKey);
+    if (cached) return cached;
+    if (continuePosterInFlight.has(cacheKey)) return continuePosterInFlight.get(cacheKey);
+
+    const promise = (async () => {
+        try {
+            // Prefer canonical TMDB payload (no provider override).
+            const details = await fetchDetails(id, type, '');
+            const detailsTitle = getTitle(details);
+            const seedTitle = item?.title || '';
+            const poster = getPoster(details);
+            if (poster && !isBadContinuePoster(poster) && isLikelySameContinueTitle(seedTitle, detailsTitle)) {
+                continuePosterCache.set(cacheKey, poster);
+                return poster;
+            }
+        } catch (_) {
+            // Ignore and fallback below.
+        }
+
+        // Fallback: search by title and choose best identity match.
+        try {
+            const seedTitle = String(item?.title || '').trim();
+            if (!seedTitle) return '';
+            const payload = await fetchJsonWithFallback(`/${encodeURIComponent(seedTitle)}`, 5000);
+            const rows = Array.isArray(payload?.results) ? payload.results : [];
+            const best = rows
+                .filter((candidate) => String(getType(candidate) || '').toLowerCase() === type)
+                .map((candidate) => {
+                    const sameTitle = isLikelySameContinueTitle(seedTitle, getTitle(candidate));
+                    const score = (sameTitle ? 120 : 0) + Number(getRating(candidate) || 0);
+                    return { candidate, score, sameTitle };
+                })
+                .sort((a, b) => b.score - a.score)[0];
+            if (best?.sameTitle && best.score >= 120) {
+                const poster = getPoster(best.candidate);
+                if (poster && !isBadContinuePoster(poster)) {
+                    continuePosterCache.set(cacheKey, poster);
+                    return poster;
+                }
+            }
+        } catch (_) {
+            // Ignore; keep existing poster.
+        }
+
+        return '';
+    })();
+
+    continuePosterInFlight.set(cacheKey, promise);
+    try {
+        return await promise;
+    } finally {
+        continuePosterInFlight.delete(cacheKey);
     }
 }
 
@@ -768,7 +945,7 @@ function createContinueWatchingCard(item) {
     const seasonEpisodeBadge = item.type === 'tv' ? `<span class="season-episode-badge">S${seasonNo}E${episodeNo}</span>` : '';
 
     card.innerHTML = `
-        <img src="${imgUrl(item.poster)}" alt="${item.title}" loading="lazy"
+        <img class="continue-card-poster" src="${imgUrl(item.poster)}" alt="${item.title}" loading="lazy"
              onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Image'">
         ${continueSelectionMode ? `<button type="button" class="continue-select-toggle ${isSelected ? 'selected' : ''}" aria-label="Select item for clearing"><i class="fa-solid fa-check"></i></button>` : ''}
         ${seasonEpisodeBadge}
@@ -816,6 +993,15 @@ function createContinueWatchingCard(item) {
         window.location.href = url;
     };
 
+    // Hydrate poster to TMDB art in background without blocking first render.
+    const posterEl = card.querySelector('.continue-card-poster');
+    if (posterEl) {
+        resolveContinueWatchingTmdbPoster(item).then((tmdbPoster) => {
+            if (!tmdbPoster || !posterEl.isConnected) return;
+            posterEl.src = tmdbPoster;
+        }).catch(() => { });
+    }
+
     return card;
 }
 
@@ -860,7 +1046,7 @@ function getDetailsUrl(id, type, provider = '') {
     const canonicalId = provider ? id : normalizeTmdbId(id);
     const safeType = (String(type || '').trim().toLowerCase() === 'tv') ? 'tv' : 'movie';
     return provider
-        ? `${BASE_URL.replace('/meta/tmdb', '/movies/' + provider)}/info?id=${encodeURIComponent(canonicalId)}`
+    ? `${BASE_URL.replace('/meta/tmdb', '/movies/' + provider)}/info?id=${encodeURIComponent(canonicalId)}&type=${safeType}`
         : `${BASE_URL}/info/${canonicalId}?type=${safeType}`;
 }
 
@@ -944,6 +1130,1312 @@ Object.entries(GENRE_MAP).forEach(([id, name]) => {
     GENRE_NAME_TO_ID[name.toLowerCase()] = parseInt(id);
 });
 
+const HOME_GENRE_FILTER_NAMES = [
+    'Action',
+    'Adventure',
+    'Animation',
+    'Comedy',
+    'Crime',
+    'Drama',
+    'Family',
+    'Fantasy',
+    'Horror',
+    'Mystery',
+    'Romance',
+    'Science Fiction',
+    'Thriller'
+];
+
+function getHomeGenreFilters() {
+    return TMDB_GENRE_FILTERS
+        .map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            icon: entry.icon || 'fa-film',
+            color: entry.color || '#e50914',
+            movieIds: Array.isArray(entry.movieIds) ? entry.movieIds.slice() : [],
+            tvIds: Array.isArray(entry.tvIds) ? entry.tvIds.slice() : []
+        }))
+        .filter(Boolean);
+}
+
+function getActiveGenreLabel() {
+    if (!Array.isArray(activeGenreFilterIds) || !activeGenreFilterIds.length) return 'Genre';
+    if (activeGenreFilterIds.length === 1) {
+        const id = activeGenreFilterIds[0];
+        const name = GENRE_MAP[id] || 'Genre';
+        return `${name} (${id})`;
+    }
+    return `${activeGenreFilterIds.length} Genres`;
+}
+
+function getActiveGenreScopeLabel() {
+    if (activeGenreTypeFilter === 'movie') return 'Movies';
+    if (activeGenreTypeFilter === 'tv') return 'TV Shows';
+    return 'All Media';
+}
+
+function getActiveGenreMatchLabel() {
+    return activeGenreMatchMode === 'all' ? 'Match All' : 'Match Any';
+}
+
+function getActiveGenreSortLabel() {
+    const map = {
+        'popularity.desc': 'Popular',
+        'vote_average.desc': 'Top Rated',
+        'vote_count.desc': 'Most Voted',
+        'primary_release_date.desc': 'Newest Movies',
+        'first_air_date.desc': 'Newest TV'
+    };
+    return map[activeGenreSortBy] || 'Popular';
+}
+
+function setActiveGenreScope(type) {
+    const next = String(type || 'all').trim();
+    activeGenreTypeFilter = next === 'movie' || next === 'tv' ? next : 'all';
+    renderGenreFilterPanel();
+    applyGenreFilter().catch(() => { });
+}
+
+function setActiveGenreMatchMode(mode) {
+    const next = String(mode || 'all').trim();
+    activeGenreMatchMode = next === 'any' ? 'any' : 'all';
+    renderGenreFilterPanel();
+    applyGenreFilter().catch(() => { });
+}
+
+function setActiveGenreSortBy(sortBy) {
+    const next = String(sortBy || 'popularity.desc').trim();
+    activeGenreSortBy = next || 'popularity.desc';
+    renderGenreFilterPanel();
+    applyGenreFilter().catch(() => { });
+}
+
+function getActiveGenreLabels() {
+    if (!Array.isArray(activeGenreFilterIds) || !activeGenreFilterIds.length) return [];
+    return activeGenreFilterIds
+    .map((id) => `${GENRE_MAP[id] || 'Genre'} (${id})`)
+        .filter(Boolean);
+}
+
+function getGenreResultsTitleText() {
+    const labels = getActiveGenreLabels();
+    if (!labels.length) return 'Genre';
+    if (labels.length === 1) return labels[0];
+    return labels.join(' + ');
+}
+
+function normalizeGenreSelection(ids) {
+    const seen = new Set();
+    const out = [];
+    (ids || []).forEach((value) => {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0 || !GENRE_MAP[n] || seen.has(n)) return;
+        seen.add(n);
+        out.push(n);
+    });
+    return out;
+}
+
+function syncActiveGenrePrimary() {
+    activeGenreFilterId = (activeGenreFilterIds && activeGenreFilterIds.length) ? activeGenreFilterIds[0] : null;
+}
+
+function filterItemsByActiveGenres(items) {
+    const selected = normalizeGenreSelection(activeGenreFilterIds);
+    if (selected.length <= 1) return Array.isArray(items) ? items : [];
+
+    // TMDB discover results are already exact; do not re-filter them.
+    if (activeGenreDiscoverState?.source === 'discover') {
+        return Array.isArray(items) ? items : [];
+    }
+
+    return (items || []).filter((item) => {
+        const ids = getGenreIds(item);
+        return ids.length ? selected.some((gid) => ids.includes(gid)) : false;
+    });
+}
+
+function updateGenreFilterButtonState() {
+    if (!genreFilterBtn) return;
+    const label = getActiveGenreLabel();
+    genreFilterBtn.classList.toggle('active', Array.isArray(activeGenreFilterIds) && activeGenreFilterIds.length > 0);
+    genreFilterBtn.setAttribute('aria-expanded', String(genreFilterPanelOpen));
+    genreFilterBtn.title = (Array.isArray(activeGenreFilterIds) && activeGenreFilterIds.length > 0)
+        ? `Genre: ${label} • ${getActiveGenreScopeLabel()} • ${getActiveGenreMatchLabel()} • ${getActiveGenreSortLabel()}`
+        : 'Filter by genre';
+
+    const labelNode = genreFilterBtn.querySelector('span');
+    if (labelNode) {
+        labelNode.textContent = label;
+    }
+}
+
+function ensureGenreResultsSection() {
+    if (!contentRows) return null;
+
+    let section = document.getElementById('genre-results-section');
+    if (section) return section;
+
+    section = document.createElement('section');
+    section.className = 'row-section';
+    section.id = 'genre-results-section';
+    section.style.display = 'none';
+    section.innerHTML = `
+        <div class="section-title-row">
+            <h2 class="section-title" id="genre-results-title">Genre Results</h2>
+            <button type="button" class="continue-action-btn" id="genre-results-more-btn" style="display:none;">Load More</button>
+        </div>
+        <p class="genre-results-meta" id="genre-results-meta"></p>
+        <div class="movie-grid" id="genre-results-grid"></div>
+        <div id="genre-results-sentinel" class="genre-results-sentinel" aria-hidden="true"></div>
+    `;
+
+    const firstRow = contentRows.querySelector('.row-section');
+    if (firstRow) {
+        contentRows.insertBefore(section, firstRow);
+    } else {
+        contentRows.appendChild(section);
+    }
+
+    const moreBtn = section.querySelector('#genre-results-more-btn');
+    if (moreBtn) {
+        moreBtn.addEventListener('click', () => {
+            if (!activeGenreFilterId) return;
+            loadMoreGenreResults(activeGenreFilterId).catch(() => { });
+        });
+    }
+
+    if (!genreResultsObserver) {
+        genreResultsObserver = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (!entry.isIntersecting) continue;
+                if (!activeGenreFilterId || !activeGenreDiscoverState) continue;
+                if (activeGenreDiscoverState.loadingMore) continue;
+                if (!activeGenreDiscoverState.hasMoreMovie && !activeGenreDiscoverState.hasMoreTv && !activeGenreDiscoverState.hasMoreMix) continue;
+                loadMoreGenreResults(activeGenreFilterId).catch(() => { });
+                break;
+            }
+        }, {
+            root: null,
+            rootMargin: '800px 0px',
+            threshold: 0.1
+        });
+    }
+
+    return section;
+}
+
+function updateGenreResultsSentinel() {
+    const sentinel = document.getElementById('genre-results-sentinel');
+    if (!sentinel || !genreResultsObserver) return;
+    genreResultsObserver.disconnect();
+    genreResultsObserver.observe(sentinel);
+}
+
+function isGenreResultsSentinelVisible() {
+    const sentinel = document.getElementById('genre-results-sentinel');
+    if (!sentinel) return false;
+    const rect = sentinel.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    return rect.top <= viewportHeight + 1200;
+}
+
+function maybeAutoLoadMoreGenreResults() {
+    if (genreResultsAutoLoadQueued) return;
+    if (!activeGenreDiscoverState || !activeGenreFilterId) return;
+    if (activeGenreDiscoverState.loadingMore) return;
+    if (!isGenreResultsSentinelVisible()) return;
+    if (!activeGenreDiscoverState.hasMoreMovie && !activeGenreDiscoverState.hasMoreTv && !activeGenreDiscoverState.hasMoreMix && !activeGenreDiscoverState.hasMore) return;
+
+    genreResultsAutoLoadQueued = true;
+    setTimeout(() => {
+        genreResultsAutoLoadQueued = false;
+        if (!activeGenreDiscoverState || !activeGenreFilterId) return;
+        if (activeGenreDiscoverState.loadingMore) return;
+        if (!isGenreResultsSentinelVisible()) return;
+        if (!activeGenreDiscoverState.hasMoreMovie && !activeGenreDiscoverState.hasMoreTv && !activeGenreDiscoverState.hasMoreMix && !activeGenreDiscoverState.hasMore) return;
+        loadMoreGenreResults(activeGenreFilterId).catch(() => { });
+    }, 120);
+}
+
+function getGenreDiscoverCacheKey(genreId, options = {}) {
+    const selectedIds = Array.isArray(options.selectedGenreIds) ? normalizeGenreSelection(options.selectedGenreIds) : [];
+    const typeFilter = String(options.typeFilter || 'all').trim() || 'all';
+    const matchMode = String(options.matchMode || 'all').trim() || 'all';
+    const sortBy = String(options.sortBy || 'popularity.desc').trim() || 'popularity.desc';
+    const mediaScope = String(options.mediaScope || 'all').trim() || 'all';
+    if (!selectedIds.length) {
+        return `search-verified:v4:genre:${genreId}:all`;
+    }
+    return `search-verified:v4:genre:${selectedIds.join('-')}:type:${typeFilter}:match:${matchMode}:sort:${sortBy}:scope:${mediaScope}`;
+}
+
+const VERIFIED_GENRE_PAGE_LIMIT = 1000;
+const VERIFIED_GENRE_INITIAL_TARGET = 72;
+const VERIFIED_GENRE_MORE_TARGET = 60;
+const VERIFIED_GENRE_PAGE_SIZE = VERIFIED_GENRE_MORE_TARGET;
+const mediaGenreResolutionCache = new Map();
+let genreResultsAutoLoadQueued = false;
+
+function getMediaIdentityKey(item, fallbackType = 'movie') {
+    const type = inferMediaType(item, fallbackType === 'tv' ? 'tv' : 'movie');
+    const id = String(item?.id || '').trim();
+    return id ? `${type}:${id}` : '';
+}
+
+function getGenreFilterConfig(genreId) {
+    return TMDB_GENRE_FILTER_BY_ID.get(Number(genreId)) || null;
+}
+
+function getGenreQueryIdsForType(selectedGenreIds, mediaType) {
+    const type = String(mediaType || 'all').trim();
+    const ids = [];
+
+    normalizeGenreSelection(selectedGenreIds).forEach((genreId) => {
+        const config = getGenreFilterConfig(genreId);
+        if (!config) return;
+
+        if (type === 'movie') {
+            ids.push(...(config.movieIds || []));
+            return;
+        }
+
+        if (type === 'tv') {
+            ids.push(...(config.tvIds || []));
+            return;
+        }
+
+        ids.push(...(config.movieIds || []), ...(config.tvIds || []));
+    });
+
+    return Array.from(new Set(ids.filter((value) => Number.isFinite(Number(value)) && Number(value) > 0).map(Number)));
+}
+
+function getGenreIdsForSelectionOnItemType(selectedGenreIds, mediaType) {
+    const type = String(mediaType || 'movie').trim() === 'tv' ? 'tv' : 'movie';
+    return normalizeGenreSelection(selectedGenreIds).flatMap((genreId) => {
+        const config = getGenreFilterConfig(genreId);
+        if (!config) return [];
+        return type === 'tv'
+            ? (config.tvIds || [])
+            : (config.movieIds || []);
+    });
+}
+
+function itemMatchesSelectedGenres(item, selectedGenreIds, matchMode = 'all') {
+    const type = inferMediaType(item, 'movie');
+    const itemGenreIds = getGenreIds(item);
+    if (!itemGenreIds.length) return false;
+
+    const selected = normalizeGenreSelection(selectedGenreIds);
+    if (!selected.length) return false;
+
+    const matches = selected.map((genreId) => {
+        const allowedIds = getGenreIdsForSelectionOnItemType([genreId], type);
+        return allowedIds.some((allowed) => itemGenreIds.includes(allowed));
+    });
+
+    return String(matchMode || 'all').trim() === 'any'
+        ? matches.some(Boolean)
+        : matches.every(Boolean);
+}
+
+async function fetchGenreDiscoverPage(mediaType, page, selectedGenreIds, options = {}) {
+    const type = String(mediaType || 'movie').trim() === 'tv' ? 'tv' : 'movie';
+    const selectedIds = normalizeGenreSelection(selectedGenreIds);
+    if (!selectedIds.length) {
+        return { page: Number(page) || 1, totalPages: 0, totalResults: 0, hasNextPage: false, results: [] };
+    }
+
+    const matchMode = String(options.matchMode || activeGenreMatchMode || 'all').trim() === 'any' ? 'any' : 'all';
+    const sortBy = String(options.sortBy || activeGenreSortBy || 'popularity.desc').trim() || 'popularity.desc';
+    const pageNumber = Math.max(1, Number(page) || 1);
+    const sourceUrls = [
+        `/trending?type=${type}&timePeriod=day&page=${encodeURIComponent(pageNumber)}`,
+        `/trending?type=${type}&timePeriod=week&page=${encodeURIComponent(pageNumber)}`,
+        `/trending?type=${type}&timePeriod=day&page=${encodeURIComponent(pageNumber + 1)}`
+    ];
+
+    const cacheKey = `genre-browse:v2:${type}:${pageNumber}:${selectedIds.join(matchMode === 'any' ? '|' : ',')}:${sortBy}`;
+    const cached = readCache(cacheKey);
+    if (cached?.results) return cached;
+
+    try {
+        const settled = await Promise.allSettled(sourceUrls.map((url) => fetchJsonWithFallback(url, 9000)));
+        const rawResults = [];
+
+        settled.forEach((entry) => {
+            if (entry.status !== 'fulfilled') return;
+            const payload = entry.value;
+            const rows = Array.isArray(payload?.results) ? payload.results : [];
+            rows.forEach((row) => {
+                const rowType = inferMediaType(row, type);
+                const normalizedRow = {
+                    ...row,
+                    media_type: row.media_type || rowType,
+                    type: row.type || (rowType === 'tv' ? 'TV Series' : 'Movie')
+                };
+                rawResults.push(normalizedRow);
+            });
+        });
+
+        const filtered = dedupeDiscoverItems(rawResults).filter((item) => itemMatchesSelectedGenres(item, selectedIds, matchMode));
+
+        const sortValue = (item, key) => {
+            if (key === 'vote_average.desc') return Number(item?.vote_average || item?.rating || 0);
+            if (key === 'vote_count.desc') return Number(item?.vote_count || 0);
+            if (key === 'primary_release_date.desc') return Date.parse(item?.release_date || item?.first_air_date || 0) || 0;
+            if (key === 'first_air_date.desc') return Date.parse(item?.first_air_date || item?.release_date || 0) || 0;
+            return Number(item?.popularity || 0);
+        };
+
+        filtered.sort((a, b) => sortValue(b, sortBy) - sortValue(a, sortBy));
+
+        const normalized = {
+            page: pageNumber,
+            totalPages: Math.max(pageNumber + 1, 2),
+            totalResults: filtered.length,
+            hasNextPage: pageNumber < 10 && filtered.length > 0,
+            results: filtered
+        };
+
+        writeCache(cacheKey, normalized);
+        return normalized;
+    } catch (error) {
+        return { page: Number(page) || 1, totalPages: 0, totalResults: 0, hasNextPage: false, results: [] };
+    }
+}
+
+function dedupeDiscoverItems(items) {
+    return dedupeByMediaIdentity(items || []);
+}
+
+function normalizeDiscoverRows(payload, fallbackType) {
+    const rows = Array.isArray(payload?.results) ? payload.results : [];
+    return rows.map((row) => {
+        const mediaType = inferMediaType(row, fallbackType === 'tv' ? 'tv' : 'movie');
+        return {
+            ...row,
+            media_type: row.media_type || mediaType,
+            type: row.type || (mediaType === 'tv' ? 'TV Series' : 'Movie')
+        };
+    });
+}
+
+function payloadHasNextPage(payload, rows, page) {
+    if (typeof payload?.hasNextPage === 'boolean') {
+        return payload.hasNextPage && Number(page || 0) < VERIFIED_GENRE_PAGE_LIMIT;
+    }
+    return (rows || []).length >= 20 && Number(page || 0) < VERIFIED_GENRE_PAGE_LIMIT;
+}
+
+function getGenreSearchQueries(kind, genreId) {
+    const label = String(GENRE_MAP[genreId] || '').trim();
+    if (!label) {
+        if (kind === 'tv') return ['tv series', 'popular tv'];
+        if (kind === 'movie') return ['movie', 'popular movies'];
+        return ['popular', 'trending'];
+    }
+
+    const lower = label.toLowerCase();
+    const compact = lower.replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+
+    if (kind === 'all') {
+        const allVariants = [
+            label,
+            `${compact} movies`,
+            `${compact} tv series`,
+            `${compact} trending`
+        ];
+        return Array.from(new Set(allVariants.filter(Boolean)));
+    }
+
+    if (kind === 'tv') {
+        if (lower === 'science fiction') {
+            return ['science fiction tv series', 'sci fi tv series', 'sci-fi tv'];
+        }
+        const tvVariants = [
+            `${label} tv series`,
+            `${compact} tv`,
+            `${compact} shows`
+        ];
+        return Array.from(new Set(tvVariants.filter(Boolean)));
+    }
+
+    if (lower === 'science fiction') {
+        return ['science fiction movie', 'sci fi movie', 'sci-fi films'];
+    }
+    const movieVariants = [
+        `${label} movie`,
+        `${compact} films`,
+        `${compact} cinema`
+    ];
+    return Array.from(new Set(movieVariants.filter(Boolean)));
+}
+
+async function fetchDiscoverCatalogPage(type, page = 1, genreId = null) {
+    const queries = getGenreSearchQueries(type, genreId);
+    const cacheKey = `search:catalog:v2:${type}:${genreId || 'na'}:${page}`;
+    const cached = readCache(cacheKey);
+    if (cached?.results) return cached;
+
+    const searchPaths = (queries || []).map((query) => `/${encodeURIComponent(query)}?page=${encodeURIComponent(page)}`);
+    const trendingPaths = (() => {
+        if (type === 'movie' || type === 'tv') {
+            return [
+                `/trending?type=${type}&timePeriod=day&page=${encodeURIComponent(page)}`,
+                `/trending?type=${type}&timePeriod=week&page=${encodeURIComponent(page)}`
+            ];
+        }
+        return [
+            `/trending?timePeriod=day&page=${encodeURIComponent(page)}`,
+            `/trending?timePeriod=week&page=${encodeURIComponent(page)}`
+        ];
+    })();
+
+    const requestPaths = Array.from(new Set([...searchPaths, ...trendingPaths]));
+    const settled = await Promise.allSettled(
+        requestPaths.map((path) => fetchJsonWithFallback(path, 9000))
+    );
+
+    const mergedResults = [];
+    let hasNextPage = false;
+
+    settled.forEach((entry) => {
+        if (entry.status !== 'fulfilled') return;
+        const payload = entry.value;
+        const rows = normalizeDiscoverRows(payload, type === 'tv' ? 'tv' : 'movie');
+        if (rows.length) mergedResults.push(...rows);
+        if (payloadHasNextPage(payload, rows, page)) hasNextPage = true;
+    });
+
+    const mergedPayload = {
+        page: Number(page) || 1,
+        hasNextPage,
+        results: dedupeByMediaIdentity(mergedResults)
+    };
+
+    writeCache(cacheKey, mergedPayload);
+    return mergedPayload;
+}
+
+async function resolveMediaGenreIds(item, fallbackType = 'movie') {
+    const identity = getMediaIdentityKey(item, fallbackType);
+    if (!identity) return [];
+
+    const cached = mediaGenreResolutionCache.get(identity);
+    if (Array.isArray(cached)) return cached;
+
+    const direct = getGenreIds(item);
+    if (direct.length) {
+        mediaGenreResolutionCache.set(identity, direct);
+        return direct;
+    }
+
+    mediaGenreResolutionCache.set(identity, []);
+    return [];
+}
+
+async function collectGenreMatchesFromCatalogPage(type, page, genreId) {
+    const payload = await fetchDiscoverCatalogPage(type, page, genreId);
+    const rows = normalizeDiscoverRows(payload, type);
+    const matches = [];
+    const requestedGenreId = Number(genreId);
+    const attachRequestedGenre = (row) => {
+        const existing = getGenreIds(row);
+        const merged = Array.from(new Set([...existing, requestedGenreId].filter((v) => Number.isFinite(v) && v > 0)));
+        return {
+            ...row,
+            genre_ids: merged
+        };
+    };
+    const genreLabel = String(GENRE_MAP[genreId] || '').toLowerCase().replace(/&/g, 'and').trim();
+    const looseGenreTokens = genreLabel.split(/\s+/).filter(Boolean);
+
+    await Promise.all(rows.map(async (row) => {
+        const ids = await resolveMediaGenreIds(row, type);
+        if (ids.includes(Number(genreId))) {
+            matches.push(attachRequestedGenre(row));
+            return;
+        }
+
+        // Fallback for sparse payloads missing genre IDs.
+        const textBlob = `${String(row?.title || row?.name || '')} ${String(row?.overview || '')}`.toLowerCase();
+        if (!textBlob) return;
+
+        if (genreLabel && textBlob.includes(genreLabel)) {
+            matches.push(attachRequestedGenre(row));
+            return;
+        }
+
+        if (looseGenreTokens.length >= 2 && looseGenreTokens.every((token) => textBlob.includes(token))) {
+            matches.push(attachRequestedGenre(row));
+        }
+    }));
+
+    if (!matches.length && rows.length) {
+        rows.slice(0, 12).forEach((row) => {
+            matches.push(attachRequestedGenre(row));
+        });
+    }
+
+    return {
+        matches,
+        hasNext: payloadHasNextPage(payload, rows, page)
+    };
+}
+
+async function advanceGenreDiscoveryState(state, genreId, requestVersion, targetAdditions = VERIFIED_GENRE_INITIAL_TARGET) {
+    if (!state) return;
+
+    const genre = Number(genreId);
+    let totalAdded = 0;
+
+    while (totalAdded < targetAdditions && (state.hasMoreMovie || state.hasMoreTv || state.hasMoreMix)) {
+        if (requestVersion !== genreResultsRequestVersion || activeGenreFilterId !== genre) return;
+
+        const jobs = [];
+
+        if (state.hasMoreMovie) {
+            const nextMoviePage = state.moviePage + 1;
+            jobs.push(
+                collectGenreMatchesFromCatalogPage('movie', nextMoviePage, genre)
+                    .then((res) => ({ ok: true, type: 'movie', page: nextMoviePage, res }))
+                    .catch(() => ({ ok: false, type: 'movie', page: nextMoviePage, res: null }))
+            );
+        }
+
+        if (state.hasMoreTv) {
+            const nextTvPage = state.tvPage + 1;
+            jobs.push(
+                collectGenreMatchesFromCatalogPage('tv', nextTvPage, genre)
+                    .then((res) => ({ ok: true, type: 'tv', page: nextTvPage, res }))
+                    .catch(() => ({ ok: false, type: 'tv', page: nextTvPage, res: null }))
+            );
+        }
+
+        if (state.hasMoreMix) {
+            const nextMixPage = state.mixPage + 1;
+            jobs.push(
+                collectGenreMatchesFromCatalogPage('all', nextMixPage, genre)
+                    .then((res) => ({ ok: true, type: 'mix', page: nextMixPage, res }))
+                    .catch(() => ({ ok: false, type: 'mix', page: nextMixPage, res: null }))
+            );
+        }
+
+        if (!jobs.length) break;
+
+        const settled = await Promise.all(jobs);
+        if (requestVersion !== genreResultsRequestVersion || activeGenreFilterId !== genre) return;
+
+        let roundAdditions = [];
+
+        settled.forEach((entry) => {
+            if (entry.type === 'movie') {
+                if (!entry.ok || !entry.res) {
+                    state.movieFailureCount = Number(state.movieFailureCount || 0) + 1;
+                    if (state.movieFailureCount >= 2) {
+                        state.hasMoreMovie = false;
+                    }
+                    return;
+                }
+                state.movieFailureCount = 0;
+                state.moviePage = entry.page;
+                state.hasMoreMovie = entry.res.hasNext;
+                roundAdditions = roundAdditions.concat(entry.res.matches || []);
+                return;
+            }
+
+            if (entry.type === 'tv') {
+                if (!entry.ok || !entry.res) {
+                    state.tvFailureCount = Number(state.tvFailureCount || 0) + 1;
+                    if (state.tvFailureCount >= 2) {
+                        state.hasMoreTv = false;
+                    }
+                    return;
+                }
+                state.tvFailureCount = 0;
+                state.tvPage = entry.page;
+                state.hasMoreTv = entry.res.hasNext;
+                roundAdditions = roundAdditions.concat(entry.res.matches || []);
+                return;
+            }
+
+            if (!entry.ok || !entry.res) {
+                state.mixFailureCount = Number(state.mixFailureCount || 0) + 1;
+                if (state.mixFailureCount >= 2) {
+                    state.hasMoreMix = false;
+                }
+                return;
+            }
+            state.mixFailureCount = 0;
+            state.mixPage = entry.page;
+            state.hasMoreMix = entry.res.hasNext;
+            roundAdditions = roundAdditions.concat(entry.res.matches || []);
+        });
+
+        const before = (state.items || []).length;
+        state.items = dedupeByMediaIdentity([...(state.items || []), ...roundAdditions]).slice(0, 2000);
+        const after = state.items.length;
+        totalAdded += Math.max(0, after - before);
+
+        if (!roundAdditions.length && !state.hasMoreMovie && !state.hasMoreTv && !state.hasMoreMix) break;
+    }
+}
+
+function updateGenreResultsMeta(genreId, count) {
+    const metaEl = document.getElementById('genre-results-meta');
+    if (!metaEl) return;
+    const labels = getActiveGenreLabels();
+    const labelText = labels.length <= 1 ? (GENRE_MAP[genreId] || labels[0] || 'Selected Genre') : labels.join(' + ');
+    const modeHint = activeGenreDiscoverState?.multi ? ' Matching all selected genres.' : '';
+    metaEl.textContent = `Showing ${count} ${labelText} titles. Scroll to load more.${modeHint}`;
+}
+
+function updateGenreResultsLoadMoreButton(state, loading = false) {
+    const btn = document.getElementById('genre-results-more-btn');
+    if (!btn) return;
+    const hasMore = !!(state?.hasMoreMovie || state?.hasMoreTv || state?.hasMoreMix);
+    btn.style.display = hasMore ? 'inline-flex' : 'none';
+    btn.disabled = !hasMore || loading;
+    btn.textContent = loading ? 'Loading...' : 'Load More';
+}
+
+function showGenreResultsLoading(genreId) {
+    const section = ensureGenreResultsSection();
+    if (!section) return;
+    const grid = document.getElementById('genre-results-grid');
+    const title = document.getElementById('genre-results-title');
+    const label = getGenreResultsTitleText() || GENRE_MAP[genreId] || 'Genre';
+
+    if (title) title.textContent = `${label}`;
+    if (grid) {
+        grid.innerHTML = `
+            <div style="grid-column: 1 / -1; display:flex; align-items:center; justify-content:center; min-height: 220px;">
+                <div style="width:42px;height:42px;border:3px solid rgba(255,255,255,.12);border-top-color:var(--primary);border-radius:50%;animation:spin 1s linear infinite;"></div>
+            </div>
+            <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+        `;
+    }
+    updateGenreResultsMeta(genreId, 0);
+    updateGenreResultsLoadMoreButton(null, true);
+}
+
+function renderGenreResults(items, genreId) {
+    const section = ensureGenreResultsSection();
+    const grid = document.getElementById('genre-results-grid');
+    const title = document.getElementById('genre-results-title');
+    if (!section || !grid) return;
+
+    section.style.display = 'block';
+    if (title) {
+        const label = getGenreResultsTitleText() || GENRE_MAP[genreId] || 'Genre';
+        title.textContent = `${label}`;
+    }
+
+    const filteredItems = filterItemsByActiveGenres(items);
+
+    if (!Array.isArray(filteredItems) || !filteredItems.length) {
+        grid.innerHTML = `
+            <div class="genre-filter-empty-state" style="display:grid; grid-column: 1 / -1; margin: 0;">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <h3>No titles found</h3>
+                <p>Try another genre or select <strong>All Genres</strong>.</p>
+            </div>
+        `;
+        updateGenreResultsMeta(genreId, 0);
+        return;
+    }
+
+    displayGrid(filteredItems, grid);
+    updateGenreResultsMeta(genreId, filteredItems.length);
+    updateGenreResultsSentinel();
+    maybeAutoLoadMoreGenreResults();
+}
+
+function toggleBaseRowsForGenreMode(enabled) {
+    if (!contentRows) return;
+
+    contentRows.classList.toggle('genre-mode-active', !!enabled);
+
+    if (heroSection) {
+        if (enabled) {
+            if (heroSection.dataset.genreModePrevDisplay === undefined) {
+                heroSection.dataset.genreModePrevDisplay = heroSection.style.display;
+            }
+            heroSection.style.display = 'none';
+        } else if (heroSection.dataset.genreModePrevDisplay !== undefined) {
+            heroSection.style.display = heroSection.dataset.genreModePrevDisplay;
+            delete heroSection.dataset.genreModePrevDisplay;
+        } else {
+            heroSection.style.display = '';
+        }
+    }
+
+    const rows = Array.from(contentRows.querySelectorAll('.row-section'));
+    rows.forEach((row) => {
+        if (row.id === 'genre-results-section') return;
+        if (enabled) {
+            if (row.dataset.genreModePrevDisplay === undefined) {
+                row.dataset.genreModePrevDisplay = row.style.display;
+            }
+            row.style.display = 'none';
+            return;
+        }
+
+        if (row.dataset.genreModePrevDisplay !== undefined) {
+            row.style.display = row.dataset.genreModePrevDisplay;
+            delete row.dataset.genreModePrevDisplay;
+        } else {
+            row.style.display = '';
+        }
+    });
+
+    const section = ensureGenreResultsSection();
+    if (section) {
+        section.style.display = enabled ? 'block' : 'none';
+    }
+
+    if (!enabled && genreResultsObserver) {
+        genreResultsObserver.disconnect();
+    }
+}
+
+function hasMoreInGenreState(state) {
+    return !!(state?.hasMoreMovie || state?.hasMoreTv || state?.hasMoreMix);
+}
+
+function buildGenreStateFromCache(genreId, cached) {
+    return {
+        genreId,
+        items: Array.isArray(cached?.items) ? cached.items.slice() : [],
+        moviePage: Number(cached?.moviePage) || 0,
+        tvPage: Number(cached?.tvPage) || 0,
+        mixPage: Number(cached?.mixPage) || 0,
+        hasMoreMovie: cached?.hasMoreMovie !== undefined
+            ? (!!cached.hasMoreMovie || (Array.isArray(cached?.items) && cached.items.length < VERIFIED_GENRE_INITIAL_TARGET))
+            : true,
+        hasMoreTv: cached?.hasMoreTv !== undefined
+            ? (!!cached.hasMoreTv || (Array.isArray(cached?.items) && cached.items.length < VERIFIED_GENRE_INITIAL_TARGET))
+            : true,
+        hasMoreMix: cached?.hasMoreMix !== undefined
+            ? (!!cached.hasMoreMix || (Array.isArray(cached?.items) && cached.items.length < VERIFIED_GENRE_INITIAL_TARGET))
+            : true,
+        movieFailureCount: 0,
+        tvFailureCount: 0,
+        mixFailureCount: 0,
+        loadingMore: false
+    };
+}
+
+function persistGenreStateCache(state) {
+    if (!state?.genreId) return;
+    writeCache(getGenreDiscoverCacheKey(state.genreId), {
+        items: state.items,
+        moviePage: state.moviePage,
+        tvPage: state.tvPage,
+        mixPage: state.mixPage,
+        hasMoreMovie: state.hasMoreMovie,
+        hasMoreTv: state.hasMoreTv,
+        hasMoreMix: state.hasMoreMix
+    });
+}
+
+function getItemIdentity(item) {
+    const id = String(item?.id || '').trim();
+    if (!id) return '';
+    const type = inferMediaType(item, 'movie');
+    return `${type}:${id}`;
+}
+
+function combineMultiGenreStates(perGenreStates, selectedGenreIds) {
+    const selected = normalizeGenreSelection(selectedGenreIds);
+    if (!selected.length) return { items: [], matchMode: 'and', hasExactMatches: false };
+
+    const perKey = new Map();
+    perGenreStates.forEach((state) => {
+        const gid = Number(state?.genreId || 0);
+        (state?.items || []).forEach((item) => {
+            const key = getItemIdentity(item);
+            if (!key) return;
+            let bucket = perKey.get(key);
+            if (!bucket) {
+                bucket = {
+                    item,
+                    genres: new Set(),
+                    votes: 0
+                };
+                perKey.set(key, bucket);
+            }
+            bucket.votes += 1;
+            if (gid > 0) bucket.genres.add(gid);
+            if (!bucket.item?.overview && item?.overview) bucket.item = item;
+        });
+    });
+
+    const finalizeItem = (entry) => {
+        const originalIds = getGenreIds(entry.item);
+        const mergedIds = Array.from(new Set([...originalIds, ...entry.genres, ...selected]));
+        return {
+            ...entry.item,
+            genre_ids: mergedIds
+        };
+    };
+
+    const strictItems = [];
+
+    perKey.forEach((entry) => {
+        const candidate = finalizeItem(entry);
+        if (entry.votes >= selected.length) {
+            strictItems.push(candidate);
+        }
+    });
+
+    return {
+        items: dedupeByMediaIdentity(strictItems),
+        matchMode: 'and',
+        hasExactMatches: strictItems.length > 0
+    };
+}
+
+function isGenreSelectionStillActive(selectedGenreIds) {
+    const expected = normalizeGenreSelection(selectedGenreIds).join(',');
+    const current = normalizeGenreSelection(activeGenreFilterIds).join(',');
+    return expected === current;
+}
+
+async function loadGenreResults(genreId) {
+    const section = ensureGenreResultsSection();
+    if (!section) return;
+
+    const requestVersion = ++genreResultsRequestVersion;
+    const selectedGenreIds = normalizeGenreSelection(activeGenreFilterIds);
+    const typeFilter = activeGenreTypeFilter === 'movie' || activeGenreTypeFilter === 'tv' ? activeGenreTypeFilter : 'all';
+    const cacheKey = getGenreDiscoverCacheKey(genreId, {
+        selectedGenreIds,
+        typeFilter,
+        matchMode: activeGenreMatchMode,
+        sortBy: activeGenreSortBy,
+        mediaScope: typeFilter
+    });
+    const cached = readCache(cacheKey);
+
+    if (!selectedGenreIds.length) {
+        activeGenreDiscoverState = null;
+        renderGenreResults([], genreId);
+        updateGenreResultsLoadMoreButton(null, false);
+        return;
+    }
+
+    showGenreResultsLoading(genreId);
+
+    try {
+        const state = {
+            genreId,
+            source: 'catalog',
+            multi: selectedGenreIds.length > 1,
+            typeFilter,
+            selectedGenreIds: selectedGenreIds.slice(),
+            matchMode: activeGenreMatchMode,
+            sortBy: activeGenreSortBy,
+            items: Array.isArray(cached?.items) ? cached.items.slice() : [],
+            moviePage: Number(cached?.moviePage) || 0,
+            tvPage: Number(cached?.tvPage) || 0,
+            mixPage: Number(cached?.mixPage) || 0,
+            hasMoreMovie: cached?.hasMoreMovie !== undefined ? !!cached.hasMoreMovie : true,
+            hasMoreTv: cached?.hasMoreTv !== undefined ? !!cached.hasMoreTv : true,
+            hasMoreMix: cached?.hasMoreMix !== undefined ? !!cached.hasMoreMix : true,
+            hasMore: cached?.hasMore !== undefined ? !!cached.hasMore : true,
+            loadingMore: false
+        };
+
+        await advanceGenreDiscoveryState(state, genreId, requestVersion, VERIFIED_GENRE_INITIAL_TARGET);
+
+        if (requestVersion !== genreResultsRequestVersion || !isGenreSelectionStillActive(selectedGenreIds)) return;
+
+        state.hasMore = !!(state.hasMoreMovie || state.hasMoreTv || state.hasMoreMix);
+
+        activeGenreDiscoverState = state;
+        renderGenreResults(state.items, genreId);
+        updateGenreResultsLoadMoreButton(state, false);
+        updateGenreResultsSentinel();
+        maybeAutoLoadMoreGenreResults();
+
+        writeCache(cacheKey, {
+            items: state.items,
+            moviePage: state.moviePage,
+            tvPage: state.tvPage,
+            mixPage: state.mixPage,
+            hasMoreMovie: state.hasMoreMovie,
+            hasMoreTv: state.hasMoreTv,
+            hasMoreMix: state.hasMoreMix,
+            hasMore: state.hasMore
+        });
+    } catch (err) {
+        if (requestVersion !== genreResultsRequestVersion || !isGenreSelectionStillActive(selectedGenreIds)) return;
+        activeGenreDiscoverState = null;
+        renderGenreResults([], genreId);
+        updateGenreResultsLoadMoreButton(null, false);
+        console.error('Genre discover failed:', err?.message || err);
+    }
+}
+
+async function loadMoreGenreResults(genreId) {
+    const state = activeGenreDiscoverState;
+    if (!state || state.genreId !== genreId || state.loadingMore) return;
+    if (state.source !== 'catalog' && state.source !== 'discover') return;
+    if (!state.hasMoreMovie && !state.hasMoreTv && !state.hasMoreMix && !state.hasMore) return;
+
+    state.loadingMore = true;
+    updateGenreResultsLoadMoreButton(state, true);
+
+    const requestVersion = genreResultsRequestVersion;
+    const selectedGenreIds = normalizeGenreSelection(state.selectedGenreIds || activeGenreFilterIds);
+
+    try {
+        await advanceGenreDiscoveryState(state, genreId, requestVersion, VERIFIED_GENRE_PAGE_SIZE);
+
+        if (requestVersion !== genreResultsRequestVersion || !isGenreSelectionStillActive(selectedGenreIds)) {
+            state.loadingMore = false;
+            updateGenreResultsLoadMoreButton(state, false);
+            return;
+        }
+
+        state.hasMore = !!(state.hasMoreMovie || state.hasMoreTv || state.hasMoreMix);
+        state.loadingMore = false;
+
+        renderGenreResults(state.items, genreId);
+        updateGenreResultsLoadMoreButton(state, false);
+        updateGenreResultsSentinel();
+        maybeAutoLoadMoreGenreResults();
+
+        writeCache(getGenreDiscoverCacheKey(genreId, {
+            selectedGenreIds,
+            typeFilter: state.typeFilter,
+            matchMode: state.matchMode,
+            sortBy: state.sortBy,
+            mediaScope: state.typeFilter
+        }), {
+            items: state.items,
+            moviePage: state.moviePage,
+            tvPage: state.tvPage,
+            mixPage: state.mixPage,
+            hasMoreMovie: state.hasMoreMovie,
+            hasMoreTv: state.hasMoreTv,
+            hasMoreMix: state.hasMoreMix,
+            hasMore: state.hasMore
+        });
+    } catch (err) {
+        state.loadingMore = false;
+        updateGenreResultsLoadMoreButton(state, false);
+        console.error('Genre load more failed:', err?.message || err);
+    }
+}
+
+function renderGenreFilterPanel() {
+    if (!genreFilterPanel) return;
+
+    const filters = getHomeGenreFilters();
+    const activeLabel = getActiveGenreLabel();
+
+    genreFilterPanel.innerHTML = `
+        <div class="genre-filter-advanced">
+            <div class="genre-control-group">
+                <span class="genre-control-label">Scope</span>
+                <div class="genre-toggle-group" id="genre-scope-group">
+                    <button type="button" class="genre-toggle-btn ${activeGenreTypeFilter === 'all' ? 'active' : ''}" data-scope="all">All</button>
+                    <button type="button" class="genre-toggle-btn ${activeGenreTypeFilter === 'movie' ? 'active' : ''}" data-scope="movie">Movies</button>
+                    <button type="button" class="genre-toggle-btn ${activeGenreTypeFilter === 'tv' ? 'active' : ''}" data-scope="tv">TV</button>
+                </div>
+            </div>
+            <div class="genre-control-group">
+                <span class="genre-control-label">Match</span>
+                <div class="genre-toggle-group" id="genre-match-group">
+                    <button type="button" class="genre-toggle-btn ${activeGenreMatchMode === 'all' ? 'active' : ''}" data-match="all">All selected</button>
+                    <button type="button" class="genre-toggle-btn ${activeGenreMatchMode === 'any' ? 'active' : ''}" data-match="any">Any selected</button>
+                </div>
+            </div>
+            <div class="genre-control-group genre-sort-control">
+                <span class="genre-control-label">Sort</span>
+                <div class="genre-sort-dropdown" id="genre-sort-dropdown">
+                    <button
+                        type="button"
+                        id="genre-sort-trigger"
+                        class="genre-sort-trigger"
+                        aria-haspopup="listbox"
+                        aria-expanded="false"
+                        aria-label="Sort genre results"
+                    >
+                        <span id="genre-sort-trigger-label">${getActiveGenreSortLabel()}</span>
+                        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                    </button>
+                    <div class="genre-sort-menu" id="genre-sort-menu" role="listbox" aria-label="Sort options">
+                        <button type="button" class="genre-sort-option ${activeGenreSortBy === 'popularity.desc' ? 'active' : ''}" data-sort="popularity.desc" role="option" aria-selected="${activeGenreSortBy === 'popularity.desc'}">Popular</button>
+                        <button type="button" class="genre-sort-option ${activeGenreSortBy === 'vote_average.desc' ? 'active' : ''}" data-sort="vote_average.desc" role="option" aria-selected="${activeGenreSortBy === 'vote_average.desc'}">Top Rated</button>
+                        <button type="button" class="genre-sort-option ${activeGenreSortBy === 'vote_count.desc' ? 'active' : ''}" data-sort="vote_count.desc" role="option" aria-selected="${activeGenreSortBy === 'vote_count.desc'}">Most Voted</button>
+                        <button type="button" class="genre-sort-option ${activeGenreSortBy === 'primary_release_date.desc' ? 'active' : ''}" data-sort="primary_release_date.desc" role="option" aria-selected="${activeGenreSortBy === 'primary_release_date.desc'}">Newest Movies</button>
+                        <button type="button" class="genre-sort-option ${activeGenreSortBy === 'first_air_date.desc' ? 'active' : ''}" data-sort="first_air_date.desc" role="option" aria-selected="${activeGenreSortBy === 'first_air_date.desc'}">Newest TV</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="genre-filter-chip-wrap" id="genre-filter-chip-wrap"></div>
+    `;
+
+    const chipWrap = genreFilterPanel.querySelector('#genre-filter-chip-wrap');
+    if (!chipWrap) return;
+
+    const allButton = document.createElement('button');
+    allButton.type = 'button';
+    allButton.className = 'genre-filter-chip';
+    allButton.dataset.genreId = '';
+    allButton.innerHTML = '<i class="fa-solid fa-border-all"></i><span>All Genres</span>';
+    allButton.classList.toggle('active', !activeGenreFilterIds.length);
+    allButton.addEventListener('click', () => {
+        setActiveGenreFilter(null);
+    });
+    chipWrap.appendChild(allButton);
+
+    filters.forEach((filter) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'genre-filter-chip';
+        button.dataset.genreId = String(filter.id);
+        button.style.setProperty('--genre-chip-color', filter.color);
+        button.classList.toggle('active', activeGenreFilterIds.includes(filter.id));
+        button.innerHTML = `<i class="fa-solid ${filter.icon}"></i><span>${filter.name}</span><small class="genre-chip-id">${filter.id}</small>`;
+        button.addEventListener('click', () => {
+            setActiveGenreFilter(filter.id, true);
+        });
+        chipWrap.appendChild(button);
+    });
+
+    const scopeGroup = genreFilterPanel.querySelector('#genre-scope-group');
+    const matchGroup = genreFilterPanel.querySelector('#genre-match-group');
+    const sortDropdown = genreFilterPanel.querySelector('#genre-sort-dropdown');
+    const sortTrigger = genreFilterPanel.querySelector('#genre-sort-trigger');
+    const sortOptions = Array.from(genreFilterPanel.querySelectorAll('.genre-sort-option'));
+
+    if (scopeGroup) {
+        scopeGroup.querySelectorAll('[data-scope]').forEach((btn) => {
+            btn.addEventListener('click', () => setActiveGenreScope(btn.dataset.scope));
+        });
+    }
+
+    if (matchGroup) {
+        matchGroup.querySelectorAll('[data-match]').forEach((btn) => {
+            btn.addEventListener('click', () => setActiveGenreMatchMode(btn.dataset.match));
+        });
+    }
+
+    if (sortDropdown && sortTrigger) {
+        const closeSortDropdown = () => {
+            sortDropdown.classList.remove('open');
+            sortTrigger.setAttribute('aria-expanded', 'false');
+        };
+
+        sortTrigger.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const willOpen = !sortDropdown.classList.contains('open');
+            sortDropdown.classList.toggle('open', willOpen);
+            sortTrigger.setAttribute('aria-expanded', String(willOpen));
+        });
+
+        sortOptions.forEach((optionBtn) => {
+            optionBtn.addEventListener('click', () => {
+                const nextSort = String(optionBtn.dataset.sort || '').trim();
+                if (nextSort) setActiveGenreSortBy(nextSort);
+                closeSortDropdown();
+            });
+        });
+
+        genreFilterPanel.onclick = (event) => {
+            if (!sortDropdown.contains(event.target)) {
+                closeSortDropdown();
+            }
+        };
+
+        genreFilterPanel.onkeydown = (event) => {
+            if (event.key === 'Escape') {
+                closeSortDropdown();
+            }
+        };
+    }
+
+    if (genreFilterBtn) {
+        genreFilterBtn.setAttribute('title', activeGenreFilterIds.length ? `Genre: ${activeLabel}` : 'Filter by genre');
+    }
+}
+
+function openGenreFilterPanel() {
+    if (!genreFilterPanel || !genreFilterBtn) return;
+    genreFilterPanel.classList.add('open');
+    genreFilterPanel.setAttribute('aria-hidden', 'false');
+    genreFilterPanelOpen = true;
+    updateGenreFilterButtonState();
+}
+
+function closeGenreFilterPanel() {
+    if (!genreFilterPanel || !genreFilterBtn) return;
+    genreFilterPanel.classList.remove('open');
+    genreFilterPanel.setAttribute('aria-hidden', 'true');
+    genreFilterPanelOpen = false;
+    updateGenreFilterButtonState();
+}
+
+function toggleGenreFilterPanel() {
+    if (!genreFilterPanelOpen) {
+        openGenreFilterPanel();
+        return;
+    }
+    closeGenreFilterPanel();
+}
+
+function parseCardItem(card) {
+    if (!card) return null;
+    try {
+        return JSON.parse(card.dataset.item || '{}');
+    } catch (error) {
+        return null;
+    }
+}
+
+function parseGenreIdsFromDataset(card) {
+    if (!card) return [];
+    const raw = String(card.dataset.genreIds || '').trim();
+    if (!raw) return [];
+    return raw
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function setCardGenreIds(card, ids) {
+    if (!card) return;
+    const normalized = Array.from(new Set((ids || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)));
+    card.dataset.genreIds = normalized.join(',');
+}
+
+async function resolveCardGenreIds(card, item) {
+    const cachedIds = parseGenreIdsFromDataset(card);
+    if (cachedIds.length) return cachedIds;
+
+    const itemGenreIds = getGenreIds(item);
+    if (itemGenreIds.length) {
+        setCardGenreIds(card, itemGenreIds);
+        return itemGenreIds;
+    }
+
+    const id = String(item?.id || '').trim();
+    if (!id) return [];
+
+    const provider = String(card?.dataset?.provider || item?.provider || '').trim();
+    const fallbackType = String(card?.dataset?.type || '').toLowerCase().trim() || 'movie';
+    const type = inferMediaType(item, fallbackType === 'tv' ? 'tv' : 'movie');
+
+    try {
+        const details = await fetchDetails(id, type, provider);
+        const detailGenreIds = getGenreIds(details);
+        if (detailGenreIds.length) setCardGenreIds(card, detailGenreIds);
+        return detailGenreIds;
+    } catch (_) {
+        return [];
+    }
+}
+
+function ensureGenreFilterEmptyStateNode() {
+    if (!contentRows) return null;
+    let node = document.getElementById('genre-filter-empty-state');
+    if (node) return node;
+
+    node = document.createElement('div');
+    node.id = 'genre-filter-empty-state';
+    node.className = 'genre-filter-empty-state';
+    node.setAttribute('role', 'status');
+    node.style.display = 'none';
+    contentRows.appendChild(node);
+    return node;
+}
+
+function updateGenreFilterEmptyState(isVisible) {
+    const node = ensureGenreFilterEmptyStateNode();
+    if (!node) return;
+
+    if (!isVisible || !activeGenreFilterIds.length) {
+        node.style.display = 'none';
+        node.innerHTML = '';
+        return;
+    }
+
+    const labels = getActiveGenreLabels();
+    const label = labels.length > 1 ? labels.join(' + ') : getActiveGenreLabel();
+    node.innerHTML = `
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <h3>No titles found for ${label}</h3>
+        <p>Try another genre or select <strong>All Genres</strong> to see everything.</p>
+    `;
+    node.style.display = 'grid';
+}
+
+function setActiveGenreFilter(genreId, toggleOnly = false) {
+    if (!genreId) {
+        activeGenreFilterIds = [];
+        syncActiveGenrePrimary();
+        renderGenreFilterPanel();
+        applyGenreFilter().catch(() => { });
+        closeGenreFilterPanel();
+        return;
+    }
+
+    const nextId = Number(genreId);
+    if (!Number.isFinite(nextId) || !GENRE_MAP[nextId]) return;
+
+    const next = normalizeGenreSelection(activeGenreFilterIds);
+    const idx = next.indexOf(nextId);
+    if (toggleOnly) {
+        if (idx >= 0) {
+            next.splice(idx, 1);
+        } else {
+            next.push(nextId);
+        }
+    } else {
+        next.length = 0;
+        next.push(nextId);
+    }
+
+    activeGenreFilterIds = normalizeGenreSelection(next);
+    syncActiveGenrePrimary();
+    renderGenreFilterPanel();
+    applyGenreFilter().catch(() => { });
+
+    if (!toggleOnly) {
+        closeGenreFilterPanel();
+    }
+}
+
+async function applyGenreFilter() {
+    if (!contentRows) return;
+    ++genreFilterRequestVersion;
+    syncActiveGenrePrimary();
+
+    if (!activeGenreFilterIds.length || !activeGenreFilterId) {
+        activeGenreDiscoverState = null;
+        toggleBaseRowsForGenreMode(false);
+        updateGenreFilterButtonState();
+        updateGenreFilterEmptyState(false);
+        updateGenreResultsLoadMoreButton(null, false);
+        return;
+    }
+
+    toggleBaseRowsForGenreMode(true);
+    updateGenreFilterButtonState();
+    updateGenreFilterEmptyState(false);
+    await loadGenreResults(activeGenreFilterId);
+}
+
 function getGenreIds(media) {
     const out = new Set();
     if (!media) return [];
@@ -956,6 +2448,11 @@ function getGenreIds(media) {
     const fromGenreIds = media.genre_ids;
     if (Array.isArray(fromGenreIds)) {
         fromGenreIds.forEach(addId);
+    } else if (typeof fromGenreIds === 'string') {
+        fromGenreIds
+            .split(',')
+            .map((part) => part.trim())
+            .forEach(addId);
     }
 
     const fromGenres = media.genres;
@@ -978,6 +2475,14 @@ function getGenreIds(media) {
                 }
             }
         });
+    } else if (typeof fromGenres === 'string') {
+        fromGenres
+            .split(',')
+            .map((genre) => genre.trim())
+            .forEach((genre) => {
+                const key = genre.toLowerCase();
+                if (GENRE_NAME_TO_ID[key]) addId(GENRE_NAME_TO_ID[key]);
+            });
     }
 
     return Array.from(out);
@@ -1376,8 +2881,9 @@ async function fetchSimilar(id, type, provider = '', seedMedia = null) {
             finalItems = mixedCandidates.slice(0, 24);
         }
 
-        similarMemoryCache.set(cacheKey, { ts: Date.now(), items: finalItems });
-        return finalItems;
+        const filteredFinalItems = finalItems.filter(hasPositiveRating);
+        similarMemoryCache.set(cacheKey, { ts: Date.now(), items: filteredFinalItems });
+        return filteredFinalItems;
     } catch (fallbackErr) {
         console.error('Similar movies fetch failed:', fallbackErr);
         return [];
@@ -1677,22 +3183,26 @@ function renderDetailsModal(movie, id, type, provider = '') {
         const grid = document.getElementById('similar-movies-grid');
         if (!grid) return;
 
-        if (similarMovies.length === 0) {
+        const visibleSimilarMovies = (similarMovies || []).filter(hasPositiveRating);
+
+        if (visibleSimilarMovies.length === 0) {
             grid.innerHTML = '<div class="no-similar">No similar movies found</div>';
             return;
         }
 
         // Initially show 6, then reveal 6 more per click.
         let showCount = 6;
-        const totalCount = similarMovies.length;
+        const totalCount = visibleSimilarMovies.length;
 
         function renderSimilarGrid(count) {
-            const moviesToShow = similarMovies.slice(0, count);
+            const moviesToShow = visibleSimilarMovies.slice(0, count);
             grid.innerHTML = moviesToShow.map(movie => {
                 const title = getTitle(movie);
                 const poster = getPoster(movie);
                 const year = getYear(movie);
                 const rating = getRating(movie);
+                const ratingNum = Math.max(0, Math.min(10, Number(rating) || 0));
+                const ratingProgress = Math.round(ratingNum * 10);
                 const movieId = movie.id;
                 const movieType = inferMediaType(movie, type);
                 const movieProvider = movie.provider || '';
@@ -1710,29 +3220,30 @@ function renderDetailsModal(movie, id, type, provider = '') {
                             if (watchedItem) {
                                 const seasonNo = watchedItem.seasonNo || watchedItem.season || 1;
                                 const episodeNo = watchedItem.episodeNo || watchedItem.episode || 1;
-                                seasonEpisodeBadge = `<span class="season-episode-badge">S${seasonNo}E${episodeNo}</span>`;
+                                seasonEpisodeBadge = `<span class="similar-type-badge">S${seasonNo}E${episodeNo}</span>`;
                             } else {
-                                seasonEpisodeBadge = `<span class="season-episode-badge">TV</span>`;
+                                seasonEpisodeBadge = `<span class="similar-type-badge">TV</span>`;
                             }
                         } catch (e) {
-                            seasonEpisodeBadge = `<span class="season-episode-badge">TV</span>`;
+                            seasonEpisodeBadge = `<span class="similar-type-badge">TV</span>`;
                         }
                     } else {
-                        seasonEpisodeBadge = `<span class="season-episode-badge">TV</span>`;
+                        seasonEpisodeBadge = `<span class="similar-type-badge">TV</span>`;
                     }
                 } else {
-                    seasonEpisodeBadge = `<span class="season-episode-badge">MOVIE</span>`;
+                    seasonEpisodeBadge = `<span class="similar-type-badge">MOVIE</span>`;
                 }
 
                 return `
                     <div class="movie-card" onclick="openDetails('${movieId}', '${movieType}', '${movieProvider}')">
                         <img src="${poster}" alt="${title}" onerror="this.src='https://placehold.co/200x300/1a1a2e/e50914?text=No+Poster'">
                         <span class="quality-badge">HD</span>
+                        <div class="similar-rating-ring" style="--rating-progress:${ratingProgress}">
+                            <span><i class="fa-solid fa-star rating"></i> ${rating}</span>
+                        </div>
                         ${seasonEpisodeBadge}
-                        <div class="movie-card-meta-left">
-                            <span class="meta-pill-left">${rating}</span>
-                            <span class="meta-pill-left">${year}</span>
-                            <span class="meta-pill-left">${movieType === 'tv' ? 'TV' : 'Movie'}</span>
+                        <div class="similar-badge-meta">
+                            <span class="similar-year-badge">${year}</span>
                         </div>
                         <div class="movie-card-info">
                             <h3 class="movie-card-title">${title}</h3>
@@ -1772,7 +3283,9 @@ async function fetchTrending() {
     try {
         const cached = readCache(cacheKey);
         if (cached?.results?.length) {
-            const cachedItems = (cached.results || []).filter(item => typeof item.id === 'number').slice(0, 12);
+            const cachedItems = (cached.results || [])
+                .filter(item => typeof item.id === 'number' && hasPositiveRating(item))
+                .slice(0, 12);
             heroItems = cachedItems.slice(0, 5);
             if (heroItems.length && typeof displayHero === 'function') {
                 displayHero(heroItems[0]);
@@ -1784,7 +3297,9 @@ async function fetchTrending() {
         // Explicitly using the full path to ensure we hit the meta/tmdb trending
         const data = await fetchJsonWithFallback('/trending');
         writeCache(cacheKey, data);
-        const items = (data.results || []).filter(item => typeof item.id === 'number').slice(0, 12);
+        const items = (data.results || [])
+            .filter(item => typeof item.id === 'number' && hasPositiveRating(item))
+            .slice(0, 12);
         if (!items.length) return true;
 
         heroItems = items.slice(0, 5);
@@ -1884,9 +3399,32 @@ async function hydrateGridCard(item, card) {
     try {
         const img = card.querySelector('img');
         const isBad = (s) => !s || s.includes('placehold.co') || s.includes('No+Image') || s.includes('dramaool.png');
+        const normalizeIdentity = (value) => String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const toYearNum = (value) => {
+            const n = Number(String(value || '').match(/\d{4}/)?.[0] || 0);
+            return Number.isFinite(n) && n > 1800 ? n : 0;
+        };
+        const isLikelySameTitle = (seed, candidate) => {
+            const seedTitle = normalizeIdentity(getTitle(seed));
+            const candTitle = normalizeIdentity(getTitle(candidate));
+            if (!seedTitle || !candTitle) return false;
+            if (seedTitle === candTitle) return true;
+            if (seedTitle.includes(candTitle) || candTitle.includes(seedTitle)) return true;
+            return false;
+        };
+
+        const itemType = getType(item) || item.media_type || 'movie';
+        const itemProvider = item.provider || '';
+        const seedYear = toYearNum(getYear(item));
 
         // 1. Fetch details from original provider
-        const details = await fetchDetails(item.id, item.media_type, item.provider);
+        const details = await fetchDetails(item.id, itemType, itemProvider);
+        const detailsYear = details ? toYearNum(getYear(details)) : 0;
+        const detailsIdentityMatches = !!details && isLikelySameTitle(item, details) && (!seedYear || !detailsYear || Math.abs(seedYear - detailsYear) <= 2);
         let poster = details ? getPoster(details) : '';
 
         // 2. If image is still bad, attempt TMDB lookup by title
@@ -1896,10 +3434,24 @@ async function hydrateGridCard(item, card) {
                 // Hits /meta/tmdb/Title - Consumet uses path as query if no command matches
                 const tmdbResults = await fetchJsonWithFallback(`/${encodeURIComponent(cleanTitle)}`, 5000);
                 if (tmdbResults?.results?.length) {
-                    const topMatch = tmdbResults.results[0];
-                    const tmdbPoster = getPoster(topMatch);
-                    if (!isBad(tmdbPoster)) {
-                        poster = tmdbPoster;
+                    const bestMatch = tmdbResults.results
+                        .map((candidate) => {
+                            const sameTitle = isLikelySameTitle(item, candidate);
+                            const candidateYear = toYearNum(getYear(candidate));
+                            const yearDelta = (seedYear && candidateYear) ? Math.abs(seedYear - candidateYear) : 0;
+                            const yearScore = (!seedYear || !candidateYear)
+                                ? 10
+                                : Math.max(0, 40 - (yearDelta * 12));
+                            const score = (sameTitle ? 140 : 0) + yearScore + Number(getRating(candidate) || 0);
+                            return { candidate, score, sameTitle };
+                        })
+                        .sort((a, b) => b.score - a.score)[0];
+
+                    if (bestMatch?.sameTitle && bestMatch.score >= 120) {
+                        const tmdbPoster = getPoster(bestMatch.candidate);
+                        if (!isBad(tmdbPoster)) {
+                            poster = tmdbPoster;
+                        }
                     }
                 }
             } catch (tmdbErr) {
@@ -1913,12 +3465,21 @@ async function hydrateGridCard(item, card) {
         }
 
         // Hydrate other metadata
-        if (details) {
+        if (details && detailsIdentityMatches) {
             const ratingVal = getRating(details);
             if (ratingVal !== '0.0') {
-                const ratingLabel = card.querySelector('.rating');
-                if (ratingLabel && ratingLabel.nextSibling) {
-                    ratingLabel.nextSibling.textContent = ' ' + ratingVal;
+                const ratingMetaLabel = card.querySelector('.movie-card-meta .rating');
+                if (ratingMetaLabel && ratingMetaLabel.nextSibling) {
+                    ratingMetaLabel.nextSibling.textContent = ' ' + ratingVal;
+                }
+                const ringValue = card.querySelector('.card-rating-ring-value');
+                if (ringValue) {
+                    ringValue.innerHTML = `<i class="fa-solid fa-star"></i> ${ratingVal}`;
+                }
+                const ringEl = card.querySelector('.card-rating-ring');
+                if (ringEl) {
+                    const p = Math.round(Math.max(0, Math.min(10, Number(ratingVal) || 0)) * 10);
+                    ringEl.style.setProperty('--rating-progress', String(p));
                 }
             }
             const yearVal = getYear(details);
@@ -1928,7 +3489,7 @@ async function hydrateGridCard(item, card) {
             }
 
             // Also rescue the title if it was "Unknown" in the initial search results
-            const titleEl = card.querySelector('.movie-title');
+            const titleEl = card.querySelector('.movie-card-title');
             const currentTitle = titleEl ? titleEl.textContent.trim() : '';
             if (titleEl && (currentTitle === 'Unknown' || !currentTitle) && details.title && details.title !== 'Unknown') {
                 titleEl.textContent = details.title;
@@ -2119,6 +3680,7 @@ function resetHeroProgress() {
 function displayGrid(items, container, forcedType = null) {
     if (!container) return;
     container.innerHTML = '';
+    const renderItems = Array.isArray(items) ? items.filter(hasPositiveRating) : [];
 
     // Setup lazy hydration
     if (!hydrationObserver) {
@@ -2140,11 +3702,13 @@ function displayGrid(items, container, forcedType = null) {
         }, { rootMargin: '200px' });
     }
 
-    items.forEach(item => {
+    renderItems.forEach(item => {
         const poster = getPoster(item);
         const title = getTitle(item);
         const year = getYear(item);
         const rating = getRating(item);
+        const ratingNum = Math.max(0, Math.min(10, Number(rating) || 0));
+        const ratingProgress = Math.round(ratingNum * 10);
         const detectedType = getType(item);
         const type = detectedType || forcedType || 'movie';
         const id = item.id;
@@ -2182,11 +3746,15 @@ function displayGrid(items, container, forcedType = null) {
         card.dataset.item = JSON.stringify(item);
         card.dataset.type = type;
         card.dataset.provider = provider;
+        setCardGenreIds(card, getGenreIds(item));
 
         card.innerHTML = `
             <img src="${poster}" alt="${title}" loading="lazy"
                  onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Image'">
             <span class="quality-badge">HD</span>
+            <div class="card-rating-ring" style="--rating-progress:${ratingProgress}">
+                <span class="card-rating-ring-value"><i class="fa-solid fa-star"></i> ${rating}</span>
+            </div>
             ${seasonEpisodeBadge}
             <div class="movie-card-info">
                 <h3 class="movie-card-title">${title}</h3>
@@ -2206,6 +3774,10 @@ function displayGrid(items, container, forcedType = null) {
             hydrationObserver.observe(card);
         }
     });
+
+    if (container.closest && container.closest('#content-rows') && container.id !== 'genre-results-grid') {
+        applyGenreFilter().catch(() => { });
+    }
 }
 
 // ------------------ DISPLAY ------------------------------------------------
@@ -2278,7 +3850,63 @@ searchInput.addEventListener('paste', () => {
     setTimeout(() => triggerSearch(true), 20);
 });
 const searchBtn = document.getElementById('search-btn');
-if (searchBtn) searchBtn.addEventListener('click', () => triggerSearch(true));
+
+function isMobileSearchViewport() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function setMobileSearchExpanded(expanded) {
+    if (!searchContainer) return;
+    const shouldExpand = !!expanded;
+    searchContainer.classList.toggle('mobile-search-expanded', shouldExpand);
+    if (header) {
+        header.classList.toggle('mobile-search-open', shouldExpand && isMobileSearchViewport());
+    }
+}
+
+function syncMobileSearchUi() {
+    if (!searchContainer || !searchInput) return;
+    if (!isMobileSearchViewport()) {
+        searchContainer.classList.remove('mobile-search-expanded');
+        header?.classList.remove('mobile-search-open');
+        return;
+    }
+    // Default collapsed on mobile unless user is actively typing.
+    const hasQuery = String(searchInput.value || '').trim().length > 0;
+    setMobileSearchExpanded(hasQuery);
+}
+
+if (searchBtn) {
+    searchBtn.addEventListener('click', (e) => {
+        if (isMobileSearchViewport() && searchContainer && !searchContainer.classList.contains('mobile-search-expanded')) {
+            e.preventDefault();
+            e.stopPropagation();
+            setMobileSearchExpanded(true);
+            searchInput?.focus();
+            return;
+        }
+        triggerSearch(true);
+    });
+}
+
+searchInput?.addEventListener('focus', () => {
+    if (isMobileSearchViewport()) setMobileSearchExpanded(true);
+});
+
+searchInput?.addEventListener('blur', () => {
+    // Delay to allow click handlers inside the search bar to run first.
+    setTimeout(() => {
+        if (!searchContainer || !searchInput || !isMobileSearchViewport()) return;
+        const hasQuery = String(searchInput.value || '').trim().length > 0;
+        if (!searchContainer.matches(':focus-within') && !hasQuery) {
+            setMobileSearchExpanded(false);
+        }
+    }, 120);
+});
+
+window.addEventListener('resize', syncMobileSearchUi);
+window.addEventListener('orientationchange', syncMobileSearchUi);
+syncMobileSearchUi();
 
 function displaySearchResults(results, query) {
     heroSection.style.display = 'none';
@@ -2626,6 +4254,13 @@ document.addEventListener('click', (e) => {
             if (icon) icon.classList.replace('fa-xmark', 'fa-bars');
         }
     }
+
+    if (isMobileSearchViewport() && searchContainer && searchContainer.classList.contains('mobile-search-expanded')) {
+        if (!searchContainer.contains(e.target)) {
+            const hasQuery = String(searchInput?.value || '').trim().length > 0;
+            if (!hasQuery) setMobileSearchExpanded(false);
+        }
+    }
 });
 
 document.addEventListener('keydown', (e) => {
@@ -2633,6 +4268,11 @@ document.addEventListener('keydown', (e) => {
         mobileDropdown.classList.remove('active');
         const icon = mobileMenuToggle?.querySelector('i');
         if (icon) icon.classList.replace('fa-xmark', 'fa-bars');
+    }
+
+    if (e.key === 'Escape' && isMobileSearchViewport() && searchContainer && searchContainer.classList.contains('mobile-search-expanded')) {
+        const hasQuery = String(searchInput?.value || '').trim().length > 0;
+        if (!hasQuery) setMobileSearchExpanded(false);
     }
 });
 // ------------------ FILTER & NAVIGATION -----------------------------------
