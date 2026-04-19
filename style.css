@@ -217,6 +217,10 @@ header.scrolled {
     touch-action: manipulation;
 }
 
+.search-close-btn {
+    display: none;
+}
+
 .genre-filter-btn {
     display: inline-flex;
     align-items: center;
@@ -2489,10 +2493,23 @@ footer {
     }
 
     .search-bar {
+        order: 2;
+    }
+
+    .genre-filter-btn {
+        order: 3;
+    }
+
+    .mobile-menu-btn {
+        order: 4;
+    }
+
+    .search-bar {
         width: 44px;
         min-width: 44px;
         height: 44px;
         padding: 0;
+        flex-direction: row;
         justify-content: center;
         overflow: hidden;
         border-radius: 14px;
@@ -2504,6 +2521,7 @@ footer {
     }
 
     .search-bar input {
+        order: 2;
         width: 0;
         opacity: 0;
         pointer-events: none;
@@ -2521,11 +2539,30 @@ footer {
         flex: 0 0 44px;
     }
 
+    #search-btn {
+        order: 1;
+    }
+
+    .search-bar .search-close-btn {
+        order: 3;
+        display: none;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .search-bar.mobile-search-expanded .search-close-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 1;
+        pointer-events: auto;
+    }
+
     .search-bar.mobile-search-expanded {
         width: min(68vw, 260px);
         min-width: min(68vw, 260px);
         justify-content: space-between;
-        padding: 0.45rem 0.65rem 0.45rem 0.95rem;
+        padding: 0.45rem 0.95rem 0.45rem 0.65rem;
         border-radius: 50px;
         background: rgba(255, 255, 255, 0.14);
         border-color: rgba(229, 9, 20, 0.45);
@@ -2965,6 +3002,7 @@ body.trailer-open {
     }
 
     .genre-filter-btn {
+        order: 2;
         padding: 0;
         width: 42px;
         min-width: 42px;
@@ -2991,6 +3029,7 @@ body.trailer-open {
     }
 
     .search-bar {
+        order: 1;
         width: 42px;
         min-width: 42px;
         height: 42px;
@@ -3004,7 +3043,7 @@ body.trailer-open {
     .search-bar.mobile-search-expanded {
         width: min(70vw, 230px);
         min-width: min(70vw, 230px);
-        padding: 0.4rem 0.6rem 0.4rem 0.85rem;
+        padding: 0.4rem 0.65rem 0.4rem 0.55rem;
     }
 
     #main-header.mobile-search-open .search-bar.mobile-search-expanded {

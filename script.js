@@ -3850,6 +3850,7 @@ searchInput.addEventListener('paste', () => {
     setTimeout(() => triggerSearch(true), 20);
 });
 const searchBtn = document.getElementById('search-btn');
+const searchCloseBtn = document.getElementById('search-close-btn');
 
 function isMobileSearchViewport() {
     return window.matchMedia('(max-width: 768px)').matches;
@@ -3886,6 +3887,21 @@ if (searchBtn) {
             return;
         }
         triggerSearch(true);
+    });
+}
+
+if (searchCloseBtn) {
+    searchCloseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (searchInput) {
+            searchInput.value = '';
+        }
+        triggerSearch(true);
+        if (isMobileSearchViewport()) {
+            setMobileSearchExpanded(false);
+            searchInput?.blur();
+        }
     });
 }
 
