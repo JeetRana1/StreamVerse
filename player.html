@@ -489,6 +489,13 @@
             opacity: 1;
         }
 
+        .player-cursor-hidden,
+        .player-cursor-hidden .player-wrap,
+        .player-cursor-hidden #player-video,
+        .player-cursor-hidden .control-surface {
+            cursor: none !important;
+        }
+
         .control-surface:not(.visible) {
             pointer-events: none !important;
         }
@@ -7650,10 +7657,12 @@
             if (isUiLocked || !video) {
                 controlSurface.classList.remove('visible');
                 playerHeader.classList.add('hidden');
+                document.body.classList.add('player-cursor-hidden');
                 return;
             }
             controlSurface.classList.add('visible');
             playerHeader.classList.remove('hidden');
+            document.body.classList.remove('player-cursor-hidden');
 
             clearTimeout(controlsHideTimer);
             clearTimeout(headerTimer);
@@ -7678,6 +7687,7 @@
                 if (video && !video.paused) {
                     controlSurface.classList.remove('visible');
                     playerHeader.classList.add('hidden');
+                    document.body.classList.add('player-cursor-hidden');
                     closeCustomMenus();
                 }
             }, hideDelay);
@@ -7711,6 +7721,7 @@
             clearTimeout(headerTimer);
             controlSurface.classList.remove('visible');
             playerHeader.classList.add('hidden');
+            document.body.classList.add('player-cursor-hidden');
             closeCustomMenus();
             lastTap = 0; // Reset double-tap sequence on hide
         }
@@ -8130,7 +8141,7 @@
             });
             video.addEventListener('pause', () => {
                 setPlayIcon(false);
-                controlSurface.classList.add('visible');
+                showControlSurface();
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(false);
             });

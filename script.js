@@ -2572,6 +2572,131 @@ function dedupeSearchResults(items) {
     return Array.from(byKey.values());
 }
 
+const SEARCH_QUERY_NOISE_WORDS = new Set([
+    'the', 'a', 'an', 'and', 'of', 'for', 'to', 'in', 'on', 'at', 'by',
+    'new', 'newest', 'latest', 'version', 'one'
+]);
+
+function buildSearchTokens(value) {
+    return normalizeSearchIdentityText(value)
+        .split(' ')
+        .map((token) => token.trim())
+        .filter((token) => token && token.length >= 2 && !SEARCH_QUERY_NOISE_WORDS.has(token));
+}
+
+function extractQueryYear(value) {
+    const match = String(value || '').match(/\b(19|20)\d{2}\b/);
+    return match ? Number(match[0]) : null;
+}
+
+function buildAlternativeSearchQueries(query) {
+    const raw = String(query || '').trim();
+    if (!raw) return [];
+
+    const alternatives = new Set();
+    const strippedNewOne = raw
+        .replace(/\b(the\s+)?new\s+one\b/gi, ' ')
+        .replace(/\bnew\s+version\b/gi, ' ')
+        .replace(/\blatest\s+version\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (strippedNewOne && strippedNewOne.toLowerCase() !== raw.toLowerCase()) {
+        alternatives.add(strippedNewOne);
+    }
+
+    const compactTokens = buildSearchTokens(raw).join(' ').trim();
+    if (compactTokens && compactTokens.toLowerCase() !== raw.toLowerCase() && compactTokens.length >= 3) {
+        alternatives.add(compactTokens);
+    }
+
+    const withoutYear = raw
+        .replace(/\b(19|20)\d{2}\b/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (withoutYear && withoutYear.toLowerCase() !== raw.toLowerCase()) {
+        alternatives.add(withoutYear);
+    }
+
+    const compactWithoutYear = buildSearchTokens(withoutYear || raw)
+        .filter((token) => !/^((19|20)\d{2})$/.test(token))
+        .join(' ')
+        .trim();
+    if (compactWithoutYear && compactWithoutYear.toLowerCase() !== raw.toLowerCase() && compactWithoutYear.length >= 3) {
+        alternatives.add(compactWithoutYear);
+    }
+
+    return Array.from(alternatives).slice(0, 3);
+}
+
+function getSearchRelevanceScore(item, query) {
+    const queryNorm = normalizeSearchIdentityText(query);
+    const titleNorm = normalizeSearchIdentityText(getTitle(item));
+    const altNorm = normalizeSearchIdentityText(
+        item?.originalTitle || item?.original_title || item?.originalName || item?.original_name || ''
+    );
+    const haystack = `${titleNorm} ${altNorm}`.trim();
+
+    let score = 0;
+    if (!queryNorm || !haystack) return score;
+
+    if (titleNorm === queryNorm) score += 320;
+    if (haystack === queryNorm) score += 160;
+    if (titleNorm.startsWith(queryNorm)) score += 120;
+    if (haystack.includes(queryNorm)) score += 85;
+
+    const tokens = buildSearchTokens(queryNorm);
+    if (tokens.length) {
+        let overlap = 0;
+        for (const token of tokens) {
+            if (haystack.includes(token)) overlap += 1;
+        }
+        score += overlap * 24;
+        if (overlap === tokens.length && tokens.length >= 2) score += 95;
+    }
+
+    const queryYear = extractQueryYear(queryNorm);
+    const itemYear = Number(getYear(item));
+    if (queryYear && Number.isFinite(itemYear)) {
+        if (itemYear === queryYear) score += 70;
+        else if (Math.abs(itemYear - queryYear) <= 1) score += 25;
+    }
+
+    if (queryNorm.includes('new') || queryNorm.includes('latest')) {
+        if (Number.isFinite(itemYear) && itemYear >= 2020) score += 18;
+    }
+
+    const queryWantsTv = /\b(tv|series|show|season|episode)\b/i.test(queryNorm);
+    const queryWantsMovie = /\b(movie|film|cinema)\b/i.test(queryNorm);
+    const mediaType = inferMediaType(item, 'movie');
+    if (queryWantsTv && mediaType === 'tv') score += 30;
+    if (queryWantsMovie && mediaType === 'movie') score += 30;
+
+    score += Math.min(10, Number(getRating(item) || 0)) * 0.9;
+    score += Math.min(10, Number(item?.popularity || 0) / 18);
+
+    return score;
+}
+
+function sortSearchResultsByQuery(items, query) {
+    const ranked = [...(items || [])];
+    ranked.sort((a, b) => {
+        const byScore = getSearchRelevanceScore(b, query) - getSearchRelevanceScore(a, query);
+        if (byScore !== 0) return byScore;
+        const byYear = Number(getYear(b) || 0) - Number(getYear(a) || 0);
+        if (byYear !== 0) return byYear;
+        return Number(getRating(b) || 0) - Number(getRating(a) || 0);
+    });
+    return ranked;
+}
+
+function shouldRescueSearchResults(items, query) {
+    if (!Array.isArray(items) || items.length < 8) return true;
+    const top = sortSearchResultsByQuery(items, query)[0];
+    if (!top) return true;
+    return getSearchRelevanceScore(top, query) < 120;
+}
+
 function normalizeGenreToken(v) {
     const raw = String(v || '').toLowerCase().trim();
     if (!raw) return '';
@@ -3677,10 +3802,13 @@ function resetHeroProgress() {
 }
 
 // ------------------ GRID ---------------------------------------------------
-function displayGrid(items, container, forcedType = null) {
+function displayGrid(items, container, forcedType = null, options = {}) {
     if (!container) return;
     container.innerHTML = '';
-    const renderItems = Array.isArray(items) ? items.filter(hasPositiveRating) : [];
+    const includeUnrated = !!options.includeUnrated;
+    const renderItems = Array.isArray(items)
+        ? (includeUnrated ? items.filter(Boolean) : items.filter(hasPositiveRating))
+        : [];
 
     // Setup lazy hydration
     if (!hydrationObserver) {
@@ -3828,8 +3956,25 @@ async function triggerSearch(immediate = false) {
 
         if (version !== searchVersion) return; // Ignore stale results
 
-        const hits = dedupeSearchResults((data?.results || []))
-            .filter(r => (r.type || r.media_type || '').toLowerCase() !== 'person');
+        const mergedResults = [...(data?.results || [])];
+        if (shouldRescueSearchResults(mergedResults, q)) {
+            const alternatives = buildAlternativeSearchQueries(q);
+            for (const altQuery of alternatives) {
+                try {
+                    const altData = await fetchJsonWithFallback(`/${encodeURIComponent(altQuery)}`, 9000);
+                    if (version !== searchVersion) return;
+                    mergedResults.push(...(altData?.results || []));
+                } catch (_) {
+                    // Best-effort rescue query, keep primary results if fallback fails.
+                }
+            }
+        }
+
+        const hits = sortSearchResultsByQuery(
+            dedupeSearchResults(mergedResults)
+                .filter(r => (r.type || r.media_type || '').toLowerCase() !== 'person'),
+            q
+        );
         displaySearchResults(hits, q);
     } catch (err) {
         console.error('Search error:', err);
@@ -3938,7 +4083,8 @@ function displaySearchResults(results, query) {
         searchPageGrid.innerHTML = '<p style="color:var(--text-muted);font-size:1.1rem">No results found.</p>';
         return;
     }
-    displayGrid(dedupedResults, searchPageGrid);
+    // For search we keep unrated/upcoming titles visible so users can discover complete TMDB matches.
+    displayGrid(dedupedResults, searchPageGrid, null, { includeUnrated: true });
 }
 
 // ------------------ DETAILS MODAL HANDLERS --------------------------------
