@@ -2614,6 +2614,8 @@ footer {
         opacity: 1;
         pointer-events: auto;
         transform: translateX(0);
+        direction: ltr;
+        text-align: left;
     }
 
     .movie-grid {

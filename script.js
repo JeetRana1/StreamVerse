@@ -3872,9 +3872,10 @@ function syncMobileSearchUi() {
         header?.classList.remove('mobile-search-open');
         return;
     }
-    // Default collapsed on mobile unless user is actively typing.
+    // Keep expanded while actively focused so virtual keyboard resize does not collapse it.
     const hasQuery = String(searchInput.value || '').trim().length > 0;
-    setMobileSearchExpanded(hasQuery);
+    const isActive = document.activeElement === searchInput || searchContainer.matches(':focus-within');
+    setMobileSearchExpanded(hasQuery || isActive);
 }
 
 if (searchBtn) {
