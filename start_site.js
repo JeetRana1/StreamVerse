@@ -40,6 +40,10 @@ const apiEnvFromFile = parseDotEnv(API_ENV_PATH);
 const API_PORT = Number(process.env.API_PORT || apiEnvFromFile.PORT || 3000);
 const SITE_API_BASE = process.env.SITE_API_BASE || `http://127.0.0.1:${API_PORT}`;
 const SITE_META_API_BASE = process.env.SITE_META_API_BASE || `${SITE_API_BASE.replace(/\/$/, '')}/meta/tmdb`;
+const SITE_STREAM_API_BASE =
+    process.env.SITE_STREAM_API_BASE ||
+    apiEnvFromFile.STREAM_API ||
+    'https://convinced-nara-personal122-7da52759.koyeb.app/api/v1';
 const WIREGUARD_ENDPOINT = process.env.WIREGUARD_ENDPOINT || '';
 const START_LOCAL_API = String(process.env.START_LOCAL_API || 'false').toLowerCase() === 'true';
 
@@ -53,6 +57,7 @@ function buildClientConfigScript() {
   META_API_BASE: ${asJsString(SITE_META_API_BASE)},
   LOCAL_API_BASE: ${asJsString(SITE_META_API_BASE)},
   LOCAL_META_API_BASE: ${asJsString(SITE_META_API_BASE)},
+    STREAM_API_BASE: ${asJsString(SITE_STREAM_API_BASE)},
   WIREGUARD_ENDPOINT: ${asJsString(WIREGUARD_ENDPOINT)}
 };
 `;
@@ -75,6 +80,35 @@ const MIME_TYPES = {
     '.otf': 'application/font-otf',
     '.wasm': 'application/wasm'
 };
+
+function readJsonBody(req, maxBytes = 1024 * 1024) {
+    return new Promise((resolve, reject) => {
+        let total = 0;
+        const chunks = [];
+        req.on('data', (chunk) => {
+            total += chunk.length;
+            if (total > maxBytes) {
+                reject(new Error('Payload too large'));
+                req.destroy();
+                return;
+            }
+            chunks.push(chunk);
+        });
+        req.on('end', () => {
+            if (!chunks.length) {
+                resolve({});
+                return;
+            }
+            try {
+                const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                resolve(parsed && typeof parsed === 'object' ? parsed : {});
+            } catch (err) {
+                reject(new Error('Invalid JSON body'));
+            }
+        });
+        req.on('error', reject);
+    });
+}
 
 let apiProc = null;
 
@@ -156,6 +190,57 @@ startApiServer().catch((err) => {
 });
 
 const server = http.createServer((req, res) => {
+    if (req.url === '/api/getStream') {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
+
+        if (req.method !== 'POST') {
+            res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, message: 'Method not allowed' }));
+            return;
+        }
+
+        readJsonBody(req)
+            .then(async (body) => {
+                const payload = {
+                    file: body?.file,
+                    key: body?.key,
+                    referer: body?.referer,
+                    id: body?.id,
+                    source: body?.source,
+                };
+
+                if (!payload.file || !payload.key) {
+                    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+                    res.end(JSON.stringify({ success: false, message: 'Missing file or key' }));
+                    return;
+                }
+
+                const targetBase = String(SITE_STREAM_API_BASE || '').replace(/\/$/, '');
+                const upstreamRes = await fetch(`${targetBase}/getStream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const text = await upstreamRes.text();
+                const contentType = upstreamRes.headers.get('content-type') || 'application/json; charset=utf-8';
+                res.writeHead(upstreamRes.status, { 'Content-Type': contentType });
+                res.end(text);
+            })
+            .catch((err) => {
+                res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(JSON.stringify({ success: false, message: err.message || 'getStream proxy failed' }));
+            });
+        return;
+    }
+
     if (req.url === '/config.js') {
         res.writeHead(200, {
             'Content-Type': 'application/javascript; charset=utf-8',

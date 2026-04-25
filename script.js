@@ -556,6 +556,24 @@ function getType(item) {
     return 'movie';
 }
 
+function getItemProvider(item) {
+    const explicit = String(item?.provider || item?.source || item?.sourceProvider || '').trim().toLowerCase();
+    if (explicit) return explicit;
+
+    const source = String(item?.url || item?.link || item?.sourceUrl || item?.href || item?.id || '').trim().toLowerCase();
+    if (!source) return '';
+
+    if (source.includes('vegamovies')) return 'vegamovies';
+    if (source.includes('dramacool')) return 'dramacool';
+    if (source.includes('flixhq')) return 'flixhq';
+    if (source.includes('animekai')) return 'animekai';
+    if (source.includes('animesalt')) return 'animesalt';
+    if (source.includes('justanime')) return 'justanime';
+    if (source.includes('satoru')) return 'satoru';
+
+    return '';
+}
+
 function getDetailKey(id, type, provider = '') {
     const canonicalId = provider ? id : normalizeTmdbId(id);
     return `${provider || 'meta'}:${type}:${canonicalId}`;
@@ -909,18 +927,33 @@ function createContinueWatchingCard(item) {
 
     const lastWatchedDate = new Date(item.lastUpdated).toLocaleDateString();
 
-    const getPrettyAudio = (token) => {
-        if (!token) return 'SUB';
-        const low = token.toLowerCase();
+    const getPrettyAudio = (token, label) => {
+        // Prefer the rich display label saved directly from the active track
+        const rawLabel = String(label || token || '').trim();
+        if (!rawLabel) return 'SUB';
+
+        const low = rawLabel.toLowerCase();
+
+        // Known keyword mappings
         if (low.includes('hindi')) return 'HINDI';
-        if (low.includes('japan') || low.includes('jpn') || low.includes('jp')) return 'JPN';
-        if (low.includes('eng') || low.includes('en')) return 'ENG';
-        if (low.includes('tam')) return 'TAMIL';
-        if (low.includes('tel')) return 'TEL';
-        if (low.includes('dub')) return 'DUB';
-        return token.toUpperCase().substring(0, 5);
+        if (low.includes('japan') || low === 'jpn' || low === 'jp') return 'JPN';
+        if (low.includes('english') || low === 'eng' || low === 'en') return 'ENG';
+        if (low.includes('tamil') || low === 'tam') return 'TAMIL';
+        if (low.includes('telugu') || low === 'tel') return 'TEL';
+        if (low.includes('kannada') || low === 'kan') return 'KAN';
+        if (low.includes('malayalam') || low === 'mal') return 'MAL';
+        if (low.includes('korean') || low === 'kor' || low === 'ko') return 'KOR';
+        if (low.includes('chinese') || low === 'chi' || low === 'zh') return 'CHI';
+        if (low.includes('dubbed') || low === 'dub') return 'DUB';
+        if (low === 'subbed' || low === 'sub') return 'SUB';
+        if (low === 'auto') return 'AUTO';
+
+        // For anything else (e.g. "Bangla", "Punjabi"): title-case and cap at 6 chars
+        const titleCased = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+        return titleCased.length > 6 ? titleCased.substring(0, 6).toUpperCase() : titleCased.toUpperCase();
     };
-    const audioLabel = getPrettyAudio(item.audio);
+    const audioLabel = getPrettyAudio(item.audio, item.audioLabel);
+
     const seasonNoRaw = Number(item?.seasonNo);
     const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw > 0
         ? seasonNoRaw
@@ -3047,6 +3080,7 @@ function levenshteinDistance(a, b) {
 
 function renderDetailsModal(movie, id, type, provider = '') {
     currentModalMovie = movie;
+    const resolvedProvider = provider || getItemProvider(movie);
     const isAdded = isInWatchlist(id);
     const title = getTitle(movie);
     const cover = getCover(movie);
@@ -3247,11 +3281,11 @@ function renderDetailsModal(movie, id, type, provider = '') {
                 </div>
                 
                 <div class="modal-action-buttons">
-                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}', '${provider}')">
+                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}', '${resolvedProvider}')">
                         <i class="fa-solid fa-play"></i> Watch Now
                     </button>
                     <button id="modal-watchlist-btn" class="btn btn-list ${isAdded ? 'btn-in-list' : 'btn-add-list'}" 
-                            onclick="handleWatchlistToggle('${id}', '${type}', '${provider}')">
+                            onclick="handleWatchlistToggle('${id}', '${type}', '${resolvedProvider}')">
                         <i class="fa-solid fa-${isAdded ? 'check' : 'plus'}"></i> ${isAdded ? 'In Your List' : 'Add to List'}
                     </button>
                 </div>
@@ -3330,7 +3364,7 @@ function renderDetailsModal(movie, id, type, provider = '') {
                 const ratingProgress = Math.round(ratingNum * 10);
                 const movieId = movie.id;
                 const movieType = inferMediaType(movie, type);
-                const movieProvider = movie.provider || '';
+                const movieProvider = getItemProvider(movie);
                 
                 // Check for continue watching data to show season/episode info
                 let seasonEpisodeBadge = '';
@@ -3831,16 +3865,21 @@ function displayGrid(items, container, forcedType = null, options = {}) {
     }
 
     renderItems.forEach(item => {
-        const poster = getPoster(item);
-        const title = getTitle(item);
-        const year = getYear(item);
-        const rating = getRating(item);
+        const normalizedItem = item && typeof item === 'object' ? { ...item } : item;
+        const provider = getItemProvider(normalizedItem);
+        if (normalizedItem && typeof normalizedItem === 'object') {
+            normalizedItem.provider = provider;
+        }
+
+        const poster = getPoster(normalizedItem);
+        const title = getTitle(normalizedItem);
+        const year = getYear(normalizedItem);
+        const rating = getRating(normalizedItem);
         const ratingNum = Math.max(0, Math.min(10, Number(rating) || 0));
         const ratingProgress = Math.round(ratingNum * 10);
-        const detectedType = getType(item);
+        const detectedType = getType(normalizedItem);
         const type = detectedType || forcedType || 'movie';
-        const id = item.id;
-        const provider = item.provider || '';
+        const id = normalizedItem.id;
         
         // Check for continue watching data to show season/episode info
         let seasonEpisodeBadge = '';
@@ -3871,10 +3910,10 @@ function displayGrid(items, container, forcedType = null, options = {}) {
 
         const card = document.createElement('div');
         card.className = 'movie-card';
-        card.dataset.item = JSON.stringify(item);
+        card.dataset.item = JSON.stringify(normalizedItem);
         card.dataset.type = type;
         card.dataset.provider = provider;
-        setCardGenreIds(card, getGenreIds(item));
+        setCardGenreIds(card, getGenreIds(normalizedItem));
 
         card.innerHTML = `
             <img src="${poster}" alt="${title}" loading="lazy"
@@ -3892,7 +3931,7 @@ function displayGrid(items, container, forcedType = null, options = {}) {
                 </div>
             </div>
         `;
-        card.onclick = () => openDetails(id, type, provider, item);
+        card.onclick = () => openDetails(id, type, provider, normalizedItem);
         card.addEventListener('mouseenter', () => prefetchDetails(id, type, provider), { once: true });
         card.addEventListener('touchstart', () => prefetchDetails(id, type, provider), { once: true, passive: true });
         card.addEventListener('pointerdown', () => prefetchDetails(id, type, provider), { once: true, passive: true });

@@ -6,3 +6,7 @@ test-mobile-safari.js
 test.json
 package.json
 package-lock.json
+scratch/
+test*.js
+temp*.js
+*.txt

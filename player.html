@@ -2878,7 +2878,7 @@
         }
 
         // Provider pools
-        const MOVIE_PROVIDERS = ['flixhq', 'animekai', 'animesalt', 'justanime', 'dramacool', 'vegamovies'];
+        const MOVIE_PROVIDERS = ['flixhq', 'animekai', 'animesalt', 'justanime', 'vegamovies'];
         const ANIME_PROVIDERS = ['animesalt', 'animekai', 'satoru', 'justanime'];
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime'];
 
@@ -3068,7 +3068,6 @@
             animekai: { animeSearch: 9000, animeInfo: 14000, watch: 35000 },
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
-            dramacool: { watch: 20000, directWatch: 15000 },
             // VegaMovies extraction may need extra time because the backend clicks
             // language buttons and resolves each resulting stream URL.
             vegamovies: { watch: 90000, metaInfo: 30000 },
@@ -3254,66 +3253,41 @@
             const isConstrained = !isThumbnail && estimateNetworkQuality();
             const isFlixHq = String(provider || '').toLowerCase().includes('flixhq');
             const isAnimeKai = String(provider || '').toLowerCase().includes('animekai');
+            const isVega = String(provider || '').toLowerCase().includes('vegamovies');
 
             // Dynamic buffer sizing — keep buffers modest to avoid bufferFullError cascades
             // (oversized buffers fill up, HLS.js panics → stall loop)
-            // FlixHQ needs larger buffers to prevent stalling
-            const backBufferLength = isThumbnail ? 2 : (isFlixHq ? 20 : (isAnimeKai ? (mobileMain ? 6 : 10) : (mobileMain ? 8 : 12)));
-            const maxBufferLength = isThumbnail ? 5 : (isFlixHq ? 35 : (isAnimeKai ? (mobileMain ? 10 : 16) : (mobileMain ? 14 : 20)));
-            const maxMaxBufferLength = isThumbnail ? 10 : (isFlixHq ? 60 : (isAnimeKai ? (mobileMain ? 20 : 28) : (mobileMain ? 28 : 40)));
+            // FlixHQ and Vega need larger buffers/tolerance to prevent stalling or robotic audio
+            const backBufferLength = isThumbnail ? 2 : (isFlixHq || isVega ? 30 : (isAnimeKai ? (mobileMain ? 6 : 10) : (mobileMain ? 8 : 12)));
+            const maxBufferLength = isThumbnail ? 5 : (isFlixHq || isVega ? 60 : (isAnimeKai ? (mobileMain ? 10 : 16) : (mobileMain ? 14 : 20)));
+            const maxMaxBufferLength = isThumbnail ? 10 : (isFlixHq || isVega ? 120 : (isAnimeKai ? (mobileMain ? 20 : 28) : (mobileMain ? 28 : 40)));
             const maxBufferSize = isThumbnail
                 ? 6 * 1024 * 1024
-                : (isFlixHq ? 50 * 1000 * 1000 : (isAnimeKai ? (mobileMain ? 14 * 1000 * 1000 : 22 * 1000 * 1000) : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000)));
+                : (isFlixHq || isVega ? 150 * 1000 * 1000 : (isAnimeKai ? (mobileMain ? 14 * 1000 * 1000 : 22 * 1000 * 1000) : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000)));
 
             return new Hls({
                 startPosition: startTime,
                 enableWorker: !isThumbnail,
-                // VOD streams — disable low-latency mode (it increases stalling on non-LL streams)
                 lowLatencyMode: false,
                 backBufferLength: backBufferLength,
                 maxBufferLength: maxBufferLength,
                 maxMaxBufferLength: maxMaxBufferLength,
                 maxBufferSize: maxBufferSize,
-                maxBufferHole: isThumbnail ? 0.1 : (isAnimeKai ? 0.6 : 0.3),
-                // Longer watchdog period prevents false positive stall detections
-                highBufferWatchdogPeriod: isThumbnail ? 2 : 4,
-                nudgeOffset: isThumbnail ? 0.1 : 0.2,
-                // Cap nudge retries — too many nudges cause bufferNudgeOnStall spam→stall loop
-                nudgeMaxRetry: isThumbnail ? 3 : 4,
-                maxFragLookUpTolerance: isThumbnail ? 0.4 : 0.05,
-                manifestLoadingTimeOut: isThumbnail ? 4000 : 10000,
-                manifestLoadingMaxRetry: 3,
-                manifestLoadingRetryDelay: isThumbnail ? 200 : 300,
-                levelLoadingTimeOut: isThumbnail ? 3000 : 10000,
-                levelLoadingMaxRetry: 2,
-                levelLoadingRetryDelay: isThumbnail ? 200 : 300,
-                fragLoadingTimeOut: isThumbnail ? 3000 : (isFlixHq ? 15000 : (isAnimeKai ? 18000 : 14000)),
-                // Fewer fragment retries — fail fast so we can rebuild in-place instead of stalling
-                fragLoadingMaxRetry: isThumbnail ? 2 : (isAnimeKai ? 4 : 3),
-                fragLoadingRetryDelay: isThumbnail ? 200 : 500,
-                fragLoadingMaxRetryTimeout: isThumbnail ? 1000 : 6000,
-                startLevel: isThumbnail ? 0 : (prefersFastStart ? 0 : -1),
-                abrEwmaDefaultEstimate: mobileMain ? 1000000 : 1500000,
-                abrEwmaFastVoD: mobileMain ? 2.5 : 3,
-                abrEwmaSlowVoD: mobileMain ? 9 : 10,
-                abrBandWidthFactor: mobileMain ? 0.7 : 0.8,
-                abrBandWidthUpFactor: mobileMain ? 0.28 : 0.45,
-                abrMaxWithRealBitrate: true,
-                ignoreDevicePixelRatio: true,
-                capLevelToPlayerSize: true,
-                capLevelOnFPSDrop: true,
-                appendErrorMaxRetry: 4,
-                // Do not force a specific AAC profile. Some FlixHQ variants advertise
-                // different audio codecs and forcing mp4a.40.2 can produce robotic audio.
                 audioCodec: undefined,
-                maxAudioFramesDrift: isThumbnail ? 2 : (isFlixHq ? 3 : 1),
+                maxAudioFramesDrift: isThumbnail ? 2 : (isFlixHq || isVega ? 4 : 1),
+                maxBufferHole: isThumbnail ? 0.1 : (isVega ? 0.08 : (isAnimeKai ? 0.6 : 0.3)),
                 startFragPrefetch: !isThumbnail && !isAnimeKai,
                 testBandwidth: !isThumbnail,
                 progressive: true,
-                maxStarvationDelay: isThumbnail ? 2 : (isFlixHq ? 8 : 4),
-                maxLoadingDelay: isThumbnail ? 2 : (isFlixHq ? 8 : 4),
+                // Aggressive recovery for skips and stalls
+                nudgeMaxRetries: isVega ? 15 : 5,
+                nudgeOffset: isVega ? 0.1 : 0.1,
+                maxFragLookUpTolerance: isVega ? 0.05 : 0.2,
+                highBufferWatchdogPeriod: isVega ? 2 : 3,
+                maxStarvationDelay: isThumbnail ? 2 : (isVega ? 12 : (isFlixHq ? 8 : 4)),
+                maxLoadingDelay: isThumbnail ? 2 : (isVega ? 12 : (isFlixHq ? 8 : 4)),
                 xhrSetup: (xhr, url) => {
-                    xhr.timeout = isThumbnail ? 5000 : (isAnimeKai ? 22000 : (isFlixHq ? 18000 : 18000));
+                    xhr.timeout = isThumbnail ? 5000 : (isVega ? 25000 : (isAnimeKai ? 22000 : 18000));
                 },
             });
         }
@@ -4355,20 +4329,26 @@
 
         function getInitialTvPositionFromUrl(seasons) {
             const safeSeasons = Array.isArray(seasons) ? seasons : [];
+            const currentParams = new URLSearchParams(location.search);
+            const currentSeason = Number(currentParams.get('season') || 0);
+            const currentEpisode = Number(currentParams.get('episode') || currentParams.get('ep') || 0);
             let si = 0;
             let ei = 0;
             let matchedExplicitSeasonRef = false;
-            if (URL_SEASON_KEY) {
+
+            if (currentParams.get('seasonKey')) {
+                const sKey = String(currentParams.get('seasonKey')).trim().toLowerCase();
                 const bySeasonKey = safeSeasons.findIndex((s) =>
-                    String(s?.providerAnimeId || '').trim().toLowerCase() === URL_SEASON_KEY
+                    String(s?.providerAnimeId || '').trim().toLowerCase() === sKey
                 );
                 if (bySeasonKey >= 0) {
                     si = bySeasonKey;
                     matchedExplicitSeasonRef = true;
                 }
             }
-            if (URL_SEASON_TITLE) {
-                const wantedSeasonTitle = normalizeSeasonSearchLabel(URL_SEASON_TITLE).toLowerCase();
+            if (currentParams.get('seasonTitle')) {
+                const sTitle = String(currentParams.get('seasonTitle')).trim();
+                const wantedSeasonTitle = normalizeSeasonSearchLabel(sTitle).toLowerCase();
                 const bySeasonTitle = safeSeasons.findIndex((s) =>
                     normalizeSeasonSearchLabel(String(s?.name || '')).toLowerCase() === wantedSeasonTitle
                 );
@@ -4377,42 +4357,48 @@
                     matchedExplicitSeasonRef = true;
                 }
             }
-            if (Number.isFinite(URL_SEASON) && URL_SEASON > 0 && !matchedExplicitSeasonRef) {
+            if (Number.isFinite(currentSeason) && currentSeason > 0 && !matchedExplicitSeasonRef) {
                 const bySeasonNo = safeSeasons.findIndex((s) => {
-                    return Number(s?.seasonNo || 0) === URL_SEASON;
+                    return Number(s?.seasonNo || 0) === currentSeason;
                 });
                 if (bySeasonNo >= 0) {
                     si = bySeasonNo;
                 } else {
-                    si = Math.max(0, Math.min(safeSeasons.length - 1, URL_SEASON - 1));
+                    // Use the requested season minus 1 as the index, even if it's beyond the safeSeasons length.
+                    // This allows fetchSources to still derive the correct selectedSeasonNo.
+                    si = currentSeason - 1;
                 }
-            } else if (Number.isFinite(RESUME_SEASON_FALLBACK) && RESUME_SEASON_FALLBACK > 0 && !matchedExplicitSeasonRef) {
-                const byResumeSeasonNo = safeSeasons.findIndex((s) => Number(s?.seasonNo || 0) === RESUME_SEASON_FALLBACK);
+            } else if (Number.isFinite(window.RESUME_SEASON_FALLBACK) && window.RESUME_SEASON_FALLBACK > 0 && !matchedExplicitSeasonRef) {
+                const byResumeSeasonNo = safeSeasons.findIndex((s) => Number(s?.seasonNo || 0) === window.RESUME_SEASON_FALLBACK);
                 if (byResumeSeasonNo >= 0) {
                     si = byResumeSeasonNo;
                 }
             }
+            
             const eps = safeSeasons[si]?.episodes || [];
-            if (Number.isFinite(URL_EPISODE) && URL_EPISODE > 0) {
+            if (Number.isFinite(currentEpisode) && currentEpisode > 0) {
                 const byEpisodeNo = eps.findIndex((ep) => {
                     const n = Number(ep?.episode || ep?.number || ep?.episodeNum || 0);
-                    return Number.isFinite(n) && n === URL_EPISODE;
+                    return Number.isFinite(n) && n === currentEpisode;
                 });
                 if (byEpisodeNo >= 0) {
                     ei = byEpisodeNo;
                 } else {
-                    ei = Math.max(0, Math.min(eps.length - 1, URL_EPISODE - 1));
+                    // Use requested episode minus 1 as index
+                    ei = currentEpisode - 1;
                 }
-            } else if (Number.isFinite(RESUME_EPISODE_FALLBACK) && RESUME_EPISODE_FALLBACK > 0) {
+            } else if (Number.isFinite(window.RESUME_EPISODE_FALLBACK) && window.RESUME_EPISODE_FALLBACK > 0) {
                 const byResumeEpisodeNo = eps.findIndex((ep) => {
                     const n = Number(ep?.episode || ep?.number || ep?.episodeNum || 0);
-                    return Number.isFinite(n) && n === RESUME_EPISODE_FALLBACK;
+                    return Number.isFinite(n) && n === window.RESUME_EPISODE_FALLBACK;
                 });
                 if (byResumeEpisodeNo >= 0) {
                     ei = byResumeEpisodeNo;
                 }
             }
-            return { seasonIndex: si, episodeIndex: ei };
+            
+            // Ensure indices are at least 0
+            return { seasonIndex: Math.max(0, si), episodeIndex: Math.max(0, ei) };
         }
 
         function buildTvSeasonsFromInfo(info) {
@@ -5150,48 +5136,6 @@
             return empty;
         }
 
-        async function resolveDramacoolEpisodeId(title, seasonNo, episodeNo, timeoutMs) {
-            const dramaBase = API_BASE.replace('/meta/tmdb', '/movies/dramacool');
-            const targetNo = Number(episodeNo || 1);
-            
-            // Try specific episode searches
-            const searchTerms = [
-                `${title} episode ${targetNo}`,
-                `${title} ep ${targetNo}`,
-                title
-            ];
-
-            for (const term of searchTerms) {
-               try {
-                   const { res: sRes } = await fetchJsonWithApiFallback(`${dramaBase}/${encodeURIComponent(term)}`, { signal: AbortSignal.timeout(timeoutMs) });
-                   if (!sRes.ok) continue;
-                   const payload = await sRes.json();
-                   const rows = Array.isArray(payload?.results) ? payload.results : [];
-                   if (!rows.length) continue;
-
-                   const picked = rows[0];
-                   if (!picked?.id) continue;
-
-                   // Get info to find specific episode ID
-                   const { res: iRes } = await fetchJsonWithApiFallback(`${dramaBase}/info?id=${encodeURIComponent(picked.id)}`, { signal: AbortSignal.timeout(timeoutMs) });
-                   if (!iRes.ok) continue;
-
-                   let info = await iRes.json();
-                   if (info?.data) info = info.data;
-                   const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
-                   
-                   const target = episodes.find(ep => 
-                        Number(ep.episode || ep.number || ep.episodeNum || 0) === targetNo
-                   ) || episodes[targetNo - 1] || episodes[0];
-
-                   if (target?.id) {
-                       console.log('[dramacool] resolved via search:', target.id);
-                       return { info, episodeId: target.id };
-                   }
-               } catch (_) {}
-            }
-            return null;
-        }
 
         function goBackToHome() {
             location.href = 'index.html';
@@ -5981,7 +5925,7 @@
             }
 
             const providerLower = String(provider || '').toLowerCase();
-            const supportsMovieToTvFallback = !['flixhq', 'dramacool'].includes(providerLower);
+            const supportsMovieToTvFallback = !['flixhq'].includes(providerLower);
             if (
                 allowTypeFallback &&
                 supportsMovieToTvFallback &&
@@ -7429,6 +7373,11 @@
                 ? episodeNoRaw
                 : (Number(curEpisode || 0) + 1);
 
+            // Capture the active display label for virtual audio tracks (e.g. Vegamovies Hindi/Tamil)
+            const activeVegaLabel = (activeSatoruTrackIndex >= 0 && satoruAudioSources[activeSatoruTrackIndex]?.label)
+                ? satoruAudioSources[activeSatoruTrackIndex].label
+                : '';
+
             const item = {
                 id: TMDB_ID,
                 type: MEDIA_TYPE,
@@ -7442,7 +7391,8 @@
                 episodeNo,
                 seasonIndex: Number(curSeason || 0),
                 episodeIndex: Number(curEpisode || 0),
-                audio: preferredAudioToken || ''
+                audio: preferredAudioToken || '',
+                audioLabel: activeVegaLabel || preferredAudioToken || ''
             };
 
             let list = [];
@@ -8636,7 +8586,12 @@
             if (showPlayerTracks) {
                 hlsTracks.forEach((track) => {
                     let label = track.name || track.lang || 'Default';
-                    if (label === 'Default' || label === 'und') label = 'Japanese';
+                    const isGeneric = label.toLowerCase() === 'default' || label.toLowerCase() === 'und' || label.toLowerCase() === 'auto';
+                    
+                    // Skip generic 'auto'/'und' tracks if we have virtual tracks from Vegamovies/Satoru
+                    if (isGeneric && hasSatoruSources) return;
+
+                    if (isGeneric) label = 'Japanese';
                     const isActive = track.id === currentHlsTrack;
                     addItem(label, isActive, () => {
                         if (hlsInst) {
@@ -8717,7 +8672,13 @@
                         hlsSessionIsFragile = false;
                         pendingJumpTarget = null;
 
-                        if (!isOnSatoru) {
+                        const urlChanged = src.url !== currentStreamUrl;
+
+                        if (!isOnSatoru || urlChanged) {
+                            // Update global state immediately so subsequent switches register the new URL
+                            currentStreamUrl = src.url;
+                            currentStreamReferer = src.referer;
+                            
                             // Ultra-fast zero-lag audio track switching
                             if (src.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
                                 const currentTime = Math.max(0, Number(video?.currentTime || 0));
@@ -10216,8 +10177,10 @@
                     activeProviders = [FORCED_PROVIDER];
                 } else if (MEDIA_TYPE === 'movie') {
                     activeProviders = [...MOVIE_PROVIDERS];
+                } else if (MEDIA_TYPE === 'tv') {
+                    activeProviders = ['vegamovies', 'flixhq', ...ANIME_PROVIDERS];
                 } else {
-                    activeProviders = ['animesalt', 'flixhq', 'dramacool', ...ANIME_PROVIDERS.filter((p) => p !== 'animesalt')];
+                    activeProviders = ['vegamovies', 'animesalt', 'flixhq', ...ANIME_PROVIDERS.filter((p) => p !== 'animesalt')];
                 }
                 console.log('activeProviders:', activeProviders, 'FORCED_PROVIDER:', FORCED_PROVIDER);
                 buildChips();
@@ -10231,7 +10194,7 @@
                     const epId = info?.episodeId || info?.id || null;
                     // Some provider-specific TMDB info responses omit episodeId/id.
                     // fetchSources() resolves provider episode IDs independently via search/info paths.
-                    await fetchSources(epId);
+                    await fetchSources(null);
                 }
             } catch (err) {
                 clearTimeout(safetyTimer);
@@ -10719,6 +10682,45 @@
             }
 
             tvSeasons = dedupeTvSeasonEntries(tvSeasons, currentIsLikelyAnime);
+
+            // If the URL requests a season/episode that isn't in our metadata (common for Vegamovies extra seasons),
+            // synthesize it so the player doesn't clamp back to Season 1.
+            const urlParamsForInjection = new URLSearchParams(location.search);
+            const injectionS = Number(urlParamsForInjection.get('season') || 0);
+            const injectionE = Number(urlParamsForInjection.get('episode') || urlParamsForInjection.get('ep') || 0);
+            if (injectionS > 0 && !tvSeasons.some(s => Number(s.seasonNo) === injectionS)) {
+                console.warn(`[initTv] URL requested Season ${injectionS} but it's not in metadata. Injecting virtual season.`);
+                const injectedEpisodes = [];
+                for (let i = 1; i <= Math.max(24, injectionE); i++) {
+                    injectedEpisodes.push({
+                        episode: i,
+                        number: i,
+                        episodeNum: i,
+                        title: `Episode ${i}`,
+                        id: null
+                    });
+                }
+                tvSeasons.push({
+                    seasonNo: injectionS,
+                    name: `Season ${injectionS}`,
+                    episodes: injectedEpisodes
+                });
+                tvSeasons.sort((a,b) => (a.seasonNo || 0) - (b.seasonNo || 0));
+            } else if (injectionS > 0) {
+                // Season exists, check if episode exists
+                const targetS = tvSeasons.find(s => Number(s.seasonNo) === injectionS);
+                if (targetS && injectionE > 0 && !targetS.episodes.some(ep => Number(ep.episode || ep.number) === injectionE)) {
+                    console.warn(`[initTv] URL requested Episode ${injectionE} but it's not in Season ${injectionS} metadata. Injecting virtual episode.`);
+                    targetS.episodes.push({
+                        episode: injectionE,
+                        number: injectionE,
+                        episodeNum: injectionE,
+                        title: `Episode ${injectionE}`,
+                        id: null
+                    });
+                    targetS.episodes.sort((a,b) => (a.episode || a.number || 0) - (b.episode || b.number || 0));
+                }
+            }
 
             buildEpPanel();
             epBtn.style.display = 'flex';
@@ -11472,6 +11474,14 @@
         async function playTvEp(si, ei, startTime = null) {
             curSeason = si; curEpisode = ei;
             pendingEpisodeStartTime = Number.isFinite(startTime) ? Number(startTime) : null;
+            
+            // Clear 'satoru' lock when switching episodes to allow fresh provider resolution
+            // Satoru is often a virtual provider used for multi-language tracks; locking it
+            // across episodes can break playback if the next episode lacks those sources.
+            if (String(FORCED_PROVIDER || '').toLowerCase() === 'satoru') {
+                FORCED_PROVIDER = '';
+            }
+
             updateEpisodeUrlState(false);
             const season = tvSeasons[si];
             const ep = (season?.episodes || [])[ei];
@@ -11498,7 +11508,13 @@
         // -----------------------------------------------------------------------
         //  FETCH SOURCES - per-provider: get that provider's own episodeId, then watch
         // -----------------------------------------------------------------------
-        async function fetchSources(_unused) {
+        async function fetchSources(forcedProviderOverride = null) {
+            if (forcedProviderOverride !== null) FORCED_PROVIDER = forcedProviderOverride;
+            
+            // Re-evaluate if we should use anime logic based on the current forced provider
+            const currentProviders = FORCED_PROVIDER ? [FORCED_PROVIDER] : (MEDIA_TYPE === 'movie' ? MOVIE_PROVIDERS : ANIME_PROVIDERS);
+            currentIsLikelyAnime = (MEDIA_TYPE === 'tv' && currentProviders.some(p => ANIME_PROVIDERS.includes(p)));
+
             allSources.length = 0;
             satoruAudioSources = [];
             currentAudioSource = 'justanime';
@@ -11514,6 +11530,8 @@
             let selectedSeasonNo = Number.isFinite(selectedSeasonNoRaw) && selectedSeasonNoRaw > 0
                 ? selectedSeasonNoRaw
                 : (curSeason + 1);
+            const selectionHint = pendingEpisodeSelectionHint;
+            pendingEpisodeSelectionHint = null;
             const selectedEpisodeNoRaw = Number(
                 selectedEpisode?.episode || selectedEpisode?.number || selectedEpisode?.episodeNum,
             );
@@ -11521,8 +11539,6 @@
                 ? selectedEpisodeNoRaw
                 : (curEpisode + 1);
 
-            const selectionHint = pendingEpisodeSelectionHint;
-            pendingEpisodeSelectionHint = null;
             const hintedProvider = String(selectionHint?.provider || '').trim().toLowerCase();
             const forcedProviderRaw = String(FORCED_PROVIDER || '').trim().toLowerCase();
             const effectiveForcedProvider = (() => {
@@ -11541,6 +11557,10 @@
                 if (Number.isFinite(hintSeasonNo) && hintSeasonNo > 0) selectedSeasonNo = hintSeasonNo;
                 if (Number.isFinite(hintEpisodeNo) && hintEpisodeNo > 0) selectedEpisodeNo = hintEpisodeNo;
             }
+
+            // Define which providers to search
+            let providersToTry = activeProviders;
+            let wasForced = !!FORCED_PROVIDER;
 
             // If the selected episode already carries a provider-style SxE id,
             // trust that mapping over derived season/episode counters.
@@ -11623,12 +11643,12 @@
                     // Extract VegaMovies language variants as virtual audio tracks.
                     // Include non-HLS direct sources too so language switching works broadly.
                     const vegamoviesSources = allSources.filter((s) => {
+                        const prov = String(s?.provider || '').toLowerCase();
                         const low = String(s?.url || '').toLowerCase();
                         return (
-                            s.provider === 'vegamovies' &&
+                            prov === 'vegamovies' &&
                             !s.isEmbed &&
                             !!s.url &&
-                            !low.includes('/playlist/') &&
                             !low.endsWith('.txt') &&
                             !low.includes('.txt?')
                         );
@@ -11638,10 +11658,11 @@
                         satoruAudioSources = vegamoviesSources
                             .map((src) => {
                                 const rawLabel = String(src.label || '').trim();
-                                const languageLabel = rawLabel.includes(' - ')
-                                    ? rawLabel.split(' - ').slice(1).join(' - ').trim()
-                                    : rawLabel;
-                                const label = languageLabel || `Audio ${seenLabels.size + 1}`;
+                                const parts = rawLabel.split(' - ').filter(p => {
+                                    const clean = p.trim().toLowerCase();
+                                    return clean !== 'vegamovies' && clean !== 'vegamovie' && !/^\d+p$/i.test(clean);
+                                });
+                                const label = parts.length > 0 ? parts[0].trim() : `Audio ${seenLabels.size + 1}`;
                                 const key = label.toLowerCase();
                                 if (seenLabels.has(key)) return null;
                                 seenLabels.add(key);
@@ -11849,9 +11870,6 @@
                             } else if (MEDIA_TYPE === 'tv' && canUseSelectedEpisodeId) {
                                 provEpisodeId = selectedEpisodeId;
                             }
-                        } else if (provider === 'dramacool') {
-                            const resolved = await resolveDramacoolEpisodeId(currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo, getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo));
-                            provEpisodeId = resolved?.episodeId;
                         }
                         if (!provEpisodeId && !isFlixhqProvider && !isVegamoviesProvider) {
                             const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, MEDIA_TYPE, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
@@ -11894,6 +11912,7 @@
                                 vegaTmdbWatchParams.set('episode', String(selectedEpisodeNo || 1));
                             }
                             if (DIRECT_ONLY) vegaTmdbWatchParams.set('directOnly', 'true');
+                            console.log('[Vegamovies] Requesting watch URL:', `${API_BASE}/watch?${vegaTmdbWatchParams.toString()}`);
                             watchCandidates.push(`${API_BASE}/watch?${vegaTmdbWatchParams.toString()}`);
                         }
 
@@ -11915,18 +11934,14 @@
                             if (DIRECT_ONLY) tmdbWatchParams.set('directOnly', 'true');
                             watchCandidates.push(`${API_BASE}/watch?${tmdbWatchParams.toString()}`);
                         }
-                        if (provider === 'dramacool') {
-                            watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
-                        } else {
-                            if (provEpisodeId && !isVegamoviesProvider) {
-                                const mediaIdRaw = String(info?.id || provEpisodeId || '').trim();
-                                const episodeIdRaw = String(provEpisodeId || '').trim();
-                                const mediaId = isNetMirrorProvider ? normalizeNetMirrorId(mediaIdRaw) : mediaIdRaw;
-                                const episodeId = isNetMirrorProvider ? normalizeNetMirrorId(episodeIdRaw) : episodeIdRaw;
-                                watchCandidates.push(
-                                    `${movieBase}/watch?episodeId=${encodeURIComponent(episodeId)}&mediaId=${encodeURIComponent(mediaId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`,
-                                );
-                            }
+                        if (provEpisodeId && !isVegamoviesProvider) {
+                            const mediaIdRaw = String(info?.id || provEpisodeId || '').trim();
+                            const episodeIdRaw = String(provEpisodeId || '').trim();
+                            const mediaId = isNetMirrorProvider ? normalizeNetMirrorId(mediaIdRaw) : mediaIdRaw;
+                            const episodeId = isNetMirrorProvider ? normalizeNetMirrorId(episodeIdRaw) : episodeIdRaw;
+                            watchCandidates.push(
+                                `${movieBase}/watch?episodeId=${encodeURIComponent(episodeId)}&mediaId=${encodeURIComponent(mediaId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`,
+                            );
                         }
                     }
 
@@ -12083,6 +12098,12 @@
             } else {
                 await Promise.all(orderedProviders.map(p => processProvider(p)));
             }
+            
+            if (wasForced && allSources.length === 0) {
+                console.log('Forced provider failed. Falling back to all providers.');
+                const fallbackProviders = activeProviders.filter(p => p !== effectiveForcedProvider);
+                await Promise.all(fallbackProviders.map(p => processProvider(p)));
+            }
 
             if (allSources.length === 0) {
                 showError('No Streams Found', `None of the providers could find a stream for this title.\n\nDetails:\n- ${failReasons.slice(0, 5).join('\n- ')}`);
@@ -12094,7 +12115,6 @@
         function providerLabel(p) {
             const map = {
                 flixhq: 'FlixHQ',
-                dramacool: 'DramaCool',
                 satoru: 'Satoru',
                 justanime: 'JustAnime',
                 animesalt: 'AnimeSalt',
@@ -12237,6 +12257,23 @@
 
         function buildSourcePanel() {
             sourcePanel.innerHTML = `<div class="panel-label">Select Server</div>`;
+            
+            // Add Reset to Auto option
+            const autoItem = document.createElement('div');
+            autoItem.className = `src-item ${!FORCED_PROVIDER ? 'active' : ''}`;
+            autoItem.innerHTML = `<span class="src-dot"></span><b>Auto (Recommended)</b>`;
+            autoItem.onclick = () => {
+                if (FORCED_PROVIDER) {
+                    FORCED_PROVIDER = '';
+                    sourcePanel.classList.remove('open');
+                    syncUrlState(); 
+                    fetchSources(null);
+                } else {
+                    sourcePanel.classList.remove('open');
+                }
+            };
+            sourcePanel.appendChild(autoItem);
+
             allSources.forEach((src, i) => {
                 const item = document.createElement('div');
                 // Use currentIdx to preserve active highlight when list rebuilds after new provider arrives
