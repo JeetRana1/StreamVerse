@@ -2542,6 +2542,10 @@
             RUNTIME_CONFIG.FALLBACK_META_API_BASE ||
             'https://consumet-api.vercel.app/meta/tmdb'
         );
+        const STREAM_API_BASE = String(
+            RUNTIME_CONFIG.STREAM_API_BASE ||
+            'https://convinced-nara-personal122-7da52759.koyeb.app/api/v1'
+        ).replace(/\/$/, '');
         const DEFAULT_META_API = PROD_META_API;
         const PARAMS_BOOT = new URLSearchParams(location.search);
         const requestedApiSource = String(PARAMS_BOOT.get('apiSource') || '').toLowerCase();
@@ -2588,6 +2592,181 @@
                 const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
                 return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(url)}${ref}`;
             } catch (_) { return url; }
+        }
+
+        function pickPlayableUrlFromPayload(payload) {
+            const candidates = [
+                payload?.url,
+                payload?.link,
+                payload?.stream,
+                payload?.data?.url,
+                payload?.data?.link,
+                payload?.data?.stream,
+                payload?.data?.file,
+                payload?.result?.url,
+                payload?.result?.link,
+                payload?.result?.stream,
+            ];
+            for (const candidate of candidates) {
+                const value = String(candidate || '').trim();
+                if (/^https?:\/\//i.test(value)) return value;
+            }
+            return '';
+        }
+
+        function extractFileAndKeyFromSource(source) {
+            const src = source || {};
+            const directFile = String(src.file || src.streamFile || src.sourceFile || '').trim();
+            const directKey = String(src.key || src.streamKey || src.sourceKey || '').trim();
+            if (directFile && directKey) return { file: directFile, key: directKey };
+
+            const rawUrl = String(src.url || '').trim();
+            if (!rawUrl) return { file: '', key: '' };
+            try {
+                const parsed = new URL(rawUrl);
+                const file = String(parsed.searchParams.get('file') || '').trim();
+                const key = String(parsed.searchParams.get('key') || '').trim();
+                return { file, key };
+            } catch (_) {
+                return { file: '', key: '' };
+            }
+        }
+
+        function extractFirstPlayableUrlFromText(rawText) {
+            const text = String(rawText || '');
+            if (!text) return '';
+            const explicitMedia = text.match(/https?:\/\/[^\s"'<>]+(?:\.m3u8|\.mp4)(?:\?[^\s"'<>]*)?/i);
+            if (explicitMedia?.[0]) return explicitMedia[0];
+            const general = text.match(/https?:\/\/[^\s"'<>]+/ig) || [];
+            for (const candidate of general) {
+                const low = String(candidate || '').toLowerCase();
+                if (low.includes('ads') || low.includes('banner')) continue;
+                if (low.includes('.m3u8') || low.includes('.mp4') || low.includes('/file/stream/')) return candidate;
+            }
+            return '';
+        }
+
+        function decodeNumericCharcodeString(rawText) {
+            const text = String(rawText || '').trim();
+            if (!text) return '';
+            const tokens = text.split(/\s+/).filter((token) => /^\d{1,3}$/.test(token));
+            if (tokens.length < 8) return '';
+            try {
+                return tokens.map((token) => String.fromCharCode(Number(token))).join('');
+            } catch (_) {
+                return '';
+            }
+        }
+
+        function extractPlayableFromRedirectPayload(rawText) {
+            const decoded = decodeNumericCharcodeString(rawText);
+            if (!decoded) return '';
+            const playable = extractFirstPlayableUrlFromText(decoded);
+            if (playable) return playable;
+            try {
+                const apiOrigin = activeApiBase.split('/meta/tmdb')[0];
+                const match = decoded.match(/\/utils\/proxy\?url=([^\s"']+)/i);
+                if (!match?.[1]) return '';
+                return `${apiOrigin}/utils/proxy?url=${match[1]}`;
+            } catch (_) {
+                return '';
+            }
+        }
+
+        async function resolveVegamoviesSource(source, fallbackReferer = '') {
+            const src = source ? { ...source } : {};
+            const rawUrl = String(src.url || '').trim();
+            const referer = String(src.referer || fallbackReferer || '').trim();
+
+            try {
+                const { file, key } = extractFileAndKeyFromSource(src);
+                if (file && key) {
+                    const resolverEndpoints = ['/api/getStream', `${STREAM_API_BASE}/getStream`];
+                    for (const endpoint of resolverEndpoints) {
+                        try {
+                            const resolveResp = await fetch(endpoint, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    file,
+                                    key,
+                                    referer,
+                                }),
+                                signal: AbortSignal.timeout(12000),
+                            });
+                            if (!resolveResp.ok) continue;
+                            const payload = await resolveResp.json();
+                            const playable = pickPlayableUrlFromPayload(payload);
+                            if (playable) {
+                                src.url = playable;
+                                if (!src.referer && referer) src.referer = referer;
+                                src.isM3U8 = src.isM3U8 || /\.m3u8(\?|$)/i.test(playable);
+                                return src;
+                            }
+                        } catch (_) {
+                            // try next resolver endpoint
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('[vegamovies] getStream resolution failed:', err?.message || err);
+            }
+
+            const low = rawUrl.toLowerCase();
+            const shouldUnwrapText =
+                !!rawUrl &&
+                (
+                    (low.includes('/playlist/') && low.includes('.txt')) ||
+                    low.includes('/file/stream/') ||
+                    low.includes('.txt?') ||
+                    low.endsWith('.txt')
+                );
+
+            if (!shouldUnwrapText) return src;
+
+            try {
+                const probeUrl = getProxiedUrl(rawUrl, referer);
+                const probeRes = await fetch(probeUrl, {
+                    method: 'GET',
+                    signal: AbortSignal.timeout(12000),
+                });
+                if (!probeRes.ok) return src;
+                const bodyText = await probeRes.text();
+                if (!bodyText) return src;
+
+                const normalizedText = String(bodyText || '').trim();
+                if (/^#EXTM3U/i.test(normalizedText)) {
+                    src.url = rawUrl;
+                    src.isM3U8 = true;
+                    if (!src.referer && referer) src.referer = referer;
+                    return src;
+                }
+
+                const embeddedUrl = extractFirstPlayableUrlFromText(normalizedText);
+                const redirectedPlayable = extractPlayableFromRedirectPayload(normalizedText);
+                const resolvedUrl = embeddedUrl || redirectedPlayable;
+                if (resolvedUrl) {
+                    src.url = resolvedUrl;
+                    src.isM3U8 = /\.m3u8(\?|$)/i.test(resolvedUrl);
+                    src.isEmbed = src.isEmbed ?? (!src.isM3U8 && !/\.mp4(\?|$)/i.test(resolvedUrl));
+                    if (!src.referer && referer) src.referer = referer;
+                }
+            } catch (err) {
+                console.warn('[vegamovies] tokenized source unwrap failed:', err?.message || err);
+            }
+
+            return src;
+        }
+
+        async function normalizeProviderSources(provider, rows, fallbackReferer = '') {
+            if (!Array.isArray(rows) || !rows.length) return [];
+            if (String(provider || '').toLowerCase() !== 'vegamovies') return rows;
+
+            const normalized = [];
+            for (const row of rows) {
+                normalized.push(await resolveVegamoviesSource(row, fallbackReferer));
+            }
+            return normalized;
         }
         let preferredSourceLabelMatch = PARAMS_BOOT.get('audio') || null; // Persistence for Sub/Dub preference
         if (preferredSourceLabelMatch && !['subbed', 'dubbed'].includes(preferredSourceLabelMatch.toLowerCase())) {
@@ -2699,7 +2878,7 @@
         }
 
         // Provider pools
-        const MOVIE_PROVIDERS = ['flixhq', 'animekai', 'animesalt', 'justanime', 'dramacool'];
+        const MOVIE_PROVIDERS = ['flixhq', 'animekai', 'animesalt', 'justanime', 'dramacool', 'vegamovies'];
         const ANIME_PROVIDERS = ['animesalt', 'animekai', 'satoru', 'justanime'];
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime'];
 
@@ -2821,6 +3000,16 @@
         let currentIsLikelyAnime = false;
         let activeProviders = [...MOVIE_PROVIDERS]; // Initialize with movie providers; refined in init() later
         let preferredAudioToken = URL_AUDIO || '';
+        const initialProviderName = String(params.get('provider') || '').trim().toLowerCase();
+        if (initialProviderName === 'vegamovies') {
+            preferredSourceLabelMatch = null;
+            preferredAudioToken = '';
+        }
+
+        function isVegamoviesPlaybackProvider() {
+            const provider = String(FORCED_PROVIDER || currentStreamProvider || lastSuccessfulProvider || '').trim().toLowerCase();
+            return provider === 'vegamovies';
+        }
 
         let headerTimer;
         let controlsHideTimer;
@@ -2880,6 +3069,9 @@
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
             dramacool: { watch: 20000, directWatch: 15000 },
+            // VegaMovies extraction may need extra time because the backend clicks
+            // language buttons and resolves each resulting stream URL.
+            vegamovies: { watch: 90000, metaInfo: 30000 },
             // Optimized FlixHQ timeouts for faster fetching
             flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 15000, metaInfo: 15000 },
         };
@@ -3413,6 +3605,10 @@
 
             if (tracks.length === 0) return;
 
+            // Vegamovies sources already ship with the intended audio; forcing a
+            // generic preference here can lock the player onto the wrong track.
+            if (isVegamoviesPlaybackProvider()) return;
+
             const activeSourceProvider = String(allSources?.[currentIdx]?.provider || '').toLowerCase();
             const shouldForceOriginalTrack =
                 currentAudioSource !== 'satoru' &&
@@ -3637,6 +3833,7 @@
                 const isBufferFull = d?.details === Hls.ErrorDetails.BUFFER_FULL_ERROR;
                 const isFragLoad = detailText.includes('fragloaderror') || d?.details === Hls.ErrorDetails.FRAG_LOAD_ERROR;
                 const isLevelLoad = detailText.includes('levelloadtimeout') || detailText.includes('levelloadererror') || d?.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR || d?.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT;
+                const isManifestParsing = detailText.includes('manifestparsingerror') || d?.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
                 const isFlixHqStream = isCurrentFlixHqStream();
                 const isAudioPipelineIssue =
                     detailText.includes('audio') ||
@@ -3882,6 +4079,11 @@
 
                 // ── Fatal media / other errors ──
                 if (d.fatal) {
+                    if (isManifestParsing && typeof onErrorFallback === 'function') {
+                        console.warn('[hls] Fatal manifest parsing error, requesting source fallback.');
+                        onErrorFallback('fatal_manifest_parse');
+                        return;
+                    }
                     if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
                         const code = d.response ? d.response.code : 0;
                         if (code === 404 || code === 403 || code >= 500) {
@@ -4037,7 +4239,7 @@
             });
         }
 
-        function svSwitchHlsSourceSilent(url, referer, onReady, explicitTargetTime = null, forceRebuild = false) {
+        function svSwitchHlsSourceSilent(url, referer, onReady, explicitTargetTime = null, forceRebuild = false, sourceIdx = currentIdx) {
             if (!video) return;
             const savedTime = video.currentTime;
             const targetTime = Math.max(0, Number(
@@ -4129,13 +4331,14 @@
             }, 1400);
             setTimeout(() => {
                 if (!video || escalatedToHardReload) return;
+                if (currentIdx !== sourceIdx) return;
                 if (Date.now() < audioSwitchInFlightUntil) return;
                 const stillBroken = !isFinite(video.duration) || video.duration <= 0 || (video.readyState < 2 && Math.abs(video.currentTime || 0) < 0.5);
                 if (stillBroken) {
                     escalatedToHardReload = true;
                     console.warn('[hls] Silent recovery still unhealthy, escalating to hard reload at target time.');
                     pendingJumpTarget = { time: targetTime, reason: pendingJumpTarget?.reason || 'seek' };
-                    loadStream(url, true, false, referer, currentIdx, targetTime);
+                    loadStream(url, true, false, referer, sourceIdx, targetTime);
                 }
             }, 2200);
             setTimeout(hideTransitionOverlay, 8000);
@@ -6191,6 +6394,9 @@
             if (provider === 'flixhq') return false;
             // AnimeKai direct hosts are sensitive to parallel segment requests.
             if (provider === 'animekai') return false;
+            // Vegamovies often returns tokenized playlist .txt URLs that are not stable enough
+            // for a second HLS session; keep preview in canvas-only mode to avoid extra failures.
+            if (provider === 'vegamovies') return false;
             if (
                 raw.includes('bluehorizon') ||
                 raw.includes('mistwolf') ||
@@ -8463,28 +8669,29 @@
             
             if (isOnSatoru) {
                 // Return to original JustAnime track
-                addItem('Japanese (Alt Source)', false, () => {
-                    const jaSource = allSources.find((s) => s.provider === 'justanime');
-                    if (!jaSource) return;
-                    const resumeAt = Math.max(0, Number(video?.currentTime || 0));
-                    audioSwitchInFlightUntil = Date.now() + 9000;
-                    hlsFragErrorBurst = 0;
-                    hlsSessionIsFragile = false;
-                    pendingJumpTarget = null;
-                    currentAudioSource = 'justanime';
-                    activeSatoruTrackIndex = -1;
-                    rememberProviderPreference('justanime');
-                    syncUrlState();
-                    if (jaSource.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
-                        svSwitchHlsSourceSilent(jaSource.url, jaSource.referer, () => { }, resumeAt);
-                    } else {
-                        loadStream(jaSource.url, !!jaSource.isM3U8, !!jaSource.isEmbed, jaSource.referer, currentIdx, resumeAt);
-                    }
-                });
+                const jaSource = allSources.find((s) => s.provider === 'justanime');
+                if (jaSource) {
+                    addItem('Japanese (Alt Source)', false, () => {
+                        const resumeAt = Math.max(0, Number(video?.currentTime || 0));
+                        audioSwitchInFlightUntil = Date.now() + 9000;
+                        hlsFragErrorBurst = 0;
+                        hlsSessionIsFragile = false;
+                        pendingJumpTarget = null;
+                        currentAudioSource = 'justanime';
+                        activeSatoruTrackIndex = -1;
+                        rememberProviderPreference('justanime');
+                        syncUrlState();
+                        if (jaSource.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
+                            svSwitchHlsSourceSilent(jaSource.url, jaSource.referer, () => { }, resumeAt);
+                        } else {
+                            loadStream(jaSource.url, !!jaSource.isM3U8, !!jaSource.isEmbed, jaSource.referer, currentIdx, resumeAt);
+                        }
+                    });
+                }
             }
 
-            // Virtual Satoru tracks
-            const showVirtualSatoruTracks = hasSatoruSources && (!isOnSatoru || !!hlsInst);
+            // Virtual source-backed tracks (used for multi-language variants)
+            const showVirtualSatoruTracks = hasSatoruSources;
             if (showVirtualSatoruTracks) {
                 satoruAudioSources.forEach((src, idx) => {
                     const isActive = isOnSatoru && activeSatoruTrackIndex === idx;
@@ -8564,8 +8771,13 @@
                                 loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt);
                             }
                         } else {
-                            svApplyPreferredAudioToHls(hlsInst);
-                            updateAudioTracks();
+                            if (hlsInst && src.isM3U8) {
+                                svApplyPreferredAudioToHls(hlsInst);
+                                updateAudioTracks();
+                            } else {
+                                // Already on virtual-mode playback with non-HLS source.
+                                loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt);
+                            }
                         }
                     });
                 });
@@ -11382,7 +11594,18 @@
 
                 // Standard sorting: Direct streams (M3U8/MP4) first, then Embeds
                 newAllSources.sort((a, b) => {
-                    const rank = (s) => (s.isEmbed ? 1 : 0);
+                    const rank = (s) => {
+                        const provider = String(s?.provider || '').toLowerCase();
+                        const low = String(s?.url || '').toLowerCase();
+                        // Vegamovies frequently returns tokenized .txt playlist URLs that are
+                        // not valid HLS manifests in browser; push them to the end.
+                        if (provider === 'vegamovies') {
+                            if (s?.isEmbed || low.includes('/play/')) return -2;
+                            if (low.includes('.mp4')) return -1;
+                            if (low.includes('/playlist/') && low.includes('.txt')) return 3;
+                        }
+                        return s.isEmbed ? 1 : 0;
+                    };
                     const r = rank(a) - rank(b);
                     if (r !== 0) return r;
                     if (preferredSourceLabelMatch) {
@@ -11397,6 +11620,55 @@
                 allSources = newAllSources;
                 
                 if (allSources.length > 0) {
+                    // Extract VegaMovies language variants as virtual audio tracks.
+                    // Include non-HLS direct sources too so language switching works broadly.
+                    const vegamoviesSources = allSources.filter((s) => {
+                        const low = String(s?.url || '').toLowerCase();
+                        return (
+                            s.provider === 'vegamovies' &&
+                            !s.isEmbed &&
+                            !!s.url &&
+                            !low.includes('/playlist/') &&
+                            !low.endsWith('.txt') &&
+                            !low.includes('.txt?')
+                        );
+                    });
+                    if (vegamoviesSources.length > 0) {
+                        const seenLabels = new Set();
+                        satoruAudioSources = vegamoviesSources
+                            .map((src) => {
+                                const rawLabel = String(src.label || '').trim();
+                                const languageLabel = rawLabel.includes(' - ')
+                                    ? rawLabel.split(' - ').slice(1).join(' - ').trim()
+                                    : rawLabel;
+                                const label = languageLabel || `Audio ${seenLabels.size + 1}`;
+                                const key = label.toLowerCase();
+                                if (seenLabels.has(key)) return null;
+                                seenLabels.add(key);
+                                return {
+                                    label,
+                                    isM3U8: !!src.isM3U8,
+                                    url: src.url,
+                                    referer: src.referer,
+                                    provider: 'vegamovies'
+                                };
+                            })
+                            .filter(Boolean);
+
+                        let keptFirst = false;
+                        allSources = allSources.filter((s) => {
+                            if (s.provider === 'vegamovies' && !s.isEmbed) {
+                                if (!keptFirst) {
+                                    s.label = 'Vegamovies';
+                                    keptFirst = true;
+                                    return true;
+                                }
+                                return false;
+                            }
+                            return true;
+                        });
+                    }
+
                     // Re-sync currentIdx after sort: find where the currently-streaming
                     // URL ended up so the active highlight and index stay accurate.
                     if (currentStreamUrl) {
@@ -11556,6 +11828,7 @@
                         }
                     } else {
                         // Movie/TV Providers (FlixHQ, etc.)
+                        const isVegamoviesProvider = provider === 'vegamovies';
                         const isFlixhqProvider = provider === 'flixhq' && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv');
                         const isLikelyFlixhqProviderEpisodeId = (value) => {
                             const raw = String(value || '').trim().toLowerCase();
@@ -11580,12 +11853,12 @@
                             const resolved = await resolveDramacoolEpisodeId(currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo, getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo));
                             provEpisodeId = resolved?.episodeId;
                         }
-                        if (!provEpisodeId && !isFlixhqProvider) {
+                        if (!provEpisodeId && !isFlixhqProvider && !isVegamoviesProvider) {
                             const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, MEDIA_TYPE, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
                             provEpisodeId = resolved?.episodeId;
                             if (resolved?.info) info = resolved.info;
                         }
-                        if (!provEpisodeId && !isFlixhqProvider) {
+                        if (!provEpisodeId && !isFlixhqProvider && !isVegamoviesProvider) {
                             const { res: infoRes } = await fetchJsonWithApiFallback(`${API_BASE}/info/${TMDB_ID}?type=${MEDIA_TYPE}&provider=${provider}`, { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) });
                             if (infoRes.ok) { 
                                 let d = await infoRes.json(); info = d.data || d; 
@@ -11600,7 +11873,7 @@
                         }
                     }
 
-                    const canResolveOnWatch = provider === 'flixhq' && MEDIA_TYPE === 'tv';
+                    const canResolveOnWatch = (provider === 'flixhq' && MEDIA_TYPE === 'tv') || provider === 'vegamovies';
                     if (!provEpisodeId && !canResolveOnWatch) throw new Error('No episode ID found');
 
                     // Watch (try TMDB provider watch first so backend can resolve missing TV episode IDs)
@@ -11609,13 +11882,27 @@
                         watchCandidates.push(buildAnimeWatchUrl(provider, provEpisodeId));
                     } else {
                         const movieBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
+                        const isVegamoviesProvider = provider === 'vegamovies';
+
+                        if (isVegamoviesProvider) {
+                            const vegaTmdbWatchParams = new URLSearchParams();
+                            vegaTmdbWatchParams.set('id', String(TMDB_ID || ''));
+                            vegaTmdbWatchParams.set('type', String(MEDIA_TYPE || 'movie'));
+                            vegaTmdbWatchParams.set('provider', 'vegamovies');
+                            if (MEDIA_TYPE === 'tv') {
+                                vegaTmdbWatchParams.set('season', String(selectedSeasonNo || 1));
+                                vegaTmdbWatchParams.set('episode', String(selectedEpisodeNo || 1));
+                            }
+                            if (DIRECT_ONLY) vegaTmdbWatchParams.set('directOnly', 'true');
+                            watchCandidates.push(`${API_BASE}/watch?${vegaTmdbWatchParams.toString()}`);
+                        }
 
                         // For FlixHQ with a known provider episode ID, hit direct provider watch first.
                         if (provider === 'flixhq' && provEpisodeId) {
                             watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
                         }
 
-                        if (provider !== 'flixhq' || (provider === 'flixhq' && MEDIA_TYPE === 'tv')) {
+                        if ((provider !== 'flixhq' || (provider === 'flixhq' && MEDIA_TYPE === 'tv')) && !isVegamoviesProvider) {
                             const tmdbWatchParams = new URLSearchParams();
                             tmdbWatchParams.set('id', String(TMDB_ID || ''));
                             tmdbWatchParams.set('type', String(MEDIA_TYPE || 'movie'));
@@ -11631,7 +11918,7 @@
                         if (provider === 'dramacool') {
                             watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
                         } else {
-                            if (provEpisodeId) {
+                            if (provEpisodeId && !isVegamoviesProvider) {
                                 const mediaIdRaw = String(info?.id || provEpisodeId || '').trim();
                                 const episodeIdRaw = String(provEpisodeId || '').trim();
                                 const mediaId = isNetMirrorProvider ? normalizeNetMirrorId(mediaIdRaw) : mediaIdRaw;
@@ -11690,11 +11977,23 @@
                     const primarySources = Array.isArray(data?.sources) ? data.sources : [];
                     const dubSourcesRaw = Array.isArray(animekaiDubData?.sources) ? animekaiDubData.sources : [];
                     const mergedWatchSources = [...primarySources, ...dubSourcesRaw];
+                    const normalizedWatchSources = await normalizeProviderSources(provider, mergedWatchSources, data.headers?.Referer || null);
 
-                    const providerSources = mergedWatchSources
+                    const providerSources = normalizedWatchSources
                     .filter((src) => {
                         const url = String(src?.url || '');
                         if (!url || isBrokenEmbedUrl(url) || isLikelyPlaceholderSource(url)) return false;
+                        if (provider === 'vegamovies') {
+                            const low = url.toLowerCase();
+                            // Tokenized playlist TXT links are intermediate pointers, not direct media streams.
+                            if ((low.includes('/playlist/') && low.includes('.txt')) || low.endsWith('.txt') || low.includes('.txt?')) {
+                                return false;
+                            }
+                            // Force native-player-only Vegamovies playback (no site/player embeds).
+                            if (src?.isEmbed || low.includes('/play/') || low.includes('/embed')) {
+                                return false;
+                            }
+                        }
                         if (provider === 'animekai') {
                             const low = url.toLowerCase();
                             // AnimeKai sometimes returns tokenized `list,<token>.m3u8` variants that
@@ -11705,7 +12004,8 @@
                     })
                     .map((src, i) => {
                         const low = String(src.url).toLowerCase();
-                        const isM3U8 = src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8');
+                        const isVegamoviesTokenizedPlaylist = provider === 'vegamovies' && low.includes('/playlist/') && low.includes('.txt');
+                        const isM3U8 = !isVegamoviesTokenizedPlaylist && (src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8'));
                         const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
                         const isDub = src.isDub === true || src.dub === true || /\bdub\b/i.test(String(src.quality || ''));
                         const qualityLabel = src.quality || `Source ${i + 1}`;
@@ -11799,6 +12099,7 @@
                 justanime: 'JustAnime',
                 animesalt: 'AnimeSalt',
                 animekai: 'AnimeKai',
+                vegamovies: 'VegaMovies',
             };
             return map[p] || p;
         }
@@ -12028,6 +12329,12 @@
         function playSource(idx, startTime = 0) {
             const src = allSources[idx];
             if (!src) return;
+
+            if (src.provider === 'vegamovies' && satoruAudioSources.length > 0) {
+                currentAudioSource = 'satoru';
+                activeSatoruTrackIndex = 0;
+            }
+
             const statusLabel = startTime > 0 ? 'Switching Server...' : 'Buffering...';
             setLoader(statusLabel, src.label);
             loadStream(src.url, src.isM3U8, src.isEmbed, src.referer, idx, startTime);
@@ -12088,6 +12395,18 @@
             const resumeTargetTime = Math.max(0, Number(startTime || 0));
             const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 20;
             let nextSourceFallbackUsed = false;
+            let sourceContextActive = true;
+            let cancelHlsStartupWatchdog = () => { };
+            const isStaleSourceContext = () => {
+                if (!sourceContextActive) return true;
+                if (currentIdx !== srcIdx) return true;
+                const activeUrl = String(allSources?.[srcIdx]?.url || '');
+                return !!activeUrl && activeUrl !== String(url || '');
+            };
+            const deactivateSourceContext = () => {
+                sourceContextActive = false;
+                try { cancelHlsStartupWatchdog(); } catch (_) { }
+            };
             const getFailoverResumeTime = () => {
                 const pendingTime = Number(pendingJumpTarget?.time);
                 const requestedTime = Number(lastRequestedPlaybackTarget);
@@ -12103,12 +12422,28 @@
                 return 0;
             };
             const failoverToNextSource = (reason = 'unknown') => {
+                if (isStaleSourceContext()) return false;
                 if (nextSourceFallbackUsed) return false;
-                const nextIdx = Array.isArray(allSources)
-                    ? allSources.findIndex((_, i) => i > srcIdx)
-                    : -1;
+                const reasonText = String(reason || '').toLowerCase();
+                const shouldPreferNonHlsFallback =
+                    sourceProvider === 'vegamovies' &&
+                    (reasonText.includes('manifest') || reasonText.includes('direct_url_failed') || reasonText.includes('fatal'));
+                let nextIdx = -1;
+                if (Array.isArray(allSources) && shouldPreferNonHlsFallback) {
+                    nextIdx = allSources.findIndex((s, i) => {
+                        if (i === srcIdx) return false;
+                        const srcUrl = String(s?.url || '').toLowerCase();
+                        return !!(s?.isEmbed || !s?.isM3U8 || srcUrl.includes('.mp4'));
+                    });
+                }
+                if (nextIdx < 0) {
+                    nextIdx = Array.isArray(allSources)
+                        ? allSources.findIndex((_, i) => i > srcIdx)
+                        : -1;
+                }
                 if (nextIdx < 0) return false;
                 nextSourceFallbackUsed = true;
+                deactivateSourceContext();
                 const resumeAt = getFailoverResumeTime();
                 if (resumeAt > 0) {
                     pendingJumpTarget = { time: resumeAt, reason: 'server_failover' };
@@ -12169,7 +12504,8 @@
                             })
                             .map((src, i) => {
                                 const low = String(src.url || '').toLowerCase();
-                                const isM3U8 = src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8');
+                                const isVegamoviesTokenizedPlaylist = provider === 'vegamovies' && low.includes('/playlist/') && low.includes('.txt');
+                                const isM3U8 = !isVegamoviesTokenizedPlaylist && (src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8'));
                                 const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
                                 return {
                                     label: `FlixHQ - ${serverName} backup ${i + 1}`,
@@ -12296,6 +12632,19 @@
             video = document.getElementById('player-video');
             if (video) { video.volume = savedVolume; video.muted = savedMuted; } // Restore volume across switches
 
+            // Some VegaMovies direct sources sound robotic when any prior non-1x rate
+            // or boosted WebAudio gain remains active across source switches.
+            if (sourceProvider === 'vegamovies' && video) {
+                try {
+                    video.playbackRate = 1;
+                    if ('preservesPitch' in video) video.preservesPitch = true;
+                    if ('webkitPreservesPitch' in video) video.webkitPreservesPitch = true;
+                } catch (_) { }
+                if (Number(volumeBoost || 100) > 100) {
+                    volumeBoost = 100;
+                }
+            }
+
             let startT = effectiveStartTime;
             let overlayHidden = false;
             const hideOverlay = () => {
@@ -12371,6 +12720,11 @@
 
                 // Sync play icon in case video was already playing when Plyr initialized
                 if (video && !video.paused) setPlayIcon(true);
+                const hideIfReady = () => {
+                    if (video && video.readyState >= 2) {
+                        hideLoader();
+                    }
+                };
                 plyr.on('canplay', hideIfReady);
                 plyr.on('playing', () => {
                     isFirstLoad = false;
@@ -12387,7 +12741,23 @@
                 });
             };
 
+            const showProviderExhaustedError = (reason = 'unknown') => {
+                const providerName = String(sourceProvider || currentStreamProvider || '').toLowerCase();
+                if (providerName === 'vegamovies') {
+                    showError(
+                        'Vegamovies Unavailable',
+                        'Vegamovies only returned invalid direct stream manifests for this title. Try another provider or the site embed if one becomes available.'
+                    );
+                    return;
+                }
+                showError(
+                    'Stream Decode Error',
+                    'Playback could not recover. Please choose another server manually.'
+                );
+            };
+
             const recoverSameSource = (reason = 'unknown') => {
+                if (isStaleSourceContext()) return;
                 if (sameSourceRecoveryLock) return;
                 sameSourceRecoveryLock = true;
                 const currentTime = (video && video.currentTime > 0) ? video.currentTime : startTime;
@@ -12397,7 +12767,11 @@
                 // Capture last visible frame immediately to prevent black screen flash during rebuild
                 try { captureVideoFrameToOverlay(); } catch (_) { }
 
-                const maxAttempts = reason === 'fatal_network_error' ? 1 : 8;
+                const lowerReason = String(reason || '').toLowerCase();
+                const isVegamoviesManifestFailure =
+                    sourceProvider === 'vegamovies' &&
+                    (lowerReason.includes('manifest') || lowerReason.includes('network') || lowerReason.includes('startup_timeout'));
+                const maxAttempts = isVegamoviesManifestFailure ? 2 : (reason === 'fatal_network_error' ? 1 : 8);
 
                 if (hlsInst && isM3U8 && sameSourceRecoverCount <= maxAttempts) {
                     try {
@@ -12426,7 +12800,7 @@
                                     Promise.resolve(video.play()).catch(() => { });
                                 });
                             }
-                        }, null, true);
+                        }, null, true, srcIdx);
                     } catch (_) { }
                     setTimeout(() => { sameSourceRecoveryLock = false; }, 600);
                     return;
@@ -12439,10 +12813,7 @@
                 }
                 tryAlternateFlixhqServer(`same_source_exhausted:${reason}`).then((switched) => {
                     if (switched) return;
-                    showError(
-                        'Stream Decode Error',
-                        'Playback could not recover. Please choose another server manually.'
-                    );
+                    showProviderExhaustedError(reason);
                 });
             };
 
@@ -12479,10 +12850,15 @@
                                 Promise.resolve(video.play()).catch(() => { video.muted = true; Promise.resolve(video.play()).catch(() => {}); });
                             }
                         }, (reason2) => {
-                            // Direct URL also failed — give up
                             console.warn('[hls] Direct URL also failed:', reason2);
                             sameSourceRecoveryLock = false;
-                            showError('Stream Error', 'Playback could not recover. Please choose another server.');
+                            if (failoverToNextSource(`direct_url_failed:${reason2}`)) {
+                                return;
+                            }
+                            tryAlternateFlixhqServer(`direct_url_failed:${reason2}`).then((switched) => {
+                                if (switched) return;
+                                showProviderExhaustedError(reason2);
+                            });
                         });
                         hlsInst.loadSource(directUrl);
                         hlsInst.attachMedia(video);
@@ -12492,14 +12868,30 @@
 
                 // Wrap recoverSameSource to inject direct-URL step before giving up
                 const recoverSameSourceWithDirectFallback = (reason) => {
+                    if (isStaleSourceContext()) return;
                     const lowerReason = String(reason || '').toLowerCase();
                     const isAnimeKaiStream = String(sourceProvider || '').toLowerCase() === 'animekai';
                     const isFlixHqStream = String(sourceProvider || '').toLowerCase() === 'flixhq';
-                    if (reason === 'fatal_network_error' && !hlsDirectFallbackAttempted) {
+                    const isUsingProxyStream = streamUrl !== String(url || '').trim();
+                    const shouldPreferDirectRetry = isUsingProxyStream && (
+                        reason === 'fatal_network_error'
+                        || lowerReason.includes('manifest')
+                        || lowerReason.includes('startup_timeout')
+                        || lowerReason.includes('level_timeout')
+                        || lowerReason.includes('network')
+                    );
+                    if (shouldPreferDirectRetry && !hlsDirectFallbackAttempted) {
                         const resumeTime = Number(video?.currentTime || startTime || 0);
                         const tried = recoverWithDirectUrl(resumeTime);
                         if (tried) {
                             setTimeout(() => { sameSourceRecoveryLock = false; }, 600);
+                            return;
+                        }
+                    }
+
+                    if (shouldPreferDirectRetry && hlsDirectFallbackAttempted) {
+                        if (failoverToNextSource(`direct_retry_exhausted:${reason}`)) {
+                            sameSourceRecoveryLock = false;
                             return;
                         }
                     }
@@ -12565,6 +12957,7 @@
                     video && video.removeEventListener('timeupdate', markHlsProgress);
                     video && video.removeEventListener('playing', markHlsProgress);
                 };
+                cancelHlsStartupWatchdog = clearHlsStartupWatchdog;
 
                 hlsInst = svCreateHlsInstance(effectiveStartTime, false, currentStreamProvider);
                 svAttachHlsListeners(hlsInst, effectiveStartTime, () => {
@@ -12901,12 +13294,17 @@
 
                 // MegaCloud/iframe sources can fail silently in custom players.
                 // Auto-rotate to next source if playback does not visibly start soon.
-                setTimeout(() => {
-                    if (currentIdx === srcIdx) {
-                        console.warn('Embed source timeout, recovering same source');
-                        recoverSameSource('embed_timeout');
-                    }
-                }, 9000);
+                // VegaMovies embed is intentionally a terminal fallback, so do not
+                // auto-recover away from it or we can enter a source-churn loop.
+                const isVegamoviesEmbed = String(sourceProvider || '').toLowerCase() === 'vegamovies';
+                if (!isVegamoviesEmbed) {
+                    setTimeout(() => {
+                        if (currentIdx === srcIdx) {
+                            console.warn('Embed source timeout, recovering same source');
+                            recoverSameSource('embed_timeout');
+                        }
+                    }, 9000);
+                }
 
             } else if (!isM3U8) {
                 console.log('Branch: Direct MP4');
