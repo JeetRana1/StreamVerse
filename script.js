@@ -441,35 +441,43 @@ window.addEventListener('resize', () => {
 });
 
 // ------------------ HELPERS -----------------------------------------------
+function isTmdbImageUrl(value) {
+    try {
+        const parsed = new URL(String(value || '').trim(), window.location.href);
+        return parsed.hostname === 'image.tmdb.org';
+    } catch (_) {
+        return false;
+    }
+}
+
 // Consumet returns full URLs for images already, but sometimes relative paths.
 function imgUrl(path, size = 'w500') {
-    const isBad = !path || typeof path !== 'string' || path.length < 5 ||
-        path.includes('placehold.co') || path.includes('dramaool.png') ||
-        path.includes('no-image') || path.includes('default-poster') ||
-        path.includes('originalnull') || path.includes('originalundefined');
+    const raw = String(path || '').trim();
+    const isBad = !raw || raw.length < 5 ||
+        raw.includes('placehold.co') || raw.includes('dramaool.png') ||
+        raw.includes('no-image') || raw.includes('default-poster') ||
+        raw.includes('originalnull') || raw.includes('originalundefined');
 
     if (isBad) {
         return 'https://placehold.co/300x450/1a1a2e/e50914?text=No+Image';
     }
 
-    // Handle full URLs and protocol-relative URLs
-    if (path.startsWith('http') || path.startsWith('//')) {
-        let url = path.startsWith('//') ? 'https:' + path : path;
-        // Force HTTPS to avoid mixed content blocks from external providers (Dramacool, etc)
-        return url.replace('http:', 'https:');
+    if (raw.startsWith('http') || raw.startsWith('//')) {
+        const url = raw.startsWith('//') ? 'https:' + raw : raw.replace('http:', 'https:');
+        return isTmdbImageUrl(url) ? url : 'https://placehold.co/300x450/1a1a2e/e50914?text=No+Image';
     }
 
     // TMDB relative paths always start with /
-    if (path.startsWith('/')) {
-        return `${IMG_BASE}${size}${path}`;
+    if (raw.startsWith('/')) {
+        if (/^\/t\/p\//i.test(raw)) return `https://image.tmdb.org${raw}`;
+        return `${IMG_BASE}${size}${raw}`;
     }
 
-    // If it looks like a relative path but without the leading slash (rare)
-    if (path.length > 0 && !path.includes('/') && !path.includes('.')) {
-        return `${IMG_BASE}${size}/${path}`;
+    if (raw.length > 0 && !raw.includes('/') && !raw.includes('.')) {
+        return `${IMG_BASE}${size}/${raw}`;
     }
 
-    return path;
+    return 'https://placehold.co/300x450/1a1a2e/e50914?text=No+Image';
 }
 
 function coverUrl(path) {
@@ -519,15 +527,42 @@ function hasPositiveRating(item) {
 }
 
 function getPoster(item) {
-    // Aggregate all possible poster fields across different providers
-    const p = item.poster_path || item.image || item.poster || item.img || item.thumbnail ||
-        item.coverImage?.large || item.coverImage?.medium || item.bannerImage || '';
-    return imgUrl(p);
+    const candidates = [
+        item?.poster_path,
+        item?.posterPath,
+        item?.tmdbPoster,
+        item?.tmdbPosterUrl,
+        item?.poster,
+        item?.posterUrl,
+        item?.image,
+        item?.img,
+        item?.thumbnail,
+        item?.coverImage?.large,
+        item?.coverImage?.medium,
+    ];
+    for (const candidate of candidates) {
+        const poster = imgUrl(candidate);
+        if (!poster.includes('placehold.co')) return poster;
+    }
+    return imgUrl('');
 }
 function getCover(item) {
-    const c = item.poster_path || item.cover || item.backdrop_path || item.bannerImage || item.image ||
-        item.poster || item.img || item.coverImage?.extraLarge || '';
-    return imgUrl(c, 'w1280');
+    const candidates = [
+        item?.backdrop_path,
+        item?.backdropPath,
+        item?.tmdbBackdrop,
+        item?.cover,
+        item?.image,
+        item?.poster_path,
+        item?.posterPath,
+        item?.poster,
+        item?.coverImage?.extraLarge,
+    ];
+    for (const candidate of candidates) {
+        const cover = imgUrl(candidate, 'w1280');
+        if (!cover.includes('placehold.co')) return cover;
+    }
+    return imgUrl('', 'w1280');
 }
 function getType(item) {
     if (!item) return 'movie';
@@ -563,7 +598,6 @@ function getItemProvider(item) {
     const source = String(item?.url || item?.link || item?.sourceUrl || item?.href || item?.id || '').trim().toLowerCase();
     if (!source) return '';
 
-    if (source.includes('vegamovies')) return 'vegamovies';
     if (source.includes('dramacool')) return 'dramacool';
     if (source.includes('flixhq')) return 'flixhq';
     if (source.includes('animekai')) return 'animekai';
@@ -576,7 +610,7 @@ function getItemProvider(item) {
 
 function getDetailKey(id, type, provider = '') {
     const canonicalId = provider ? id : normalizeTmdbId(id);
-    return `${provider || 'meta'}:${type}:${canonicalId}`;
+    return `trailer-v2:${provider || 'meta'}:${type}:${canonicalId}`;
 }
 
 function normalizeTmdbId(id) {
@@ -3225,13 +3259,46 @@ function renderDetailsModal(movie, id, type, provider = '') {
         }
     }
 
+    // Priority 2b: if the API only returned teasers/clips but they still point to
+    // YouTube, keep the trailer affordance available instead of hiding it entirely.
+    if (!trailerUrl && Array.isArray(movie.videos?.results)) {
+        const videoCandidates = movie.videos.results
+            .filter(v => v && typeof v === 'object')
+            .filter(v => String(v.site || '').toLowerCase() === 'youtube' || v.key || v.youtubeId || v.videoId || v.url)
+            .sort((a, b) => {
+                const score = (v) => {
+                    const type = String(v.type || '').toLowerCase();
+                    const name = String(v.name || '').toLowerCase();
+                    return (
+                        (type.includes('trailer') ? 40 : 0) +
+                        (name.includes('trailer') ? 30 : 0) +
+                        (name.includes('official') ? 20 : 0) -
+                        (type.includes('clip') || name.includes('clip') ? 25 : 0)
+                    );
+                };
+                return score(b) - score(a);
+            });
+
+        for (const v of videoCandidates) {
+            trailerUrl = normalizeTrailerUrl(v);
+            if (trailerUrl) break;
+        }
+    }
+
     // Priority 3: common alternate fields
     if (!trailerUrl) {
         trailerUrl = normalizeTrailerUrl(movie.trailer_url || movie.trailerUrl || movie.youtube_trailer || movie.youtubeTrailer);
     }
 
-    // Do not synthesize a YouTube search URL here.
-    // We only show trailer CTA for embeddable/direct trailer links from APIs.
+    // Priority 4: search fallback only when a YouTube API key is configured.
+    // YouTube search embed URLs are unreliable, so do not render a trailer CTA
+    // unless playTrailer() can resolve the search to a real video ID first.
+    if (!trailerUrl && YOUTUBE_API_KEY) {
+        const searchTitle = `${title} ${year !== 'N/A' ? year : ''} official trailer`.replace(/\s+/g, ' ').trim();
+        if (searchTitle) {
+            trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTitle)}`;
+        }
+    }
     
     const hasTrailer = Boolean(trailerUrl);
     const safeTrailerUrl = hasTrailer ? encodeURIComponent(trailerUrl) : '';
@@ -4241,6 +4308,47 @@ async function resolveYouTubeVideoIdFromSearchUrl(trailerUrl) {
     }
 }
 
+function getYouTubeSearchQuery(trailerUrl) {
+    try {
+        const url = new URL(trailerUrl);
+        const isYouTubeSearch =
+            url.hostname.includes('youtube.com') &&
+            (url.pathname === '/results' || url.pathname === '/results/');
+        if (!isYouTubeSearch) return '';
+        return url.searchParams.get('search_query') || url.searchParams.get('q') || '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function showTrailerEmbed(embedSrc) {
+    const heroBg = document.getElementById('modal-hero-bg');
+    const trailerContainer = document.getElementById('modal-trailer-container');
+    const trailerIframe = document.getElementById('modal-trailer-iframe');
+    const posterWrapper = document.querySelector('.modal-poster-wrapper');
+    const modalCloseBtn = document.querySelector('.close-modal');
+
+    if (heroBg && trailerContainer && trailerIframe) {
+        heroBg.classList.add('trailer-starting');
+
+        setTimeout(() => {
+            trailerIframe.src = embedSrc;
+            heroBg.style.display = 'none';
+            trailerContainer.style.display = 'block';
+            requestAnimationFrame(() => trailerContainer.classList.add('trailer-visible'));
+
+            if (posterWrapper) {
+                posterWrapper.classList.add('poster-top-cut');
+            }
+
+            if (modalCloseBtn) {
+                modalCloseBtn.classList.remove('hidden');
+                modalCloseBtn.classList.add('trailer-active-close');
+            }
+        }, 260);
+    }
+}
+
 async function playTrailer(trailerUrl, coverImage) {
     if (!trailerUrl) {
         console.warn('No trailer URL provided');
@@ -4287,39 +4395,12 @@ async function playTrailer(trailerUrl, coverImage) {
     }
 
     if (!videoId) {
-        // Final fallback: open in new tab
-        console.warn('Could not extract video ID from trailer URL:', trailerUrl);
-        window.open(trailerUrl, '_blank');
+        const searchQuery = getYouTubeSearchQuery(trailerUrl);
+        console.warn('Could not resolve playable trailer video ID:', searchQuery || trailerUrl);
         return;
     }
 
-    // Hide hero background and show trailer
-    const heroBg = document.getElementById('modal-hero-bg');
-    const trailerContainer = document.getElementById('modal-trailer-container');
-    const trailerIframe = document.getElementById('modal-trailer-iframe');
-    const posterWrapper = document.querySelector('.modal-poster-wrapper');
-    const modalCloseBtn = document.querySelector('.close-modal');
-
-    if (heroBg && trailerContainer && trailerIframe) {
-        // Set iframe source with autoplay
-        trailerIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&controls=1&fs=1&modestbranding=1&playsinline=1&iv_load_policy=3&disablekb=0`;
-        
-        // Hide hero and show trailer
-        heroBg.style.display = 'none';
-        trailerContainer.style.display = 'block';
-        
-        // Cut top half of poster with animation
-        if (posterWrapper) {
-            posterWrapper.classList.add('poster-top-cut');
-        }
-        
-        // Hide modal close button with opacity
-        if (modalCloseBtn) {
-            modalCloseBtn.classList.remove('hidden');
-            modalCloseBtn.classList.add('trailer-active-close');
-        }
-
-    }
+    showTrailerEmbed(`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&controls=1&fs=1&modestbranding=1&playsinline=1&iv_load_policy=3&disablekb=0`);
 }
 
 function closeTrailer() {
@@ -4334,7 +4415,9 @@ function closeTrailer() {
         trailerIframe.src = '';
         
         // Show hero and hide trailer
+        trailerContainer.classList.remove('trailer-visible');
         heroBg.style.display = 'block';
+        heroBg.classList.remove('trailer-starting');
         trailerContainer.style.display = 'none';
         
         // Reset poster (remove top cut animation)

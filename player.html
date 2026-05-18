@@ -526,6 +526,16 @@
             margin: 0 auto;
             flex: 1;
             transform: translateY(4vh);
+            position: relative;
+            z-index: 6;
+            pointer-events: none;
+        }
+
+        .control-center .ctrl-btn,
+        .control-center .play-btn {
+            position: relative;
+            z-index: 7;
+            pointer-events: auto;
         }
 
         .ctrl-btn {
@@ -579,6 +589,7 @@
             pointer-events: auto;
             padding: 0 .5rem;
             position: relative;
+            z-index: 12;
         }
 
         .time-readout {
@@ -608,25 +619,33 @@
             display: flex;
             align-items: center;
             width: 100%;
+            min-height: 30px;
+            cursor: pointer;
+            pointer-events: auto;
+            z-index: 5;
         }
 
         .seek-track-base {
             position: absolute;
             left: 0;
             right: 0;
+            top: 50%;
             height: 5px;
             background: rgba(255, 255, 255, .15);
             border-radius: 999px;
             pointer-events: none;
+            transform: translateY(-50%);
         }
 
         #skipMarkerContainer {
             position: absolute;
             left: 0;
             right: 0;
+            top: 50%;
             height: 5px;
             pointer-events: none;
             z-index: 1;
+            transform: translateY(-50%);
         }
 
         .skip-marker {
@@ -673,15 +692,17 @@
         }
 
         .seek-bar {
+            position: relative;
             width: 100%;
             appearance: none;
-            height: 5px;
+            height: 30px;
             border-radius: 999px;
-            background: linear-gradient(to right, rgba(229, 9, 20, 0.58) 0%, rgba(229, 9, 20, 0.58) var(--seek-percent, 0%), transparent var(--seek-percent, 0%), transparent 100%);
+            background: linear-gradient(to right, rgba(229, 9, 20, 0.58) 0%, rgba(229, 9, 20, 0.58) var(--seek-percent, 0%), transparent var(--seek-percent, 0%), transparent 100%) center / 100% 5px no-repeat;
             outline: none;
             cursor: pointer;
             z-index: 2;
             margin: 0;
+            pointer-events: auto;
         }
 
         .seek-bar::-webkit-slider-thumb {
@@ -703,7 +724,7 @@
 
         .seek-preview {
             position: absolute;
-            bottom: 72px;
+            bottom: auto;
             left: 0;
             display: flex;
             visibility: hidden;
@@ -743,12 +764,32 @@
             backdrop-filter: blur(2px);
         }
 
+        .seek-preview-thumb::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, 0.28));
+            pointer-events: none;
+            z-index: 2;
+        }
+
         .seek-preview-thumb video {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
             border-radius: 8px;
             display: block;
+        }
+
+        .seek-preview-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+            display: none;
+            position: absolute;
+            inset: 0;
+            z-index: 1;
         }
 
         .seek-preview-time {
@@ -781,6 +822,127 @@
             border-right: 7px solid transparent;
             border-top: 7px solid rgba(15, 15, 15, 0.75);
         }
+
+            .pause-media-card {
+                position: absolute;
+                left: 28px;
+                bottom: calc(116px + var(--safe-bottom));
+                max-width: min(720px, calc(100vw - 56px));
+                display: flex;
+                align-items: center;
+                gap: 18px;
+                padding: 20px 22px;
+                border-radius: 22px;
+                background: linear-gradient(135deg, rgba(12, 12, 14, 0.82), rgba(18, 18, 20, 0.56));
+                border: 1px solid rgba(255, 255, 255, 0.10);
+                box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
+                backdrop-filter: blur(16px);
+                -webkit-backdrop-filter: blur(16px);
+                opacity: 0;
+                transform: translateY(12px) scale(0.98);
+                pointer-events: none;
+                transition: opacity .22s ease, transform .22s ease;
+                z-index: 0;
+            }
+
+            .pause-media-poster {
+                width: 108px;
+                height: 150px;
+                border-radius: 14px;
+                object-fit: cover;
+                flex: 0 0 auto;
+                background: rgba(255, 255, 255, 0.06);
+                box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+            }
+
+            .pause-media-card.show {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+
+            .pause-media-meta {
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+
+            .pause-media-title {
+                font-family: 'Outfit', sans-serif;
+                font-size: 1.38rem;
+                font-weight: 800;
+                line-height: 1.15;
+                color: #fff;
+                text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .pause-media-description {
+                font-size: 0.92rem;
+                line-height: 1.35;
+                color: rgba(255, 255, 255, 0.74);
+                display: -webkit-box;
+                line-clamp: 2;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+            }
+
+            @keyframes pausePulse {
+                0% { transform: scale(1); box-shadow: 0 0 0 6px rgba(229, 9, 20, 0.12), 0 0 28px rgba(229, 9, 20, 0.20); }
+                50% { transform: scale(1.06); box-shadow: 0 0 0 9px rgba(229, 9, 20, 0.06), 0 0 38px rgba(229, 9, 20, 0.30); }
+                100% { transform: scale(1); box-shadow: 0 0 0 6px rgba(229, 9, 20, 0.12), 0 0 28px rgba(229, 9, 20, 0.20); }
+            }
+
+            @media (max-width: 720px) {
+                .pause-media-card {
+                    left: 16px;
+                    right: 16px;
+                    max-width: calc(100vw - 32px);
+                    bottom: calc(92px + var(--safe-bottom));
+                    padding: 16px;
+                    gap: 12px;
+                    align-items: flex-start;
+                    flex-direction: column;
+                }
+
+                .control-center {
+                    position: relative;
+                    z-index: 3;
+                    pointer-events: none;
+                }
+
+                .control-bottom {
+                    position: relative;
+                    z-index: 12;
+                }
+
+                .time-readout,
+                .seek-wrapper,
+                .control-actions {
+                    position: relative;
+                    z-index: 3;
+                }
+
+                .pause-media-poster {
+                    width: 100px;
+                    height: 140px;
+                    border-radius: 13px;
+                }
+
+                .pause-media-title {
+                    font-size: 1.22rem;
+                    white-space: normal;
+                }
+
+                .pause-media-description {
+                    font-size: 0.88rem;
+                    line-clamp: 3;
+                    -webkit-line-clamp: 3;
+                }
+            }
 
         .control-actions {
             grid-area: actions;
@@ -1566,6 +1728,25 @@
             font-weight: 700;
         }
 
+        .src-item.loading {
+            opacity: 0.72;
+            pointer-events: none;
+        }
+
+        .src-item.loading .src-dot {
+            width: 10px;
+            height: 10px;
+            border: 2px solid currentColor;
+            border-top-color: transparent;
+            background: transparent;
+            animation: spin .7s linear infinite;
+        }
+
+        .src-item.failed {
+            color: #ff6b6b;
+            background: rgba(229, 9, 20, 0.12);
+        }
+
         .src-dot {
             width: 7px;
             height: 7px;
@@ -1956,6 +2137,14 @@
             .control-center {
                 width: min(90vw, 420px);
                 gap: 1.8rem;
+                z-index: 8;
+                pointer-events: none;
+            }
+
+            .control-center .ctrl-btn,
+            .control-center .play-btn {
+                z-index: 9;
+                pointer-events: auto;
             }
 
             .ctrl-btn {
@@ -2001,12 +2190,13 @@
                 padding: 1.5rem calc(1rem + var(--safe-left)) calc(1.5rem + var(--safe-bottom));
                 flex-wrap: wrap;
                 gap: 1rem;
+                z-index: 12;
             }
 
             .seek-bar {
                 min-width: 100%;
                 order: 3;
-                height: 6px;
+                height: 30px;
             }
 
             .control-actions {
@@ -2413,6 +2603,13 @@
             </button>
         </div>
         <div class="control-bottom">
+            <div id="pauseMediaCard" class="pause-media-card" aria-hidden="true">
+                <img id="pauseMediaPoster" class="pause-media-poster" alt="" aria-hidden="true" hidden />
+                <div class="pause-media-meta">
+                    <div id="pauseMediaTitle" class="pause-media-title"></div>
+                    <div id="pauseMediaDescription" class="pause-media-description"></div>
+                </div>
+            </div>
             <div class="time-readout">
                 <span id="currentTime">0:00</span>
                 <span class="time-divider">/</span>
@@ -2426,6 +2623,7 @@
 
             <div id="seek-preview" class="seek-preview">
                 <div class="seek-preview-thumb">
+                    <img id="previewThumbImage" alt="Preview thumbnail" />
                     <video id="previewVideo" muted preload="auto" playsinline webkit-playsinline
                         crossorigin="anonymous"></video>
                 </div>
@@ -2673,100 +2871,9 @@
             }
         }
 
-        async function resolveVegamoviesSource(source, fallbackReferer = '') {
-            const src = source ? { ...source } : {};
-            const rawUrl = String(src.url || '').trim();
-            const referer = String(src.referer || fallbackReferer || '').trim();
-
-            try {
-                const { file, key } = extractFileAndKeyFromSource(src);
-                if (file && key) {
-                    const resolverEndpoints = ['/api/getStream', `${STREAM_API_BASE}/getStream`];
-                    for (const endpoint of resolverEndpoints) {
-                        try {
-                            const resolveResp = await fetch(endpoint, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    file,
-                                    key,
-                                    referer,
-                                }),
-                                signal: AbortSignal.timeout(12000),
-                            });
-                            if (!resolveResp.ok) continue;
-                            const payload = await resolveResp.json();
-                            const playable = pickPlayableUrlFromPayload(payload);
-                            if (playable) {
-                                src.url = playable;
-                                if (!src.referer && referer) src.referer = referer;
-                                src.isM3U8 = src.isM3U8 || /\.m3u8(\?|$)/i.test(playable);
-                                return src;
-                            }
-                        } catch (_) {
-                            // try next resolver endpoint
-                        }
-                    }
-                }
-            } catch (err) {
-                console.warn('[vegamovies] getStream resolution failed:', err?.message || err);
-            }
-
-            const low = rawUrl.toLowerCase();
-            const shouldUnwrapText =
-                !!rawUrl &&
-                (
-                    (low.includes('/playlist/') && low.includes('.txt')) ||
-                    low.includes('/file/stream/') ||
-                    low.includes('.txt?') ||
-                    low.endsWith('.txt')
-                );
-
-            if (!shouldUnwrapText) return src;
-
-            try {
-                const probeUrl = getProxiedUrl(rawUrl, referer);
-                const probeRes = await fetch(probeUrl, {
-                    method: 'GET',
-                    signal: AbortSignal.timeout(12000),
-                });
-                if (!probeRes.ok) return src;
-                const bodyText = await probeRes.text();
-                if (!bodyText) return src;
-
-                const normalizedText = String(bodyText || '').trim();
-                if (/^#EXTM3U/i.test(normalizedText)) {
-                    src.url = rawUrl;
-                    src.isM3U8 = true;
-                    if (!src.referer && referer) src.referer = referer;
-                    return src;
-                }
-
-                const embeddedUrl = extractFirstPlayableUrlFromText(normalizedText);
-                const redirectedPlayable = extractPlayableFromRedirectPayload(normalizedText);
-                const resolvedUrl = embeddedUrl || redirectedPlayable;
-                if (resolvedUrl) {
-                    src.url = resolvedUrl;
-                    src.isM3U8 = /\.m3u8(\?|$)/i.test(resolvedUrl);
-                    src.isEmbed = src.isEmbed ?? (!src.isM3U8 && !/\.mp4(\?|$)/i.test(resolvedUrl));
-                    if (!src.referer && referer) src.referer = referer;
-                }
-            } catch (err) {
-                console.warn('[vegamovies] tokenized source unwrap failed:', err?.message || err);
-            }
-
-            return src;
-        }
-
         async function normalizeProviderSources(provider, rows, fallbackReferer = '') {
             if (!Array.isArray(rows) || !rows.length) return [];
-            if (String(provider || '').toLowerCase() !== 'vegamovies') return rows;
-
-            const normalized = [];
-            for (const row of rows) {
-                normalized.push(await resolveVegamoviesSource(row, fallbackReferer));
-            }
-            return normalized;
+            return rows;
         }
         let preferredSourceLabelMatch = PARAMS_BOOT.get('audio') || null; // Persistence for Sub/Dub preference
         if (preferredSourceLabelMatch && !['subbed', 'dubbed'].includes(preferredSourceLabelMatch.toLowerCase())) {
@@ -2877,10 +2984,15 @@
             return String(url || '').replace(API_BASE, base);
         }
 
-        // Provider pools
-        const MOVIE_PROVIDERS = ['flixhq', 'animekai', 'animesalt', 'justanime', 'vegamovies'];
-        const ANIME_PROVIDERS = ['animesalt', 'animekai', 'satoru', 'justanime'];
-        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['justanime'];
+        // Provider pools - automatically selected based on anime detection
+        // ANIME_PROVIDERS: Specialized anime providers (used exclusively for anime content)
+        const ANIME_PROVIDERS = ['animesalt', 'satoru'];
+        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['animesalt'];
+        
+        // NOTE: MOVIE_PROVIDERS is legacy - replaced with intelligent anime detection
+        // For non-anime content: FlixHQ first, then AnimeSalt fallback
+        // For anime content: ANIME_PROVIDERS only (most reliable)
+        const MOVIE_PROVIDERS = ['flixhq', 'animesalt'];
 
         const params = new URLSearchParams(location.search);
         const TMDB_ID = params.get('id');
@@ -2938,6 +3050,7 @@
         const controlSurface = document.getElementById('controlSurface');
         const playerWrap = document.querySelector('.player-wrap');
         const playPauseBtn = document.getElementById('playPauseBtn');
+        const pauseMediaPoster = document.getElementById('pauseMediaPoster');
         const skipBackBtn = document.getElementById('skipBackBtn');
         const skipFwdBtn = document.getElementById('skipFwdBtn');
         const customServerBtn = document.getElementById('customServerBtn');
@@ -2957,8 +3070,12 @@
         const skipSegmentBtn = document.getElementById('skipSegmentBtn');
         const nextEpisodeBtn = document.getElementById('nextEpisodeBtn');
         const seekBar = document.getElementById('seekBar');
+        const seekWrapper = document.querySelector('.seek-wrapper');
         const currentTimeEl = document.getElementById('currentTime');
         const durationTimeEl = document.getElementById('durationTime');
+        const pauseMediaCard = document.getElementById('pauseMediaCard');
+        const pauseMediaTitle = document.getElementById('pauseMediaTitle');
+        const pauseMediaDescription = document.getElementById('pauseMediaDescription');
         const qualityMenu = document.getElementById('qualityMenu');
         const captionsMenu = document.getElementById('captionsMenu');
         const playbackMenu = document.getElementById('playbackMenu');
@@ -2974,6 +3091,13 @@
         window.allSources = [];
         let allSources = window.allSources;
         let externalSubtitleTracks = []; // [{label, srclang, src, provider}]
+        window.externalSubtitleTracks = externalSubtitleTracks;
+
+        function setExternalSubtitleTracks(tracks) {
+            externalSubtitleTracks = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
+            window.externalSubtitleTracks = externalSubtitleTracks;
+            return externalSubtitleTracks;
+        }
         const animeSubtitleCache = new Map();
         const justanimeAnimeIdCache = new Map(); // show-title -> justanime anime ID, persists across episodes
         const subtitleBlobCache = new Map(); // Cache processed VTT text by source URL to avoid redundant fetches and proxy hits
@@ -2989,6 +3113,7 @@
         let currentAnimeCanonicalInfoKey = '';
         let currentCoverUrl = null; // poster/backdrop used as transition overlay background
         let isFirstLoad = true;     // true until the very first stream produces real frames
+        let pauseCardHideTimer = null;
 
         let tvSeasons = [];
         let providerSeasonCatalog = new Map();
@@ -2997,18 +3122,14 @@
         let curSeason = 0;
         let curEpisode = 0;
         let curEpisodeId = null;
+        // Last FlixHQ episodeId and endpoint (set when fetchSources resolves FlixHQ watch candidates)
+        window._lastFlixhqEpisodeId = null;
+        window._flixhqMovieBase = null;
         let currentIsLikelyAnime = false;
         let activeProviders = [...MOVIE_PROVIDERS]; // Initialize with movie providers; refined in init() later
         let preferredAudioToken = URL_AUDIO || '';
-        const initialProviderName = String(params.get('provider') || '').trim().toLowerCase();
-        if (initialProviderName === 'vegamovies') {
-            preferredSourceLabelMatch = null;
-            preferredAudioToken = '';
-        }
-
         function isVegamoviesPlaybackProvider() {
-            const provider = String(FORCED_PROVIDER || currentStreamProvider || lastSuccessfulProvider || '').trim().toLowerCase();
-            return provider === 'vegamovies';
+            return false;
         }
 
         let headerTimer;
@@ -3019,7 +3140,7 @@
         let hasApiSkipSegments = false;
         let lastSuccessfulProvider = '';
         let satoruAudioSources = []; // background-fetched satoru sources used as virtual audio tracks
-        let currentAudioSource = 'justanime'; // 'justanime' or 'satoru'
+        let currentAudioSource = 'animesalt'; // active stream provider for virtual/audio switching
         let activeSatoruTrackIndex = -1; // -1 means none, or index in satoruAudioSources
         const ANIME_PROVIDER_INFO_CACHE_TTL_MS = 30 * 60 * 1000;
         const animeProviderInfoCache = new Map();
@@ -3068,11 +3189,8 @@
             animekai: { animeSearch: 9000, animeInfo: 14000, watch: 35000 },
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
-            // VegaMovies extraction may need extra time because the backend clicks
-            // language buttons and resolves each resulting stream URL.
-            vegamovies: { watch: 90000, metaInfo: 30000 },
-            // Optimized FlixHQ timeouts for faster fetching
-            flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 15000, metaInfo: 15000 },
+            // Optimized FlixHQ timeouts for faster fetching (backend takes 20-25s)
+            flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 45000, metaInfo: 15000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
@@ -3098,6 +3216,8 @@
         let audioCtx = null;
         let gainNode = null;
         let sourceNode = null;
+        let sourceNodeVideo = null;
+        let activeFlixhqServerName = '';
         let isSourceSwitching = false;
         let initialSeekDone = false;
         let isUserSeeking = false;
@@ -3165,6 +3285,87 @@
             errorBox.style.display = 'block';
         }
         function hideError() { errorBox.style.display = 'none'; }
+
+        function isTmdbImageUrl(value) {
+            try {
+                const parsed = new URL(String(value || '').trim(), location.href);
+                return parsed.hostname === 'image.tmdb.org';
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function buildTmdbImageUrl(value, size = 'w500') {
+            const raw = String(value || '').trim();
+            if (!raw) return '';
+            if (raw.startsWith('/')) return `https://image.tmdb.org/t/p/${size}${raw}`;
+            if (isTmdbImageUrl(raw)) return raw;
+            if (raw.length > 0 && !raw.includes('/') && !raw.includes('.')) return `https://image.tmdb.org/t/p/${size}/${raw}`;
+            return '';
+        }
+
+        function resolveMediaPosterUrl(info = {}, fallbackUrl = '') {
+            const candidates = [
+                info.poster_path,
+                info.posterPath,
+                info.tmdbPoster,
+                info.tmdbPosterUrl,
+                info.poster,
+                info.posterUrl,
+                info.image,
+                info.img,
+                info.thumbnail,
+                fallbackUrl,
+            ];
+            for (const candidate of candidates) {
+                const tmdbUrl = buildTmdbImageUrl(candidate, 'w500');
+                if (tmdbUrl) return tmdbUrl;
+            }
+            return '';
+        }
+
+        function updatePauseMediaPoster() {
+            if (!pauseMediaPoster) return;
+            const posterUrl = resolveMediaPosterUrl(currentMediaInfo || {}, currentCoverUrl || '');
+            if (posterUrl) {
+                pauseMediaPoster.src = posterUrl;
+                pauseMediaPoster.hidden = false;
+            } else {
+                pauseMediaPoster.removeAttribute('src');
+                pauseMediaPoster.hidden = true;
+            }
+        }
+
+        function getPauseCardMetadata() {
+            const info = currentMediaInfo || {};
+            const title = String(info.title || info.name || document.getElementById('media-title')?.textContent || 'Unknown Title').trim();
+            const description = String(info.overview || info.description || info.plot || info.synopsis || info.tagline || '').trim() || 'Paused';
+            return { title, description };
+        }
+
+        function showPauseMediaCard() {
+            if (!pauseMediaCard || !pauseMediaTitle || !pauseMediaDescription) return;
+            updatePauseMediaPoster();
+            const { title, description } = getPauseCardMetadata();
+            pauseMediaTitle.textContent = title;
+            pauseMediaDescription.textContent = description;
+            pauseMediaCard.classList.add('show');
+            pauseMediaCard.setAttribute('aria-hidden', 'false');
+            if (pauseCardHideTimer) {
+                clearTimeout(pauseCardHideTimer);
+                pauseCardHideTimer = null;
+            }
+        }
+
+        function hidePauseMediaCard() {
+            if (!pauseMediaCard) return;
+            pauseMediaCard.classList.remove('show');
+            pauseMediaCard.setAttribute('aria-hidden', 'true');
+            if (pauseCardHideTimer) {
+                clearTimeout(pauseCardHideTimer);
+                pauseCardHideTimer = null;
+            }
+        }
 
         function normalizeAudioToken(v) {
             return String(v || '')
@@ -3257,13 +3458,14 @@
 
             // Dynamic buffer sizing — keep buffers modest to avoid bufferFullError cascades
             // (oversized buffers fill up, HLS.js panics → stall loop)
-            // FlixHQ and Vega need larger buffers/tolerance to prevent stalling or robotic audio
-            const backBufferLength = isThumbnail ? 2 : (isFlixHq || isVega ? 30 : (isAnimeKai ? (mobileMain ? 6 : 10) : (mobileMain ? 8 : 12)));
-            const maxBufferLength = isThumbnail ? 5 : (isFlixHq || isVega ? 60 : (isAnimeKai ? (mobileMain ? 10 : 16) : (mobileMain ? 14 : 20)));
-            const maxMaxBufferLength = isThumbnail ? 10 : (isFlixHq || isVega ? 120 : (isAnimeKai ? (mobileMain ? 20 : 28) : (mobileMain ? 28 : 40)));
+            // Keep FlixHQ buffers modest. Large audio buffers can preserve decoder drift
+            // after seeks/track refreshes, which sounds like robotic/distorted audio.
+            const backBufferLength = isThumbnail ? 4 : (isVega ? 30 : (isFlixHq ? 8 : (isAnimeKai ? (mobileMain ? 6 : 10) : (mobileMain ? 8 : 12))));
+            const maxBufferLength = isThumbnail ? 12 : (isVega ? 60 : (isFlixHq ? 18 : (isAnimeKai ? (mobileMain ? 10 : 16) : (mobileMain ? 14 : 20))));
+            const maxMaxBufferLength = isThumbnail ? 24 : (isVega ? 120 : (isFlixHq ? 30 : (isAnimeKai ? (mobileMain ? 20 : 28) : (mobileMain ? 28 : 40))));
             const maxBufferSize = isThumbnail
                 ? 6 * 1024 * 1024
-                : (isFlixHq || isVega ? 150 * 1000 * 1000 : (isAnimeKai ? (mobileMain ? 14 * 1000 * 1000 : 22 * 1000 * 1000) : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000)));
+                : (isVega ? 150 * 1000 * 1000 : (isFlixHq ? 36 * 1000 * 1000 : (isAnimeKai ? (mobileMain ? 14 * 1000 * 1000 : 22 * 1000 * 1000) : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000))));
 
             return new Hls({
                 startPosition: startTime,
@@ -3274,7 +3476,7 @@
                 maxMaxBufferLength: maxMaxBufferLength,
                 maxBufferSize: maxBufferSize,
                 audioCodec: undefined,
-                maxAudioFramesDrift: isThumbnail ? 2 : (isFlixHq || isVega ? 4 : 1),
+                maxAudioFramesDrift: isThumbnail ? 2 : (isVega ? 4 : (isFlixHq ? 1 : 1)),
                 maxBufferHole: isThumbnail ? 0.1 : (isVega ? 0.08 : (isAnimeKai ? 0.6 : 0.3)),
                 startFragPrefetch: !isThumbnail && !isAnimeKai,
                 testBandwidth: !isThumbnail,
@@ -3284,10 +3486,10 @@
                 nudgeOffset: isVega ? 0.1 : 0.1,
                 maxFragLookUpTolerance: isVega ? 0.05 : 0.2,
                 highBufferWatchdogPeriod: isVega ? 2 : 3,
-                maxStarvationDelay: isThumbnail ? 2 : (isVega ? 12 : (isFlixHq ? 8 : 4)),
-                maxLoadingDelay: isThumbnail ? 2 : (isVega ? 12 : (isFlixHq ? 8 : 4)),
+                maxStarvationDelay: isThumbnail ? 4 : (isVega ? 12 : (isFlixHq ? 8 : 4)),
+                maxLoadingDelay: isThumbnail ? 4 : (isVega ? 12 : (isFlixHq ? 8 : 4)),
                 xhrSetup: (xhr, url) => {
-                    xhr.timeout = isThumbnail ? 5000 : (isVega ? 25000 : (isAnimeKai ? 22000 : 18000));
+                    xhr.timeout = isThumbnail ? 5000 : (isVega ? 30000 : (isAnimeKai ? 28000 : (isFlixHq ? 35000 : 25000)));
                 },
             });
         }
@@ -3584,6 +3786,11 @@
             if (isVegamoviesPlaybackProvider()) return;
 
             const activeSourceProvider = String(allSources?.[currentIdx]?.provider || '').toLowerCase();
+            const isFlixHqAudio = activeSourceProvider === 'flixhq';
+            const hasExplicitAudioPreference = Boolean(String(URL_AUDIO || preferredAudioToken || preferredSourceLabelMatch || '').trim());
+            if (isFlixHqAudio && !hasExplicitAudioPreference) {
+                return;
+            }
             const shouldForceOriginalTrack =
                 currentAudioSource !== 'satoru' &&
                 activeSourceProvider === 'justanime';
@@ -4242,6 +4449,7 @@
                     hlsInst.destroy();
                 } catch (_) { }
                 hlsInst = null;
+                clearVideoMediaSource();
             }
 
             // ENHANCED: For audio track switching, reuse HLS instance if possible
@@ -5271,8 +5479,14 @@
 
         function normalizeAnimeSearchQuery(raw) {
             return String(getAnimeTitleText(raw) || '')
+                .normalize('NFKD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[’‘`´]/g, "'")
+                .replace(/[“”]/g, '"')
+                .replace(/[×✕]/g, 'x')
+                .replace(/[‐‑‒–—―]/g, '-')
                 .replace(/[_-]+/g, ' ')
-                .replace(/[:\-!?,.]/g, ' ') // Strip common punctuation for search
+                .replace(/[:;,.!?()[\]{}"'’]/g, ' ') // Strip common punctuation for search
                 .replace(/\s+/g, ' ')
                 .trim();
         }
@@ -6275,20 +6489,52 @@
 
         function normalizeSubtitleEntries(watchData, provider, referer = null) {
             const toArray = (v) => Array.isArray(v) ? v : [];
-            const all = [
-                ...toArray(watchData?.subtitles),
-                ...toArray(watchData?.captions),
-                ...toArray(watchData?.tracks)
-            ];
+            const all = [];
+            const collect = (value, depth = 0) => {
+                if (!value || depth > 3) return;
+                if (Array.isArray(value)) {
+                    value.forEach((row) => collect(row, depth + 1));
+                    return;
+                }
+                if (typeof value === 'string') {
+                    all.push({ url: value });
+                    return;
+                }
+                if (typeof value !== 'object') return;
+
+                const directSrc = value.url || value.file || value.src || value.link;
+                const directKind = String(value.kind || value.type || '').toLowerCase();
+                if (directSrc && (!directKind || directKind === 'captions' || directKind === 'caption' || directKind === 'subtitles' || directKind === 'subtitle' || directKind === 'sub')) {
+                    all.push(value);
+                }
+
+                [
+                    value.subtitles,
+                    value.subtitle,
+                    value.captions,
+                    value.caption,
+                    value.tracks,
+                    value.cc,
+                    value.closedCaptions,
+                    value.closed_captions,
+                    value.data?.subtitles,
+                    value.data?.captions,
+                    value.data?.tracks,
+                    value.result?.subtitles,
+                    value.result?.captions,
+                    value.result?.tracks,
+                ].forEach((nested) => collect(nested, depth + 1));
+            };
+            collect(watchData);
             const out = [];
 
             all.forEach((item, idx) => {
-                const kind = String(item?.kind || '').toLowerCase();
-                if (kind && kind !== 'captions' && kind !== 'subtitles') return;
-                const src = item?.url || item?.file || item?.src;
+                const kind = String(item?.kind || item?.type || '').toLowerCase();
+                if (kind && !['captions', 'caption', 'subtitles', 'subtitle', 'sub'].includes(kind)) return;
+                const src = item?.url || item?.file || item?.src || item?.link;
                 if (!src || typeof src !== 'string') return;
 
-                const rawLang = String(item?.lang || item?.language || item?.label || `Track ${idx + 1}`).trim();
+                const rawLang = String(item?.lang || item?.language || item?.label || item?.name || item?.title || `Track ${idx + 1}`).trim();
                 const langLower = rawLang.toLowerCase();
                 let srclang = 'en';
                 if (langLower === 'ja' || langLower === 'jpn' || langLower.includes('japanese')) srclang = 'ja';
@@ -6296,7 +6542,7 @@
                 else if (/^[a-z]{2,3}$/i.test(rawLang)) srclang = rawLang.toLowerCase();
 
                 out.push({
-                    label: item?.label || item?.language || rawLang,
+                    label: item?.label || item?.language || item?.name || item?.title || rawLang,
                     srclang,
                     src,
                     provider,
@@ -6334,13 +6580,10 @@
         function shouldUsePreviewHls(sourceUrl, sourceProvider) {
             const provider = String(sourceProvider || '').toLowerCase();
             const raw = String(sourceUrl || '').toLowerCase();
-            // FlixHQ direct hosts often become unstable with dual HLS sessions (main + preview).
-            if (provider === 'flixhq') return false;
-            // AnimeKai direct hosts are sensitive to parallel segment requests.
-            if (provider === 'animekai') return false;
             // Vegamovies often returns tokenized playlist .txt URLs that are not stable enough
             // for a second HLS session; keep preview in canvas-only mode to avoid extra failures.
             if (provider === 'vegamovies') return false;
+            if (raw.includes('.txt')) return false;
             if (
                 raw.includes('bluehorizon') ||
                 raw.includes('mistwolf') ||
@@ -6363,7 +6606,9 @@
                 const apiOrigin = activeApiBase.split('/meta/tmdb')[0];
                 const referer = String(sub?.referer || '').trim();
                 const refParam = referer ? `&referer=${encodeURIComponent(referer)}` : '';
-                const vttUrl = `${apiOrigin}/utils/vtt?url=${encodeURIComponent(rawSrc)}${refParam}`;
+                const providerParam = sub?.provider ? `&provider=${encodeURIComponent(String(sub.provider))}` : '';
+                const bustParam = String(sub?.provider || '').toLowerCase() === 'animesalt' ? `&_t=${Date.now()}` : '';
+                const vttUrl = `${apiOrigin}/utils/vtt?url=${encodeURIComponent(rawSrc)}${refParam}${providerParam}${bustParam}`;
                 console.log('[sub] track src → /utils/vtt proxy:', rawSrc.slice(0, 60));
                 return vttUrl;
             } catch (_) { /* fall through to legacy data URI path */ }
@@ -6431,16 +6676,37 @@
 
                 if (subtitleBlobCache.has(lower)) {
                     const cachedVtt = subtitleBlobCache.get(lower);
-                    return cachedVtt ? toVttUrl(cachedVtt) : '';
+                    return cachedVtt ? toVttBlobUrl(cachedVtt) : '';
                 }
 
-                // Correctly use the already computed proxied URL which includes the referer.
                 const proxiedSub = proxied;
-                try {
-                    const looksLikeSrt = /\.srt(\?|$)/i.test(rawSrc);
-                    const looksLikeAss = /\.ass(\?|$)/i.test(rawSrc) || /\.ssa(\?|$)/i.test(rawSrc);
-                    const txtRes = await fetch(proxiedSub, { signal: AbortSignal.timeout(12000) });
-                    if (txtRes.ok) {
+                const looksLikeSrt = /\.srt(\?|$)/i.test(rawSrc);
+                const looksLikeAss = /\.ass(\?|$)/i.test(rawSrc) || /\.ssa(\?|$)/i.test(rawSrc);
+                let retries = 0;
+                const maxRetries = 2;
+                let txtRes = null;
+                
+                while (retries <= maxRetries && !txtRes?.ok) {
+                    try {
+                        txtRes = await fetch(proxiedSub, { signal: AbortSignal.timeout(12000) });
+                        if (txtRes.ok) break;
+                        if (retries < maxRetries) {
+                            const waitTime = 500 * (retries + 1);
+                            console.warn('[sub] fetch retry in', waitTime + 'ms');
+                            await new Promise(r => setTimeout(r, waitTime));
+                        }
+                    } catch (e) {
+                        if (retries < maxRetries) {
+                            const waitTime = 500 * (retries + 1);
+                            console.warn('[sub] fetch error, retry in', waitTime + 'ms');
+                            await new Promise(r => setTimeout(r, waitTime));
+                        }
+                    }
+                    retries++;
+                }
+                
+                if (txtRes?.ok) {
+                    try {
                         const txt = await txtRes.text();
                         if (!txt) return '';
                         const ln = txt.trim().toLowerCase();
@@ -6475,13 +6741,13 @@
 
                         if (vttContent) {
                             subtitleBlobCache.set(lower, vttContent);
-                            return toVttUrl(vttContent);
+                            return toVttBlobUrl(vttContent);
                         }
-                    } else if (txtRes.status === 404 || txtRes.status === 403) {
-                        subtitleBlobCache.set(lower, '');
-                        return '';
-                    }
-                } catch (e) { console.warn('Sub fetch fail:', e); }
+                    } catch (e) { console.warn('Sub fetch fail:', e); }
+                } else if (txtRes && (txtRes.status === 404 || txtRes.status === 403)) {
+                    subtitleBlobCache.set(lower, '');
+                    return '';
+                }
                 
                 // Fallback: if we couldn't parse/download but the file exists, return the raw proxied URL
                 try {
@@ -6661,7 +6927,7 @@
             });
         }
 
-        async function fetchAnimeSubtitleFallback() {
+        async function fetchAnimeSubtitleFallback(forceRefresh = false) {
             if (!currentIsLikelyAnime) return [];
             const canonicalAnimeInfo = currentAnimeCanonicalInfo || await getCanonicalAnimeInfo();
             const mediaTitle = normalizeAnimeSearchQuery(
@@ -6679,7 +6945,7 @@
                     .reduce((sum, season) => sum + (Array.isArray(season?.episodes) ? season.episodes.length : 0), 0),
             ) + (curEpisode + 1);
             const subtitleCacheKey = `${mediaTitle.toLowerCase()}::${preferredYear || ''}::ep${absoluteEpisodeNo}`;
-            if (animeSubtitleCache.has(subtitleCacheKey)) {
+            if (!forceRefresh && animeSubtitleCache.has(subtitleCacheKey)) {
                 return animeSubtitleCache.get(subtitleCacheKey) || [];
             }
 
@@ -6707,7 +6973,18 @@
                     );
                     const providerEpisodeNo = Math.max(1, Number(providerResolution.episodeNo || absoluteEpisodeNo || 1));
                     const providerAnimeIdOverride = String(providerResolution.animeIdOverride || '').trim();
+                    const subtitleTimeoutMs = getProviderTimeout(provider, 'subtitleFallback', REQ_TIMEOUT.subtitleFallback);
                     let providerEpisodeId = null;
+                    if (provider === 'animesalt') {
+                        providerEpisodeId = await resolveAnimesaltEpisodeId(
+                            {
+                                ...providerResolution,
+                                preferredYear,
+                                isMovie: MEDIA_TYPE === 'movie',
+                            },
+                            subtitleTimeoutMs,
+                        );
+                    }
                     if (provider === 'justanime' && providerAnimeIdOverride) {
                         providerEpisodeId = await resolveJustAnimeOverrideEpisodeId(
                             providerAnimeIdOverride,
@@ -6721,12 +6998,11 @@
                         preferredYear,
                         providerResolution.seasonLabel,
                     );
-                    const subtitleTimeoutMs = getProviderTimeout(provider, 'subtitleFallback', REQ_TIMEOUT.subtitleFallback);
 
                     // Check show-level cache to skip search+info on subsequent episodes
-                    const cachedAnimeId = providerAnimeIdOverride || justanimeAnimeIdCache.get(providerCacheScope);
+                    const cachedAnimeId = provider === 'animesalt' ? null : (providerAnimeIdOverride || justanimeAnimeIdCache.get(providerCacheScope));
 
-                    if (cachedAnimeId) {
+                    if (!providerEpisodeId && cachedAnimeId) {
                         // Fast path: already know the anime ID, build episode ID directly
                         if (provider === 'justanime') {
                             providerEpisodeId = `${cachedAnimeId}$episode$${MEDIA_TYPE === 'tv' ? providerEpisodeNo : 1}`;
@@ -6802,7 +7078,6 @@
                     }
                 } catch (_) { }
             }
-            animeSubtitleCache.set(subtitleCacheKey, []);
             return [];
         }
 
@@ -7026,9 +7301,9 @@
                 retryItem.textContent = 'Retry subtitle fetch';
                 retryItem.onclick = async () => {
                     try {
-                        const subs = await fetchAnimeSubtitleFallback();
+                        const subs = await fetchAnimeSubtitleFallback(true);
                         if (Array.isArray(subs) && subs.length) {
-                            externalSubtitleTracks = mergeSubtitleTrackLists(externalSubtitleTracks, subs);
+                            setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, subs));
                             if (video) await applyExternalSubtitlesToVideo(video);
                         }
                     } catch (_) { }
@@ -7070,22 +7345,27 @@
                 }
 
                 // If sourceNode doesn't exist or is attached to the wrong element
-                if (!sourceNode || sourceNode.mediaElement !== video) {
+                if (!sourceNode || sourceNodeVideo !== video) {
                     try {
                         if (sourceNode) sourceNode.disconnect();
                         sourceNode = audioCtx.createMediaElementSource(video);
+                        sourceNodeVideo = video;
                         if (!gainNode) gainNode = audioCtx.createGain();
                         sourceNode.connect(gainNode);
                         gainNode.connect(audioCtx.destination);
                     } catch (e) {
                         console.warn('AudioContext boost failed:', e);
+                        sourceNode = null;
+                        sourceNodeVideo = null;
                         return;
                     }
                 }
             }
 
             if (audioCtx && gainNode) {
-                if (audioCtx.state === 'suspended') audioCtx.resume();
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(() => undefined);
+                }
                 gainNode.gain.value = volumeBoost / 100;
             }
 
@@ -7123,6 +7403,8 @@
             playPauseBtn.innerHTML = isPlaying
                 ? '<i class="fa-solid fa-pause"></i>'
                 : '<i class="fa-solid fa-play"></i>';
+            playPauseBtn.classList.toggle('is-playing', isPlaying);
+            playPauseBtn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
         }
 
         function updateMuteIcon() {
@@ -7382,7 +7664,7 @@
                 id: TMDB_ID,
                 type: MEDIA_TYPE,
                 title: document.getElementById('media-title').textContent,
-                poster: currentCoverUrl,
+                poster: resolveMediaPosterUrl(currentMediaInfo || {}, currentCoverUrl || ''),
                 currentTime: currentTime,
                 duration: duration,
                 lastUpdated: now,
@@ -8300,10 +8582,15 @@
                 showControlSurface();
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(false);
+                showPauseMediaCard();
+            });
+            video.addEventListener('play', () => {
+                hidePauseMediaCard();
             });
             video.addEventListener('ended', () => {
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(true);
+                hidePauseMediaCard();
             });
         }
 
@@ -8787,6 +9074,14 @@
             updateMuteIcon();
             captionsBtn.style.display = 'none';
             initMobileSheetDragToClose();
+            const wakeControlsIfHidden = () => {
+                if (!controlSurface.classList.contains('visible')) {
+                    holdControlsVisible(0);
+                    return true;
+                }
+                holdControlsVisible(3000);
+                return false;
+            };
             if (customAudioBtn) {
                 customAudioBtn.innerHTML = '<svg class="audio-wave-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 14V10M8 17V7M12 20V4M16 16V8M20 13V11" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>';
             }
@@ -8802,11 +9097,7 @@
 
             playPauseBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // If controls are hidden, show them instead of playing/pausing
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 if (!video) return;
                 if (video.paused) video.play();
                 else video.pause();
@@ -8815,12 +9106,7 @@
             skipBackBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
-                holdControlsVisible(0);
+                if (wakeControlsIfHidden()) return;
                 registerSkipPulse('left', 10);
                 requestSeekToTime(Math.max(0, (video.currentTime || 0) - 10), true);
             });
@@ -8828,12 +9114,7 @@
             skipFwdBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
-                holdControlsVisible(0);
+                if (wakeControlsIfHidden()) return;
                 registerSkipPulse('right', 10);
                 if (isFinite(video.duration)) requestSeekToTime(Math.min(video.duration, (video.currentTime || 0) + 10), true);
                 else requestSeekToTime((video.currentTime || 0) + 10, true);
@@ -8848,22 +9129,14 @@
 
             customAudioBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 toggleAudioPanel(customAudioBtn);
             });
 
             captionsBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 const wasOpen = captionsMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -8874,32 +9147,20 @@
 
             customServerBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 toggleSourcePanel(customServerBtn);
             });
 
             customEpisodeBtn?.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 toggleEpPanel(customEpisodeBtn);
             });
 
             qualityBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!hlsInst) return;
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 const wasOpen = qualityMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -8910,11 +9171,7 @@
 
             playbackBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 const wasOpen = playbackMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -8925,11 +9182,7 @@
 
             preferencesBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 const wasOpen = preferencesMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -8940,11 +9193,7 @@
 
             fitBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 fitIndex = (fitIndex + 1) % fitModes.length;
                 applyFitMode();
                 showControlSurface();
@@ -8953,11 +9202,7 @@
             muteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!video) return;
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 const wasOpen = volumeMenu.classList.contains('active');
                 closeAllPopups();
                 if (wasOpen) return;
@@ -8968,12 +9213,7 @@
 
             fullscreenBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-
-                // If controls are hidden, show them instead
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(0); // Uses minimum hold time
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
 
                 // Helper: check if any fullscreen is active (standard + webkit variants)
                 const isInFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement || video?.webkitDisplayingFullscreen);
@@ -9223,10 +9463,40 @@
                 await goToNextEpisode();
             });
 
+            const getSeekPercentFromClientX = (clientX) => {
+                const rect = seekBar.getBoundingClientRect();
+                if (!rect.width) return parseFloat(seekBar.value || '0');
+                return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+            };
+
+            const previewSeekAtPercent = (percent) => {
+                seekBar.value = String(percent);
+                seekBar.style.setProperty('--seek-percent', `${percent}%`);
+                if (video && isFinite(video.duration) && video.duration > 0) {
+                    currentTimeEl.textContent = formatTime((percent / 100) * video.duration);
+                }
+            };
+
+            const seekToPercent = (percent) => {
+                previewSeekAtPercent(percent);
+                requestSeekToTime((percent / 100) * (video?.duration || 0), true);
+            };
+
+            seekWrapper?.addEventListener('pointerdown', (e) => {
+                if (e.target === seekBar) return;
+                if (!video || !isFinite(video.duration) || video.duration <= 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (wakeControlsIfHidden()) return;
+                seekToPercent(getSeekPercentFromClientX(e.clientX));
+            });
+
             seekBar.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
                 isSeekDragging = true;
                 seekBar.setPointerCapture?.(e.pointerId);
-                pendingSeekPercent = parseFloat(seekBar.value || '0');
+                pendingSeekPercent = getSeekPercentFromClientX(e.clientX);
+                previewSeekAtPercent(pendingSeekPercent);
                 wasPlayingBeforeDragSeek = !!video && !video.paused;
             });
 
@@ -9241,11 +9511,7 @@
                     }
                     return;
                 }
-                // If controls are hidden, don't seek
-                if (Date.now() >= controlsHoldVisibleUntil) {
-                    holdControlsVisible(1500);
-                    return;
-                }
+                if (wakeControlsIfHidden()) return;
                 requestSeekToTime((percent / 100) * (video?.duration || 0), true);
             });
 
@@ -9259,7 +9525,7 @@
                 isSeekDragging = false;
                 pendingSeekPercent = null;
                 lastDragSeekCommitAt = Date.now();
-                requestSeekToTime((percent / 100) * (video?.duration || 0), true);
+                seekToPercent(percent);
                 if (wasPlayingBeforeDragSeek && video) {
                     Promise.resolve(video.play()).catch(() => { });
                 }
@@ -9267,17 +9533,20 @@
 
             seekBar.addEventListener('pointerup', commitSeekFromDrag);
             seekBar.addEventListener('pointercancel', commitSeekFromDrag);
+            seekBar.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!video || !isFinite(video.duration) || video.duration <= 0) return;
+                if (Date.now() - lastDragSeekCommitAt < 120) return;
+                if (wakeControlsIfHidden()) return;
+                seekToPercent(getSeekPercentFromClientX(e.clientX));
+            });
             seekBar.addEventListener('change', () => {
                 // Keyboard/click commits (non-drag path)
                 if (!isSeekDragging) {
                     if (Date.now() - lastDragSeekCommitAt < 280) return;
-                    // If controls are hidden, don't seek
-                    if (Date.now() >= controlsHoldVisibleUntil) {
-                        holdControlsVisible(1500);
-                        return;
-                    }
+                    if (wakeControlsIfHidden()) return;
                     const percent = parseFloat(seekBar.value || '0');
-                    requestSeekToTime((percent / 100) * (video?.duration || 0), true);
+                    seekToPercent(percent);
                 }
             });
 
@@ -9285,6 +9554,8 @@
             const previewTime = document.getElementById('previewTime');
             window.previewLastSecond = -1;
             window.previewSeekInFlight = false;
+            window.previewLastRequestAt = 0;
+            window.previewLastCapturedSecond = -1;
             window.previewNudgeTick = 0;
             window.isAutoSkipping = false;
 
@@ -9318,42 +9589,9 @@
             const previewFrameCache = new Map();
             const maxCacheSize = 150; // Cache up to 150 frames
 
-            window._lastCapturedFrameHash = null;
-            window._captureFailureCount = 0;
-            window._previewHlsResetAttempts = 0;
-
-            function getFrameDataHash(frameDataUrl) {
-                // Simple hash to detect if we're getting the same frame repeatedly
-                if (!frameDataUrl) return null;
-                // Use first 100 chars of data URL as a quick hash
-                return frameDataUrl.substring(0, 100);
-            }
-
             function cachePreviewFrame(roundedSecond, frameData = null) {
                 // If frameData is provided, use it directly (from canvas capture)
                 if (frameData) {
-                    // Check for frame repetition
-                    const frameHash = getFrameDataHash(frameData);
-                    if (frameHash === window._lastCapturedFrameHash) {
-                        window._captureFailureCount++;
-                        // If we're getting the same frame too many times, try to reset preview HLS
-                        if (window._captureFailureCount > 2 && window._previewHlsResetAttempts < 3) {
-                            console.log('[preview] Frame repetition detected, attempting preview HLS reset...');
-                            window._previewHlsResetAttempts++;
-                            try {
-                                if (window.previewHlsInst) {
-                                    window.previewHlsInst.destroy();
-                                    window.previewHlsIsUnhealthy = false;
-                                    window.previewHlsErrorCount = 0;
-                                }
-                            } catch (_) { }
-                            return; // Don't cache the duplicate
-                        }
-                    } else {
-                        window._lastCapturedFrameHash = frameHash;
-                        window._captureFailureCount = 0;
-                    }
-
                     previewFrameCache.set(roundedSecond, frameData);
                     if (previewFrameCache.size > maxCacheSize) {
                         const firstKey = previewFrameCache.keys().next().value;
@@ -9373,19 +9611,6 @@
                         ctx.drawImage(previewVideo, 0, 0);
                         const frameUrl = canvas.toDataURL('image/jpeg', 0.75);
 
-                        // Check for frame repetition in preview video capture too
-                        const frameHash = getFrameDataHash(frameUrl);
-                        if (frameHash === window._lastCapturedFrameHash) {
-                            window._captureFailureCount++;
-                            if (window._captureFailureCount > 2) {
-                                console.log('[preview] Preview video capturing same frame repeatedly');
-                                return; // Skip caching duplicate frames
-                            }
-                        } else {
-                            window._lastCapturedFrameHash = frameHash;
-                            window._captureFailureCount = 0;
-                        }
-
                         previewFrameCache.set(roundedSecond, frameUrl);
                         // Clean up old cache entries
                         if (previewFrameCache.size > maxCacheSize) {
@@ -9398,6 +9623,141 @@
 
             function getPreviewFrameFromCache(roundedSecond) {
                 return previewFrameCache.get(roundedSecond) || null;
+            }
+
+            function getPreviewThumbImage() {
+                const previewThumbImage = document.getElementById('previewThumbImage');
+                const previewVideo = document.getElementById('previewVideo');
+                if (previewThumbImage && previewVideo) {
+                    previewVideo._thumbImage = previewThumbImage;
+                    return previewThumbImage;
+                }
+                return previewThumbImage || null;
+            }
+
+            function showPreviewFrame(previewVideo, frameData) {
+                const previewThumbImage = getPreviewThumbImage();
+                if (!previewThumbImage || !previewVideo) return;
+                if (frameData) {
+                    previewThumbImage.src = frameData;
+                    previewThumbImage.style.display = 'block';
+                    previewVideo.style.visibility = 'hidden';
+                } else {
+                    previewThumbImage.style.display = 'none';
+                    previewVideo.style.visibility = 'visible';
+                }
+            }
+
+            function getPreviewPosterFallback() {
+                const poster = resolveMediaPosterUrl(currentMediaInfo || {}, currentCoverUrl || '');
+                return poster || pauseMediaPoster?.src || video?.poster || '';
+            }
+
+            function showPreviewPosterFallback(previewVideo) {
+                const poster = getPreviewPosterFallback();
+                if (!poster) return;
+                showPreviewFrame(previewVideo, poster);
+            }
+
+            function canvasLooksMostlyBlack(canvas) {
+                try {
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    if (!ctx) return false;
+                    const w = canvas.width;
+                    const h = canvas.height;
+                    const sample = ctx.getImageData(0, 0, w, h).data;
+                    let dark = 0;
+                    let total = 0;
+                    const step = Math.max(4, Math.floor(sample.length / 1600));
+                    for (let i = 0; i < sample.length; i += step - (step % 4)) {
+                        const r = sample[i] || 0;
+                        const g = sample[i + 1] || 0;
+                        const b = sample[i + 2] || 0;
+                        if ((r + g + b) / 3 < 10) dark++;
+                        total++;
+                    }
+                    return total > 0 && dark / total > 0.92;
+                } catch (_) {
+                    return false;
+                }
+            }
+
+            function capturePreviewFrame(previewVideo) {
+                if (!previewVideo || !previewVideo.videoWidth || previewVideo.readyState < 2) return null;
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(previewVideo.videoWidth, 240);
+                    canvas.height = Math.max(previewVideo.videoHeight, 135);
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return null;
+                    ctx.drawImage(previewVideo, 0, 0);
+                    if (canvasLooksMostlyBlack(canvas)) return null;
+                    return canvas.toDataURL('image/jpeg', 0.85);
+                } catch (_) {
+                    return null;
+                }
+            }
+
+            function captureFromMainVideo(timeInSeconds) {
+                try {
+                    if (!video || video.seeking) return null;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 240;
+                    canvas.height = 135;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.drawImage(video, 0, 0, 240, 135);
+                        if (canvasLooksMostlyBlack(canvas)) return null;
+                        return canvas.toDataURL('image/jpeg', 0.85);
+                    }
+                } catch (_) { }
+                return null;
+            }
+
+            function capturePreviewFrameWhenReady(previewVideo, requestToken, targetTime) {
+                let captured = false;
+                const finalizeCapture = () => {
+                    if (captured) return;
+                    if (window.previewPreviewRequestToken !== requestToken) return;
+                    const rounded = Math.round(Number(targetTime || 0));
+                    let frameData = capturePreviewFrame(previewVideo);
+                    if (!frameData && (window.previewUseCanvasFallbackOnly || (window.previewHlsIsUnhealthy && window.previewHlsErrorCount > 3))) {
+                        frameData = captureFromMainVideo(rounded) || null;
+                    }
+                    if (frameData) {
+                        captured = true;
+                        window.previewLastCapturedSecond = rounded;
+                        cachePreviewFrame(rounded, frameData);
+                        showPreviewFrame(previewVideo, frameData);
+                    } else if (!window.previewHlsInst || window.previewUseCanvasFallbackOnly) {
+                        showPreviewPosterFallback(previewVideo);
+                    }
+                };
+
+                if (typeof previewVideo.requestVideoFrameCallback === 'function') {
+                    previewVideo.requestVideoFrameCallback(() => {
+                        finalizeCapture();
+                    });
+                }
+
+                previewVideo.addEventListener('seeked', finalizeCapture, { once: true });
+                previewVideo.addEventListener('loadeddata', finalizeCapture, { once: true });
+                previewVideo.addEventListener('canplay', finalizeCapture, { once: true });
+                setTimeout(finalizeCapture, 220);
+                setTimeout(finalizeCapture, 650);
+                setTimeout(() => {
+                    finalizeCapture();
+                    if (!captured && !window.previewHlsInst) showPreviewPosterFallback(previewVideo);
+                }, 1200);
+            }
+
+            function hasActivePreviewSource(previewVideo) {
+                return !!(
+                    previewVideo?.currentSrc ||
+                    previewVideo?.src ||
+                    window.previewHlsInst ||
+                    window.previewDashInst
+                );
             }
 
             function handleSeekPreview(e) {
@@ -9415,41 +9775,43 @@
                 const parentRect = parentEl.getBoundingClientRect();
                 const anchorClientX = rect.left + (percent / 100) * rect.width;
                 const leftInParent = anchorClientX - parentRect.left;
-                // Keep alignment to hovered time; only tiny edge padding to avoid hard clipping.
+                seekPreview.classList.add('visible');
+                const previewWidth = seekPreview.offsetWidth || 240;
+                const previewHeight = seekPreview.offsetHeight || 190;
+                // Keep alignment to hovered time while preventing edge clipping.
                 const edgePad = 8;
-                const minLeft = edgePad;
-                const maxLeft = Math.max(minLeft, parentRect.width - edgePad);
+                const minLeft = (previewWidth / 2) + edgePad;
+                const maxLeft = Math.max(minLeft, parentRect.width - (previewWidth / 2) - edgePad);
                 const clampedLeft = Math.max(minLeft, Math.min(maxLeft, leftInParent));
                 seekPreview.style.left = `${clampedLeft}px`;
-                seekPreview.classList.add('visible');
+                seekPreview.style.top = `${(rect.top - parentRect.top) - previewHeight - 14}px`;
                 previewTime.textContent = formatTime(seekTime);
 
                 // ENHANCED: Frame-accurate preview thumbnail display
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
-                    const wholeSecond = Math.max(0, Math.min(Math.floor(seekTime), Math.floor(video.duration)));
+                    const wholeSecond = Math.max(0, Math.min(Math.round(seekTime), Math.floor(video.duration)));
 
                     // Check if we already have this frame cached
                     const cachedFrame = getPreviewFrameFromCache(wholeSecond);
                     if (cachedFrame) {
                         // Display cached frame immediately
-                        if (!previewVideo._cacheDisplay) {
-                            previewVideo._cacheDisplay = document.createElement('img');
-                            previewVideo._cacheDisplay.style.position = 'absolute';
-                            previewVideo._cacheDisplay.style.width = '100%';
-                            previewVideo._cacheDisplay.style.height = '100%';
-                            previewVideo._cacheDisplay.style.objectFit = 'contain';
-                            previewVideo.parentElement?.appendChild(previewVideo._cacheDisplay);
-                        }
-                        previewVideo._cacheDisplay.src = cachedFrame;
-                        previewVideo._cacheDisplay.style.display = 'block';
-                    } else if (previewVideo._cacheDisplay) {
-                        previewVideo._cacheDisplay.style.display = 'none';
+                        showPreviewFrame(previewVideo, cachedFrame);
+                    } else if (!hasActivePreviewSource(previewVideo)) {
+                        showPreviewFrame(previewVideo, null);
                     }
 
-                    // Same second skip
-                    if (wholeSecond === window.previewLastSecond) return;
+                    const now = Date.now();
+                    if (
+                        wholeSecond === window.previewLastSecond &&
+                        window.previewLastCapturedSecond === wholeSecond
+                    ) return;
+                    if (
+                        wholeSecond === window.previewLastSecond &&
+                        now - (window.previewLastRequestAt || 0) < 350
+                    ) return;
                     window.previewLastSecond = wholeSecond;
+                    window.previewLastRequestAt = now;
 
                     // ENHANCED: Improved frame seeking strategy
                     // Try to get exact second, then with small offset for keyframe variety
@@ -9461,21 +9823,29 @@
 
             window.performPreviewSeek = function () {
                 const previewVideo = document.getElementById('previewVideo');
-                if (!previewVideo || window.previewTargetTime === undefined || !isFinite(previewVideo.duration)) return;
-                if (previewVideo.readyState < 1) return;
+                if (!previewVideo || window.previewTargetTime === undefined) return;
+                if (previewVideo.readyState < 1) {
+                    if (!window.previewRetryReadyTimer) {
+                        window.previewRetryReadyTimer = setTimeout(() => {
+                            window.previewRetryReadyTimer = null;
+                            window.performPreviewSeek?.();
+                        }, 120);
+                    }
+                    return;
+                }
                 if (window.previewSeekInFlight) return;
 
                 // ENHANCED: Canvas-only fallback for unstable preview pipelines.
                 if (window.previewUseCanvasFallbackOnly) {
                     const rounded = Math.round(Number(window.previewTargetTime || 0));
                     const frameData = captureFromMainVideo(rounded);
-                    if (frameData) cachePreviewFrame(rounded, frameData);
+                    if (frameData) {
+                        cachePreviewFrame(rounded, frameData);
+                        showPreviewFrame(previewVideo, frameData);
+                    } else if (!hasActivePreviewSource(previewVideo)) {
+                        showPreviewPosterFallback(previewVideo);
+                    }
                     return;
-                }
-
-                // ENHANCED: Disable preview seeking during main video startup to prevent interference
-                if (Date.now() < (window.previewSeekingDisabledUntil || 0)) {
-                    return; // Skip preview seeking during initial playback
                 }
 
                 // Also skip if main video is actively seeking or just buffering
@@ -9488,32 +9858,23 @@
                     return;
                 }
 
-                // ENHANCED: Helper to capture frame from main video as fallback
-                const captureFromMainVideo = (timeInSeconds) => {
-                    try {
-                        if (!video || video.seeking) return null;
-                        const canvas = document.createElement('canvas');
-                        canvas.width = 240;
-                        canvas.height = 135;
-                        const ctx = canvas.getContext('2d');
-                        if (ctx) {
-                            ctx.drawImage(video, 0, 0, 240, 135);
-                            return canvas.toDataURL('image/jpeg', 0.85);
-                        }
-                    } catch (_) { }
-                    return null;
-                };
-
                 // ENHANCED: More responsive seek with better timing
                 if (window.previewSeekTimer) clearTimeout(window.previewSeekTimer);
                 window.previewSeekTimer = setTimeout(() => {
-                    const maxTime = Math.max(0, Number(previewVideo.duration || 0) - 0.05);
+                    const previewDuration = isFinite(previewVideo.duration) && previewVideo.duration > 0
+                        ? Number(previewVideo.duration)
+                        : Number(video?.duration || 0);
+                    if (!isFinite(previewDuration) || previewDuration <= 0) return;
+                    const maxTime = Math.max(0, previewDuration - 0.05);
                     let target = Math.max(0, Math.min(Number(window.previewTargetTime || 0), maxTime));
+                    const requestToken = (window.previewPreviewRequestToken || 0) + 1;
+                    window.previewPreviewRequestToken = requestToken;
 
                     window.previewSeekInFlight = true;
+                    let seekStarted = false;
                     try {
                         // ENHANCED: Check preview HLS health - more conservative to avoid main stream interference
-                        if (window.previewHlsInst && !window.previewHlsIsUnhealthy && window.previewHlsErrorCount < 3) {
+                        if (window.previewHlsInst && window.previewHlsErrorCount < 8) {
                             try {
                                 const levels = window.previewHlsInst.levels || [];
                                 // Use level 1 if available (middle quality), fallback to 0
@@ -9526,20 +9887,18 @@
                                 if (!video?.seeking) {
                                     window.previewHlsInst.startLoad(Math.max(0, target - 0.5));
                                 }
-                            } catch (_) {
-                                window.previewHlsIsUnhealthy = true;
-                            }
+                            } catch (_) { }
                         }
 
-                        // Skip seeking the preview video if HLS is too unhealthy (avoid compounding errors)
-                        // OR if the main video is actively seeking
-                        if ((!window.previewHlsIsUnhealthy || window.previewHlsErrorCount <= 1) && !video?.seeking) {
+                        if (!video?.seeking) {
                             if (typeof previewVideo.fastSeek === 'function') {
                                 previewVideo.fastSeek(target);
                             } else {
                                 previewVideo.currentTime = target;
                             }
+                            seekStarted = true;
                         }
+                        capturePreviewFrameWhenReady(previewVideo, requestToken, target);
                     } catch (_) {
                         // Try fallback offset on error
                         if (window.previewTargetTimeAlt !== undefined && window.previewTargetTimeAlt !== target) {
@@ -9550,89 +9909,61 @@
                                 } else {
                                     previewVideo.currentTime = target;
                                 }
+                                capturePreviewFrameWhenReady(previewVideo, requestToken, target);
                             } catch (_) { }
                         }
                     } finally {
-                        window.previewSeekInFlight = false;
-                        // ENHANCED: Cache the frame after successful seek
-                        setTimeout(() => {
-                            if (!previewVideo.seeking) {
-                                const rounded = Math.round(window.previewTargetTime || 0);
-
-                                // Try to capture from preview video first, fallback to main video
-                                let frameData = null;
-
-                                // Force main video canvas capture if preview HLS has become unreliable
-                                if (!window.previewUseCanvasFallbackOnly) {
-                                    try {
-                                        if (previewVideo.readyState >= 2) {
-                                            const canvas = document.createElement('canvas');
-                                            canvas.width = Math.max(previewVideo.videoWidth, 240);
-                                            canvas.height = Math.max(previewVideo.videoHeight, 135);
-                                            const ctx = canvas.getContext('2d');
-                                            if (ctx) {
-                                                ctx.drawImage(previewVideo, 0, 0);
-                                                frameData = canvas.toDataURL('image/jpeg', 0.75);
-                                            }
-                                        }
-                                    } catch (_) { }
-                                }
-
-                                // Fallback to main video if preview frame capture failed or preview is too unhealthy
-                                // OR if we've flagged to always use canvas fallback
-                                if ((!frameData || window.previewUseCanvasFallbackOnly) && (window.previewUseCanvasFallbackOnly || (window.previewHlsIsUnhealthy && window.previewHlsErrorCount > 3))) {
-                                    console.log(`[preview] Using main video canvas at ${rounded}s`);
-                                    // Try multiple offsets to avoid capturing the same frame
-                                    const offsets = [0, 0.3, 0.6, -0.3];
-                                    for (const offset of offsets) {
-                                        const offsetTime = Math.max(0, rounded + offset);
-                                        frameData = captureFromMainVideo(offsetTime);
-                                        if (frameData) break; // Use first successful capture
-                                    }
-                                }
-
-                                if (frameData) {
-                                    cachePreviewFrame(rounded, frameData);
-                                }
-
-                                // ENHANCED: Prefetch adjacent frames for smooth scrolling
-                                const prefetchNext = rounded + 1;
-                                const prefetchPrev = Math.max(0, rounded - 1);
-                                if (prefetchNext <= Math.floor(video.duration)) {
-                                    setTimeout(() => {
-                                        if (!getPreviewFrameFromCache(prefetchNext) && !window.previewSeekInFlight) {
-                                            window.previewTargetTime = prefetchNext;
-                                            window.performPreviewSeek();
-                                        }
-                                    }, 300);
-                                }
+                        if (!seekStarted) window.previewSeekInFlight = false;
+                        else setTimeout(() => {
+                            if (window.previewPreviewRequestToken === requestToken) {
+                                window.previewSeekInFlight = false;
                             }
-                        }, 100);
+                        }, 260);
                     }
-                }, 35); // ENHANCED: Slightly faster response (was 45ms)
+                }, 8);
             };
 
             seekBar.addEventListener('mousemove', handleSeekPreview);
             seekBar.addEventListener('touchstart', handleSeekPreview, { passive: true });
             seekBar.addEventListener('touchmove', handleSeekPreview, { passive: true });
+            seekWrapper?.addEventListener('mousemove', handleSeekPreview);
+            seekWrapper?.addEventListener('touchstart', handleSeekPreview, { passive: true });
+            seekWrapper?.addEventListener('touchmove', handleSeekPreview, { passive: true });
 
             seekBar.addEventListener('mouseleave', () => {
                 seekPreview.classList.remove('visible');
                 window.previewLastSecond = -1;
+                window.previewLastCapturedSecond = -1;
+                window.previewLastRequestAt = 0;
+                window.previewHlsInst?.stopLoad?.();
                 // Hide cache display
                 const previewVideo = document.getElementById('previewVideo');
-                if (previewVideo && previewVideo._cacheDisplay) {
-                    previewVideo._cacheDisplay.style.display = 'none';
+                const previewThumbImage = document.getElementById('previewThumbImage');
+                if (previewThumbImage) {
+                    previewThumbImage.style.display = 'none';
                 }
+                if (previewVideo) previewVideo.style.visibility = 'visible';
+            });
+            seekWrapper?.addEventListener('mouseleave', () => {
+                seekPreview.classList.remove('visible');
+                window.previewLastSecond = -1;
+                window.previewLastCapturedSecond = -1;
+                window.previewLastRequestAt = 0;
+                window.previewHlsInst?.stopLoad?.();
             });
             seekBar.addEventListener('touchend', () => {
                 seekPreview.classList.remove('visible');
                 window.previewLastSecond = -1;
+                window.previewLastCapturedSecond = -1;
+                window.previewLastRequestAt = 0;
+                window.previewHlsInst?.stopLoad?.();
                 // Hide cache display
                 const previewVideo = document.getElementById('previewVideo');
-                if (previewVideo && previewVideo._cacheDisplay) {
-                    previewVideo._cacheDisplay.style.display = 'none';
+                const previewThumbImage = document.getElementById('previewThumbImage');
+                if (previewThumbImage) {
+                    previewThumbImage.style.display = 'none';
                 }
+                if (previewVideo) previewVideo.style.visibility = 'visible';
             });
 
 
@@ -9738,7 +10069,7 @@
                 const isControlsVisible = controlSurface.classList.contains('visible');
 
                 // 1. Identify other interactive elements
-                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
+                const isOnInteractive = e.target.closest('button, input[type="range"], .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
 
                 // 2. Hide logic: Let buttons and specific bubble-phase handlers handle hiding.
                 // We ONLY intercept here if we need to reveal the UI.
@@ -9791,7 +10122,7 @@
                 if (now - lastInteractionAt < 100) return; // Prevent double-toggle from reveal-tap
 
                 // Identify if clicked on an actual button/control
-                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn');
+                const isOnInteractive = e.target.closest('button, input[type="range"], .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn');
 
                 if (!isOnInteractive) {
                     e.preventDefault();
@@ -9801,13 +10132,13 @@
             });
 
             // ─── ADVANCED INTERACTION HANDLER ───
-            // Handles: Double-tap Skip, Double-tap Play/Pause, and Single-tap Hide.
+            // Handles: Double-tap Skip and Single-tap Hide. Play/pause stays on the play button only.
             function handleSurfaceInteraction(e) {
                 // UI Lock bypass
                 const isLockedAction = e.target.closest('#uiLockBtn, .ui-lock-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return; 
                 if (isUiLocked) return;
-                const isOnInteractive = e.target.closest('button, input[type="range"], .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
+                const isOnInteractive = e.target.closest('button, input[type="range"], .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
                 if (isOnInteractive) return;
 
                 const now = Date.now();
@@ -9835,7 +10166,7 @@
                         if (isFinite(video.duration)) requestSeekToTime(Math.min(video.duration, (video.currentTime || 0) + 10), true);
                         else requestSeekToTime((video.currentTime || 0) + 10, true);
                     } else {
-                        if (video.paused) video.play(); else video.pause();
+                        holdControlsVisible(3000);
                     }
                     return;
                 }
@@ -10035,7 +10366,7 @@
             }, 60000);
 
             try {
-                const isAnimeOnlyProvider = ['satoru', 'justanime', 'animesalt', 'animekai'].includes(FORCED_PROVIDER);
+                const isAnimeOnlyProvider = ['satoru', 'animesalt'].includes(FORCED_PROVIDER);
                 const providerNeedsMetaInfo = false;
                 const infoUrls = (FORCED_PROVIDER && !isAnimeOnlyProvider && !providerNeedsMetaInfo)
                     ? [
@@ -10124,6 +10455,7 @@
 
                 currentMediaInfo = info;
                 console.log('currentMediaInfo.title:', currentMediaInfo?.title, 'TMDB_ID:', TMDB_ID);
+                updatePauseMediaPoster();
                 flixhqAltServerAttempted = false;
                 currentAnimeCanonicalInfo = null;
                 currentAnimeCanonicalInfoPromise = null;
@@ -10151,10 +10483,11 @@
                 const title = info.title || info.name || 'Unknown Title';
                 document.title = `Watching: ${title} | StreamVerse`;
                 document.getElementById('media-title').textContent = title;
-                if (info.cover || info.image) {
-                    currentCoverUrl = info.cover || info.image;
+                currentCoverUrl = resolveMediaPosterUrl(info, currentCoverUrl || '');
+                if (currentCoverUrl) {
                     loader.style.backgroundImage = `url('${currentCoverUrl}')`;
                 }
+                updatePauseMediaPoster();
 
                 const isTv = MEDIA_TYPE === 'tv' ||
                     (info.type || '').toLowerCase().includes('tv') ||
@@ -10169,20 +10502,34 @@
                     await getCanonicalAnimeInfo();
                 }
 
-                // Provider pool selection:
+                // Provider pool selection with anime detection:
                 // - Forced provider: run only that provider.
-                // - Movie mode: never mix anime providers.
-                // - Anime mode: prefer anime providers first, then movie providers as fallback.
+                // - Anime content: use anime providers exclusively (most reliable for anime).
+                // - Non-anime movies: FlixHQ first priority (fastest), then other non-anime providers.
+                // - Non-anime TV: FlixHQ first, then other non-anime providers.
+                if (['animekai', 'justanime'].includes(String(FORCED_PROVIDER || '').toLowerCase())) {
+                    console.warn('[providers] Disabled anime provider ignored:', FORCED_PROVIDER);
+                    FORCED_PROVIDER = '';
+                }
                 if (FORCED_PROVIDER) {
                     activeProviders = [FORCED_PROVIDER];
+                } else if (currentIsLikelyAnime) {
+                    // Anime detected: use only anime providers for best results
+                    activeProviders = [...ANIME_PROVIDERS];
+                    console.log('🎌 Anime detected! Using anime-only providers:', activeProviders);
                 } else if (MEDIA_TYPE === 'movie') {
-                    activeProviders = [...MOVIE_PROVIDERS];
+                    // Non-anime movie: prioritize FlixHQ (fastest), then other non-anime providers
+                    activeProviders = ['flixhq'];
+                    console.log('🎬 Non-anime movie: FlixHQ priority providers:', activeProviders);
                 } else if (MEDIA_TYPE === 'tv') {
-                    activeProviders = ['vegamovies', 'flixhq', ...ANIME_PROVIDERS];
+                    // Non-anime TV: prioritize FlixHQ, then other non-anime providers
+                    activeProviders = ['flixhq'];
+                    console.log('📺 Non-anime TV: FlixHQ priority providers:', activeProviders);
                 } else {
-                    activeProviders = ['vegamovies', 'animesalt', 'flixhq', ...ANIME_PROVIDERS.filter((p) => p !== 'animesalt')];
+                    // Fallback for unknown types
+                    activeProviders = ['flixhq', ...ANIME_PROVIDERS];
                 }
-                console.log('activeProviders:', activeProviders, 'FORCED_PROVIDER:', FORCED_PROVIDER);
+                console.log('activeProviders:', activeProviders, 'FORCED_PROVIDER:', FORCED_PROVIDER, 'isAnime:', currentIsLikelyAnime);
                 buildChips();
 
                 if (isTv) {
@@ -10386,7 +10733,7 @@
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v4';
+                    const seasonCacheVersion = 'v5';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -10621,7 +10968,7 @@
                     ...ANIME_PROVIDERS,
                 ]))
                     .map((p) => String(p || '').toLowerCase())
-                    .filter((p) => ['animesalt', 'animekai', 'satoru', 'justanime'].includes(p));
+                    .filter((p) => ANIME_PROVIDERS.includes(p));
 
                 // Run provider hydration in parallel
                 const hydrationPromises = hydrateProviders.map(async (provider) => {
@@ -11034,7 +11381,11 @@
 
                 (s.episodes || []).forEach((ep, ei) => {
                     const mapped = resolveGlobalEpisodeIndices(s, ep, si, ei);
-                    const mappedKey = `${mapped.seasonIndex}:${mapped.episodeIndex}`;
+                    const scopedProvider = String(getActiveEpisodeMenuProvider() || '').trim().toLowerCase();
+                    const providerEpisodeId = String(ep?.id || '').trim().toLowerCase();
+                    const mappedKey = scopedProvider && providerEpisodeId
+                        ? `${scopedProvider}:${providerEpisodeId}`
+                        : `${mapped.seasonIndex}:${mapped.episodeIndex}`;
                     if (renderedEpisodeKeys.has(mappedKey)) return;
                     renderedEpisodeKeys.add(mappedKey);
 
@@ -11511,15 +11862,16 @@
         async function fetchSources(forcedProviderOverride = null) {
             if (forcedProviderOverride !== null) FORCED_PROVIDER = forcedProviderOverride;
             
-            // Re-evaluate if we should use anime logic based on the current forced provider
-            const currentProviders = FORCED_PROVIDER ? [FORCED_PROVIDER] : (MEDIA_TYPE === 'movie' ? MOVIE_PROVIDERS : ANIME_PROVIDERS);
-            currentIsLikelyAnime = (MEDIA_TYPE === 'tv' && currentProviders.some(p => ANIME_PROVIDERS.includes(p)));
+            // Use the anime detection status that was already determined in init()
+            // This preserves the intelligent anime detection across provider changes
+            console.log('fetchSources: Using detected anime status:', currentIsLikelyAnime);
 
             allSources.length = 0;
+            activeFlixhqServerName = '';
             satoruAudioSources = [];
-            currentAudioSource = 'justanime';
+            currentAudioSource = 'animesalt';
             activeSatoruTrackIndex = -1;
-            externalSubtitleTracks = [];
+            setExternalSubtitleTracks([]);
             currentIdx = 0;
             hideError();
             setLoader('Searching providers...', 'Trying available sources');
@@ -11580,7 +11932,7 @@
             ) + (curEpisode + 1);
 
             // Defer subtitle fallback prefetch so primary provider can start playback first.
-            const forcedProviderHasOwnSubs = effectiveForcedProvider === 'justanime';
+            const forcedProviderHasOwnSubs = false;
 
             activeProviders.forEach(p => chipState(p, ''));
 
@@ -11617,13 +11969,6 @@
                     const rank = (s) => {
                         const provider = String(s?.provider || '').toLowerCase();
                         const low = String(s?.url || '').toLowerCase();
-                        // Vegamovies frequently returns tokenized .txt playlist URLs that are
-                        // not valid HLS manifests in browser; push them to the end.
-                        if (provider === 'vegamovies') {
-                            if (s?.isEmbed || low.includes('/play/')) return -2;
-                            if (low.includes('.mp4')) return -1;
-                            if (low.includes('/playlist/') && low.includes('.txt')) return 3;
-                        }
                         return s.isEmbed ? 1 : 0;
                     };
                     const r = rank(a) - rank(b);
@@ -11640,56 +11985,6 @@
                 allSources = newAllSources;
                 
                 if (allSources.length > 0) {
-                    // Extract VegaMovies language variants as virtual audio tracks.
-                    // Include non-HLS direct sources too so language switching works broadly.
-                    const vegamoviesSources = allSources.filter((s) => {
-                        const prov = String(s?.provider || '').toLowerCase();
-                        const low = String(s?.url || '').toLowerCase();
-                        return (
-                            prov === 'vegamovies' &&
-                            !s.isEmbed &&
-                            !!s.url &&
-                            !low.endsWith('.txt') &&
-                            !low.includes('.txt?')
-                        );
-                    });
-                    if (vegamoviesSources.length > 0) {
-                        const seenLabels = new Set();
-                        satoruAudioSources = vegamoviesSources
-                            .map((src) => {
-                                const rawLabel = String(src.label || '').trim();
-                                const parts = rawLabel.split(' - ').filter(p => {
-                                    const clean = p.trim().toLowerCase();
-                                    return clean !== 'vegamovies' && clean !== 'vegamovie' && !/^\d+p$/i.test(clean);
-                                });
-                                const label = parts.length > 0 ? parts[0].trim() : `Audio ${seenLabels.size + 1}`;
-                                const key = label.toLowerCase();
-                                if (seenLabels.has(key)) return null;
-                                seenLabels.add(key);
-                                return {
-                                    label,
-                                    isM3U8: !!src.isM3U8,
-                                    url: src.url,
-                                    referer: src.referer,
-                                    provider: 'vegamovies'
-                                };
-                            })
-                            .filter(Boolean);
-
-                        let keptFirst = false;
-                        allSources = allSources.filter((s) => {
-                            if (s.provider === 'vegamovies' && !s.isEmbed) {
-                                if (!keptFirst) {
-                                    s.label = 'Vegamovies';
-                                    keptFirst = true;
-                                    return true;
-                                }
-                                return false;
-                            }
-                            return true;
-                        });
-                    }
-
                     // Re-sync currentIdx after sort: find where the currently-streaming
                     // URL ended up so the active highlight and index stay accurate.
                     if (currentStreamUrl) {
@@ -11731,6 +12026,11 @@
             }
 
             const processProvider = async (provider) => {
+                if (['animekai', 'justanime'].includes(String(provider || '').toLowerCase())) {
+                    console.warn('[providers] Disabled anime provider skipped:', provider);
+                    chipState(provider, 'failed');
+                    return;
+                }
                 console.log('Processing provider:', provider);
                 chipState(provider, 'trying');
                 try {
@@ -11900,6 +12200,8 @@
                         watchCandidates.push(buildAnimeWatchUrl(provider, provEpisodeId));
                     } else {
                         const movieBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
+                        // remember flixhq movie base for server listing
+                        if (provider === 'flixhq') window._flixhqMovieBase = movieBase;
                         const isVegamoviesProvider = provider === 'vegamovies';
 
                         if (isVegamoviesProvider) {
@@ -11918,6 +12220,11 @@
 
                         // For FlixHQ with a known provider episode ID, hit direct provider watch first.
                         if (provider === 'flixhq' && provEpisodeId) {
+                            // remember last flixhq episodeId so UI can query available servers
+                            window._lastFlixhqEpisodeId = provEpisodeId;
+                            // Prefer Vidking/Videasy first; keep backend auto as a fallback.
+                            watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=vidking${DIRECT_ONLY ? '&directOnly=true' : ''}`);
+                            watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=videasy${DIRECT_ONLY ? '&directOnly=true' : ''}`);
                             watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
                         }
 
@@ -11998,19 +12305,30 @@
                     .filter((src) => {
                         const url = String(src?.url || '');
                         if (!url || isBrokenEmbedUrl(url) || isLikelyPlaceholderSource(url)) return false;
+                        const low = url.toLowerCase();
+                        const isDirectPlayable =
+                            src?.isM3U8 ||
+                            src?.isM3u8 ||
+                            src?.isDASH ||
+                            low.includes('.m3u8') ||
+                            low.includes('m3u8-proxy') ||
+                            low.includes('getm3u8') ||
+                            low.includes('.mp4') ||
+                            low.includes('.mpd');
+                        if (src?.isEmbed || src?.isIframe || low.includes('/embed') || low.includes('/iframe') || !isDirectPlayable) {
+                            return false;
+                        }
                         if (provider === 'vegamovies') {
-                            const low = url.toLowerCase();
                             // Tokenized playlist TXT links are intermediate pointers, not direct media streams.
                             if ((low.includes('/playlist/') && low.includes('.txt')) || low.endsWith('.txt') || low.includes('.txt?')) {
                                 return false;
                             }
                             // Force native-player-only Vegamovies playback (no site/player embeds).
-                            if (src?.isEmbed || low.includes('/play/') || low.includes('/embed')) {
+                            if (low.includes('/play/')) {
                                 return false;
                             }
                         }
                         if (provider === 'animekai') {
-                            const low = url.toLowerCase();
                             // AnimeKai sometimes returns tokenized `list,<token>.m3u8` variants that
                             // trigger frequent hls frag parse/audio corruption during switches.
                             if (low.includes('/list,') && low.includes('.m3u8')) return false;
@@ -12047,7 +12365,7 @@
                             ? normalizeSubtitleEntries(animekaiDubData.data || animekaiDubData, provider, animekaiDubData?.headers?.Referer || null)
                             : [];
                         const subs = mergeSubtitleTrackLists(primarySubs, dubSubs);
-                        if (subs.length) externalSubtitleTracks = mergeSubtitleTrackLists(externalSubtitleTracks, subs);
+                        if (subs.length) setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, subs));
 
                         // Trigger UI update
                         updateSourceList();
@@ -12085,15 +12403,32 @@
                     await Promise.all(fallbackProviders.map((p) => processProvider(p)));
                 }
             } else if (shouldPreferFlixhqFirst) {
-                await processProvider('flixhq');
+                // Start FlixHQ but don't block indefinitely: if it takes too long,
+                // start fallback providers in parallel so the UI doesn't stall.
+                let flixDone = false;
+                const flixPromise = processProvider('flixhq')
+                    .catch((e) => console.warn('[flixhq] background error:', e?.message || e))
+                    .finally(() => { flixDone = true; });
+                const shortWaitMs = 2000; // wait briefly for FlixHQ to return fast cached result
+                const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+                await Promise.race([flixPromise, sleep(shortWaitMs)]);
+
                 if (allSources.length === 0) {
                     const fallbackProviders = orderedProviders.filter((p) => p !== 'flixhq');
+                    // Run fallbacks in parallel and wait for them so we can show results quickly.
                     await Promise.all(fallbackProviders.map((p) => processProvider(p)));
                 } else if (MEDIA_TYPE !== 'movie') {
                     const backgroundProviders = orderedProviders.filter((p) => p !== 'flixhq');
                     Promise.all(backgroundProviders.map((p) => processProvider(p))).catch((err) => {
                         console.warn('[movie background providers] failed:', err?.message || err);
                     });
+                }
+
+                // If fallbacks failed quickly, wait for FlixHQ before allowing a
+                // no-stream error. FlixHQ often resolves a little later and is
+                // the primary normal movie/TV provider.
+                if (allSources.length === 0 && !flixDone) {
+                    await flixPromise;
                 }
             } else {
                 await Promise.all(orderedProviders.map(p => processProvider(p)));
@@ -12105,7 +12440,7 @@
                 await Promise.all(fallbackProviders.map(p => processProvider(p)));
             }
 
-            if (allSources.length === 0) {
+            if (allSources.length === 0 && !currentStreamUrl && !(video && video.currentSrc)) {
                 showError('No Streams Found', `None of the providers could find a stream for this title.\n\nDetails:\n- ${failReasons.slice(0, 5).join('\n- ')}`);
             }
         }
@@ -12119,7 +12454,6 @@
                 justanime: 'JustAnime',
                 animesalt: 'AnimeSalt',
                 animekai: 'AnimeKai',
-                vegamovies: 'VegaMovies',
             };
             return map[p] || p;
         }
@@ -12255,12 +12589,13 @@
             return false;
         }
 
-        function buildSourcePanel() {
+        async function buildSourcePanel() {
             sourcePanel.innerHTML = `<div class="panel-label">Select Server</div>`;
             
             // Add Reset to Auto option
             const autoItem = document.createElement('div');
             autoItem.className = `src-item ${!FORCED_PROVIDER ? 'active' : ''}`;
+            autoItem.dataset.auto = '1';
             autoItem.innerHTML = `<span class="src-dot"></span><b>Auto (Recommended)</b>`;
             autoItem.onclick = () => {
                 if (FORCED_PROVIDER) {
@@ -12274,18 +12609,111 @@
             };
             sourcePanel.appendChild(autoItem);
 
+            // If we have FlixHQ episode info, fetch available servers and add as selectable backups
+            if (window._lastFlixhqEpisodeId && window._flixhqMovieBase) {
+                try {
+                    const serversUrl = `${window._flixhqMovieBase}/servers?episodeId=${encodeURIComponent(window._lastFlixhqEpisodeId)}`;
+                    const { res } = await fetchJsonWithApiFallback(serversUrl, { signal: AbortSignal.timeout(10000) });
+                    if (res && res.ok) {
+                        const payload = await res.json();
+                        const rows = Array.isArray(payload) ? payload : payload?.data || payload?.servers || [];
+                        (rows || []).forEach((sv) => {
+                            const name = String(sv?.serverName || sv?.name || sv?.serverName || sv?.server || '').trim() || String(sv?.serverUrl || sv?.link || sv?.serverId || '').trim();
+                            if (!name) return;
+                            const serverId = String(sv?.serverName || sv?.name || sv?.server || name).trim().toLowerCase();
+                            const item = document.createElement('div');
+                            item.className = `src-item ${activeFlixhqServerName === serverId ? 'active' : ''}`;
+                            item.dataset.serverId = serverId;
+                            item.innerHTML = `<span class="src-dot"></span>FlixHQ - ${name}`;
+                            item.addEventListener('click', async (event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                try {
+                                    item.classList.add('loading');
+                                    const watchUrl = `${window._flixhqMovieBase}/watch?episodeId=${encodeURIComponent(window._lastFlixhqEpisodeId)}&server=${encodeURIComponent(serverId)}&strictServer=true${DIRECT_ONLY ? '&directOnly=true' : ''}`;
+                                    const { res: wres } = await fetchJsonWithApiFallback(watchUrl, { signal: AbortSignal.timeout(30000) });
+                                    if (!wres || !wres.ok) throw new Error(`Server ${name} returned ${wres?.status || 'no response'}`);
+                                    const wpayload = await wres.json();
+                                    const rows = Array.isArray(wpayload?.sources) ? wpayload.sources : [];
+                                    const mapped = (rows || [])
+                                        .filter(r => r && r.url)
+                                        .map((src) => {
+                                        const low = String(src.url || '').toLowerCase();
+                                        const isM3U8 = low.includes('.m3u8') || /m3u8-proxy/i.test(low) || Boolean(src.isM3U8);
+                                        const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
+                                        const qualityLabel = src.quality || (isM3U8 ? 'HLS' : 'Embed');
+                                        return {
+                                            label: `FlixHQ - ${name} ${qualityLabel}`,
+                                            url: src.url,
+                                            isM3U8,
+                                            isEmbed,
+                                            referer: src.referer || wpayload?.headers?.Referer || null,
+                                            provider: 'flixhq',
+                                            flixhqServer: serverId,
+                                        };
+                                    })
+                                    .filter((src) => {
+                                        const low = String(src.url || '').toLowerCase();
+                                        return src.url && !src.isEmbed && (src.isM3U8 || low.includes('.mp4') || low.includes('.mpd'));
+                                    });
+                                    if (!mapped.length) throw new Error(`No direct playable sources from ${name}`);
+                                    activeFlixhqServerName = serverId;
+                                    // Replace the previous manual FlixHQ server choice, but keep other provider/source rows.
+                                    allSources = mapped.concat((allSources || []).filter((src) => !src?.manualFlixhqServer));
+                                    mapped.forEach((src) => { src.manualFlixhqServer = true; });
+                                    window.allSources = allSources;
+                                    // Rebuild panel and start playback on first server source
+                                    buildSourcePanel();
+                                    if (mapped.length > 0) selectSource(0);
+                                    sourcePanel.classList.remove('open');
+                                } catch (err) {
+                                    console.warn('[flixhq server fetch] failed:', err?.message || err);
+                                    item.classList.remove('loading');
+                                    item.classList.add('failed');
+                                    setTimeout(() => item.classList.remove('failed'), 1200);
+                                }
+                            });
+                            sourcePanel.appendChild(item);
+                        });
+                    }
+                } catch (err) {
+                    console.warn('[buildSourcePanel] flixhq servers fetch failed:', err?.message || err);
+                }
+            }
+
             allSources.forEach((src, i) => {
                 const item = document.createElement('div');
                 // Use currentIdx to preserve active highlight when list rebuilds after new provider arrives
-                item.className = `src-item ${i === (currentIdx ?? 0) ? 'active' : ''}`;
+                item.className = `src-item`;
+                item.dataset.srcIndex = String(i);
+                if (i === (currentIdx ?? 0)) item.classList.add('active');
                 item.innerHTML = `<span class="src-dot"></span>${src.label}`;
                 item.onclick = () => { selectSource(i); sourcePanel.classList.remove('open'); };
                 sourcePanel.appendChild(item);
             });
+            // Ensure panel shows only one active item
+            try { updateSourceUI(typeof currentIdx === 'number' ? currentIdx : null); } catch (_) { }
         }
 
         function updateSourceUI(idx) {
-            sourcePanel.querySelectorAll('.src-item').forEach((el, i) => el.classList.toggle('active', i === idx));
+            // Ensure only one .src-item is active at any time.
+            const items = sourcePanel.querySelectorAll('.src-item');
+            items.forEach((el) => el.classList.remove('active'));
+
+            if (typeof idx === 'number' && Number.isFinite(idx)) {
+                const el = sourcePanel.querySelector(`.src-item[data-src-index=\"${idx}\"]`);
+                if (el) el.classList.add('active');
+                const src = allSources?.[idx];
+                const serverName = String(src?.flixhqServer || '').toLowerCase();
+                if (serverName) {
+                    const serverEl = sourcePanel.querySelector(`.src-item[data-server-id=\"${serverName}\"]`);
+                    if (serverEl) serverEl.classList.add('active');
+                }
+            } else {
+                // No source selected -> mark Auto active
+                const autoEl = sourcePanel.querySelector('.src-item[data-auto]');
+                if (autoEl) autoEl.classList.add('active');
+            }
         }
 
         function selectSource(idx, explicitStartTime = null) {
@@ -12295,10 +12723,13 @@
                 ? explicitTime
                 : ((video && !video.ended) ? video.currentTime : 0);
             currentIdx = idx;
-            updateSourceUI(idx);
 
             const src = allSources[idx];
-            if (!src) return;
+            if (!src) {
+                // No source at this index: mark Auto active and exit
+                updateSourceUI(null);
+                return;
+            }
 
             // Remember if user prefers Dubbed or Subbed
             const label = String(src.label || '').toLowerCase();
@@ -12318,6 +12749,12 @@
                     activeMenuProvider = scopedProvider;
                 }
             }
+            if (src.flixhqServer) {
+                activeFlixhqServerName = String(src.flixhqServer || '').toLowerCase();
+            }
+
+            // Update UI after we set FORCED_PROVIDER so Auto highlight is correct
+            updateSourceUI(idx);
 
             if (MEDIA_TYPE === 'tv') {
                 buildEpPanel();
@@ -12330,6 +12767,7 @@
 
         function resetPlayerSurface() {
             if (hlsInst) { try { hlsInst.stopLoad(); hlsInst.detachMedia(); hlsInst.destroy(); } catch (_) { } hlsInst = null; }
+            clearVideoMediaSource();
             if (dashInst) { try { dashInst.reset(); } catch (_) { } dashInst = null; }
             if (plyr) { try { plyr.destroy(); } catch (_) { } plyr = null; }
             const wrap = document.querySelector('.player-wrap');
@@ -12381,12 +12819,17 @@
             const rawUrl = String(url || '').trim();
             const providerName = String(provider || '').toLowerCase();
             // Cinezo already returns proxy-wrapped HLS links; avoid double-proxying those.
-            if (/\/m3u8-proxy\?/i.test(rawUrl)) {
+            if (/\/(?:m3u8-proxy|utils\/proxy)(?:[/?]|$)/i.test(rawUrl)) {
                 return rawUrl;
             }
             // StreamRuby HLS often rejects server-side proxy requests (403) even with referer,
             // but plays directly in browser context.
             if (/https?:\/\/[^/]*streamruby\.net\//i.test(rawUrl) && providerName !== 'justanime') {
+                return rawUrl;
+            }
+            // VegaMovies tokenized URLs are unstable with reverse proxy overhead;
+            // direct browser access often succeeds where proxy fails.
+            if (providerName === 'vegamovies') {
                 return rawUrl;
             }
             const apiBaseUrl = new URL(activeApiBase || API_BASE, location.href);
@@ -12425,10 +12868,19 @@
             }
         }
 
+        function clearVideoMediaSource(videoEl = video) {
+            if (!videoEl) return;
+            try {
+                videoEl.removeAttribute('src');
+                videoEl.src = '';
+                videoEl.load();
+            } catch (_) { }
+        }
+
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) {
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
             const sourceProvider = String(allSources?.[srcIdx]?.provider || '').toLowerCase();
-            const proxyOnlyProvider = sourceProvider === 'justanime';
+            const proxyOnlyProvider = sourceProvider === 'justanime' || sourceProvider === 'animesalt';
             const resumeTargetTime = Math.max(0, Number(startTime || 0));
             const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 20;
             let nextSourceFallbackUsed = false;
@@ -12500,7 +12952,7 @@
                 if (String(sourceProvider || '').toLowerCase() !== 'flixhq') return false;
                 const mediaType = String(MEDIA_TYPE || '').toLowerCase();
                 if (mediaType !== 'movie' && mediaType !== 'tv') return false;
-                const candidateServers = ['vidcloud', 'upcloud'];
+                const candidateServers = ['vidking', 'videasy', 'megacloud', 'vidcloud', 'upcloud', 'flixhq'];
                 for (const serverName of candidateServers) {
                     try {
                         const watchParams = new URLSearchParams();
@@ -12634,6 +13086,7 @@
 
             // Tear down previous
             if (hlsInst) { try { hlsInst.stopLoad(); hlsInst.detachMedia(); hlsInst.destroy(); } catch (_) { } hlsInst = null; }
+            clearVideoMediaSource();
             if (window.previewHlsInst) { try { window.previewHlsInst.stopLoad(); window.previewHlsInst.detachMedia(); window.previewHlsInst.destroy(); } catch (_) { } window.previewHlsInst = null; }
             if (dashInst) { try { dashInst.reset(); } catch (_) { } dashInst = null; }
             if (window.previewDashInst) { try { window.previewDashInst.reset(); } catch (_) { } window.previewDashInst = null; }
@@ -12669,15 +13122,15 @@
             video = document.getElementById('player-video');
             if (video) { video.volume = savedVolume; video.muted = savedMuted; } // Restore volume across switches
 
-            // Some VegaMovies direct sources sound robotic when any prior non-1x rate
-            // or boosted WebAudio gain remains active across source switches.
-            if (sourceProvider === 'vegamovies' && video) {
+            // Some sources sound robotic when any prior non-1x rate or boosted
+            // WebAudio gain remains active across source switches.
+            if ((sourceProvider === 'vegamovies' || sourceProvider === 'flixhq') && video) {
                 try {
                     video.playbackRate = 1;
                     if ('preservesPitch' in video) video.preservesPitch = true;
                     if ('webkitPreservesPitch' in video) video.webkitPreservesPitch = true;
                 } catch (_) { }
-                if (Number(volumeBoost || 100) > 100) {
+                if (sourceProvider === 'vegamovies' && Number(volumeBoost || 100) > 100) {
                     volumeBoost = 100;
                 }
             }
@@ -12875,6 +13328,7 @@
                     showBufferingOverlay();
                     try {
                         if (hlsInst) { hlsInst.stopLoad(); hlsInst.detachMedia(); hlsInst.destroy(); hlsInst = null; }
+                        clearVideoMediaSource();
                         hlsInst = svCreateHlsInstance(resumeTime, false, currentStreamProvider);
                         svAttachHlsListeners(hlsInst, resumeTime, () => {
                             // If Plyr was never initialized (proxy failed before MANIFEST_PARSED),
@@ -13061,6 +13515,10 @@
                         console.log('[preview] Using canvas-only preview mode for stream stability.');
                         warmupPreviewVideo(previewVideo);
                     } else {
+                    try {
+                        previewVideo.removeAttribute('src');
+                        previewVideo.load();
+                    } catch (_) { }
                     window.previewHlsInst = svCreateHlsInstance(0, true);
                     window.previewHlsInst.on(Hls.Events.MANIFEST_LOADED, () => {
                         // ENHANCED: Use level 1 (if available) instead of always lowest for better quality
@@ -13080,21 +13538,16 @@
                         }
                     });
 
-                    // ENHANCED: Better error handling for preview stream
-                    // Disable preview seeking during main video startup (first 8 seconds)
-                    window.previewSeekingDisabledUntil = Date.now() + 8000;
-
                     window.previewHlsInst.on(Hls.Events.ERROR, (_, data) => {
                         window.previewHlsErrorCount = (window.previewHlsErrorCount || 0) + 1;
 
                         // Non-fatal errors - mark as unhealthy but limit retries to avoid resource exhaustion
                         if (!data.fatal) {
                             console.warn(`[preview] Non-fatal error (count: ${window.previewHlsErrorCount}): ${data.details}`);
-                            // Only retry once for non-fatal errors to avoid hammering connection
-                            if (window.previewHlsErrorCount === 1 || window.previewHlsErrorCount === 3) {
-                                window.previewHlsIsUnhealthy = true;
+                            // Retry occasional non-fatal errors without permanently disabling HLS previews.
+                            if (window.previewHlsErrorCount === 2 || window.previewHlsErrorCount === 5) {
                                 setTimeout(() => {
-                                    if (window.previewHlsInst && window.previewHlsIsUnhealthy && !video?.seeking) {
+                                    if (window.previewHlsInst && !video?.seeking) {
                                         try {
                                             console.log('[preview] Retrying after non-fatal error (limited)...');
                                             window.previewHlsInst.recoverMediaError?.();
@@ -13102,18 +13555,16 @@
                                     }
                                 }, 1500); // Increased delay to let main stream priority
                             }
-                            // After 5 consecutive non-fatal errors, switch to fallback mode permanently
-                            if (window.previewHlsErrorCount >= 5) {
-                                console.warn('[preview] Too many non-fatal errors, switching to canvas fallback permanently');
+                            if (window.previewHlsErrorCount >= 12) {
+                                console.warn('[preview] Too many non-fatal errors, switching to fallback temporarily');
                                 window.previewHlsIsUnhealthy = true;
-                                window.previewUseCanvasFallbackOnly = true; // Force canvas fallback
                             }
                             return;
                         }
 
                         // Fatal errors - escalate recovery with more conservative timing
                         console.warn(`[preview] Fatal error (attempt ${window.previewHlsErrorCount}): ${data.details}`);
-                        window.previewHlsIsUnhealthy = true;
+                        window.previewHlsIsUnhealthy = window.previewHlsErrorCount > 3;
 
                         // Only one recovery attempt per consecutive fatals
                         if (window.previewHlsErrorCount <= 2) {
@@ -13124,7 +13575,7 @@
                         } else {
                             // Multiple failures - signal that we should use main video canvas fallback
                             console.warn('[preview] Fatal errors persistent, fallback to main video capture enabled');
-                            window.previewUseCanvasFallbackOnly = true; // Force canvas fallback
+                            window.previewUseCanvasFallbackOnly = window.previewHlsErrorCount >= 8;
                         }
                     });
 
@@ -13236,6 +13687,12 @@
 
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
+                    window.previewUseCanvasFallbackOnly = false;
+                    window.previewHlsErrorCount = 0;
+                    window.previewHlsIsUnhealthy = false;
+                    window.previewLastSecond = -1;
+                    window.previewLastCapturedSecond = -1;
+                    window.previewLastRequestAt = 0;
                     previewVideo.preload = 'auto';
                     previewVideo.src = proxiedUrl;
                     warmupPreviewVideo(previewVideo);
@@ -13297,6 +13754,12 @@
 
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
+                    window.previewUseCanvasFallbackOnly = false;
+                    window.previewHlsErrorCount = 0;
+                    window.previewHlsIsUnhealthy = false;
+                    window.previewLastSecond = -1;
+                    window.previewLastCapturedSecond = -1;
+                    window.previewLastRequestAt = 0;
                     previewVideo.preload = 'auto';
                     window.previewDashInst = window.dashjs.MediaPlayer().create();
                     window.previewDashInst.initialize(previewVideo, mpdUrl, false);
@@ -13322,25 +13785,10 @@
                 if (!IS_IOS) video.play().catch(() => hideLoader());
 
             } else if (isEmbed) {
-                console.log('Branch: Direct IFRAME Embed');
-                wrap.innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:none;pointer-events:auto;" allowfullscreen allow="autoplay; fullscreen; encrypted-media"></iframe>`;
-                video = null;
-                hideControlSurfaceNow();
-                isFirstLoad = false;
-                hideLoader();
-
-                // MegaCloud/iframe sources can fail silently in custom players.
-                // Auto-rotate to next source if playback does not visibly start soon.
-                // VegaMovies embed is intentionally a terminal fallback, so do not
-                // auto-recover away from it or we can enter a source-churn loop.
-                const isVegamoviesEmbed = String(sourceProvider || '').toLowerCase() === 'vegamovies';
-                if (!isVegamoviesEmbed) {
-                    setTimeout(() => {
-                        if (currentIdx === srcIdx) {
-                            console.warn('Embed source timeout, recovering same source');
-                            recoverSameSource('embed_timeout');
-                        }
-                    }, 9000);
+                console.warn('Embed source skipped; native direct playback only.');
+                if (!failoverToNextSource('embed_source_skipped')) {
+                    showError('No Direct Stream', 'This server only returned an embed player. Please try another source.');
+                    hideLoader();
                 }
 
             } else if (!isM3U8) {
@@ -13389,6 +13837,12 @@
 
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
+                    window.previewUseCanvasFallbackOnly = false;
+                    window.previewHlsErrorCount = 0;
+                    window.previewHlsIsUnhealthy = false;
+                    window.previewLastSecond = -1;
+                    window.previewLastCapturedSecond = -1;
+                    window.previewLastRequestAt = 0;
                     previewVideo.preload = 'auto';
                     previewVideo.src = proxiedMp4Url;
                     warmupPreviewVideo(previewVideo);
