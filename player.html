@@ -11356,19 +11356,28 @@
             const pinnedProvider = String(activeMenuProvider || '').trim().toLowerCase();
             if (pinnedProvider && providerSeasonCatalog.has(pinnedProvider)) return pinnedProvider;
 
-            const playingProvider = String(currentStreamProvider || '').trim().toLowerCase();
-            if (playingProvider && providerSeasonCatalog.has(playingProvider)) return playingProvider;
-
             const activeSourceProvider = String(allSources?.[currentIdx]?.provider || '').trim().toLowerCase();
             const forcedProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
             const provider = activeSourceProvider || forcedProvider;
             if (provider && providerSeasonCatalog.has(provider)) return provider;
 
-            return '';
+            // Fall back to a provider catalog entry if the current source provider is
+            // not available or if the mobile source list resolves differently.
+            const fallbackProvider = Array.from(providerSeasonCatalog.keys())[0] || '';
+            return fallbackProvider;
         }
 
         function getEpisodeMenuSeasons() {
-            // Use canonical TV season metadata for the episode menu to keep mobile and desktop aligned.
+            const scopedProvider = getActiveEpisodeMenuProvider();
+            if (scopedProvider) {
+                const scoped = providerSeasonCatalog.get(scopedProvider);
+                if (Array.isArray(scoped) && scoped.length) {
+                    const providerScoped = scopedProvider === 'animesalt'
+                        ? mergeMenuSeasonsBySeasonNo(scoped)
+                        : scoped;
+                    return cloneAndSortMenuSeasons(providerScoped);
+                }
+            }
             return cloneAndSortMenuSeasons(tvSeasons);
         }
 
