@@ -529,6 +529,7 @@
             position: relative;
             z-index: 6;
             pointer-events: none;
+            isolation: isolate;
         }
 
         .control-center .ctrl-btn,
@@ -910,8 +911,13 @@
 
                 .control-center {
                     position: relative;
-                    z-index: 3;
+                    z-index: 40;
                     pointer-events: none;
+                }
+
+                .control-center .ctrl-btn,
+                .control-center .play-btn {
+                    z-index: 41;
                 }
 
                 .control-bottom {
@@ -2137,13 +2143,13 @@
             .control-center {
                 width: min(90vw, 420px);
                 gap: 1.8rem;
-                z-index: 8;
+                z-index: 40;
                 pointer-events: none;
             }
 
             .control-center .ctrl-btn,
             .control-center .play-btn {
-                z-index: 9;
+                z-index: 41;
                 pointer-events: auto;
             }
 
@@ -2217,6 +2223,17 @@
                 .control-actions {
                     justify-content: flex-end;
                     gap: 1rem;
+                }
+            }
+
+            @media (pointer: coarse) {
+                .control-center {
+                    z-index: 40;
+                }
+
+                .control-center .ctrl-btn,
+                .control-center .play-btn {
+                    z-index: 41;
                 }
             }
 
@@ -2305,6 +2322,21 @@
                 border-radius: 999px;
                 background: rgba(255, 255, 255, 0.25);
                 pointer-events: none;
+            }
+        }
+
+        @media (pointer: coarse) {
+            .control-center {
+                z-index: 40;
+            }
+
+            .control-center .ctrl-btn,
+            .control-center .play-btn {
+                z-index: 41;
+            }
+
+            .pause-media-card {
+                z-index: 10;
             }
         }
 
@@ -5600,12 +5632,6 @@
                 ].filter(Boolean)));
 
                 let bestResult = null;
-                const isAmbiguousBaseTitle = isAmbiguousSingleTokenTitle(baseTitle);
-                const titleYearMatches = (row) => {
-                    if (!isAmbiguousBaseTitle || !preferredYear) return true;
-                    const rowYear = getProviderResultYear(row);
-                    return Number.isFinite(rowYear) && Math.abs(rowYear - Number(preferredYear)) <= 1;
-                };
                 for (const term of searchTerms) {
                     if (!term || term.length < 2) continue;
                     try {
@@ -5626,17 +5652,17 @@
 
                         // Standardize: use context-aware title match (isMovieContext is from resolvedContext)
                         const picked = pickAnimeResultByTitle(pool, baseTitle, preferredYear, 1, '', isMovieContext);
-                        if (picked?.id && titleYearMatches(picked)) {
+                        if (picked?.id && isAllowedAmbiguousAnimeProviderMatch(picked, baseTitle, preferredYear)) {
                             bestResult = picked;
                             break;
                         } else if (picked?.id) {
-                            console.warn('[animesalt] rejected ambiguous-year title match:', baseTitle, getAnimeResultTitleTexts(picked).join(' / ') || picked.id, getProviderResultYear(picked), 'wanted', preferredYear);
+                            console.warn('[animesalt] rejected weak title match:', baseTitle, getAnimeResultTitleTexts(picked).join(' / ') || picked.id, getProviderResultYear(picked), 'wanted', preferredYear);
                         }
                         // Fallback: only use the top result when the title is genuinely close.
                         // Shared generic words like "seven" must not map The Seven Deadly Sins
                         // to unrelated shows such as Reign of the Seven Spellblades.
                         if (pool[0]?.id) {
-                            if (isAllowedAmbiguousAnimeProviderMatch(pool[0], baseTitle, preferredYear) && titleYearMatches(pool[0])) {
+                            if (isAllowedAmbiguousAnimeProviderMatch(pool[0], baseTitle, preferredYear)) {
                                 bestResult = pool[0];
                                 break;
                             }
@@ -5914,8 +5940,9 @@
                 ...getAnimeResultTitleTexts(row),
                 row?.id,
                 row?.url,
-            ].join(' ').toLowerCase();
-            return /(^|[\s-])the[\s-]+series[\s-]+the[\s-]+beginning($|[\s-])/i.test(combined);
+            ].join(' ');
+            const compactCombined = normalizeAnimeSearchQuery(combined).toLowerCase().replace(/[^a-z0-9]+/g, '');
+            return compactCombined.includes('pokemontheseriesthebeginning');
         }
 
         function isTrustedAnimesaltEpisodeIdForTitle(episodeId, wantedTitle, preferredYear = null) {
@@ -11337,9 +11364,21 @@
         }
 
         function getEpisodeMenuSeasons() {
-            // Always use the canonical TV season metadata for the episode menu.
-            // Provider-specific catalogs can vary by provider and can cause inconsistent
-            // episode listings between desktop and mobile views.
+            const scopedProvider = getActiveEpisodeMenuProvider();
+            if (scopedProvider) {
+                const scoped = providerSeasonCatalog.get(scopedProvider);
+                if (Array.isArray(scoped) && scoped.length) {
+                    const providerScoped = scopedProvider === 'animesalt'
+                        ? mergeMenuSeasonsBySeasonNo(scoped)
+                        : scoped;
+                    return cloneAndSortMenuSeasons(providerScoped);
+                }
+            }
+            if (currentIsLikelyAnime) {
+                // Keep provider-first behavior for anime, but avoid an empty panel when
+                // provider catalog hydration fails (transient API/search mismatch).
+                return cloneAndSortMenuSeasons(tvSeasons);
+            }
             return cloneAndSortMenuSeasons(tvSeasons);
         }
 
