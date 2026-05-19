@@ -2790,6 +2790,9 @@
         const IS_MOBILE_CLIENT =
             /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(navigator.userAgent || '') ||
             ('ontouchstart' in window);
+        const IS_TOUCH_CLIENT =
+            IS_MOBILE_CLIENT ||
+            (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches);
         const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         const IS_PWA = (IS_IOS && navigator.standalone) || window.matchMedia('(display-mode: standalone)').matches;
@@ -4572,10 +4575,13 @@
             const currentParams = new URLSearchParams(location.search);
             const currentSeason = Number(currentParams.get('season') || 0);
             const currentEpisode = Number(currentParams.get('episode') || currentParams.get('ep') || 0);
+            const rawSeasonTitle = String(currentParams.get('seasonTitle') || '').trim();
+            const seasonZeroExplicit = currentParams.has('season') && Number(currentParams.get('season') || 0) === 0;
+            const specialTitleHint = /^(specials?|ovas?|extras?|recaps?)$/i.test(rawSeasonTitle);
             const hasExplicitEpisodePosition =
                 currentParams.has('season') ||
                 currentParams.has('seasonKey') ||
-                currentParams.has('seasonTitle') ||
+                (currentParams.has('seasonTitle') && (!currentIsLikelyAnime || !specialTitleHint || seasonZeroExplicit)) ||
                 (Number.isFinite(window.RESUME_SEASON_FALLBACK) && window.RESUME_SEASON_FALLBACK > 0);
             let si = hasExplicitEpisodePosition
                 ? 0
@@ -4594,7 +4600,10 @@
                 }
             }
             if (currentParams.get('seasonTitle')) {
-                const sTitle = String(currentParams.get('seasonTitle')).trim();
+                const sTitle = rawSeasonTitle;
+                if (currentIsLikelyAnime && specialTitleHint && !seasonZeroExplicit) {
+                    matchedExplicitSeasonRef = false;
+                } else {
                 const wantedSeasonTitle = normalizeSeasonSearchLabel(sTitle).toLowerCase();
                 const bySeasonTitle = safeSeasons.findIndex((s) =>
                     normalizeSeasonSearchLabel(String(s?.name || '')).toLowerCase() === wantedSeasonTitle
@@ -4602,6 +4611,7 @@
                 if (bySeasonTitle >= 0) {
                     si = bySeasonTitle;
                     matchedExplicitSeasonRef = true;
+                }
                 }
             }
             if (Number.isFinite(currentSeason) && currentSeason > 0 && !matchedExplicitSeasonRef) {
@@ -11379,11 +11389,24 @@
                         // If provider-scoped seasons look like only 'Specials'/extras and
                         // do not overlap with canonical tvSeasons, prefer canonical
                         // tvSeasons for mobile clients to avoid showing unexpected lists.
-                        const tvNos = new Set((Array.isArray(tvSeasons) ? tvSeasons : []).map(s => Number(s?.seasonNo || 0)).filter(n => n > 0));
+                        const canonicalSeasons = Array.isArray(tvSeasons) ? tvSeasons : [];
+                        const canonicalRealSeasons = canonicalSeasons.filter((s) => Number(s?.seasonNo || 0) > 0);
+                        const tvNos = new Set(canonicalRealSeasons.map(s => Number(s?.seasonNo || 0)).filter(n => n > 0));
                         const providerNos = new Set((providerScoped || []).map(s => Number(s?.seasonNo || 0)).filter(n => n > 0));
                         const hasOverlap = Array.from(providerNos).some(n => tvNos.has(n));
-                        if (!hasOverlap && IS_MOBILE_CLIENT && Array.isArray(tvSeasons) && tvSeasons.length) {
-                            return cloneAndSortMenuSeasons(tvSeasons);
+                        const providerLooksLikeExtras = (providerScoped || []).every((s) => {
+                            const seasonNo = Number(s?.seasonNo || 0);
+                            const name = String(s?.name || '').trim();
+                            return seasonNo <= 0 || /^(specials?|ovas?|extras?|recaps?)$/i.test(name);
+                        });
+                        const currentCanonicalSeasonNo = Number(tvSeasons?.[Number(curSeason || 0)]?.seasonNo || 0);
+                        const providerHasCurrentSeason = currentCanonicalSeasonNo > 0 && Array.from(providerNos).includes(currentCanonicalSeasonNo);
+                        if (
+                            IS_TOUCH_CLIENT &&
+                            canonicalSeasons.length &&
+                            (!hasOverlap || providerLooksLikeExtras || (currentCanonicalSeasonNo > 0 && !providerHasCurrentSeason))
+                        ) {
+                            return cloneAndSortMenuSeasons(canonicalRealSeasons.length ? canonicalRealSeasons : canonicalSeasons);
                         }
                     } catch (_) { /* ignore and continue */ }
                     return cloneAndSortMenuSeasons(providerScoped);
