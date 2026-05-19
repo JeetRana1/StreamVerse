@@ -450,14 +450,29 @@ function requestHomePortraitOrientation() {
     });
 }
 
+function syncHomePortraitGuard() {
+    const isTouchMobile = window.matchMedia('(pointer: coarse)').matches;
+    const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+    const isShortViewport = window.innerHeight < 620;
+    document.documentElement.classList.toggle('home-landscape-locked', isTouchMobile && isLandscape && isShortViewport);
+}
+
 requestHomePortraitOrientation();
+syncHomePortraitGuard();
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) requestHomePortraitOrientation();
+    if (!document.hidden) {
+        requestHomePortraitOrientation();
+        syncHomePortraitGuard();
+    }
 });
 window.addEventListener('orientationchange', () => {
-    setTimeout(requestHomePortraitOrientation, 150);
+    setTimeout(() => {
+        requestHomePortraitOrientation();
+        syncHomePortraitGuard();
+    }, 150);
 });
 document.addEventListener('touchend', requestHomePortraitOrientation, { once: true, passive: true });
+window.addEventListener('resize', syncHomePortraitGuard);
 
 function isTmdbImageUrl(value) {
     try {

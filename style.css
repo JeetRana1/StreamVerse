@@ -20,6 +20,22 @@ html {
     overflow-x: hidden;
 }
 
+html.home-landscape-locked,
+html.home-landscape-locked body {
+    width: 100vh;
+    min-width: 100vh;
+    height: 100vw;
+    min-height: 100vw;
+    overflow-x: hidden;
+}
+
+html.home-landscape-locked body {
+    position: absolute;
+    inset: 0 auto auto 0;
+    transform: rotate(-90deg) translateX(-100%);
+    transform-origin: top left;
+}
+
 * {
     margin: 0;
     padding: 0;
