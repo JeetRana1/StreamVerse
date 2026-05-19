@@ -13339,6 +13339,12 @@
             currentStreamReferer = referer || null;
             currentStreamProvider = sourceProvider;
 
+            if (MEDIA_TYPE === 'tv' && currentIsLikelyAnime && sourceProvider && providerSeasonCatalog.has(sourceProvider)) {
+                activeMenuProvider = sourceProvider;
+                buildEpPanel();
+                updateEpUI(curSeason, curEpisode);
+            }
+
             // Visual Bridge: capture current frame before we wipe anything.
             // Skip on the very first load — the #loader (with cover art) is already
             // covering everything, so there's no black gap to bridge.
