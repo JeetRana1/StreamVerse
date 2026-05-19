@@ -11368,16 +11368,7 @@
         }
 
         function getEpisodeMenuSeasons() {
-            const scopedProvider = getActiveEpisodeMenuProvider();
-            if (scopedProvider) {
-                const scoped = providerSeasonCatalog.get(scopedProvider);
-                if (Array.isArray(scoped) && scoped.length) {
-                    const providerScoped = scopedProvider === 'animesalt'
-                        ? mergeMenuSeasonsBySeasonNo(scoped)
-                        : scoped;
-                    return cloneAndSortMenuSeasons(providerScoped);
-                }
-            }
+            // Use canonical TV season metadata for the episode menu to keep mobile and desktop aligned.
             return cloneAndSortMenuSeasons(tvSeasons);
         }
 
