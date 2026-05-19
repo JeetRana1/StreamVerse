@@ -25,23 +25,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="StreamVerse">
     <link rel="apple-touch-icon" href="logo.png">
-    <style>
-        /* Landscape lock overlay for devices that don't support orientation lock */
-        #landscape-lock-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);color:#fff;z-index:99999;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:Inter,Arial,Helvetica,sans-serif}
-        #landscape-lock-overlay.show{display:flex}
-        #landscape-lock-overlay .rotate-icon{font-size:48px;margin-bottom:12px;opacity:0.95}
-        #landscape-lock-overlay .msg{max-width:520px;font-size:18px;line-height:1.4}
-        @media(min-width:640px){#landscape-lock-overlay .msg{font-size:20px}}
-    </style>
 </head>
 
 <body>
-    <div id="landscape-lock-overlay" aria-hidden="true">
-        <div>
-            <div class="rotate-icon">🔒↕️</div>
-            <div class="msg">This app is designed for portrait orientation. Please rotate your device back to portrait to continue.</div>
-        </div>
-    </div>
+    
     <header id="main-header">
         <div class="container container-header">
             <div class="logo">
@@ -224,41 +211,7 @@
 
     <script src="/config.js"></script>
     <script src="script.js?v=3.4"></script>
-    <script>
-        (function(){
-            const overlay = document.getElementById('landscape-lock-overlay');
-            function updateOverlay(){
-                const isLandscape = window.matchMedia && window.matchMedia('(orientation: landscape)').matches;
-                if(isLandscape){
-                    overlay.classList.add('show');
-                    document.documentElement.style.overflow = 'hidden';
-                } else {
-                    overlay.classList.remove('show');
-                    document.documentElement.style.overflow = '';
-                }
-            }
-
-            // Try to lock orientation when launched as a PWA/standalone
-            function tryLock(){
-                const isStandalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-                if(isStandalone && screen.orientation && screen.orientation.lock){
-                    screen.orientation.lock('portrait').catch(()=>{});
-                }
-            }
-
-            // Initial checks
-            tryLock();
-            updateOverlay();
-
-            // Listen for changes
-            if(window.matchMedia){
-                try{ window.matchMedia('(orientation: landscape)').addEventListener('change', updateOverlay); }catch(e){
-                    try{ window.matchMedia('(orientation: landscape)').addListener(updateOverlay); }catch(e){}
-                }
-            }
-            window.addEventListener('orientationchange', updateOverlay);
-        })();
-    </script>
+    
 </body>
 
 </html>
