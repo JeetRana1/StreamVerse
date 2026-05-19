@@ -11355,12 +11355,16 @@
             if (!currentIsLikelyAnime) return '';
             const pinnedProvider = String(activeMenuProvider || '').trim().toLowerCase();
             if (pinnedProvider && providerSeasonCatalog.has(pinnedProvider)) return pinnedProvider;
+
             const activeSourceProvider = String(allSources?.[currentIdx]?.provider || '').trim().toLowerCase();
             const forcedProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
             const provider = activeSourceProvider || forcedProvider;
-            if (!provider) return '';
-            const seasons = providerSeasonCatalog.get(provider);
-            return Array.isArray(seasons) && seasons.length ? provider : '';
+            if (provider && providerSeasonCatalog.has(provider)) return provider;
+
+            // Fall back to a provider catalog entry if the current source provider is
+            // not available or if the mobile source list resolves differently.
+            const fallbackProvider = Array.from(providerSeasonCatalog.keys())[0] || '';
+            return fallbackProvider;
         }
 
         function getEpisodeMenuSeasons() {
@@ -11373,11 +11377,6 @@
                         : scoped;
                     return cloneAndSortMenuSeasons(providerScoped);
                 }
-            }
-            if (currentIsLikelyAnime) {
-                // Keep provider-first behavior for anime, but avoid an empty panel when
-                // provider catalog hydration fails (transient API/search mismatch).
-                return cloneAndSortMenuSeasons(tvSeasons);
             }
             return cloneAndSortMenuSeasons(tvSeasons);
         }
