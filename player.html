@@ -529,6 +529,7 @@
             position: relative;
             z-index: 6;
             pointer-events: none;
+            isolation: isolate;
         }
 
         .control-center .ctrl-btn,
@@ -910,8 +911,13 @@
 
                 .control-center {
                     position: relative;
-                    z-index: 3;
+                    z-index: 40;
                     pointer-events: none;
+                }
+
+                .control-center .ctrl-btn,
+                .control-center .play-btn {
+                    z-index: 41;
                 }
 
                 .control-bottom {
@@ -2137,13 +2143,13 @@
             .control-center {
                 width: min(90vw, 420px);
                 gap: 1.8rem;
-                z-index: 8;
+                z-index: 40;
                 pointer-events: none;
             }
 
             .control-center .ctrl-btn,
             .control-center .play-btn {
-                z-index: 9;
+                z-index: 41;
                 pointer-events: auto;
             }
 
@@ -2217,6 +2223,17 @@
                 .control-actions {
                     justify-content: flex-end;
                     gap: 1rem;
+                }
+            }
+
+            @media (pointer: coarse) {
+                .control-center {
+                    z-index: 40;
+                }
+
+                .control-center .ctrl-btn,
+                .control-center .play-btn {
+                    z-index: 41;
                 }
             }
 
@@ -2305,6 +2322,21 @@
                 border-radius: 999px;
                 background: rgba(255, 255, 255, 0.25);
                 pointer-events: none;
+            }
+        }
+
+        @media (pointer: coarse) {
+            .control-center {
+                z-index: 40;
+            }
+
+            .control-center .ctrl-btn,
+            .control-center .play-btn {
+                z-index: 41;
+            }
+
+            .pause-media-card {
+                z-index: 10;
             }
         }
 
@@ -4540,7 +4572,14 @@
             const currentParams = new URLSearchParams(location.search);
             const currentSeason = Number(currentParams.get('season') || 0);
             const currentEpisode = Number(currentParams.get('episode') || currentParams.get('ep') || 0);
-            let si = 0;
+            const hasExplicitEpisodePosition =
+                currentParams.has('season') ||
+                currentParams.has('seasonKey') ||
+                currentParams.has('seasonTitle') ||
+                (Number.isFinite(window.RESUME_SEASON_FALLBACK) && window.RESUME_SEASON_FALLBACK > 0);
+            let si = hasExplicitEpisodePosition
+                ? 0
+                : Math.max(0, safeSeasons.findIndex((s) => Number(s?.seasonNo || 0) > 0));
             let ei = 0;
             let matchedExplicitSeasonRef = false;
 
@@ -5584,6 +5623,7 @@
                 // all seasons/arcs under one series). Try progressively simpler terms.
                 const baseTitle = normTitle;
                 const searchTerms = Array.from(new Set([
+                    ...getAnimeSaltTitleAliases(baseTitle),
                     baseTitle,
                     baseTitle.replace(/ (Season|Arc|Part|Cour) \d+/gi, ''),
                     baseTitle.split(' ').slice(0, 4).join(' '), // first 4 words
@@ -5612,16 +5652,17 @@
 
                         // Standardize: use context-aware title match (isMovieContext is from resolvedContext)
                         const picked = pickAnimeResultByTitle(pool, baseTitle, preferredYear, 1, '', isMovieContext);
-                        if (picked?.id) {
+                        if (picked?.id && isAllowedAmbiguousAnimeProviderMatch(picked, baseTitle, preferredYear)) {
                             bestResult = picked;
                             break;
+                        } else if (picked?.id) {
+                            console.warn('[animesalt] rejected weak title match:', baseTitle, getAnimeResultTitleTexts(picked).join(' / ') || picked.id, getProviderResultYear(picked), 'wanted', preferredYear);
                         }
-                        // Fallback: just use first result if title is close enough
+                        // Fallback: only use the top result when the title is genuinely close.
+                        // Shared generic words like "seven" must not map The Seven Deadly Sins
+                        // to unrelated shows such as Reign of the Seven Spellblades.
                         if (pool[0]?.id) {
-                            const r0Title = normalizeAnimeSearchQuery(String(pool[0].title || pool[0].name || '')).toLowerCase();
-                            const normLower = baseTitle.toLowerCase();
-                            const overlap = normLower.split(' ').filter(w => r0Title.includes(w)).length;
-                            if (overlap >= Math.min(2, normLower.split(' ').length)) {
+                            if (isAllowedAmbiguousAnimeProviderMatch(pool[0], baseTitle, preferredYear)) {
                                 bestResult = pool[0];
                                 break;
                             }
@@ -5661,6 +5702,18 @@
                 if (infoRes.ok) {
                     let info = await infoRes.json();
                     if (info?.data) info = info.data;
+                    const infoTitle = String(info?.title || info?.name || '').trim();
+                    const infoYear = getProviderResultYear(info);
+                    if (isAmbiguousSingleTokenTitle(normTitle) && preferredYear) {
+                        const infoTitleQuality = getTitleMatchQuality(infoTitle || seriesSlug, normTitle);
+                        const yearOk = Number.isFinite(infoYear)
+                            ? Math.abs(Number(infoYear) - Number(preferredYear)) <= 1
+                            : /(^|-)the-series-the-beginning($|-)/i.test(seriesSlug);
+                        if (!yearOk || !infoTitleQuality.strong) {
+                            console.warn('[animesalt] rejected slug after info validation:', seriesSlug, 'title=', infoTitle, 'year=', infoYear, 'wanted=', normTitle, preferredYear);
+                            return null;
+                        }
+                    }
                     const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
                     const bySeasonEpisode = episodes.find((ep) => {
                         const id = String(ep?.id || '').trim().toLowerCase();
@@ -5790,6 +5843,117 @@
             return Array.isArray(searchData) ? searchData : [];
         }
 
+        function getAnimeResultTitleTexts(row) {
+            const out = [];
+            const push = (value) => {
+                const text = getAnimeTitleText(value);
+                if (text && !out.some((existing) => existing.toLowerCase() === text.toLowerCase())) out.push(text);
+            };
+            push(row?.title);
+            push(row?.name);
+            push(row?.englishTitle);
+            push(row?.romajiTitle);
+            push(row?.nativeTitle);
+            push(row?.title?.english);
+            push(row?.title?.romaji);
+            push(row?.title?.native);
+            return out;
+        }
+
+        function getTitleMatchQuality(candidateTitle, wantedTitle) {
+            const normalize = (value) => normalizeAnimeSearchQuery(value).toLowerCase();
+            const compact = (value) => normalize(value).replace(/[^a-z0-9]+/g, '');
+            const tokenSet = (value) => new Set(
+                normalize(value)
+                    .split(/\s+/)
+                    .filter((token) => token && !['the', 'a', 'an', 'and', 'of', 'season', 'part', 'tv'].includes(token)),
+            );
+
+            const candidate = normalize(candidateTitle);
+            const wanted = normalize(wantedTitle);
+            const compactCandidate = compact(candidateTitle);
+            const compactWanted = compact(wantedTitle);
+            if (!candidate || !wanted || !compactCandidate || !compactWanted) {
+                return { exact: false, contains: false, tokenRatio: 0, strong: false };
+            }
+
+            const wantedTokens = tokenSet(wanted);
+            const candidateTokens = tokenSet(candidate);
+            const shared = [...wantedTokens].filter((token) => candidateTokens.has(token)).length;
+            const tokenRatio = wantedTokens.size ? shared / wantedTokens.size : 0;
+            const singleWantedToken = wantedTokens.size === 1 ? [...wantedTokens][0] : '';
+            const distinctiveSingleTokenMatch =
+                singleWantedToken.length >= 6 &&
+                candidateTokens.has(singleWantedToken);
+            const exact = compactCandidate === compactWanted;
+            const contains =
+                compactWanted.length >= 6 &&
+                compactCandidate.length >= 8 &&
+                (compactCandidate.includes(compactWanted) || compactWanted.includes(compactCandidate));
+            const strong = exact || contains || distinctiveSingleTokenMatch || (wantedTokens.size >= 2 && tokenRatio >= 0.75);
+            return { exact, contains, tokenRatio, strong };
+        }
+
+        function isStrongAnimeProviderTitleMatch(row, wantedTitle) {
+            return getAnimeResultTitleTexts(row).some((candidateTitle) =>
+                getTitleMatchQuality(candidateTitle, wantedTitle).strong
+            );
+        }
+
+        function getProviderResultYear(row) {
+            const raw = String(
+                row?.releaseDate ||
+                row?.release_date ||
+                row?.startDate ||
+                row?.year ||
+                row?.aired ||
+                '',
+            );
+            const y = Number(raw.match(/\b(19|20)\d{2}\b/)?.[0] || 0);
+            return Number.isFinite(y) && y > 1900 ? y : null;
+        }
+
+        function isAmbiguousSingleTokenTitle(title) {
+            const tokens = normalizeAnimeSearchQuery(title)
+                .toLowerCase()
+                .split(/\s+/)
+                .filter((token) => token && !['the', 'a', 'an', 'and', 'of', 'season', 'part', 'tv'].includes(token));
+            return tokens.length === 1;
+        }
+
+        function getAnimeSaltTitleAliases(title) {
+            const compact = normalizeAnimeSearchQuery(title).toLowerCase().replace(/[^a-z0-9]+/g, '');
+            const aliases = {
+                pokemon: ['Pokemon the Series The Beginning', 'Pokemon the Series: The Beginning'],
+            };
+            return aliases[compact] || [];
+        }
+
+        function isAllowedAmbiguousAnimeProviderMatch(row, wantedTitle, preferredYear = null) {
+            if (!isStrongAnimeProviderTitleMatch(row, wantedTitle)) return false;
+            if (!isAmbiguousSingleTokenTitle(wantedTitle) || !preferredYear) return true;
+
+            const rowYear = getProviderResultYear(row);
+            if (Number.isFinite(rowYear) && Math.abs(Number(rowYear) - Number(preferredYear)) <= 1) return true;
+
+            const combined = [
+                ...getAnimeResultTitleTexts(row),
+                row?.id,
+                row?.url,
+            ].join(' ');
+            const compactCombined = normalizeAnimeSearchQuery(combined).toLowerCase().replace(/[^a-z0-9]+/g, '');
+            return compactCombined.includes('pokemontheseriesthebeginning');
+        }
+
+        function isTrustedAnimesaltEpisodeIdForTitle(episodeId, wantedTitle, preferredYear = null) {
+            const raw = String(episodeId || '').trim().toLowerCase();
+            const match = raw.match(/^(.+)-(\d+)x(\d+)$/i);
+            if (!match) return false;
+            const slug = match[1];
+            const slugTitle = slug.replace(/-/g, ' ');
+            return isAllowedAmbiguousAnimeProviderMatch({ title: slugTitle, id: slug }, wantedTitle, preferredYear);
+        }
+
         function pickAnimeResultByAniListId(results, anilistId) {
             const targetId = String(anilistId || '').trim();
             if (!targetId || !Array.isArray(results) || !results.length) return null;
@@ -5840,43 +6004,103 @@
                 .map((g) => (typeof g === 'string' ? g : (g?.name || '')))
                 .map((g) => String(g).toLowerCase());
             const originalLang = String(info?.original_language || info?.originalLanguage || '').toLowerCase();
+            const originCountries = [
+                ...(Array.isArray(info?.origin_country) ? info.origin_country : []),
+                ...(Array.isArray(info?.originCountry) ? info.originCountry : []),
+                ...(Array.isArray(info?.production_countries) ? info.production_countries.map((c) => c?.iso_3166_1 || c?.name || c) : []),
+            ].map((c) => String(c || '').toLowerCase());
             const titleLower = title.toLowerCase();
 
             const strongTitleSignals = [
                 'anime', 'manga', 'jujutsu', 'kaisen', 'naruto', 'one piece', 'bleach', 'attack on titan',
                 'demon slayer', 'kimetsu', 'my hero academia', 'boku no hero', 'chainsaw man', 'tokyo ghoul',
                 'hunter x hunter', 'dragon ball', 'sailor moon', 'spy x family', 'solo leveling', 'blue lock',
-                'black clover', 'fate', 're:zero', 'vinland', 'frieren', 'mashle', 'dandadan', 'kaiju',
+                'black clover', 're:zero', 'vinland', 'frieren', 'mashle', 'dandadan', 'kaiju',
                 'sakamoto days', 'pokemon', 'digimon', 'naruto shippuden', 'death note', 'one punch man',
+                'seven deadly sins',
             ];
+            const titleAliases = {
+                thesevendeadlysins: ['nanatsu no taizai'],
+            };
 
-            const titleLooksAnime = strongTitleSignals.some((signal) => titleLower.includes(signal));
-            const metadataLooksAnime =
+            const compactTitle = titleLower.replace(/[^a-z0-9]+/g, '');
+            const titleLooksAnime = strongTitleSignals.some((signal) => {
+                const compactSignal = signal.replace(/[^a-z0-9]+/g, '');
+                if (!compactSignal) return false;
+                if (compactSignal.length <= 5) return compactTitle === compactSignal;
+                return compactTitle.includes(compactSignal);
+            });
+            const hasExplicitAnimeMetadata =
+                genreNames.includes('anime') ||
+                Boolean(info?.anilistId || info?.malId || info?.animeId);
+            const hasSoftAnimeMetadata =
                 originalLang === 'ja' ||
                 originalLang === 'jpn' ||
-                genreNames.includes('anime') ||
+                originCountries.includes('jp') ||
+                originCountries.includes('japan') ||
                 (genreNames.includes('animation') && !genreNames.includes('family') && !genreNames.includes('children'));
+            const metadataLooksAnime =
+                hasExplicitAnimeMetadata ||
+                (hasSoftAnimeMetadata && MEDIA_TYPE === 'movie' && titleLooksAnime);
 
             if (titleLooksAnime || metadataLooksAnime) return true;
 
-            if (MEDIA_TYPE !== 'tv') return false;
+            if (MEDIA_TYPE !== 'tv' && MEDIA_TYPE !== 'movie') return false;
 
             try {
-                const anilistUrl = `${API_BASE.replace('/meta/tmdb', '/meta/anilist')}/${encodeURIComponent(title)}`;
-                const { res } = await fetchJsonWithApiFallback(anilistUrl, {
-                    signal: AbortSignal.timeout(7000),
-                });
-                if (!res.ok) return false;
-                const payload = await res.json();
-                const results = getAnimeSearchResults(payload);
+                const searchTitles = Array.from(new Set([
+                    title,
+                    ...(titleAliases[compactTitle] || []),
+                ].filter(Boolean)));
+                let results = [];
+                for (const searchTitle of searchTitles) {
+                    const anilistUrl = `${API_BASE.replace('/meta/tmdb', '/meta/anilist')}/${encodeURIComponent(searchTitle)}`;
+                    const { res } = await fetchJsonWithApiFallback(anilistUrl, {
+                        signal: AbortSignal.timeout(7000),
+                    });
+                    if (!res.ok) continue;
+                    const payload = await res.json();
+                    results = getAnimeSearchResults(payload);
+                    if (Array.isArray(results) && results.length) break;
+                }
                 if (!Array.isArray(results) || !results.length) return false;
 
-                const picked = pickAnimeResultByTitle(results, title, getPreferredMediaYear(), 1, '', false)
-                    || results.find((row) => {
-                        const rowTitle = normalizeAnimeSearchQuery(String(row?.title || row?.name || '')).toLowerCase();
-                        return rowTitle.includes(titleLower) || titleLower.includes(rowTitle);
+                const preferredYear = getPreferredMediaYear();
+                const picked = results.find((row) => {
+                        const rowTitles = getAnimeResultTitleTexts(row)
+                            .map((value) => normalizeAnimeSearchQuery(value).toLowerCase())
+                            .filter(Boolean);
+                        if (!rowTitles.length) return false;
+                        const rowYear = Number(String(row?.releaseDate || row?.startDate || row?.year || '').slice(0, 4));
+                        const yearMatches = hasSoftAnimeMetadata
+                            ? (!preferredYear || !Number.isFinite(rowYear) || Math.abs(rowYear - preferredYear) <= 1)
+                            : (!preferredYear || (Number.isFinite(rowYear) && Math.abs(rowYear - preferredYear) <= 1));
+                        const titleMatches = rowTitles.some((rowTitle) => {
+                            const compactRowTitle = rowTitle.replace(/[^a-z0-9]+/g, '');
+                            if (!compactRowTitle || compactRowTitle.length < 4) return false;
+                            return (
+                            compactRowTitle === compactTitle ||
+                            (hasSoftAnimeMetadata && compactTitle.length >= 8 && compactRowTitle.length >= 8 &&
+                                (compactRowTitle.includes(compactTitle) || compactTitle.includes(compactRowTitle))) ||
+                            (titleAliases[compactTitle] || []).some((alias) =>
+                                compactRowTitle === alias.replace(/[^a-z0-9]+/g, '')
+                            )
+                            );
+                        });
+                        return titleMatches && yearMatches;
                     });
-                return Boolean(picked?.id);
+                if (!picked?.id) return false;
+
+                return getAnimeResultTitleTexts(picked).some((pickedTitleRaw) => {
+                    const pickedTitle = normalizeAnimeSearchQuery(pickedTitleRaw).toLowerCase();
+                    const compactPickedTitle = pickedTitle.replace(/[^a-z0-9]+/g, '');
+                    return compactPickedTitle === compactTitle ||
+                        (hasSoftAnimeMetadata && compactTitle.length >= 8 && compactPickedTitle.length >= 8 &&
+                            (compactPickedTitle.includes(compactTitle) || compactTitle.includes(compactPickedTitle))) ||
+                        (titleAliases[compactTitle] || []).some((alias) =>
+                            compactPickedTitle === alias.replace(/[^a-z0-9]+/g, '')
+                        );
+                });
             } catch {
                 return false;
             }
@@ -6070,19 +6294,26 @@
                 const scored = rows.map((r) => {
                     const rt = normalizeLoose(r?.title || r?.name || r?.id || '');
                     const rowType = String(r?.type || r?.mediaType || '').toLowerCase();
+                    const quality = getTitleMatchQuality(r?.title || r?.name || r?.id || '', title);
                     let score = 0;
-                    if (rt === wanted) score += 100;
-                    if (rt.includes(wanted) || wanted.includes(rt)) score += 50;
+                    if (quality.exact || rt === wanted) score += 130;
+                    if (quality.contains || rt.includes(wanted) || wanted.includes(rt)) score += 55;
+                    score += quality.tokenRatio * 35;
                     if (rowType === wantedType) score += 80;
                     else if (rowType) score -= 120;
                     const releaseYear = Number(
                         String(r?.releaseDate || '').match(/\b(19|20)\d{2}\b/)?.[0] || 0,
                     );
                     if (yearHint && releaseYear && yearHint === releaseYear) score += 20;
-                    return { row: r, score };
+                    return { row: r, score, quality };
                 });
                 scored.sort((a, b) => b.score - a.score);
-                const picked = scored[0]?.row || rows[0];
+                const bestScored = scored[0];
+                if (!bestScored?.row || bestScored.score < 95 || !bestScored.quality?.strong) {
+                    console.warn(`[${provider}] rejected weak search match for "${title}"`, bestScored?.row?.title || bestScored?.row?.name || bestScored?.row?.id, bestScored?.score);
+                    continue;
+                }
+                const picked = bestScored.row;
                 if (!picked?.id) continue;
 
                 const pickedId = picked.id;
@@ -6397,6 +6628,7 @@
             const specificSeasonTokens = isMovie ? [] : getSpecificSeasonLabelTokens(seasonLabel, title);
             let best = null;
             let bestScore = -Infinity;
+            let bestQuality = null;
 
             const parseYear = (item) => {
                 const raw = String(
@@ -6411,12 +6643,26 @@
             };
 
             for (const r of results) {
-                let rawTitle = r?.title || r?.name || '';
-                if (typeof rawTitle === 'object') {
-                    rawTitle = rawTitle.english || rawTitle.romaji || rawTitle.native || String(rawTitle);
-                }
-                const itemTitle = normalizeAnimeSearchQuery(rawTitle).toLowerCase();
-                if (!itemTitle) continue;
+                const rawTitles = getAnimeResultTitleTexts(r);
+                if (!rawTitles.length) continue;
+                const titleMatches = rawTitles
+                    .map((rawTitle) => ({
+                        rawTitle,
+                        itemTitle: normalizeAnimeSearchQuery(rawTitle).toLowerCase(),
+                        quality: getTitleMatchQuality(rawTitle, normTitle),
+                    }))
+                    .filter((entry) => entry.itemTitle);
+                if (!titleMatches.length) continue;
+                const bestTitleMatch = titleMatches.sort((a, b) => {
+                    if (a.quality.exact !== b.quality.exact) return a.quality.exact ? -1 : 1;
+                    if (a.quality.contains !== b.quality.contains) return a.quality.contains ? -1 : 1;
+                    return b.quality.tokenRatio - a.quality.tokenRatio;
+                })[0];
+                const rawTitle = bestTitleMatch.rawTitle;
+                const itemTitle = bestTitleMatch.itemTitle;
+                const matchQuality = bestTitleMatch.quality;
+                if (!matchQuality.strong && !seasonLabel) continue;
+                if (!isAllowedAmbiguousAnimeProviderMatch(r, normTitle, preferredYear)) continue;
 
                 let score = 0;
 
@@ -6428,6 +6674,8 @@
                     if (itemRawTitle === `${normTitle} ${prefAudio}`) score += 50; // exact "Show Hindi" match 
                 }
 
+                if (matchQuality.exact) score += 160;
+                else if (matchQuality.contains) score += 95;
                 if (itemTitle === normTitle) score += 120;
                 else if (itemTitle.startsWith(normTitle)) score += 95;
                 else if (itemTitle.includes(normTitle)) score += 80;
@@ -6435,6 +6683,7 @@
                 const tWords = itemTitle.split(' ').filter(Boolean);
                 const common = qWords.filter((w) => tWords.includes(w)).length;
                 score += common * 10;
+                score += matchQuality.tokenRatio * 45;
                 score -= Math.abs(itemTitle.length - normTitle.length) * 0.2;
 
                 if (seasonWords.length) {
@@ -6472,11 +6721,12 @@
                 if (score > bestScore) {
                     bestScore = score;
                     best = r;
+                    bestQuality = matchQuality;
                 }
             }
 
             // Reject weak matches instead of forcing a wrong ID.
-            if (!best || bestScore < 35) return null;
+            if (!best || bestScore < 70 || !bestQuality?.strong) return null;
             return best;
         }
 
@@ -10521,7 +10771,7 @@
                     // Non-anime movie: prioritize FlixHQ (fastest), then other non-anime providers
                     activeProviders = ['flixhq'];
                     console.log('🎬 Non-anime movie: FlixHQ priority providers:', activeProviders);
-                } else if (MEDIA_TYPE === 'tv') {
+                } else if (isTv) {
                     // Non-anime TV: prioritize FlixHQ, then other non-anime providers
                     activeProviders = ['flixhq'];
                     console.log('📺 Non-anime TV: FlixHQ priority providers:', activeProviders);
@@ -10566,10 +10816,10 @@
                 const makeSeasonKey = (seasonNo, partNo = 0) => `${Number(seasonNo || 0)}::${Number(partNo || 0)}`;
                 const isGenericSeasonName = (value) => /^\s*(season|part)\s*\d+\s*$/i.test(String(value || '').trim());
                 const toEpisodeNumber = (ep, fallbackIndex) => {
-                    const raw = Number(ep?.number || ep?.episode || ep?.episodeNum || 0);
-                    if (Number.isFinite(raw) && raw > 0) return raw;
                     const idMatch = String(ep?.id || '').match(/(?:-|\b)(\d+)x(\d+)$/i);
                     if (idMatch?.[2]) return Number(idMatch[2]);
+                    const raw = Number(ep?.number || ep?.episode || ep?.episodeNum || 0);
+                    if (Number.isFinite(raw) && raw > 0) return raw;
                     return fallbackIndex + 1;
                 };
                 const toSeasonNumber = (ep, fallbackSeason) => {
@@ -10608,9 +10858,21 @@
                         providerTitle: String(providerTitle || '').trim(),
                     });
 
+                    const seasonValues = rawEpisodes
+                        .map((ep) => Number(ep?.season || ep?.seasonNumber || ep?.season_number || ep?.seasonNum || 0))
+                        .filter((value) => Number.isFinite(value) && value > 0);
+                    const distinctSeasonValues = Array.from(new Set(seasonValues));
+                    const hasSxeEpisodeIds = rawEpisodes.some((ep) => /(?:-|\b)(\d+)x(\d+)$/i.test(String(ep?.id || '')));
+                    const hasMeaningfulSeasonMetadata =
+                        hasSxeEpisodeIds ||
+                        distinctSeasonValues.length > 1 ||
+                        (distinctSeasonValues.length === 1 && Number(distinctSeasonValues[0]) > 1);
+
                     rawEpisodes.forEach((ep, index) => {
                         if (!ep || typeof ep !== 'object') return;
-                        const seasonNo = toSeasonNumber(ep, Number(fallbackSeasonNo || 1));
+                        const seasonNo = hasMeaningfulSeasonMetadata
+                            ? toSeasonNumber(ep, Number(fallbackSeasonNo || 1))
+                            : Number(fallbackSeasonNo || 1);
                         const seasonPartNo = Number(ep?.part || ep?.partNo || ep?.seasonPart || 0) || 0;
                         const key = makeSeasonKey(seasonNo, seasonPartNo);
                         const episodeNo = toEpisodeNumber(ep, index);
@@ -10639,7 +10901,6 @@
                         if (!bucket.providerAnimeId && providerAnimeId) bucket.providerAnimeId = providerAnimeId;
                     });
 
-                    const hasMeaningfulSeasonMetadata = rawEpisodes.some((ep) => Number(ep?.season || ep?.seasonNumber || ep?.season_number || ep?.seasonNum || 0) > 0);
                     const explicitFallbackSeasonNo = Number(fallbackSeasonNo || 0);
                     const hasExplicitTargetSeason = Number.isFinite(explicitFallbackSeasonNo) && explicitFallbackSeasonNo > 1;
 
@@ -10733,7 +10994,7 @@
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v5';
+                    const seasonCacheVersion = 'v7';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -10808,27 +11069,20 @@
                     let bestResult = null;
                     const animekaiCandidateMap = new Map();
 
-                    const normalizeLoose = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-                    const wantedTitleNorm = normalizeLoose(animeSeriesTitle);
-                    const wantedTokens = wantedTitleNorm.split(' ').filter(Boolean);
-                    const looksLikeSameSeries = (title) => {
-                        const t = normalizeLoose(title);
-                        if (!t) return false;
-                        if (wantedTitleNorm && (t.includes(wantedTitleNorm) || wantedTitleNorm.includes(t))) return true;
-                        const tokens = t.split(' ').filter(Boolean);
-                        const shared = wantedTokens.filter((tok) => tokens.includes(tok)).length;
-                        return shared >= Math.min(2, wantedTokens.length);
-                    };
-
                     // Check cache for previous search result
-                    const searchCacheVersion = 'v4';
+                    const searchCacheVersion = 'v5';
                     const searchCacheKey = `anime_search_${searchCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cachedSearch = localStorage.getItem(searchCacheKey);
                     if (cachedSearch) {
                         try {
                             const parsed = JSON.parse(cachedSearch);
                             if (parsed.ts && Date.now() - parsed.ts < 60 * 60 * 1000) { // 1 hour
-                                bestResult = parsed.data;
+                                const cachedResult = parsed.data;
+                                if (isAllowedAmbiguousAnimeProviderMatch(cachedResult, animeSeriesTitle, preferredYear)) {
+                                    bestResult = cachedResult;
+                                } else {
+                                    localStorage.removeItem(searchCacheKey);
+                                }
                             }
                         } catch {}
                     }
@@ -10857,7 +11111,7 @@
                                 findExactProviderSeasonMatch(providerName, searchPool, '') ||
                                 pickAnimeResultByTitle(searchPool, animeSeriesTitle, preferredYear, 1, '', false);
 
-                            if (!bestResult && picked?.id) {
+                            if (!bestResult && picked?.id && isAllowedAmbiguousAnimeProviderMatch(picked, animeSeriesTitle, preferredYear)) {
                                 bestResult = picked;
                                 // Cache the result
                                 localStorage.setItem(searchCacheKey, JSON.stringify({ ts: Date.now(), data: bestResult }));
@@ -10865,7 +11119,7 @@
 
                             if (providerName === 'animekai') {
                                 searchPool
-                                    .filter((row) => looksLikeSameSeries(row?.title || row?.name || ''))
+                                    .filter((row) => isAllowedAmbiguousAnimeProviderMatch(row, animeSeriesTitle, preferredYear))
                                     .slice(0, 8)
                                     .forEach((row) => {
                                         const rowId = String(row?.id || '').trim();
@@ -11159,10 +11413,15 @@
         }
 
         function getEpisodeOrdinalForMenu(ep, fallback = 0) {
+            const idMatch = String(ep?.id || '').match(/-(\d+)x(\d+)$/i);
+            if (currentIsLikelyAnime && idMatch?.[2]) {
+                const fromId = Number(idMatch[2]);
+                if (Number.isFinite(fromId) && fromId > 0) return fromId;
+            }
+
             const numeric = Number(ep?.episode || ep?.number || ep?.episodeNum || 0);
             if (Number.isFinite(numeric) && numeric > 0) return numeric;
 
-            const idMatch = String(ep?.id || '').match(/-(\d+)x(\d+)$/i);
             if (idMatch?.[2]) {
                 const fromId = Number(idMatch[2]);
                 if (Number.isFinite(fromId) && fromId > 0) return fromId;
@@ -12014,7 +12273,7 @@
             };
 
             // Fast boot: if we recently played this media with FlixHQ, start immediately from cache.
-            const preferProviderForFastBoot = FORCED_PROVIDER || (MEDIA_TYPE === 'movie' ? 'flixhq' : '');
+            const preferProviderForFastBoot = FORCED_PROVIDER || (!currentIsLikelyAnime && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv') ? 'flixhq' : '');
             if (preferProviderForFastBoot) {
                 const cachedSources = readCachedProviderSources(preferProviderForFastBoot);
                 if (cachedSources.length) {
@@ -12077,7 +12336,11 @@
                                 // Best-case path: AnimeSalt ids include explicit season/episode (slug-SxE).
                                 // If the clicked row already has this id, use it directly to prevent cross-season drift.
                                 if (selectedEpisodeId && /-\d+x\d+$/i.test(selectedEpisodeId)) {
-                                    provEpisodeId = selectedEpisodeId;
+                                    if (isTrustedAnimesaltEpisodeIdForTitle(selectedEpisodeId, resContext.mediaTitle, getPreferredMediaYear())) {
+                                        provEpisodeId = selectedEpisodeId;
+                                    } else {
+                                        console.warn('[animesalt] rejected stale/provider-scoped episode id for current title:', selectedEpisodeId, 'wanted:', resContext.mediaTitle);
+                                    }
                                 }
                             }
 
@@ -12120,6 +12383,12 @@
                                         pickAnimeResultByAniListId(searchPool, canonicalAnimeId) ||
                                         findExactProviderSeasonMatch(provider, searchPool, resContext.seasonLabel) ||
                                         pickAnimeResultByTitle(searchPool, resContext.mediaTitle, getPreferredMediaYear(), resContext.seasonNo, resContext.seasonLabel, MEDIA_TYPE === 'movie');
+                                    const bestAnimeCanonicalId = String(bestAnime?.anilistId || bestAnime?.anilist || bestAnime?.anilist_id || '').trim();
+                                    const matchedCanonicalId = canonicalAnimeId && bestAnimeCanonicalId && bestAnimeCanonicalId === canonicalAnimeId;
+                                    if (bestAnime?.id && !matchedCanonicalId && !isAllowedAmbiguousAnimeProviderMatch(bestAnime, resContext.mediaTitle, getPreferredMediaYear())) {
+                                        console.warn(`[${provider}] rejected wrong-title anime match for "${resContext.mediaTitle}"`, getAnimeResultTitleTexts(bestAnime).join(' / ') || bestAnime.id);
+                                        bestAnime = null;
+                                    }
                                     if (bestAnime?.id) break;
                                 }
                                 if (!bestAnime) throw new Error('title not found');

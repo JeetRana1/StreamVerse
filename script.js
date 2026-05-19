@@ -441,6 +441,24 @@ window.addEventListener('resize', () => {
 });
 
 // ------------------ HELPERS -----------------------------------------------
+function requestHomePortraitOrientation() {
+    const orientation = screen?.orientation;
+    if (!orientation || typeof orientation.lock !== 'function') return;
+
+    orientation.lock('portrait-primary').catch(() => {
+        // Browser support is limited outside installed/fullscreen PWAs.
+    });
+}
+
+requestHomePortraitOrientation();
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) requestHomePortraitOrientation();
+});
+window.addEventListener('orientationchange', () => {
+    setTimeout(requestHomePortraitOrientation, 150);
+});
+document.addEventListener('touchend', requestHomePortraitOrientation, { once: true, passive: true });
+
 function isTmdbImageUrl(value) {
     try {
         const parsed = new URL(String(value || '').trim(), window.location.href);
