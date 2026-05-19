@@ -6,7 +6,6 @@
   "display": "minimal-ui",
   "background_color": "#000000",
   "theme_color": "#000000",
-  "orientation": "any",
   "icons": [
     {
       "src": "logo.png",
