@@ -11375,6 +11375,17 @@
                     const providerScoped = scopedProvider === 'animesalt'
                         ? mergeMenuSeasonsBySeasonNo(scoped)
                         : scoped;
+                    try {
+                        // If provider-scoped seasons look like only 'Specials'/extras and
+                        // do not overlap with canonical tvSeasons, prefer canonical
+                        // tvSeasons for mobile clients to avoid showing unexpected lists.
+                        const tvNos = new Set((Array.isArray(tvSeasons) ? tvSeasons : []).map(s => Number(s?.seasonNo || 0)).filter(n => n > 0));
+                        const providerNos = new Set((providerScoped || []).map(s => Number(s?.seasonNo || 0)).filter(n => n > 0));
+                        const hasOverlap = Array.from(providerNos).some(n => tvNos.has(n));
+                        if (!hasOverlap && IS_MOBILE_CLIENT && Array.isArray(tvSeasons) && tvSeasons.length) {
+                            return cloneAndSortMenuSeasons(tvSeasons);
+                        }
+                    } catch (_) { /* ignore and continue */ }
                     return cloneAndSortMenuSeasons(providerScoped);
                 }
             }
