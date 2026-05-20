@@ -526,6 +526,13 @@ function hasPositiveRating(item) {
     return Number(getRating(item) || 0) > 0;
 }
 
+function hasUsableMediaId(item) {
+    const id = item?.id;
+    if (typeof id === 'number') return Number.isFinite(id);
+    if (typeof id === 'string') return /^\d+$/.test(id.trim());
+    return false;
+}
+
 function getPoster(item) {
     const candidates = [
         item?.poster_path,
@@ -3510,7 +3517,7 @@ async function fetchTrending() {
         const cached = readCache(cacheKey);
         if (cached?.results?.length) {
             const cachedItems = (cached.results || [])
-                .filter(item => typeof item.id === 'number' && hasPositiveRating(item))
+                .filter(item => hasUsableMediaId(item) && hasPositiveRating(item))
                 .slice(0, 12);
             heroItems = cachedItems.slice(0, 5);
             if (heroItems.length && typeof displayHero === 'function') {
@@ -3524,7 +3531,7 @@ async function fetchTrending() {
         const data = await fetchJsonWithFallback('/trending');
         writeCache(cacheKey, data);
         const items = (data.results || [])
-            .filter(item => typeof item.id === 'number' && hasPositiveRating(item))
+            .filter(item => hasUsableMediaId(item) && hasPositiveRating(item))
             .slice(0, 12);
         if (!items.length) return true;
 

@@ -11377,6 +11377,52 @@
             return '';
         }
 
+        function countMenuSeasonEpisodes(seasons) {
+            return (Array.isArray(seasons) ? seasons : []).reduce((total, season) => {
+                const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
+                return total + episodes.length;
+            }, 0);
+        }
+
+        function isExtrasOnlyMenuSeason(season) {
+            const seasonNo = Number(season?.seasonNo || 0);
+            const name = String(season?.name || '').trim();
+            return seasonNo <= 0 || /^(specials?|ovas?|extras?|recaps?)$/i.test(name);
+        }
+
+        function getBestProviderCatalogMenuSeasons() {
+            let best = [];
+            let bestCount = 0;
+            providerSeasonCatalog.forEach((seasons, provider) => {
+                if (!Array.isArray(seasons) || !seasons.length) return;
+                const normalizedProvider = String(provider || '').trim().toLowerCase();
+                const normalized = normalizedProvider === 'animesalt'
+                    ? mergeMenuSeasonsBySeasonNo(seasons)
+                    : seasons;
+                const realSeasons = normalized.filter((season) => Number(season?.seasonNo || 0) > 0);
+                const candidate = realSeasons.length ? realSeasons : normalized;
+                if (!candidate.length || candidate.every(isExtrasOnlyMenuSeason)) return;
+                const count = countMenuSeasonEpisodes(candidate);
+                if (count > bestCount) {
+                    best = candidate;
+                    bestCount = count;
+                }
+            });
+            return best;
+        }
+
+        function chooseExpandedEpisodeMenuSeasons(preferredSeasons) {
+            const preferred = Array.isArray(preferredSeasons) ? preferredSeasons : [];
+            const preferredCount = countMenuSeasonEpisodes(preferred);
+            if (!currentIsLikelyAnime || preferredCount > 1) return preferred;
+
+            const providerFallback = getBestProviderCatalogMenuSeasons();
+            const providerCount = countMenuSeasonEpisodes(providerFallback);
+            if (providerCount > preferredCount) return providerFallback;
+
+            return preferred;
+        }
+
         function getEpisodeMenuSeasons() {
             const scopedProvider = getActiveEpisodeMenuProvider();
             if (scopedProvider) {
@@ -11406,13 +11452,14 @@
                             canonicalSeasons.length &&
                             (!hasOverlap || providerLooksLikeExtras || (currentCanonicalSeasonNo > 0 && !providerHasCurrentSeason))
                         ) {
-                            return cloneAndSortMenuSeasons(canonicalRealSeasons.length ? canonicalRealSeasons : canonicalSeasons);
+                            const canonicalChoice = canonicalRealSeasons.length ? canonicalRealSeasons : canonicalSeasons;
+                            return cloneAndSortMenuSeasons(chooseExpandedEpisodeMenuSeasons(canonicalChoice));
                         }
                     } catch (_) { /* ignore and continue */ }
-                    return cloneAndSortMenuSeasons(providerScoped);
+                    return cloneAndSortMenuSeasons(chooseExpandedEpisodeMenuSeasons(providerScoped));
                 }
             }
-            return cloneAndSortMenuSeasons(tvSeasons);
+            return cloneAndSortMenuSeasons(chooseExpandedEpisodeMenuSeasons(tvSeasons));
         }
 
         function mergeMenuSeasonsBySeasonNo(seasons) {
