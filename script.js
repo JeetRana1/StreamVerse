@@ -319,6 +319,7 @@ const header = document.getElementById('main-header');
 const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
 const genreFilterBtn = document.getElementById('genre-filter-btn');
 const genreFilterPanel = document.getElementById('genre-filter-panel');
+const cacheClearBtn = document.getElementById('cache-clear-btn');
 // const mobileNav = document.getElementById('mobile-nav'); // Removed
 const dramasGrid = document.getElementById('dramas-grid');
 const continueWatchingSection = document.getElementById('continue-watching-section');
@@ -402,6 +403,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    if (cacheClearBtn) {
+        cacheClearBtn.addEventListener('click', clearOldAppCache);
+    }
+
     document.addEventListener('click', (event) => {
         if (!genreFilterPanelOpen) return;
         if (genreFilterPanel && genreFilterPanel.contains(event.target)) return;
@@ -441,6 +446,58 @@ window.addEventListener('resize', () => {
 });
 
 // ------------------ HELPERS -----------------------------------------------
+async function clearOldAppCache() {
+    const preserveKeys = new Set([
+        'streamverse_watchlist',
+        'sv_continue_watching',
+        'api_source',
+    ]);
+    const prefixes = [
+        CACHE_PREFIX,
+        'anime_provider_seasons_',
+        'anime_search_',
+        'anime_filler_',
+        'filler_',
+        'tmdb_detail_',
+    ];
+
+    let removed = 0;
+    try {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i += 1) {
+            const key = localStorage.key(i);
+            if (key) keys.push(key);
+        }
+        keys.forEach((key) => {
+            if (preserveKeys.has(key)) return;
+            if (!prefixes.some((prefix) => key.startsWith(prefix))) return;
+            localStorage.removeItem(key);
+            removed += 1;
+        });
+    } catch (err) {
+        console.warn('Failed to clear local cache:', err);
+    }
+
+    try {
+        if (window.caches?.keys) {
+            const cacheNames = await window.caches.keys();
+            await Promise.all(cacheNames
+                .filter((name) => /streamverse|tmdb|anime|consumet/i.test(name))
+                .map((name) => window.caches.delete(name)));
+        }
+    } catch (err) {
+        console.warn('Failed to clear browser cache storage:', err);
+    }
+
+    if (cacheClearBtn) {
+        cacheClearBtn.classList.add('cleared');
+        cacheClearBtn.title = `Cleared ${removed} cached item${removed === 1 ? '' : 's'}`;
+        cacheClearBtn.innerHTML = '<i class="fa-solid fa-check"></i><span>Cleared</span>';
+    }
+
+    setTimeout(() => window.location.reload(), 450);
+}
+
 function isTmdbImageUrl(value) {
     try {
         const parsed = new URL(String(value || '').trim(), window.location.href);

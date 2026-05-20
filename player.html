@@ -11004,7 +11004,7 @@
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v7';
+                    const seasonCacheVersion = 'v8';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -11012,8 +11012,13 @@
                             const parsed = JSON.parse(cached);
                             if (parsed.ts && Date.now() - parsed.ts < 60 * 60 * 1000) { // 1 hour
                                 const cachedData = Array.isArray(parsed.data) ? parsed.data : [];
-                                // Ignore known stale AnimeKai cache shapes that collapse all episodes into one giant season.
-                                if (providerName === 'animekai') {
+                                const cachedEpisodeCount = countMenuSeasonEpisodes(cachedData);
+                                const cachedRealSeasonCount = cachedData.filter((season) => Number(season?.seasonNo || 0) > 0).length;
+                                const cachedLooksLikeExtras = cachedData.length > 0 && cachedData.every(isExtrasOnlyMenuSeason);
+                                if (cachedEpisodeCount <= 1 || !cachedRealSeasonCount || cachedLooksLikeExtras) {
+                                    localStorage.removeItem(cacheKey);
+                                } else if (providerName === 'animekai') {
+                                    // Ignore known stale AnimeKai cache shapes that collapse all episodes into one giant season.
                                     const firstLen = Number(cachedData?.[0]?.episodes?.length || 0);
                                     if (cachedData.length <= 1 && firstLen > 35) {
                                         localStorage.removeItem(cacheKey);
@@ -11080,7 +11085,7 @@
                     const animekaiCandidateMap = new Map();
 
                     // Check cache for previous search result
-                    const searchCacheVersion = 'v5';
+                    const searchCacheVersion = 'v6';
                     const searchCacheKey = `anime_search_${searchCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cachedSearch = localStorage.getItem(searchCacheKey);
                     if (cachedSearch) {
@@ -11413,14 +11418,37 @@
 
         function chooseExpandedEpisodeMenuSeasons(preferredSeasons) {
             const preferred = Array.isArray(preferredSeasons) ? preferredSeasons : [];
-            const preferredCount = countMenuSeasonEpisodes(preferred);
-            if (!currentIsLikelyAnime || preferredCount > 1) return preferred;
+            if (!currentIsLikelyAnime) return preferred;
 
+            const canonical = Array.isArray(tvSeasons) ? tvSeasons : [];
             const providerFallback = getBestProviderCatalogMenuSeasons();
-            const providerCount = countMenuSeasonEpisodes(providerFallback);
-            if (providerCount > preferredCount) return providerFallback;
+            const currentCanonicalSeasonNo = Number(canonical?.[Number(curSeason || 0)]?.seasonNo || 0) || (Number(curSeason || 0) + 1);
+            const candidates = [preferred, providerFallback, canonical].filter((list) => Array.isArray(list) && list.length);
 
-            return preferred;
+            const scoreCandidate = (list) => {
+                if (!Array.isArray(list) || !list.length) return -1;
+                if (list.every(isExtrasOnlyMenuSeason)) return -1;
+
+                const totalEpisodes = countMenuSeasonEpisodes(list);
+                const currentSeason = list.find((season) => Number(season?.seasonNo || 0) === currentCanonicalSeasonNo);
+                const currentEpisodes = Array.isArray(currentSeason?.episodes) ? currentSeason.episodes.length : 0;
+                const hasCurrentSeason = currentEpisodes > 0 ? 1 : 0;
+                const realSeasonCount = list.filter((season) => Number(season?.seasonNo || 0) > 0).length;
+
+                return (hasCurrentSeason * 100000) + (currentEpisodes * 1000) + (realSeasonCount * 25) + totalEpisodes;
+            };
+
+            let best = preferred;
+            let bestScore = scoreCandidate(preferred);
+            candidates.forEach((candidate) => {
+                const score = scoreCandidate(candidate);
+                if (score > bestScore) {
+                    best = candidate;
+                    bestScore = score;
+                }
+            });
+
+            return best;
         }
 
         function getEpisodeMenuSeasons() {
