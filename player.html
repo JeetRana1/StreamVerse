@@ -11431,31 +11431,6 @@
                     const providerScoped = scopedProvider === 'animesalt'
                         ? mergeMenuSeasonsBySeasonNo(scoped)
                         : scoped;
-                    try {
-                        // If provider-scoped seasons look like only 'Specials'/extras and
-                        // do not overlap with canonical tvSeasons, prefer canonical
-                        // tvSeasons for mobile clients to avoid showing unexpected lists.
-                        const canonicalSeasons = Array.isArray(tvSeasons) ? tvSeasons : [];
-                        const canonicalRealSeasons = canonicalSeasons.filter((s) => Number(s?.seasonNo || 0) > 0);
-                        const tvNos = new Set(canonicalRealSeasons.map(s => Number(s?.seasonNo || 0)).filter(n => n > 0));
-                        const providerNos = new Set((providerScoped || []).map(s => Number(s?.seasonNo || 0)).filter(n => n > 0));
-                        const hasOverlap = Array.from(providerNos).some(n => tvNos.has(n));
-                        const providerLooksLikeExtras = (providerScoped || []).every((s) => {
-                            const seasonNo = Number(s?.seasonNo || 0);
-                            const name = String(s?.name || '').trim();
-                            return seasonNo <= 0 || /^(specials?|ovas?|extras?|recaps?)$/i.test(name);
-                        });
-                        const currentCanonicalSeasonNo = Number(tvSeasons?.[Number(curSeason || 0)]?.seasonNo || 0);
-                        const providerHasCurrentSeason = currentCanonicalSeasonNo > 0 && Array.from(providerNos).includes(currentCanonicalSeasonNo);
-                        if (
-                            IS_TOUCH_CLIENT &&
-                            canonicalSeasons.length &&
-                            (!hasOverlap || providerLooksLikeExtras || (currentCanonicalSeasonNo > 0 && !providerHasCurrentSeason))
-                        ) {
-                            const canonicalChoice = canonicalRealSeasons.length ? canonicalRealSeasons : canonicalSeasons;
-                            return cloneAndSortMenuSeasons(chooseExpandedEpisodeMenuSeasons(canonicalChoice));
-                        }
-                    } catch (_) { /* ignore and continue */ }
                     return cloneAndSortMenuSeasons(chooseExpandedEpisodeMenuSeasons(providerScoped));
                 }
             }
