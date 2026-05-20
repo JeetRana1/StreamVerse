@@ -11004,7 +11004,7 @@
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v8';
+                    const seasonCacheVersion = 'v9';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -11418,37 +11418,12 @@
 
         function chooseExpandedEpisodeMenuSeasons(preferredSeasons) {
             const preferred = Array.isArray(preferredSeasons) ? preferredSeasons : [];
-            if (!currentIsLikelyAnime) return preferred;
+            if (!currentIsLikelyAnime || countMenuSeasonEpisodes(preferred) > 1) return preferred;
 
-            const canonical = Array.isArray(tvSeasons) ? tvSeasons : [];
             const providerFallback = getBestProviderCatalogMenuSeasons();
-            const currentCanonicalSeasonNo = Number(canonical?.[Number(curSeason || 0)]?.seasonNo || 0) || (Number(curSeason || 0) + 1);
-            const candidates = [preferred, providerFallback, canonical].filter((list) => Array.isArray(list) && list.length);
-
-            const scoreCandidate = (list) => {
-                if (!Array.isArray(list) || !list.length) return -1;
-                if (list.every(isExtrasOnlyMenuSeason)) return -1;
-
-                const totalEpisodes = countMenuSeasonEpisodes(list);
-                const currentSeason = list.find((season) => Number(season?.seasonNo || 0) === currentCanonicalSeasonNo);
-                const currentEpisodes = Array.isArray(currentSeason?.episodes) ? currentSeason.episodes.length : 0;
-                const hasCurrentSeason = currentEpisodes > 0 ? 1 : 0;
-                const realSeasonCount = list.filter((season) => Number(season?.seasonNo || 0) > 0).length;
-
-                return (hasCurrentSeason * 100000) + (currentEpisodes * 1000) + (realSeasonCount * 25) + totalEpisodes;
-            };
-
-            let best = preferred;
-            let bestScore = scoreCandidate(preferred);
-            candidates.forEach((candidate) => {
-                const score = scoreCandidate(candidate);
-                if (score > bestScore) {
-                    best = candidate;
-                    bestScore = score;
-                }
-            });
-
-            return best;
+            return countMenuSeasonEpisodes(providerFallback) > countMenuSeasonEpisodes(preferred)
+                ? providerFallback
+                : preferred;
         }
 
         function getEpisodeMenuSeasons() {
@@ -11459,7 +11434,7 @@
                     const providerScoped = scopedProvider === 'animesalt'
                         ? mergeMenuSeasonsBySeasonNo(scoped)
                         : scoped;
-                    return cloneAndSortMenuSeasons(chooseExpandedEpisodeMenuSeasons(providerScoped));
+                    return cloneAndSortMenuSeasons(providerScoped);
                 }
             }
             return cloneAndSortMenuSeasons(chooseExpandedEpisodeMenuSeasons(tvSeasons));
@@ -11584,7 +11559,7 @@
                 });
         }
 
-        function resolveGlobalEpisodeIndices(menuSeason, menuEpisode, fallbackSeasonIndex, fallbackEpisodeIndex) {
+        function resolveGlobalEpisodeIndices(menuSeason, menuEpisode, fallbackSeasonIndex, fallbackEpisodeIndex, allowProviderEpisodeInjection = false) {
             const getSeasonPart = (row) => {
                 const raw = Number(row?.seasonPartNo || row?.part || row?.partNo || 0);
                 return Number.isFinite(raw) && raw > 0 ? raw : 0;
@@ -11687,7 +11662,7 @@
                 }
             }
 
-            if (currentIsLikelyAnime && isScopedAnimeMenu) {
+            if (allowProviderEpisodeInjection && currentIsLikelyAnime && isScopedAnimeMenu) {
                 let targetSeasonIndex = tvSeasons.findIndex((season) => Number(season?.seasonNo || 0) === seasonNo);
                 if (targetSeasonIndex < 0) {
                     tvSeasons.push({
@@ -11769,7 +11744,7 @@
                 const renderedEpisodeKeys = new Set();
 
                 (s.episodes || []).forEach((ep, ei) => {
-                    const mapped = resolveGlobalEpisodeIndices(s, ep, si, ei);
+                    const mapped = resolveGlobalEpisodeIndices(s, ep, si, ei, false);
                     const scopedProvider = String(getActiveEpisodeMenuProvider() || '').trim().toLowerCase();
                     const providerEpisodeId = String(ep?.id || '').trim().toLowerCase();
                     const menuEpisodeNo = Number(ep?.episode || ep?.number || ep?.episodeNum || (ei + 1));
@@ -11811,6 +11786,7 @@
                     item.dataset.ei = mapped.episodeIndex;
                     item.onclick = () => {
                         const menuProvider = String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase();
+                        const target = resolveGlobalEpisodeIndices(s, ep, si, ei, true);
                         const hintEpisodeNoRaw = Number(ep?.episode || ep?.number || ep?.episodeNum || displayEpNo);
                         const hintSeasonNoRaw = Number(s?.seasonNo || 0);
                         const hintSeasonPartRaw = Number(s?.seasonPartNo || s?.part || s?.partNo || 0);
@@ -11823,7 +11799,7 @@
                             providerAnimeId: String(s?.providerAnimeId || '').trim() || null,
                         };
                         epPanel.classList.remove('open');
-                        playTvEp(mapped.seasonIndex, mapped.episodeIndex, 0);
+                        playTvEp(target.seasonIndex, target.episodeIndex, 0);
                     };
                     epPanel.appendChild(item);
                 });
