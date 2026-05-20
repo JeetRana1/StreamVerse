@@ -11687,6 +11687,53 @@
                 }
             }
 
+            if (currentIsLikelyAnime && isScopedAnimeMenu) {
+                let targetSeasonIndex = tvSeasons.findIndex((season) => Number(season?.seasonNo || 0) === seasonNo);
+                if (targetSeasonIndex < 0) {
+                    tvSeasons.push({
+                        seasonNo,
+                        seasonPartNo: seasonPart,
+                        name: `Season ${seasonNo}`,
+                        providerAnimeId: menuSeasonProviderId || null,
+                        episodes: [],
+                    });
+                    tvSeasons.sort((a, b) => {
+                        const seasonDiff = Number(a?.seasonNo || 0) - Number(b?.seasonNo || 0);
+                        if (seasonDiff !== 0) return seasonDiff;
+                        return Number(a?.seasonPartNo || 0) - Number(b?.seasonPartNo || 0);
+                    });
+                    targetSeasonIndex = tvSeasons.findIndex((season) => Number(season?.seasonNo || 0) === seasonNo);
+                }
+
+                const targetSeason = tvSeasons[targetSeasonIndex];
+                if (targetSeason) {
+                    if (!Array.isArray(targetSeason.episodes)) targetSeason.episodes = [];
+                    let targetEpisodeIndex = targetSeason.episodes.findIndex((ep) => {
+                        const epId = String(ep?.id || '').trim().toLowerCase();
+                        const epNo = Number(ep?.episode || ep?.number || ep?.episodeNum || 0);
+                        return (episodeId && epId === episodeId) || epNo === episodeNo;
+                    });
+                    if (targetEpisodeIndex < 0) {
+                        targetSeason.episodes.push({
+                            id: episodeId || null,
+                            episode: episodeNo,
+                            number: episodeNo,
+                            episodeNum: episodeNo,
+                            title: String(menuEpisode?.title || `Episode ${episodeNo}`),
+                        });
+                        targetSeason.episodes.sort((a, b) => Number(a?.episode || a?.number || 0) - Number(b?.episode || b?.number || 0));
+                        targetEpisodeIndex = targetSeason.episodes.findIndex((ep) => {
+                            const epId = String(ep?.id || '').trim().toLowerCase();
+                            const epNo = Number(ep?.episode || ep?.number || ep?.episodeNum || 0);
+                            return (episodeId && epId === episodeId) || epNo === episodeNo;
+                        });
+                    }
+                    if (targetEpisodeIndex >= 0) {
+                        return { seasonIndex: targetSeasonIndex, episodeIndex: targetEpisodeIndex };
+                    }
+                }
+            }
+
             const fallbackSeason = candidateSeasonIndices[0] ?? safeSeasonIndex;
             const safeEpisodes = Array.isArray(tvSeasons[fallbackSeason]?.episodes) ? tvSeasons[fallbackSeason].episodes : [];
             const safeEpisodeIndex = Math.max(0, Math.min(Math.max(0, safeEpisodes.length - 1), Number(fallbackEpisodeIndex || 0)));
@@ -11725,15 +11772,16 @@
                     const mapped = resolveGlobalEpisodeIndices(s, ep, si, ei);
                     const scopedProvider = String(getActiveEpisodeMenuProvider() || '').trim().toLowerCase();
                     const providerEpisodeId = String(ep?.id || '').trim().toLowerCase();
-                    const mappedKey = scopedProvider && providerEpisodeId
-                        ? `${scopedProvider}:${providerEpisodeId}`
+                    const menuEpisodeNo = Number(ep?.episode || ep?.number || ep?.episodeNum || (ei + 1));
+                    const mappedKey = currentIsLikelyAnime && scopedProvider
+                        ? `${scopedProvider}:${String(s?.providerAnimeId || s?.seasonNo || si).trim().toLowerCase()}:${providerEpisodeId || menuEpisodeNo}:${normalizeTitleForMatch(String(ep?.title || ''))}`
                         : `${mapped.seasonIndex}:${mapped.episodeIndex}`;
                     if (renderedEpisodeKeys.has(mappedKey)) return;
                     renderedEpisodeKeys.add(mappedKey);
 
                     const item = document.createElement('div');
                     item.className = 'ep-item';
-                    const epNo = Number(ep.episode || ep.number || ep.episodeNum || (ei + 1));
+                    const epNo = menuEpisodeNo;
                     const epTitle = ep.title || `Episode ${epNo}`;
 
                     const displayEpNo = epNo;
