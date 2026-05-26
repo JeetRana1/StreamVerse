@@ -188,15 +188,19 @@ function toggleApi(source) {
 
 function getDefaultApiSource() {
     const host = String(window.location.hostname || '').toLowerCase();
-    const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+    const isLocalHost = isDevHost();
     return isLocalHost ? 'local' : 'prod';
+}
+
+function isDevHost() {
+    const host = String(window.location.hostname || '').toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.endsWith('.local');
 }
 
 function getCurrentApiSource() {
     const saved = String(localStorage.getItem('api_source') || '').toLowerCase();
     const source = saved === 'local' || saved === 'prod' ? saved : getDefaultApiSource();
-    const host = String(window.location.hostname || '').toLowerCase();
-    const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+    const isLocalHost = isDevHost();
     if (!isLocalHost && source === 'local') return 'prod';
     return source;
 }
@@ -306,6 +310,8 @@ const trendingGrid = document.getElementById('trending-grid');
 const popularMoviesGrid = document.getElementById('popular-movies-grid');
 const popularTvGrid = document.getElementById('popular-tv-grid');
 const topRatedGrid = document.getElementById('top-rated-grid');
+const allMediaGrid = document.getElementById('all-media-grid');
+const allMediaMoreBtn = document.getElementById('all-media-more-btn');
 const searchInput = document.getElementById('search-input');
 const searchContainer = document.getElementById('search-container');
 const searchPage = document.getElementById('search-page');
@@ -359,6 +365,7 @@ let searchVersion = 0;
 let hydrationObserver = null;
 let continueSelectionMode = false;
 let continueSelectedKeys = new Set();
+const homepageFeaturedMediaKeys = new Set();
 let activeGenreFilterId = null;
 let activeGenreFilterIds = [];
 let activeGenreTypeFilter = 'all';
@@ -434,9 +441,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     ];
 
     const results = await Promise.allSettled(promises);
+    const allMediaResult = await fetchAllMediaSection().catch((err) => {
+        console.error('All Movies / TV init failed:', err?.message || err);
+        return false;
+    });
     const allFailed = results.every(result => result.status === 'rejected' || result.value === false);
 
-    if (allFailed) {
+    if (allFailed && allMediaResult === false) {
         showErrorPage();
     }
 });
@@ -773,13 +784,12 @@ function applyContinueGridLayout() {
     if (!continueWatchingGrid) return;
     const width = window.innerWidth || document.documentElement.clientWidth || 0;
     let cols = 6;
-    if (width <= 420) cols = 1;
-    else if (width <= 560) cols = 2;
+    if (width <= 560) cols = 1;
     else if (width <= 768) cols = 3;
 
     continueWatchingGrid.style.setProperty('display', 'grid', 'important');
     continueWatchingGrid.style.setProperty('grid-template-columns', `repeat(${cols}, minmax(0, 1fr))`, 'important');
-    continueWatchingGrid.style.setProperty('gap', '1.2rem', 'important');
+    continueWatchingGrid.style.setProperty('gap', width <= 560 ? '0.9rem' : '1.2rem', 'important');
     continueWatchingGrid.style.setProperty('align-items', 'start', 'important');
     continueWatchingGrid.style.setProperty('grid-auto-flow', 'row', 'important');
 }
@@ -1074,6 +1084,9 @@ function createContinueWatchingCard(item) {
         })();
     const tvLabel = item.type === 'tv' ? ` - S${seasonNo}E${episodeNo}` : '';
     const seasonEpisodeBadge = item.type === 'tv' ? `<span class="season-episode-badge">S${seasonNo}E${episodeNo}</span>` : '';
+    const typeBadge = item.type === 'tv'
+        ? '<span class="meta-pill-left"><i class="fa-solid fa-tv"></i><span>TV</span></span>'
+        : '<span class="meta-pill-left"><i class="fa-solid fa-film"></i><span>Movie</span></span>';
 
     card.innerHTML = `
         <img class="continue-card-poster" src="${imgUrl(item.poster)}" alt="${item.title}" loading="lazy"
@@ -1081,8 +1094,7 @@ function createContinueWatchingCard(item) {
         ${continueSelectionMode ? `<button type="button" class="continue-select-toggle ${isSelected ? 'selected' : ''}" aria-label="Select item for clearing"><i class="fa-solid fa-check"></i></button>` : ''}
         ${seasonEpisodeBadge}
         <div class="movie-card-meta-left">
-            <span class="meta-pill-left">${formatTime(item.currentTime)}</span>
-            <span class="meta-pill-left">${item.type === 'tv' ? 'TV' : 'Movie'}</span>
+            ${typeBadge}
         </div>
         <div class="audio-badge">
             <span class="audio-dot"></span>
@@ -1100,6 +1112,7 @@ function createContinueWatchingCard(item) {
                 <span>${formatTime(item.currentTime)} watched • ${formatTime(timeLeft)} left</span>
                 <span>Last watched: ${lastWatchedDate}</span>
             </div>
+            <div class="continue-progress-label">${Math.round(watchedPercent)}% watched</div>
         </div>
     `;
 
@@ -1118,7 +1131,19 @@ function createContinueWatchingCard(item) {
             return;
         }
         const providerPart = item.provider ? `&provider=${encodeURIComponent(item.provider)}` : '';
-        const seasonEpisodePart = item.type === 'tv' ? `&season=${seasonNo}&episode=${episodeNo}` : '';
+        const extraTvParams = new URLSearchParams();
+        if (item.type === 'tv') {
+            extraTvParams.set('season', String(seasonNo));
+            extraTvParams.set('episode', String(episodeNo));
+            if (item.seasonTitle) extraTvParams.set('seasonTitle', String(item.seasonTitle));
+            if (item.seasonKey) extraTvParams.set('seasonKey', String(item.seasonKey));
+            if (item.episodeId) extraTvParams.set('episodeId', String(item.episodeId));
+            const absoluteEpisodeNo = Number(item.absoluteEpisodeNo || item.absoluteEpisode || 0);
+            if (Number.isFinite(absoluteEpisodeNo) && absoluteEpisodeNo > 0) {
+                extraTvParams.set('absoluteEpisode', String(absoluteEpisodeNo));
+            }
+        }
+        const seasonEpisodePart = item.type === 'tv' ? `&${extraTvParams.toString()}` : '';
         const apiSource = getCurrentApiSource();
         const url = `player.html?id=${encodeURIComponent(item.id)}&type=${item.type}${providerPart}${seasonEpisodePart}&t=${Math.floor(item.currentTime)}&audio=${encodeURIComponent(item.audio || '')}&apiSource=${encodeURIComponent(apiSource)}`;
         window.location.href = url;
@@ -2401,6 +2426,7 @@ function renderGenreFilterPanel() {
 
 function openGenreFilterPanel() {
     if (!genreFilterPanel || !genreFilterBtn) return;
+    positionGenreFilterPanel();
     genreFilterPanel.classList.add('open');
     genreFilterPanel.setAttribute('aria-hidden', 'false');
     genreFilterPanelOpen = true;
@@ -2422,6 +2448,30 @@ function toggleGenreFilterPanel() {
     }
     closeGenreFilterPanel();
 }
+
+function positionGenreFilterPanel() {
+    if (!genreFilterPanel || !genreFilterBtn) return;
+    if (window.matchMedia('(max-width: 768px)').matches || window.matchMedia('(orientation: portrait)').matches) {
+        genreFilterPanel.style.removeProperty('--genre-panel-left');
+        genreFilterPanel.style.removeProperty('--genre-panel-top');
+        return;
+    }
+
+    const rect = genreFilterBtn.getBoundingClientRect();
+    const panelWidth = Math.min(460, window.innerWidth - 32);
+    const left = Math.max(16, Math.min(window.innerWidth - panelWidth - 16, rect.left + (rect.width / 2) - (panelWidth / 2)));
+    const top = rect.bottom + 12;
+    genreFilterPanel.style.setProperty('--genre-panel-left', `${Math.round(left)}px`);
+    genreFilterPanel.style.setProperty('--genre-panel-top', `${Math.round(top)}px`);
+}
+
+window.addEventListener('resize', () => {
+    if (genreFilterPanelOpen) positionGenreFilterPanel();
+});
+
+window.addEventListener('scroll', () => {
+    if (genreFilterPanelOpen) positionGenreFilterPanel();
+}, { passive: true });
 
 function parseCardItem(card) {
     if (!card) return null;
@@ -3176,6 +3226,734 @@ function levenshteinDistance(a, b) {
     return matrix[b.length][a.length];
 }
 
+function escapeModalHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getModalEpisodeNumber(ep, fallback = 1) {
+    const value = Number(ep?.episode || ep?.number || ep?.episodeNum || ep?.episode_number || fallback);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function getModalSeasonNumber(season, fallback = 1) {
+    const seasonName = String(season?.name || season?.title || '').trim();
+    if (/^specials?$/i.test(seasonName)) return 0;
+    const hasExplicitNumber =
+        season?.seasonNo != null ||
+        season?.season_number != null ||
+        season?.season != null ||
+        season?.number != null;
+    if (!hasExplicitNumber) {
+        const titleSeasonNo = Number((seasonName.match(/\bseason\s+(\d+)\b/i) || [])[1] || 0);
+        if (Number.isFinite(titleSeasonNo) && titleSeasonNo > 0) return titleSeasonNo;
+    }
+    const raw = season?.seasonNo ?? season?.season_number ?? season?.season ?? season?.number ?? fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function getModalEpisodeTitle(ep, episodeNo = 0) {
+    const raw = String(ep?.title || ep?.name || ep?.episodeName || ep?.episode_name || '').trim();
+    if (!raw || /^episode\s*\d*$/i.test(raw)) return `Episode ${episodeNo || ''}`.trim();
+    return raw;
+}
+
+function getModalEpisodeImage(ep, fallbackImage = '') {
+    const candidates = [
+        ep?.still_path,
+        ep?.stillPath,
+        ep?.image,
+        ep?.thumbnail,
+        ep?.img,
+        ep?.thumb,
+        ep?.poster,
+        ep?.posterUrl,
+        ep?.still,
+        ep?.still_path,
+        ep?.stillPath,
+        ep?.thumbnailUrl,
+        ep?.thumbnail_url,
+        ep?.poster_path,
+        ep?.posterPath,
+        ep?.backdrop,
+        ep?.backdrop_path,
+        ep?.backdropPath,
+        fallbackImage,
+    ];
+
+    for (const candidate of candidates) {
+        const raw = String(candidate || '').trim();
+        if (!raw) continue;
+        if (/^https?:\/\//i.test(raw) || raw.startsWith('//')) {
+            return (raw.startsWith('//') ? `https:${raw}` : raw.replace(/^http:/i, 'https:'))
+                .replace('media.themoviedb.org/t/p/', 'image.tmdb.org/t/p/');
+        }
+        const resolved = imgUrl(raw, 'w342');
+        if (!resolved.includes('placehold.co')) return resolved;
+    }
+
+    return '';
+}
+
+const modalSeasonEpisodeDetailCache = new Map();
+const modalSeasonEpisodeDetailPromises = new Map();
+
+function getModalSeasonCacheKey(id, seasonNo) {
+    return `${normalizeTmdbId(id)}:s${Number(seasonNo)}`;
+}
+
+function extractModalSeasonEpisodes(payload) {
+    const source = payload?.data || payload || {};
+    return Array.isArray(source?.episodes)
+        ? source.episodes
+        : (Array.isArray(source?.season?.episodes) ? source.season.episodes : []);
+}
+
+function normalizeModalDetailedEpisode(ep, idx = 0) {
+    const episodeNo = getModalEpisodeNumber({
+        episode: ep?.episode,
+        number: ep?.episodeNumber ?? ep?.episode_number ?? ep?.number,
+        episodeNum: ep?.episodeNum,
+    }, idx + 1);
+    const title = getModalEpisodeTitle({
+        title: ep?.displayTitle || ep?.name || ep?.title || ep?.episodeName || ep?.episode_name,
+    }, episodeNo);
+    const description = String(ep?.overview || ep?.description || ep?.summary || ep?.synopsis || ep?.plot || '').trim();
+    const still = ep?.still_path || ep?.stillPath || ep?.image || ep?.thumbnail || ep?.still || '';
+    return {
+        ...ep,
+        episode: episodeNo,
+        number: episodeNo,
+        episodeNo,
+        title,
+        name: title,
+        description,
+        overview: description,
+        still_path: still,
+        image: still,
+    };
+}
+
+function mergeModalSeasonEpisodeDetails(season, payload) {
+    const detailed = extractModalSeasonEpisodes(payload).map(normalizeModalDetailedEpisode);
+    if (!season || !detailed.length) return false;
+    season.episodes = season.episodes.map((ep, idx) => {
+        const episodeNo = getModalEpisodeNumber(ep, idx + 1);
+        const rich = detailed.find((row) => Number(row.episodeNo || row.episode || row.number) === episodeNo);
+        if (!rich) return ep;
+        const providerTitle = getModalEpisodeTitle(ep, episodeNo);
+        const richTitle = getModalEpisodeTitle(rich, episodeNo);
+        const title = /^episode\s*\d*$/i.test(providerTitle) ? richTitle : providerTitle;
+        return { ...ep, ...rich, title, name: title };
+    });
+    season._modalHydrated = true;
+    return true;
+}
+
+function parseModalTmdbPublicSeasonHtml(html, seasonNo) {
+    const text = String(html || '');
+    if (!text.trim()) return null;
+    const doc = new DOMParser().parseFromString(text, 'text/html');
+    const cards = [...doc.querySelectorAll('.episode_list .card, .episode.card, [data-url*="/season/"][data-url*="/episode/"]')];
+    const episodes = [];
+    cards.forEach((card, idx) => {
+        const link = card.querySelector('a[data-episode-number], a[href*="/episode/"]');
+        const epNo = Number(link?.getAttribute('data-episode-number') || card.querySelector('[data-episode-number]')?.getAttribute('data-episode-number') || idx + 1);
+        if (!Number.isFinite(epNo) || epNo <= 0) return;
+        const title = getModalEpisodeTitle({
+            title:
+                card.querySelector('.episode_title h3 a')?.textContent ||
+                card.querySelector('.episode_title h3')?.textContent ||
+                card.querySelector('h3 a[title]')?.getAttribute('title') ||
+                card.querySelector('h3 a[title]')?.textContent ||
+                card.querySelector('h3')?.textContent ||
+                link?.getAttribute('title') ||
+                link?.textContent ||
+                card.querySelector('img[alt]')?.getAttribute('alt'),
+        }, epNo);
+        const descNode = [...card.querySelectorAll('.episode_title p, p')].find((node) => String(node.textContent || '').trim());
+        const description = String(descNode?.textContent || '').replace(/\s*Read More\s*$/i, '').replace(/\s+/g, ' ').trim();
+        const img = card.querySelector('img.backdrop, img[src*="media.themoviedb.org/t/p"], img[src*="image.tmdb.org/t/p"]');
+        let src = String(img?.getAttribute('data-src') || img?.getAttribute('src') || '').trim();
+        if (!src) src = String(img?.getAttribute('srcset') || '').trim();
+        if (src.includes(',')) {
+            src = src.split(',').map((part) => part.trim().split(/\s+/)[0]).filter(Boolean)[0] || src;
+        } else if (src.includes(' ')) {
+            src = src.split(/\s+/)[0] || src;
+        }
+        src = src.replace('media.themoviedb.org/t/p/', 'image.tmdb.org/t/p/');
+        episodes.push({
+            episode: epNo,
+            number: epNo,
+            episodeNo: epNo,
+            title,
+            name: title,
+            description,
+            overview: description,
+            still_path: src,
+            image: src,
+            season: Number(seasonNo),
+        });
+    });
+    return episodes.length ? { season: Number(seasonNo), episodes } : null;
+}
+
+async function fetchModalTextWithTimeout(url, timeoutMs = 12000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.text();
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function hydrateModalSeasonEpisodeDetails(id, season) {
+    const seasonNo = Number(season?.seasonNo || 0);
+    const tmdbId = normalizeTmdbId(id);
+    if (!tmdbId || !Number.isFinite(seasonNo) || seasonNo <= 0) return false;
+    const key = getModalSeasonCacheKey(tmdbId, seasonNo);
+    if (modalSeasonEpisodeDetailCache.has(key)) {
+        return mergeModalSeasonEpisodeDetails(season, modalSeasonEpisodeDetailCache.get(key));
+    }
+    if (modalSeasonEpisodeDetailPromises.has(key)) {
+        const payload = await modalSeasonEpisodeDetailPromises.get(key);
+        return mergeModalSeasonEpisodeDetails(season, payload);
+    }
+
+    const promise = (async () => {
+        const urls = [
+            `${BASE_URL}/info/${encodeURIComponent(tmdbId)}?type=tv&season=${encodeURIComponent(seasonNo)}&details=true`,
+            `${BASE_URL}/info?id=${encodeURIComponent(tmdbId)}&type=tv&season=${encodeURIComponent(seasonNo)}&details=true`,
+        ];
+        for (const url of urls) {
+            try {
+                const parsed = await fetchJsonWithFallback(url, 9000);
+                if (extractModalSeasonEpisodes(parsed).length) {
+                    modalSeasonEpisodeDetailCache.set(key, parsed);
+                    return parsed;
+                }
+            } catch (_) { }
+        }
+
+        try {
+            const apiOrigin = String(BASE_URL || '').split('/meta/tmdb')[0];
+            const tmdbSeasonUrl = `https://www.themoviedb.org/tv/${encodeURIComponent(tmdbId)}/season/${encodeURIComponent(seasonNo)}`;
+            const html = await fetchModalTextWithTimeout(`${apiOrigin}/utils/proxy?url=${encodeURIComponent(tmdbSeasonUrl)}`, 12000);
+            const parsed = parseModalTmdbPublicSeasonHtml(html, seasonNo);
+            if (parsed) {
+                modalSeasonEpisodeDetailCache.set(key, parsed);
+                return parsed;
+            }
+        } catch (_) { }
+
+        const empty = { season: seasonNo, episodes: [] };
+        modalSeasonEpisodeDetailCache.set(key, empty);
+        return empty;
+    })().finally(() => {
+        modalSeasonEpisodeDetailPromises.delete(key);
+    });
+
+    modalSeasonEpisodeDetailPromises.set(key, promise);
+    const payload = await promise;
+    return mergeModalSeasonEpisodeDetails(season, payload);
+}
+
+function normalizeModalTvSeasons(movie, options = {}) {
+    const preferProviderEpisodes = options?.preferProviderEpisodes === true;
+    const sourceSeasons = Array.isArray(movie?.seasons) ? movie.seasons : [];
+    const normalized = sourceSeasons
+        .map((season, seasonIdx) => {
+            const seasonNo = getModalSeasonNumber(season, seasonIdx + 1);
+            if (seasonNo <= 0) return null;
+
+            let episodes = Array.isArray(season?.episodes) ? season.episodes : [];
+            const episodeCount = Number(season?.episode_count || season?.episodeCount || season?.episodesCount || 0);
+            const hasProviderFlattenedEpisodes = !preferProviderEpisodes && episodeCount > 0 && episodes.length > episodeCount;
+            if (hasProviderFlattenedEpisodes) {
+                episodes = [];
+            }
+            if (!episodes.length && Number.isFinite(episodeCount) && episodeCount > 0) {
+                episodes = Array.from({ length: episodeCount }, (_, idx) => ({
+                    episode: idx + 1,
+                    title: `Episode ${idx + 1}`,
+                }));
+            }
+            const seasonImage = getModalEpisodeImage(season);
+
+            return {
+                seasonNo,
+                seasonTitle: String(season?.name || season?.title || `Season ${seasonNo}`).trim(),
+                seasonKey: String(season?.providerAnimeId || season?.id || '').trim(),
+                seasonImage,
+                episodes: episodes.map((ep, epIdx) => ({
+                    ...ep,
+                    episodeNo: getModalEpisodeNumber(ep, epIdx + 1),
+                    image: getModalEpisodeImage(ep, seasonImage) || ep?.image,
+                })),
+            };
+        })
+        .filter((season) => season && season.episodes.length);
+
+    if (normalized.length) return normalized.sort((a, b) => a.seasonNo - b.seasonNo);
+
+    const flatEpisodes = Array.isArray(movie?.episodes) ? movie.episodes : [];
+    if (flatEpisodes.length) {
+        return [{
+            seasonNo: 1,
+            seasonTitle: 'Season 1',
+            seasonKey: '',
+            seasonImage: getModalEpisodeImage(movie),
+            episodes: flatEpisodes.map((ep, idx) => ({
+                ...ep,
+                episodeNo: getModalEpisodeNumber(ep, idx + 1),
+                image: getModalEpisodeImage(ep, getModalEpisodeImage(movie)) || ep?.image,
+            })),
+        }];
+    }
+
+    return [];
+}
+
+function isModalAnimeLike(movie = {}) {
+    const text = [
+        movie.type,
+        movie.category,
+        movie.source,
+        movie.provider,
+        ...(Array.isArray(movie.genres) ? movie.genres : String(movie.genres || '').split(',')),
+    ].join(' ').toLowerCase();
+    return /\banime\b|animesalt|satoru|justanime|animekai/.test(text);
+}
+
+function getModalEpisodeProviderOptions(movie = {}, provider = '') {
+    const options = [{ id: 'tmdb', label: 'TMDB' }];
+    const seen = new Set(['tmdb']);
+    const addProvider = (value, label = '') => {
+        const id = String(value || '').trim().toLowerCase();
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        options.push({
+            id,
+            label: String(label || id).replace(/(^|\s)\w/g, (m) => m.toUpperCase()),
+        });
+    };
+
+    addProvider(provider);
+    [
+        movie.provider,
+        movie.source,
+        movie.sourceProvider,
+        ...(Array.isArray(movie.providers) ? movie.providers : []),
+    ].forEach((value) => addProvider(value));
+
+    if (isModalAnimeLike(movie)) {
+        addProvider('animesalt', 'AnimeSalt');
+        addProvider('satoru', 'Satoru');
+    }
+
+    return options;
+}
+
+function getModalEpisodeAbsoluteNo(seasons, targetSeasonNo, episodeNo) {
+    let offset = 0;
+    for (const season of seasons) {
+        if (Number(season.seasonNo) === Number(targetSeasonNo)) break;
+        offset += Array.isArray(season.episodes) ? season.episodes.length : 0;
+    }
+    return offset + Number(episodeNo || 0);
+}
+
+function getModalEpisodeKeys({ provider = '', seasonKey = '', episodeId = '', seasonNo = 0, episodeNo = 0, absoluteEpisodeNo = 0 }) {
+    const keys = [];
+    const safeProvider = String(provider || '').trim().toLowerCase();
+    const safeSeasonKey = String(seasonKey || '').trim().toLowerCase();
+    const safeEpisodeId = String(episodeId || '').trim().toLowerCase();
+    const safeSeasonNo = Number(seasonNo || 0);
+    const safeEpisodeNo = Number(episodeNo || 0);
+    const safeAbsoluteNo = Number(absoluteEpisodeNo || 0);
+    if (safeProvider && safeEpisodeId) keys.push(`provider:${safeProvider}:id:${safeEpisodeId}`);
+    if (safeProvider && safeSeasonKey && safeAbsoluteNo > 0) keys.push(`provider:${safeProvider}:series:${safeSeasonKey}:abs:${safeAbsoluteNo}`);
+    if (safeProvider && safeSeasonKey && safeSeasonNo > 0 && safeEpisodeNo > 0) keys.push(`provider:${safeProvider}:series:${safeSeasonKey}:s${safeSeasonNo}:e${safeEpisodeNo}`);
+    if (safeSeasonNo > 0 && safeEpisodeNo > 0) keys.push(`local:s${safeSeasonNo}:e${safeEpisodeNo}`);
+    return [...new Set(keys)];
+}
+
+function readModalEpisodeState(id, type) {
+    const watchedKey = `sv_watched_episodes:${type}:${id}`;
+    const progressKey = `sv_episode_progress:${type}:${id}`;
+    let watched = new Set();
+    let progress = new Map();
+    try {
+        const raw = localStorage.getItem(watchedKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) watched = new Set(parsed.map((v) => String(v || '')).filter(Boolean));
+    } catch (_) { }
+    try {
+        const raw = localStorage.getItem(progressKey);
+        const parsed = raw ? JSON.parse(raw) : {};
+        if (parsed && typeof parsed === 'object') progress = new Map(Object.entries(parsed));
+    } catch (_) { }
+    return { watched, progress };
+}
+
+function readModalContinueWatchingEntry(id, type) {
+    try {
+        const raw = localStorage.getItem('sv_continue_watching');
+        const items = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(items)) return null;
+        return items.find((row) =>
+            String(row?.id || '') === String(id || '') &&
+            String(row?.type || '').toLowerCase() === String(type || '').toLowerCase()
+        ) || null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function getBestModalEpisodeProgress(progressMap, keys = []) {
+    let best = null;
+    keys.forEach((key) => {
+        const row = progressMap.get(key);
+        if (!row) return;
+        const percent = Number(row.percent || 0);
+        if (!best || percent > Number(best.percent || 0)) best = row;
+    });
+    return best || { time: 0, duration: 0, percent: 0 };
+}
+
+function getModalResumeTime(progressInfo) {
+    const time = Number(progressInfo?.time || 0);
+    const duration = Number(progressInfo?.duration || 0);
+    const percent = Number(progressInfo?.percent || 0);
+    if (!Number.isFinite(time) || time < 5 || percent >= 99.5) return 0;
+    if (Number.isFinite(duration) && duration > 0 && time >= Math.max(0, duration - 2)) return 0;
+    return Math.max(0, Math.floor(time));
+}
+
+function isModalCurrentlyWatchingEpisode(continueEntry, seasonNo, episodeNo, progressInfo) {
+    if (!continueEntry) return false;
+    const entrySeasonNo = Number(continueEntry.seasonNo || 0) ||
+        (Number(continueEntry.seasonIndex) >= 0 ? Number(continueEntry.seasonIndex) + 1 : 0);
+    const entryEpisodeNo = Number(continueEntry.episodeNo || 0) ||
+        (Number(continueEntry.episodeIndex) >= 0 ? Number(continueEntry.episodeIndex) + 1 : 0);
+    if (entrySeasonNo !== Number(seasonNo || 0) || entryEpisodeNo !== Number(episodeNo || 0)) return false;
+
+    const progressPercent = Number(progressInfo?.percent || 0);
+    const entryPercent = Number(continueEntry.percent || continueEntry.progress || 0);
+    const currentTime = Number(continueEntry.currentTime || progressInfo?.time || 0);
+    const duration = Number(continueEntry.duration || progressInfo?.duration || 0);
+    const computedPercent = Number.isFinite(duration) && duration > 0 ? (currentTime / duration) * 100 : 0;
+    const bestPercent = Math.max(progressPercent, entryPercent, computedPercent);
+
+    return currentTime >= 5 && bestPercent < 99.5;
+}
+
+function buildModalTvEpisodesSection(movie, id, type, provider = '') {
+    if (String(type).toLowerCase() !== 'tv') return '';
+    const seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false });
+    if (!seasons.length) return '';
+    const selectedSeason = seasons.find((season) => Number(season.seasonNo) === 1) || seasons[0];
+    const providerOptions = getModalEpisodeProviderOptions(movie, provider);
+    const showProviderDropdown = providerOptions.length > 1 && isModalAnimeLike(movie);
+
+    return `
+        <div class="modal-episodes-section" id="modal-tv-episodes"
+             data-id="${escapeModalHtml(id)}"
+             data-type="${escapeModalHtml(type)}"
+             data-provider="${escapeModalHtml(provider)}">
+            <div class="modal-episodes-head">
+                <h3 class="modal-episodes-title">Episodes</h3>
+                <div class="modal-episodes-controls">
+                    ${showProviderDropdown ? `
+                    <div class="modal-season-dropdown modal-provider-dropdown" id="modal-provider-dropdown">
+                        <button type="button"
+                                id="modal-provider-select"
+                                class="modal-season-select"
+                                aria-haspopup="listbox"
+                                aria-expanded="false">
+                            <span class="modal-season-kicker">Source</span>
+                            <span class="modal-season-current">${escapeModalHtml(providerOptions[0].label)}</span>
+                            <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                        </button>
+                        <div class="modal-season-menu" id="modal-provider-menu" role="listbox">
+                            ${providerOptions.map((option, idx) => `
+                                <button type="button"
+                                        class="modal-provider-option ${idx === 0 ? 'selected' : ''}"
+                                        data-provider="${escapeModalHtml(option.id)}"
+                                        role="option"
+                                        aria-selected="${idx === 0 ? 'true' : 'false'}">
+                                    ${escapeModalHtml(option.label)}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                    ` : ''}
+                    <div class="modal-season-dropdown" id="modal-season-dropdown">
+                        <button type="button"
+                                id="modal-season-select"
+                                class="modal-season-select"
+                                aria-haspopup="listbox"
+                                aria-expanded="false">
+                            <span class="modal-season-kicker">Season</span>
+                            <span class="modal-season-current">
+                                ${escapeModalHtml(selectedSeason.seasonTitle || `Season ${selectedSeason.seasonNo}`)}
+                            </span>
+                            <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                        </button>
+                        <div class="modal-season-menu" id="modal-season-menu" role="listbox">
+                            ${seasons.map((season) => `
+                                <button type="button"
+                                        class="modal-season-option ${season.seasonNo === selectedSeason.seasonNo ? 'selected' : ''}"
+                                        data-season="${season.seasonNo}"
+                                        role="option"
+                                        aria-selected="${season.seasonNo === selectedSeason.seasonNo ? 'true' : 'false'}">
+                                    ${escapeModalHtml(season.seasonTitle || `Season ${season.seasonNo}`)}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="modal-episodes-list" class="modal-episodes-list"></div>
+        </div>
+    `;
+}
+
+function initModalTvEpisodes(movie, id, type, provider = '') {
+    const root = document.getElementById('modal-tv-episodes');
+    const dropdown = document.getElementById('modal-season-dropdown');
+    const select = document.getElementById('modal-season-select');
+    const currentLabel = select?.querySelector('.modal-season-current');
+    const menu = document.getElementById('modal-season-menu');
+    const providerDropdown = document.getElementById('modal-provider-dropdown');
+    const providerSelect = document.getElementById('modal-provider-select');
+    const providerCurrentLabel = providerSelect?.querySelector('.modal-season-current');
+    const providerMenu = document.getElementById('modal-provider-menu');
+    const list = document.getElementById('modal-episodes-list');
+    if (!root || !dropdown || !select || !menu || !list) return;
+
+    let selectedProvider = 'tmdb';
+    let seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false });
+    if (!seasons.length) return;
+    const apiSource = getCurrentApiSource();
+    const state = readModalEpisodeState(id, type);
+    const continueEntry = readModalContinueWatchingEntry(id, type);
+    const modalFallbackImage = getCover(movie) || getPoster(movie) || getModalEpisodeImage(movie);
+    let selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo || seasons[0]?.seasonNo || 1);
+
+    const setDropdownOpen = (isOpen) => {
+        dropdown.classList.toggle('open', isOpen);
+        select.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    };
+
+    const syncDropdownSelection = (season) => {
+        selectedSeasonNo = Number(season?.seasonNo || selectedSeasonNo || 1);
+        if (currentLabel) currentLabel.textContent = season?.seasonTitle || `Season ${selectedSeasonNo}`;
+        menu.querySelectorAll('.modal-season-option').forEach((option) => {
+            const isSelected = Number(option.dataset.season || 0) === selectedSeasonNo;
+            option.classList.toggle('selected', isSelected);
+            option.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        });
+    };
+
+    const rebuildSeasonMenu = () => {
+        const selectedSeason = seasons.find((season) => Number(season.seasonNo) === selectedSeasonNo) || seasons[0];
+        selectedSeasonNo = Number(selectedSeason?.seasonNo || 1);
+        menu.innerHTML = seasons.map((season) => `
+            <button type="button"
+                    class="modal-season-option ${Number(season.seasonNo) === selectedSeasonNo ? 'selected' : ''}"
+                    data-season="${escapeModalHtml(season.seasonNo)}"
+                    role="option"
+                    aria-selected="${Number(season.seasonNo) === selectedSeasonNo ? 'true' : 'false'}">
+                ${escapeModalHtml(season.seasonTitle || `Season ${season.seasonNo}`)}
+            </button>
+        `).join('');
+        menu.querySelectorAll('.modal-season-option').forEach((option) => {
+            option.addEventListener('click', (event) => {
+                event.stopPropagation();
+                renderSeason(option.dataset.season || '1');
+                setDropdownOpen(false);
+            });
+        });
+    };
+
+    const syncProviderSelection = () => {
+        if (!providerMenu) return;
+        providerMenu.querySelectorAll('.modal-provider-option').forEach((option) => {
+            const isSelected = String(option.dataset.provider || '') === selectedProvider;
+            option.classList.toggle('selected', isSelected);
+            option.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+            if (isSelected && providerCurrentLabel) providerCurrentLabel.textContent = option.textContent.trim();
+        });
+    };
+
+    const setProviderDropdownOpen = (isOpen) => {
+        if (!providerDropdown || !providerSelect) return;
+        providerDropdown.classList.toggle('open', isOpen);
+        providerSelect.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    };
+
+    const renderSeason = (seasonNoValue) => {
+        const seasonNo = Number(seasonNoValue || 1);
+        const season = seasons.find((row) => Number(row.seasonNo) === seasonNo) || seasons[0];
+        if (!season) return;
+        syncDropdownSelection(season);
+
+        list.innerHTML = season.episodes.map((ep, idx) => {
+            const episodeNo = Number(ep.episodeNo || idx + 1);
+            const episodeId = String(ep.id || ep.episodeId || '').trim();
+            const absoluteEpisodeNo = getModalEpisodeAbsoluteNo(seasons, season.seasonNo, episodeNo);
+            const activeProvider = selectedProvider === 'tmdb' ? provider : selectedProvider;
+            const keys = getModalEpisodeKeys({
+                provider: activeProvider,
+                seasonKey: season.seasonKey,
+                episodeId,
+                seasonNo: season.seasonNo,
+                episodeNo,
+                absoluteEpisodeNo,
+            });
+            const progressInfo = getBestModalEpisodeProgress(state.progress, keys);
+            const percent = Math.max(0, Math.min(100, Number(progressInfo.percent || 0)));
+            const isWatched = keys.some((key) => state.watched.has(key)) || percent >= 99.5;
+            const isCurrentlyWatching = !isWatched && isModalCurrentlyWatchingEpisode(continueEntry, season.seasonNo, episodeNo, progressInfo);
+            const title = getModalEpisodeTitle(ep, episodeNo);
+            const desc = String(ep.description || ep.overview || ep.summary || '').trim();
+            const thumb = getModalEpisodeImage(ep, season.seasonImage || modalFallbackImage);
+            const resumeTime = getModalResumeTime(progressInfo);
+            const safeSeasonTitle = `Season ${season.seasonNo}`;
+
+            const params = new URLSearchParams();
+            params.set('id', String(id || ''));
+            params.set('type', 'tv');
+            params.set('apiSource', String(apiSource || ''));
+            params.set('season', String(season.seasonNo));
+            params.set('episode', String(episodeNo));
+            params.set('resume', '0');
+            params.set('t', String(resumeTime));
+            if (activeProvider && selectedProvider !== 'tmdb') params.set('provider', String(activeProvider));
+            else if (provider) params.set('provider', String(provider));
+            params.set('seasonTitle', safeSeasonTitle);
+            if (season.seasonKey) params.set('seasonKey', season.seasonKey);
+            if (absoluteEpisodeNo > 0) params.set('absoluteEpisode', String(absoluteEpisodeNo));
+
+            return `
+                <button type="button"
+                        class="modal-episode-item ${isWatched ? 'watched' : ''} ${isCurrentlyWatching ? 'currently-watching' : ''}"
+                        data-watch-url="player.html?${escapeModalHtml(params.toString())}">
+                    <div class="modal-episode-thumb ${thumb ? '' : 'no-thumb'}">
+                        ${thumb ? `<img src="${escapeModalHtml(thumb)}" alt="" loading="lazy"
+                             onerror="this.parentElement.classList.add('no-thumb'); this.remove(); this.parentElement.insertAdjacentHTML('beforeend', '<span>${episodeNo}</span>');">` : `<span>${episodeNo}</span>`}
+                    </div>
+                    <div class="modal-episode-copy">
+                        <div class="modal-episode-row">
+                            <span class="modal-episode-number">E${episodeNo}</span>
+                            <strong>${escapeModalHtml(title)}</strong>
+                            ${isCurrentlyWatching ? '<span class="modal-episode-current">Currently watching</span>' : ''}
+                            ${isWatched ? '<span class="modal-episode-seen">Seen</span>' : ''}
+                        </div>
+                        ${desc ? `<p>${escapeModalHtml(desc)}</p>` : ''}
+                        <div class="modal-episode-progress" aria-label="${Math.round(percent)}% watched">
+                            <span style="width:${percent}%"></span>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-play modal-episode-play"></i>
+                </button>
+            `;
+        }).join('');
+
+        list.querySelectorAll('.modal-episode-item').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const url = btn.getAttribute('data-watch-url');
+                if (url) window.location.href = url;
+            });
+        });
+
+        if (!season._modalHydrated && !season._modalHydrating) {
+            season._modalHydrating = true;
+            hydrateModalSeasonEpisodeDetails(id, season).then((changed) => {
+                season._modalHydrating = false;
+                if (changed && Number(selectedSeasonNo) === Number(season.seasonNo)) {
+                    renderSeason(season.seasonNo);
+                }
+            }).catch(() => {
+                season._modalHydrating = false;
+            });
+        }
+    };
+
+    select.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setDropdownOpen(!dropdown.classList.contains('open'));
+    });
+
+    rebuildSeasonMenu();
+
+    providerSelect?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setProviderDropdownOpen(!providerDropdown?.classList.contains('open'));
+        setDropdownOpen(false);
+    });
+
+    providerMenu?.querySelectorAll('.modal-provider-option').forEach((option) => {
+        option.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            selectedProvider = String(option.dataset.provider || 'tmdb').trim().toLowerCase() || 'tmdb';
+            syncProviderSelection();
+            let providerMovie = movie;
+            if (selectedProvider !== 'tmdb') {
+                list.innerHTML = '<div class="similar-loading">Loading provider episodes...</div>';
+                try {
+                    providerMovie = await fetchDetails(id, type, selectedProvider);
+                } catch (_) {
+                    providerMovie = movie;
+                }
+            }
+            seasons = normalizeModalTvSeasons(providerMovie, { preferProviderEpisodes: selectedProvider !== 'tmdb' });
+            if (!seasons.length) {
+                seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false });
+            }
+            if (!seasons.length) {
+                setProviderDropdownOpen(false);
+                return;
+            }
+            selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo || seasons[0]?.seasonNo || 1);
+            rebuildSeasonMenu();
+            renderSeason(selectedSeasonNo);
+            setProviderDropdownOpen(false);
+        });
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!dropdown.contains(event.target)) setDropdownOpen(false);
+        if (providerDropdown && !providerDropdown.contains(event.target)) setProviderDropdownOpen(false);
+    });
+
+    dropdown.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            setDropdownOpen(false);
+            select.focus();
+        }
+    });
+
+    providerDropdown?.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            setProviderDropdownOpen(false);
+            providerSelect?.focus();
+        }
+    });
+
+    syncProviderSelection();
+    renderSeason(selectedSeasonNo);
+}
+
 function renderDetailsModal(movie, id, type, provider = '') {
     currentModalMovie = movie;
     const resolvedProvider = provider || getItemProvider(movie);
@@ -3431,6 +4209,8 @@ function renderDetailsModal(movie, id, type, provider = '') {
                     </div>
                 </div>
 
+                ${buildModalTvEpisodesSection(movie, id, type, resolvedProvider)}
+
                 <div class="modal-similar-section">
                     <h3 class="similar-title">Similar Finds</h3>
                     <div id="similar-movies-grid" class="movie-grid">
@@ -3467,6 +4247,8 @@ function renderDetailsModal(movie, id, type, provider = '') {
             }
         }
     }, 100);
+
+    initModalTvEpisodes(movie, id, type, resolvedProvider);
 
     // Load similar movies by shared genre with the clicked item.
     fetchSimilar(id, type, provider, movie).then(similarMovies => {
@@ -3625,6 +4407,105 @@ async function fetchSection(type, grid, mediaType, timePeriod = 'day') {
         console.error(`Error fetching ${type}:`, err?.message || err);
         return false;
     }
+}
+
+// ------------------ ALL MOVIES / TV ---------------------------------------
+const allMediaState = {
+    items: [],
+    page: 0,
+    loading: false,
+    hasMore: true,
+    visibleCount: 24,
+};
+
+function makeMediaDedupeKey(item) {
+    const type = getType(item) || item?.media_type || item?.type || 'movie';
+    return `${type}:${String(item?.id || item?.tmdbId || item?.imdbId || item?.title || item?.name || '').trim()}`;
+}
+
+function mergeAllMediaItems(nextItems) {
+    const seen = new Set(allMediaState.items.map(makeMediaDedupeKey));
+    (Array.isArray(nextItems) ? nextItems : [])
+        .filter((item) => hasUsableMediaId(item) && hasPositiveRating(item))
+        .forEach((item) => {
+            const key = makeMediaDedupeKey(item);
+            if (!key || seen.has(key) || homepageFeaturedMediaKeys.has(key)) return;
+            seen.add(key);
+            allMediaState.items.push(item);
+        });
+}
+
+function renderAllMediaSection() {
+    if (!allMediaGrid) return;
+    const visibleItems = allMediaState.items.slice(0, allMediaState.visibleCount);
+    if (!visibleItems.length && allMediaState.loading) return;
+    displayGrid(visibleItems, allMediaGrid, null);
+    if (allMediaMoreBtn) {
+        const canReveal = allMediaState.visibleCount < allMediaState.items.length;
+        allMediaMoreBtn.style.display = (canReveal || allMediaState.hasMore) ? 'inline-flex' : 'none';
+        allMediaMoreBtn.disabled = allMediaState.loading;
+        allMediaMoreBtn.textContent = allMediaState.loading ? 'Loading...' : 'Load More';
+    }
+}
+
+async function fetchAllMediaPage() {
+    if (allMediaState.loading || !allMediaState.hasMore) return true;
+    allMediaState.loading = true;
+    renderAllMediaSection();
+    const nextPage = allMediaState.page + 1;
+    try {
+        const requestSpecs = [
+            { key: `all-media:movie:day:${nextPage}`, path: `/trending?type=movie&timePeriod=day&page=${encodeURIComponent(nextPage)}` },
+            { key: `all-media:tv:day:${nextPage}`, path: `/trending?type=tv&timePeriod=day&page=${encodeURIComponent(nextPage)}` },
+        ];
+        const payloads = await Promise.all(requestSpecs.map(async (spec) => {
+            const cached = readCache(spec.key);
+            if (cached?.results?.length) return cached;
+            const fresh = await fetchJsonWithFallback(spec.path);
+            writeCache(spec.key, fresh);
+            return fresh;
+        }));
+        const results = payloads.flatMap((data) => Array.isArray(data?.results) ? data.results : []);
+        mergeAllMediaItems(results);
+        allMediaState.page = nextPage;
+        allMediaState.hasMore = results.length > 0 && nextPage < 10;
+        return true;
+    } catch (err) {
+        console.error('All Movies / TV error:', err?.message || err);
+        allMediaState.hasMore = false;
+        return false;
+    } finally {
+        allMediaState.loading = false;
+        renderAllMediaSection();
+    }
+}
+
+async function fetchAllMediaSection() {
+    if (!allMediaGrid) return true;
+    if (allMediaMoreBtn && !allMediaMoreBtn.dataset.bound) {
+        allMediaMoreBtn.dataset.bound = 'true';
+        allMediaMoreBtn.addEventListener('click', async () => {
+            if (allMediaState.loading) return;
+            if (allMediaState.visibleCount < allMediaState.items.length) {
+                allMediaState.visibleCount += 24;
+                renderAllMediaSection();
+                if (allMediaState.hasMore && allMediaState.items.length - allMediaState.visibleCount <= 24) {
+                    fetchAllMediaPage().catch((err) => console.error('All Movies / TV preload failed:', err?.message || err));
+                }
+                return;
+            }
+            allMediaState.visibleCount += 24;
+            renderAllMediaSection();
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            await fetchAllMediaPage();
+        });
+    }
+    await fetchAllMediaPage();
+    if (allMediaState.items.length < allMediaState.visibleCount && allMediaState.hasMore) {
+        await fetchAllMediaPage();
+    }
+    renderAllMediaSection();
+    return allMediaState.items.length > 0;
 }
 
 // ------------------ FETCH DRAMAS -------------------------------------------
@@ -3971,6 +4852,12 @@ function displayGrid(items, container, forcedType = null, options = {}) {
     if (!container) return;
     container.innerHTML = '';
     const includeUnrated = !!options.includeUnrated;
+    const shouldRememberFeaturedKey = [
+        trendingGrid,
+        popularMoviesGrid,
+        popularTvGrid,
+        topRatedGrid,
+    ].includes(container);
     const renderItems = Array.isArray(items)
         ? (includeUnrated ? items.filter(Boolean) : items.filter(hasPositiveRating))
         : [];
@@ -4011,6 +4898,9 @@ function displayGrid(items, container, forcedType = null, options = {}) {
         const detectedType = getType(normalizedItem);
         const type = detectedType || forcedType || 'movie';
         const id = normalizedItem.id;
+        if (shouldRememberFeaturedKey) {
+            homepageFeaturedMediaKeys.add(makeMediaDedupeKey({ ...normalizedItem, media_type: type, type }));
+        }
         
         // Check for continue watching data to show season/episode info
         let seasonEpisodeBadge = '';
@@ -4027,16 +4917,16 @@ function displayGrid(items, container, forcedType = null, options = {}) {
                         const episodeNo = watchedItem.episodeNo || watchedItem.episode || 1;
                         seasonEpisodeBadge = `<span class="season-episode-badge">S${seasonNo}E${episodeNo}</span>`;
                     } else {
-                        seasonEpisodeBadge = `<span class="season-episode-badge">TV</span>`;
+                        seasonEpisodeBadge = `<span class="season-episode-badge type-label-badge"><i class="fa-solid fa-tv"></i><span>TV</span></span>`;
                     }
                 } catch (e) {
-                    seasonEpisodeBadge = `<span class="season-episode-badge">TV</span>`;
+                    seasonEpisodeBadge = `<span class="season-episode-badge type-label-badge"><i class="fa-solid fa-tv"></i><span>TV</span></span>`;
                 }
             } else {
-                seasonEpisodeBadge = `<span class="season-episode-badge">TV</span>`;
+                seasonEpisodeBadge = `<span class="season-episode-badge type-label-badge"><i class="fa-solid fa-tv"></i><span>TV</span></span>`;
             }
         } else {
-            seasonEpisodeBadge = `<span class="season-episode-badge">MOVIE</span>`;
+            seasonEpisodeBadge = `<span class="season-episode-badge type-label-badge"><i class="fa-solid fa-film"></i><span>Movie</span></span>`;
         }
 
         const card = document.createElement('div');
@@ -4666,8 +5556,10 @@ function filterType(type) {
 function updateSwitcherState() {
     const src = getCurrentApiSource();
     BASE_URL = src === 'local' ? LOCAL_API : PROD_API;
+    const switcher = document.querySelector('.api-switcher');
     const localBtn = document.getElementById('api-local');
     const prodBtn = document.getElementById('api-prod');
+    if (switcher) switcher.classList.toggle('dev-visible', isDevHost());
     if (!localBtn || !prodBtn) return;
     localBtn.classList.toggle('active', src === 'local');
     prodBtn.classList.toggle('active', src === 'prod');
