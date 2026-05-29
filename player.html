@@ -7886,6 +7886,7 @@
             } catch (_) { /* fall through to legacy data URI path */ }
 
             const proxied = proxiedStreamUrl(rawSrc, sub?.referer || null);
+
             const toVttBlobUrl = (text) => {
                 const vttText = String(text || '');
                 try {
@@ -7939,7 +7940,7 @@
 
             try {
                 const lower = String(rawSrc || '').toLowerCase();
-                
+
                 // CRITICAL FIX: Direct skip if already a VTT and on iOS 
                 // Normal HTTP URLs are much more stable for AVKit probes than Blobs.
                 if (IS_IOS && lower.split('?')[0].endsWith('.vtt')) {
@@ -8020,7 +8021,7 @@
                     subtitleBlobCache.set(lower, '');
                     return '';
                 }
-                
+
                 // Fallback: if we couldn't parse/download but the file exists, return the raw proxied URL
                 try {
                     const testRes = await fetch(proxied, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
@@ -8032,7 +8033,7 @@
 
         function applyExternalSubtitlesToVideoSync(videoEl) {
             if (!videoEl || !Array.isArray(window.externalSubtitleTracks) || window.externalSubtitleTracks.length === 0) return;
-            
+
             // Derive API origin for proxy. Must point to the BACKEND server, not the frontend origin.
             let apiOrigin = '';
             try {
@@ -15922,6 +15923,7 @@
                     return false;
                 }
             };
+
             const tryAlternateFlixhqServer = async (reason = 'unknown') => {
                 if (flixhqAltServerAttempted) return false;
                 if (String(sourceProvider || '').toLowerCase() !== 'flixhq') return false;
@@ -16584,7 +16586,7 @@
                 // On iOS, crossOrigin='anonymous' triggers CORS preflight for every segment
                 // request, which can cause failures when the CDN doesn't support CORS.
                 // Remove it for native HLS — canvas thumbnail capture isn't used on iOS.
-                // Exception: 'justanime' uses external subtitles resolving to a cross-origin /utils/vtt.
+                // Exception: 'justanime' keeps external subtitles as direct text tracks when possible.
                 // If we remove crossorigin, iOS WebKit instantly crashes the <video> when the <track> is added.
                 video.setAttribute('crossorigin', 'anonymous');
                 video.crossOrigin = 'anonymous';
