@@ -4387,10 +4387,21 @@
 
         function isEnhancementCompatibleMedia() {
             if (!video) return false;
+            const sourceProviderName = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').trim().toLowerCase();
             const currentSrc = String(video.currentSrc || video.src || '').trim();
+            const currentSourceUrl = String(allSources?.[currentIdx]?.url || currentSrc || '').trim().toLowerCase();
+            if (sourceProviderName === 'archive.org' || currentSourceUrl.includes('archive.org')) {
+                if (!RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY) return false;
+                if (!currentSrc) return false;
+                try {
+                    return new URL(currentSrc, location.href).origin === location.origin;
+                } catch (_) {
+                    return false;
+                }
+            }
+
             if (!currentSrc) {
-                const sourceProviderName = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').trim().toLowerCase();
-                return sourceProviderName !== 'archive.org';
+                return true;
             }
 
             try {
@@ -8226,7 +8237,7 @@
                 const bustParam = String(sub?.provider || '').toLowerCase() === 'animesalt' ? `&_t=${Date.now()}` : '';
                 const vttUrl = `${apiOrigin}/utils/vtt?url=${encodeURIComponent(rawSrc)}${refParam}${providerParam}${bustParam}`;
                 console.log('[sub] track src → /utils/vtt proxy:', rawSrc.slice(0, 60));
-                return vttUrl;
+                if (IS_IOS) return vttUrl;
             } catch (_) { /* fall through to legacy data URI path */ }
 
             const proxied = proxiedStreamUrl(rawSrc, sub?.referer || null);
@@ -10201,8 +10212,14 @@
 
             const cinemaCheckbox = document.createElement('input');
             cinemaCheckbox.type = 'checkbox';
-            cinemaCheckbox.checked = audioEnhancementEnabled;
+            const cinemaCompatible = isEnhancementCompatibleMedia();
+            cinemaCheckbox.checked = cinemaCompatible && audioEnhancementEnabled;
+            cinemaCheckbox.disabled = !cinemaCompatible;
             cinemaCheckbox.addEventListener('change', () => {
+                if (!isEnhancementCompatibleMedia()) {
+                    cinemaCheckbox.checked = false;
+                    return;
+                }
                 setAudioEnhancementEnabled(cinemaCheckbox.checked);
                 if (video && audioCtx && audioCtx.state === 'suspended') {
                     audioCtx.resume().catch(() => { });
@@ -10224,7 +10241,9 @@
 
             const cinemaHint = document.createElement('div');
             cinemaHint.className = 'menu-section-hint';
-            cinemaHint.textContent = 'Adds cinematic EQ and compression. Best with headphones or stereo speakers.';
+            cinemaHint.textContent = cinemaCompatible
+                ? 'Adds cinematic EQ and compression. Best with headphones or stereo speakers.'
+                : 'Unavailable for this source because the browser blocks WebAudio access.';
             preferencesMenu.appendChild(cinemaHint);
 
             // Auto Episode toggle row
@@ -11798,6 +11817,8 @@
                         window.previewLastCapturedSecond = rounded;
                         cachePreviewFrame(rounded, frameData);
                         showPreviewFrame(previewVideo, frameData);
+                    } else if (window.previewPreferVideoElement && hasActivePreviewSource(previewVideo)) {
+                        showPreviewFrame(previewVideo, null);
                     } else if (!window.previewHlsInst || window.previewUseCanvasFallbackOnly) {
                         showPreviewPosterFallback(previewVideo);
                     }
@@ -11816,7 +11837,7 @@
                 setTimeout(finalizeCapture, 650);
                 setTimeout(() => {
                     finalizeCapture();
-                    if (!captured && !window.previewHlsInst) showPreviewPosterFallback(previewVideo);
+                    if (!captured && !window.previewHlsInst && !window.previewPreferVideoElement) showPreviewPosterFallback(previewVideo);
                 }, 1200);
             }
 
@@ -11860,32 +11881,39 @@
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
                     const wholeSecond = Math.max(0, Math.min(Math.round(seekTime), Math.floor(video.duration)));
+                    const smoothPreview = Boolean(window.previewPreferVideoElement);
+                    const previewTimeKey = smoothPreview
+                        ? Math.max(0, Math.min(Number(seekTime || 0), Number(video.duration || seekTime || 0)))
+                        : wholeSecond;
 
                     // Check if we already have this frame cached
-                    const cachedFrame = getPreviewFrameFromCache(wholeSecond);
+                    const cachedFrame = smoothPreview ? null : getPreviewFrameFromCache(wholeSecond);
                     if (cachedFrame) {
                         // Display cached frame immediately
                         showPreviewFrame(previewVideo, cachedFrame);
+                    } else if (window.previewPreferVideoElement && hasActivePreviewSource(previewVideo)) {
+                        showPreviewFrame(previewVideo, null);
                     } else if (!hasActivePreviewSource(previewVideo)) {
                         showPreviewFrame(previewVideo, null);
                     }
 
                     const now = Date.now();
                     if (
+                        !smoothPreview &&
                         wholeSecond === window.previewLastSecond &&
                         window.previewLastCapturedSecond === wholeSecond
                     ) return;
                     if (
-                        wholeSecond === window.previewLastSecond &&
-                        now - (window.previewLastRequestAt || 0) < 350
+                        previewTimeKey === window.previewLastSecond &&
+                        now - (window.previewLastRequestAt || 0) < (smoothPreview ? 16 : 350)
                     ) return;
-                    window.previewLastSecond = wholeSecond;
+                    window.previewLastSecond = previewTimeKey;
                     window.previewLastRequestAt = now;
 
                     // ENHANCED: Improved frame seeking strategy
                     // Try to get exact second, then with small offset for keyframe variety
-                    window.previewTargetTime = wholeSecond;
-                    window.previewTargetTimeAlt = wholeSecond + 0.15; // Fallback offset
+                    window.previewTargetTime = previewTimeKey;
+                    window.previewTargetTimeAlt = previewTimeKey + (smoothPreview ? 0.03 : 0.15); // Fallback offset
                     window.performPreviewSeek();
                 }
             }
@@ -11902,7 +11930,32 @@
                     }
                     return;
                 }
+                if (window.previewPreferVideoElement) window.previewSeekInFlight = false;
                 if (window.previewSeekInFlight) return;
+
+                // ENHANCED: Canvas-only fallback for unstable preview pipelines.
+                if (window.previewPreferVideoElement) {
+                    if (window.previewSeekTimer) clearTimeout(window.previewSeekTimer);
+                    const previewDuration = isFinite(previewVideo.duration) && previewVideo.duration > 0
+                        ? Number(previewVideo.duration)
+                        : Number(video?.duration || 0);
+                    if (!isFinite(previewDuration) || previewDuration <= 0) return;
+                    const maxTime = Math.max(0, previewDuration - 0.05);
+                    const target = Math.max(0, Math.min(Number(window.previewTargetTime || 0), maxTime));
+                    showPreviewFrame(previewVideo, null);
+                    window.previewPreviewRequestToken = (window.previewPreviewRequestToken || 0) + 1;
+                    const requestToken = window.previewPreviewRequestToken;
+                    if (window.previewRaf) cancelAnimationFrame(window.previewRaf);
+                    window.previewRaf = requestAnimationFrame(() => {
+                        if (window.previewPreviewRequestToken !== requestToken) return;
+                        try {
+                            if (Math.abs(Number(previewVideo.currentTime || 0) - target) > 0.035) {
+                                previewVideo.currentTime = target;
+                            }
+                        } catch (_) { }
+                    });
+                    return;
+                }
 
                 // ENHANCED: Canvas-only fallback for unstable preview pipelines.
                 if (window.previewUseCanvasFallbackOnly) {
@@ -11960,7 +12013,7 @@
                         }
 
                         if (!video?.seeking) {
-                            if (typeof previewVideo.fastSeek === 'function') {
+                            if (typeof previewVideo.fastSeek === 'function' && !window.previewPreferVideoElement) {
                                 previewVideo.fastSeek(target);
                             } else {
                                 previewVideo.currentTime = target;
@@ -16381,7 +16434,9 @@
                 return rawUrl;
             }
             if (providerName === 'archive.org') {
-                const apiOrigin = getProxyGatewayOrigin();
+                const apiOrigin = RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY
+                    ? location.origin
+                    : getProxyGatewayOrigin();
                 const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
                 return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(rawUrl)}${ref}`;
             }
@@ -17134,6 +17189,7 @@
                 const usePreviewHls = shouldUsePreviewHls(url, currentSourceProvider);
                 if (previewVideo) {
                     window.previewUseCanvasFallbackOnly = !usePreviewHls;
+                    window.previewPreferVideoElement = false;
 
                     if (!usePreviewHls) {
                         try {
@@ -17325,6 +17381,7 @@
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
                     window.previewUseCanvasFallbackOnly = false;
+                    window.previewPreferVideoElement = false;
                     window.previewHlsErrorCount = 0;
                     window.previewHlsIsUnhealthy = false;
                     window.previewLastSecond = -1;
@@ -17392,6 +17449,7 @@
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
                     window.previewUseCanvasFallbackOnly = false;
+                    window.previewPreferVideoElement = false;
                     window.previewHlsErrorCount = 0;
                     window.previewHlsIsUnhealthy = false;
                     window.previewLastSecond = -1;
@@ -17473,6 +17531,33 @@
                 const directMp4Url = url;
                 const isArchiveDirect = String(sourceProvider || '').toLowerCase() === 'archive.org';
                 let triedDirectFallback = false;
+                let triedArchiveBackendProxyFallback = false;
+                const getArchiveBackendProxyUrl = () => {
+                    const apiOrigin = getProxyGatewayOrigin();
+                    const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
+                    return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(directMp4Url)}${ref}`;
+                };
+                const tryArchiveBackendProxyFallback = () => {
+                    if (!isArchiveDirect || triedArchiveBackendProxyFallback) return false;
+                    const fallbackUrl = getArchiveBackendProxyUrl();
+                    if (!fallbackUrl || fallbackUrl === String(video?.currentSrc || video?.src || '')) return false;
+                    triedArchiveBackendProxyFallback = true;
+                    console.warn('Archive.org same-origin proxy failed, retrying backend proxy');
+                    try {
+                        video.removeAttribute('crossorigin');
+                    } catch (_) { }
+                    try {
+                        video.crossOrigin = null;
+                    } catch (_) { }
+                    try {
+                        video.src = fallbackUrl;
+                        video.load();
+                        video.play().catch(() => { });
+                        return true;
+                    } catch (_) {
+                        return false;
+                    }
+                };
 
                 const tryDirectMp4Fallback = () => {
                     if (isArchiveDirect) {
@@ -17502,7 +17587,7 @@
                 };
 
                 video.addEventListener('error', () => {
-                    const switched = tryDirectMp4Fallback();
+                    const switched = tryArchiveBackendProxyFallback() || tryDirectMp4Fallback();
                     if (!switched) {
                         console.warn('Direct MP4 failed, recovering same source');
                         recoverSameSource('mp4_error');
@@ -17512,7 +17597,7 @@
                 // If proxy starts but never gets metadata, fallback to direct URL when that is CORS-safe.
                 const metadataFallbackTimer = setTimeout(() => {
                     if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
-                        tryDirectMp4Fallback();
+                        tryArchiveBackendProxyFallback() || tryDirectMp4Fallback();
                     }
                 }, 4500);
                 video.addEventListener('loadedmetadata', () => clearTimeout(metadataFallbackTimer), { once: true });
@@ -17532,13 +17617,25 @@
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
                     window.previewUseCanvasFallbackOnly = false;
+                    window.previewPreferVideoElement = isArchiveDirect;
                     window.previewHlsErrorCount = 0;
                     window.previewHlsIsUnhealthy = false;
                     window.previewLastSecond = -1;
                     window.previewLastCapturedSecond = -1;
                     window.previewLastRequestAt = 0;
                     previewVideo.preload = 'auto';
-                    previewVideo.src = proxiedMp4Url;
+                    if (isArchiveDirect) {
+                        previewVideo.removeAttribute('crossorigin');
+                        try {
+                            previewVideo.crossOrigin = null;
+                        } catch (_) { }
+                        const previewThumbImage = document.getElementById('previewThumbImage');
+                        if (previewThumbImage) previewThumbImage.style.display = 'none';
+                        previewVideo.style.visibility = 'visible';
+                    } else {
+                        previewVideo.crossOrigin = 'anonymous';
+                    }
+                    previewVideo.src = isArchiveDirect ? directMp4Url : proxiedMp4Url;
                     warmupPreviewVideo(previewVideo);
                 }
 

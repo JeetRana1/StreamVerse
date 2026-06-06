@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const { Readable } = require('stream');
 const { spawn } = require('child_process');
 
 const DEFAULT_SITE_PORT = 8080;
@@ -58,6 +59,7 @@ function buildClientConfigScript() {
   LOCAL_API_BASE: ${asJsString(SITE_META_API_BASE)},
   LOCAL_META_API_BASE: ${asJsString(SITE_META_API_BASE)},
     STREAM_API_BASE: ${asJsString(SITE_STREAM_API_BASE)},
+  SAME_ORIGIN_MEDIA_PROXY: true,
   WIREGUARD_ENDPOINT: ${asJsString(WIREGUARD_ENDPOINT)}
 };
 `;
@@ -190,6 +192,47 @@ startApiServer().catch((err) => {
 });
 
 const server = http.createServer((req, res) => {
+    if (req.url && req.url.startsWith('/utils/proxy')) {
+        const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const targetUrl = requestUrl.searchParams.get('url');
+        const referer = requestUrl.searchParams.get('referer') || '';
+
+        if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+            res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Missing or invalid url');
+            return;
+        }
+
+        const headers = {};
+        if (req.headers.range) headers.Range = req.headers.range;
+        if (referer) headers.Referer = referer;
+        headers['User-Agent'] = req.headers['user-agent'] || 'Mozilla/5.0';
+
+        fetch(targetUrl, { headers })
+            .then((upstreamRes) => {
+                const responseHeaders = {};
+                for (const [key, value] of upstreamRes.headers.entries()) {
+                    if (/^(content-type|content-length|content-range|accept-ranges|cache-control|last-modified|etag)$/i.test(key)) {
+                        responseHeaders[key] = value;
+                    }
+                }
+                responseHeaders['Access-Control-Allow-Origin'] = '*';
+                responseHeaders['Cross-Origin-Resource-Policy'] = 'cross-origin';
+                responseHeaders['Cache-Control'] = responseHeaders['cache-control'] || 'public, max-age=3600';
+                res.writeHead(upstreamRes.status, responseHeaders);
+                if (!upstreamRes.body) {
+                    res.end();
+                    return;
+                }
+                Readable.fromWeb(upstreamRes.body).pipe(res);
+            })
+            .catch((err) => {
+                res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+                res.end(err.message || 'Proxy failed');
+            });
+        return;
+    }
+
     if (req.url === '/api/getStream') {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
