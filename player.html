@@ -251,6 +251,16 @@
             z-index: 1;
         }
 
+        .player-embed-frame {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: #000;
+            z-index: 4;
+        }
+
         /* ── iOS Pseudo-Fullscreen ───────────────────────────────────────────
            iOS Safari cannot grant true document fullscreen. When the user taps
            the fullscreen button on iPhone/iPad we instead apply this mode:
@@ -1674,6 +1684,13 @@
             font-size: 0.88rem;
             font-weight: 500;
             color: #ddd;
+        }
+
+        .menu-section-hint {
+            margin: 6px 6px 0;
+            font-size: 0.76rem;
+            line-height: 1.45;
+            color: rgba(255, 255, 255, 0.55);
         }
 
         /* The pill switch */
@@ -3315,7 +3332,7 @@
 
     <!-- VIDEO PLAYER -->
     <div class="player-wrap">
-        <video id="player-video" crossorigin="anonymous"></video>
+        <video id="player-video"></video>
         <script>
             (function() {
                 const v = document.getElementById('player-video');
@@ -3536,6 +3553,11 @@
             RUNTIME_CONFIG.FALLBACK_META_API_BASE ||
             'https://consumet-api.vercel.app/meta/tmdb'
         );
+        const PROXY_GATEWAY_BASE = String(
+            RUNTIME_CONFIG.PROXY_GATEWAY_BASE ||
+            RUNTIME_CONFIG.PROXY_BASE ||
+            'https://proxy-jade-kappa-94.vercel.app'
+        ).replace(/\/$/, '');
         const STREAM_API_BASE = String(
             RUNTIME_CONFIG.STREAM_API_BASE ||
             'https://convinced-nara-personal122-7da52759.koyeb.app/api/v1'
@@ -3580,12 +3602,30 @@
 
         const IS_LOCAL_API = /localhost|127\.0\.0\.1/i.test(API_BASE);
         let activeApiBase = API_BASE;
+        function getProxyGatewayOrigin(fallbackBase = activeApiBase || API_BASE) {
+            const base = String(fallbackBase || '').trim();
+            if (base.startsWith('http')) {
+                try {
+                    return new URL(base, location.href).origin;
+                } catch (_) { }
+            }
+
+            const proxyBase = String(PROXY_GATEWAY_BASE || '').trim();
+            if (proxyBase) {
+                try {
+                    return new URL(proxyBase, location.href).origin;
+                } catch (_) { }
+            }
+
+            return location.origin;
+        }
+
         function getProxiedUrl(url, referer = '') {
             if (!url) return '';
             try {
                 const u = new URL(url);
                 if (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || url.includes('/utils/proxy')) return url;
-                const apiOrigin = activeApiBase.split('/meta/tmdb')[0];
+                const apiOrigin = getProxyGatewayOrigin();
                 const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
                 return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(url)}${ref}`;
             } catch (_) { return url; }
@@ -3661,7 +3701,7 @@
             const playable = extractFirstPlayableUrlFromText(decoded);
             if (playable) return playable;
             try {
-                const apiOrigin = activeApiBase.split('/meta/tmdb')[0];
+                const apiOrigin = getProxyGatewayOrigin();
                 const match = decoded.match(/\/utils\/proxy\?url=([^\s"']+)/i);
                 if (!match?.[1]) return '';
                 return `${apiOrigin}/utils/proxy?url=${match[1]}`;
@@ -4053,14 +4093,15 @@
             animekai: { animeSearch: 9000, animeInfo: 14000, watch: 35000 },
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
-            // Optimized FlixHQ timeouts for faster fetching (backend takes 20-25s)
-            flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 45000, metaInfo: 15000 },
+            // FlixHQ extraction can be slower on small cloud VMs because Chromium startup and mirrors compete for CPU.
+            flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 75000, extraction: 60000, metaInfo: 15000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
             const value = Number(raw);
             return Number.isFinite(value) && value > 0 ? value : fallbackMs;
         };
+        const getFlixhqExtractionTimeout = () => getProviderTimeout('flixhq', 'extraction', 60000);
         const isTimeoutLikeError = (err) => {
             const msg = String(err?.message || err || '').toLowerCase();
             return msg.includes('timed out') || msg.includes('timeout') || msg.includes('aborted');
@@ -4069,6 +4110,7 @@
         const MEDIA_INFO_CACHE_TTL_MS = 10 * 60 * 1000;
         const ENABLE_CONSUMET_META_FILLER = false;
         const animeSkipCache = new Map();
+        const animeSkipDeferredKeys = new Set();
         const animeFillerCache = new Map();
         let episodeFillerStatus = new Map(); // episodeNo -> 'manga' | 'mixed' | 'filler'
         let fillerLookupState = 'idle'; // idle | loading | ready | not_found | fetch_failed
@@ -4077,10 +4119,23 @@
         let volumeSliderEl = null;
         let volumeToggleEl = null;
         let volumeBoost = 100; // 100% to 200%
+        let audioEnhancementEnabled = localStorage.getItem('pref_cinemaAudio') !== 'false';
         let audioCtx = null;
         let gainNode = null;
         let sourceNode = null;
         let sourceNodeVideo = null;
+        let audioHighPassNode = null;
+        let audioLowShelfNode = null;
+        let audioBassPunchNode = null;
+        let audioPresenceNode = null;
+        let audioAirShelfNode = null;
+        let audioCompressorNode = null;
+        let audioStereoSplitterNode = null;
+        let audioStereoMergerNode = null;
+        let audioWidthDelayLeftNode = null;
+        let audioWidthDelayRightNode = null;
+        let audioWidthGainLeftNode = null;
+        let audioWidthGainRightNode = null;
         let activeFlixhqServerName = '';
         let isSourceSwitching = false;
         let initialSeekDone = false;
@@ -4149,6 +4204,19 @@
             errorBox.style.display = 'block';
         }
         function hideError() { errorBox.style.display = 'none'; }
+
+        function withFlixhqExtractionTimeout(url) {
+            try {
+                const parsed = new URL(String(url || ''), location.href);
+                if (!/\/movies\/flixhq\/watch$/i.test(parsed.pathname)) return String(url || '');
+                if (!parsed.searchParams.has('extractionTimeoutMs')) {
+                    parsed.searchParams.set('extractionTimeoutMs', String(getFlixhqExtractionTimeout()));
+                }
+                return parsed.toString();
+            } catch (_) {
+                return String(url || '');
+            }
+        }
 
         function isTmdbImageUrl(value) {
             try {
@@ -4229,6 +4297,260 @@
                 clearTimeout(pauseCardHideTimer);
                 pauseCardHideTimer = null;
             }
+        }
+
+        function hardResetAudioEnhancementGraph() {
+            try { if (sourceNode) sourceNode.disconnect(); } catch (_) { }
+            try { if (audioHighPassNode) audioHighPassNode.disconnect(); } catch (_) { }
+            try { if (audioLowShelfNode) audioLowShelfNode.disconnect(); } catch (_) { }
+            try { if (audioBassPunchNode) audioBassPunchNode.disconnect(); } catch (_) { }
+            try { if (audioPresenceNode) audioPresenceNode.disconnect(); } catch (_) { }
+            try { if (audioAirShelfNode) audioAirShelfNode.disconnect(); } catch (_) { }
+            try { if (audioCompressorNode) audioCompressorNode.disconnect(); } catch (_) { }
+            try { if (audioStereoSplitterNode) audioStereoSplitterNode.disconnect(); } catch (_) { }
+            try { if (audioStereoMergerNode) audioStereoMergerNode.disconnect(); } catch (_) { }
+            try { if (audioWidthDelayLeftNode) audioWidthDelayLeftNode.disconnect(); } catch (_) { }
+            try { if (audioWidthDelayRightNode) audioWidthDelayRightNode.disconnect(); } catch (_) { }
+            try { if (audioWidthGainLeftNode) audioWidthGainLeftNode.disconnect(); } catch (_) { }
+            try { if (audioWidthGainRightNode) audioWidthGainRightNode.disconnect(); } catch (_) { }
+            try { if (gainNode) gainNode.disconnect(); } catch (_) { }
+            sourceNode = null;
+            sourceNodeVideo = null;
+            audioHighPassNode = null;
+            audioLowShelfNode = null;
+            audioBassPunchNode = null;
+            audioPresenceNode = null;
+            audioAirShelfNode = null;
+            audioCompressorNode = null;
+            audioStereoSplitterNode = null;
+            audioStereoMergerNode = null;
+            audioWidthDelayLeftNode = null;
+            audioWidthDelayRightNode = null;
+            audioWidthGainLeftNode = null;
+            audioWidthGainRightNode = null;
+            gainNode = null;
+        }
+
+        function connectAudioEnhancementGraph(enabled = audioEnhancementEnabled) {
+            if (!audioCtx || !sourceNode || !gainNode) return;
+
+            try { sourceNode.disconnect(); } catch (_) { }
+            try { if (audioHighPassNode) audioHighPassNode.disconnect(); } catch (_) { }
+            try { if (audioLowShelfNode) audioLowShelfNode.disconnect(); } catch (_) { }
+            try { if (audioBassPunchNode) audioBassPunchNode.disconnect(); } catch (_) { }
+            try { if (audioPresenceNode) audioPresenceNode.disconnect(); } catch (_) { }
+            try { if (audioAirShelfNode) audioAirShelfNode.disconnect(); } catch (_) { }
+            try { if (audioCompressorNode) audioCompressorNode.disconnect(); } catch (_) { }
+            try { if (audioStereoSplitterNode) audioStereoSplitterNode.disconnect(); } catch (_) { }
+            try { if (audioStereoMergerNode) audioStereoMergerNode.disconnect(); } catch (_) { }
+            try { if (audioWidthDelayLeftNode) audioWidthDelayLeftNode.disconnect(); } catch (_) { }
+            try { if (audioWidthDelayRightNode) audioWidthDelayRightNode.disconnect(); } catch (_) { }
+            try { if (audioWidthGainLeftNode) audioWidthGainLeftNode.disconnect(); } catch (_) { }
+            try { if (audioWidthGainRightNode) audioWidthGainRightNode.disconnect(); } catch (_) { }
+            try { gainNode.disconnect(); } catch (_) { }
+
+            if (enabled && audioHighPassNode && audioLowShelfNode && audioBassPunchNode && audioPresenceNode && audioAirShelfNode && audioCompressorNode) {
+                sourceNode.connect(audioHighPassNode);
+                audioHighPassNode.connect(audioLowShelfNode);
+                audioLowShelfNode.connect(audioBassPunchNode);
+                audioBassPunchNode.connect(audioPresenceNode);
+                audioPresenceNode.connect(audioAirShelfNode);
+                audioAirShelfNode.connect(audioCompressorNode);
+
+                if (audioStereoSplitterNode && audioStereoMergerNode && audioWidthDelayLeftNode && audioWidthDelayRightNode && audioWidthGainLeftNode && audioWidthGainRightNode) {
+                    audioCompressorNode.connect(audioStereoSplitterNode);
+                    audioStereoSplitterNode.connect(audioStereoMergerNode, 0, 0);
+                    audioStereoSplitterNode.connect(audioStereoMergerNode, 1, 1);
+                    audioStereoSplitterNode.connect(audioWidthDelayRightNode, 0);
+                    audioWidthDelayRightNode.connect(audioWidthGainRightNode);
+                    audioWidthGainRightNode.connect(audioStereoMergerNode, 0, 1);
+                    audioStereoSplitterNode.connect(audioWidthDelayLeftNode, 1);
+                    audioWidthDelayLeftNode.connect(audioWidthGainLeftNode);
+                    audioWidthGainLeftNode.connect(audioStereoMergerNode, 0, 0);
+                    audioStereoMergerNode.connect(gainNode);
+                } else {
+                    audioCompressorNode.connect(gainNode);
+                }
+            } else {
+                sourceNode.connect(gainNode);
+            }
+            gainNode.connect(audioCtx.destination);
+        }
+
+        function disableAudioEnhancementGraph() {
+            if (!audioCtx || !sourceNode || !gainNode) return;
+            connectAudioEnhancementGraph(false);
+            try {
+                gainNode.gain.value = Math.max(0, Math.min(2, volumeBoost / 100));
+            } catch (_) { }
+        }
+
+        function isEnhancementCompatibleMedia() {
+            if (!video) return false;
+            const currentSrc = String(video.currentSrc || video.src || '').trim();
+            if (!currentSrc) {
+                const sourceProviderName = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').trim().toLowerCase();
+                return sourceProviderName !== 'archive.org';
+            }
+
+            try {
+                const srcOrigin = new URL(currentSrc, location.href).origin;
+                const proxyOrigin = getProxyGatewayOrigin();
+                return srcOrigin === location.origin || srcOrigin === proxyOrigin;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function ensureAudioContext() {
+            if (!video) return null;
+            if (!isEnhancementCompatibleMedia()) {
+                hardResetAudioEnhancementGraph();
+                return null;
+            }
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            if (!sourceNode || sourceNodeVideo !== video) {
+                try {
+                    hardResetAudioEnhancementGraph();
+
+                    sourceNode = audioCtx.createMediaElementSource(video);
+                    sourceNodeVideo = video;
+
+                    audioHighPassNode = audioCtx.createBiquadFilter();
+                    audioHighPassNode.type = 'highpass';
+                    audioHighPassNode.frequency.value = 45;
+                    audioHighPassNode.Q.value = 0.7;
+
+                    audioLowShelfNode = audioCtx.createBiquadFilter();
+                    audioLowShelfNode.type = 'lowshelf';
+                    audioLowShelfNode.frequency.value = 95;
+                    audioLowShelfNode.gain.value = 0;
+
+                    audioBassPunchNode = audioCtx.createBiquadFilter();
+                    audioBassPunchNode.type = 'peaking';
+                    audioBassPunchNode.frequency.value = 155;
+                    audioBassPunchNode.Q.value = 0.85;
+                    audioBassPunchNode.gain.value = 0;
+
+                    audioPresenceNode = audioCtx.createBiquadFilter();
+                    audioPresenceNode.type = 'peaking';
+                    audioPresenceNode.frequency.value = 3200;
+                    audioPresenceNode.Q.value = 1.0;
+                    audioPresenceNode.gain.value = 0;
+
+                    audioAirShelfNode = audioCtx.createBiquadFilter();
+                    audioAirShelfNode.type = 'highshelf';
+                    audioAirShelfNode.frequency.value = 7600;
+                    audioAirShelfNode.gain.value = 0;
+
+                    audioCompressorNode = audioCtx.createDynamicsCompressor();
+                    audioCompressorNode.threshold.value = -24;
+                    audioCompressorNode.knee.value = 18;
+                    audioCompressorNode.ratio.value = 3.2;
+                    audioCompressorNode.attack.value = 0.003;
+                    audioCompressorNode.release.value = 0.14;
+
+                    if (audioCtx.createChannelSplitter && audioCtx.createChannelMerger && audioCtx.createDelay) {
+                        audioStereoSplitterNode = audioCtx.createChannelSplitter(2);
+                        audioStereoMergerNode = audioCtx.createChannelMerger(2);
+                        audioWidthDelayLeftNode = audioCtx.createDelay(0.05);
+                        audioWidthDelayRightNode = audioCtx.createDelay(0.05);
+                        audioWidthGainLeftNode = audioCtx.createGain();
+                        audioWidthGainRightNode = audioCtx.createGain();
+                        audioWidthDelayLeftNode.delayTime.value = 0.018;
+                        audioWidthDelayRightNode.delayTime.value = 0.014;
+                        audioWidthGainLeftNode.gain.value = 0;
+                        audioWidthGainRightNode.gain.value = 0;
+                    }
+
+                    gainNode = audioCtx.createGain();
+
+                    connectAudioEnhancementGraph(audioEnhancementEnabled);
+                } catch (e) {
+                    console.warn('AudioContext enhancement setup failed:', e);
+                    sourceNode = null;
+                    sourceNodeVideo = null;
+                    audioHighPassNode = null;
+                    audioLowShelfNode = null;
+                    audioPresenceNode = null;
+                    audioCompressorNode = null;
+                    gainNode = null;
+                    return null;
+                }
+            }
+
+            return audioCtx;
+        }
+
+        function updateAudioEnhancementChain() {
+            if (!audioCtx || !gainNode) return;
+            if (!isEnhancementCompatibleMedia()) {
+                hardResetAudioEnhancementGraph();
+                return;
+            }
+
+            const enabled = Boolean(audioEnhancementEnabled);
+            const outputGain = Math.max(0, Math.min(2, volumeBoost / 100));
+
+            try {
+                connectAudioEnhancementGraph(enabled);
+                if (audioHighPassNode) {
+                    audioHighPassNode.frequency.value = enabled ? 32 : 20;
+                    audioHighPassNode.Q.value = enabled ? 0.55 : 0.1;
+                }
+                if (audioLowShelfNode) {
+                    audioLowShelfNode.frequency.value = 92;
+                    audioLowShelfNode.gain.value = enabled ? 5.2 : 0;
+                }
+                if (audioBassPunchNode) {
+                    audioBassPunchNode.frequency.value = 165;
+                    audioBassPunchNode.Q.value = 0.9;
+                    audioBassPunchNode.gain.value = enabled ? 2.6 : 0;
+                }
+                if (audioPresenceNode) {
+                    audioPresenceNode.frequency.value = 2850;
+                    audioPresenceNode.Q.value = 0.95;
+                    audioPresenceNode.gain.value = enabled ? 1.6 : 0;
+                }
+                if (audioAirShelfNode) {
+                    audioAirShelfNode.frequency.value = 7600;
+                    audioAirShelfNode.gain.value = enabled ? 1.4 : 0;
+                }
+                if (audioCompressorNode) {
+                    audioCompressorNode.threshold.value = enabled ? -22 : -24;
+                    audioCompressorNode.knee.value = enabled ? 22 : 12;
+                    audioCompressorNode.ratio.value = enabled ? 2.8 : 2.0;
+                    audioCompressorNode.attack.value = enabled ? 0.006 : 0.01;
+                    audioCompressorNode.release.value = enabled ? 0.18 : 0.25;
+                }
+                if (audioWidthDelayLeftNode) {
+                    audioWidthDelayLeftNode.delayTime.value = enabled ? 0.018 : 0;
+                }
+                if (audioWidthDelayRightNode) {
+                    audioWidthDelayRightNode.delayTime.value = enabled ? 0.014 : 0;
+                }
+                if (audioWidthGainLeftNode) {
+                    audioWidthGainLeftNode.gain.value = enabled ? 0.18 : 0;
+                }
+                if (audioWidthGainRightNode) {
+                    audioWidthGainRightNode.gain.value = enabled ? 0.16 : 0;
+                }
+                gainNode.gain.value = enabled ? Math.min(1.85, outputGain * 0.94) : outputGain;
+            } catch (e) {
+                console.warn('Audio enhancement update failed:', e);
+            }
+        }
+
+        function setAudioEnhancementEnabled(enabled) {
+            audioEnhancementEnabled = Boolean(enabled);
+            localStorage.setItem('pref_cinemaAudio', audioEnhancementEnabled ? 'true' : 'false');
+            if (isEnhancementCompatibleMedia()) {
+                ensureAudioContext();
+            }
+            updateAudioEnhancementChain();
         }
 
         function normalizeAudioToken(v) {
@@ -5127,6 +5449,12 @@
                 // ── Fatal fragLoadError / levelLoadError: rebuild HLS in-place ──
                 // (This is the main cause of black-screen — proxy refused = fatal frag load)
                 if (d.fatal && (isFragLoad || isLevelLoad)) {
+                    const code = Number(d?.response?.code || 0);
+                    if (isFlixHqStream && typeof onErrorFallback === 'function' && (code === 403 || code === 404 || code >= 500 || isLevelLoad)) {
+                        console.warn('[hls] FlixHQ HLS proxy/source failed, switching source immediately.');
+                        onErrorFallback('fatal_network_error');
+                        return;
+                    }
                     consecutiveFragErrors++;
                     console.warn(`[hls] Fatal ${d.details} (attempt ${consecutiveFragErrors}), rebuilding HLS in-place...`);
                     showBufferingOverlay();
@@ -7891,7 +8219,7 @@
             // Route all subtitle fetching through /utils/vtt which does server-side fetch+convert
             // and returns proper text/vtt with CORS headers that iOS AVKit can load natively.
             try {
-                const apiOrigin = activeApiBase.split('/meta/tmdb')[0];
+                const apiOrigin = getProxyGatewayOrigin();
                 const referer = String(sub?.referer || '').trim();
                 const refParam = referer ? `&referer=${encodeURIComponent(referer)}` : '';
                 const providerParam = sub?.provider ? `&provider=${encodeURIComponent(String(sub.provider))}` : '';
@@ -8048,22 +8376,13 @@
         }
 
         function applyExternalSubtitlesToVideoSync(videoEl) {
+            if (!IS_IOS) return;
             if (!videoEl || !Array.isArray(window.externalSubtitleTracks) || window.externalSubtitleTracks.length === 0) return;
 
             // Derive API origin for proxy. Must point to the BACKEND server, not the frontend origin.
             let apiOrigin = '';
             try {
-                // Priority: activeApiBase (runtime) -> window.__STREAMVERSE_CONFIG__ -> API_BASE -> location.origin
-                const configBase = (typeof window !== 'undefined' && window.__STREAMVERSE_CONFIG__?.PROD_META_API_BASE);
-                const base = (typeof activeApiBase !== 'undefined' && activeApiBase) ? activeApiBase : 
-                             (configBase || (typeof API_BASE !== 'undefined' ? API_BASE : ''));
-                
-                if (base && base.startsWith('http')) {
-                    const urlObj = new URL(base);
-                    apiOrigin = `${urlObj.protocol}//${urlObj.host}`;
-                } else {
-                    apiOrigin = location.origin; // Last resort
-                }
+                apiOrigin = getProxyGatewayOrigin();
             } catch (e) {
                 apiOrigin = location.origin;
             }
@@ -8105,6 +8424,9 @@
         async function applyExternalSubtitlesToVideo(videoEl) {
             if (!videoEl) return;
             const applyVersion = ++subtitleApplyVersion;
+            videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach((track) => {
+                if (String(track?.src || '').startsWith('blob:')) track.remove();
+            });
 
             if (!Array.isArray(externalSubtitleTracks) || externalSubtitleTracks.length === 0) {
                 videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach((t) => t.remove());
@@ -8764,34 +9086,15 @@
             // Extended: 0 = mute, 100 = normal, 200 = double boost
             volumeBoost = Math.max(0, Math.min(200, level));
 
-            if (volumeBoost !== 100 || IS_IOS) {
-                if (!audioCtx) {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-
-                // If sourceNode doesn't exist or is attached to the wrong element
-                if (!sourceNode || sourceNodeVideo !== video) {
-                    try {
-                        if (sourceNode) sourceNode.disconnect();
-                        sourceNode = audioCtx.createMediaElementSource(video);
-                        sourceNodeVideo = video;
-                        if (!gainNode) gainNode = audioCtx.createGain();
-                        sourceNode.connect(gainNode);
-                        gainNode.connect(audioCtx.destination);
-                    } catch (e) {
-                        console.warn('AudioContext boost failed:', e);
-                        sourceNode = null;
-                        sourceNodeVideo = null;
-                        return;
-                    }
-                }
+            if (volumeBoost !== 100 || IS_IOS || audioEnhancementEnabled) {
+                ensureAudioContext();
             }
 
             if (audioCtx && gainNode) {
                 if (audioCtx.state === 'suspended') {
                     audioCtx.resume().catch(() => undefined);
                 }
-                gainNode.gain.value = volumeBoost / 100;
+                updateAudioEnhancementChain();
             }
 
             const boostValEl = document.querySelector('.boost-value');
@@ -9349,6 +9652,19 @@
             if (!title || !Number.isFinite(episodeNum) || episodeNum <= 0) return false;
 
             const cacheKey = `${title.toLowerCase()}::${seasonLabel.toLowerCase()}::${episodeNum}`;
+            const episodeLength = Math.floor(Number(video?.duration || 0));
+            if (!Number.isFinite(episodeLength) || episodeLength <= 30) {
+                if (video && !animeSkipDeferredKeys.has(cacheKey)) {
+                    animeSkipDeferredKeys.add(cacheKey);
+                    const retryAniSkipAfterMetadata = () => {
+                        animeSkipDeferredKeys.delete(cacheKey);
+                        fetchAniSkipSegmentsForCurrentEpisode();
+                    };
+                    video.addEventListener('loadedmetadata', retryAniSkipAfterMetadata, { once: true });
+                    video.addEventListener('durationchange', retryAniSkipAfterMetadata, { once: true });
+                }
+                return false;
+            }
             if (animeSkipCache.has(cacheKey)) {
                 const cached = animeSkipCache.get(cacheKey);
                 if (cached) return applyApiSkipSegments(cached);
@@ -9415,7 +9731,7 @@
                     let found = false;
                     for (const id of candidateIds) {
                         if (failedAny.has(id)) continue;
-                        const u2 = `https://api.aniskip.com/v2/skip-times/${id}/${episodeNum}?types=op&types=ed&episodeLength=0`;
+                        const u2 = `https://api.aniskip.com/v2/skip-times/${id}/${episodeNum}?types=op&types=ed&episodeLength=${encodeURIComponent(episodeLength)}`;
                         const u1 = `https://api.aniskip.com/v1/skip-times/${id}/${episodeNum}?types=op&types=ed`;
                         const skipUrls = [u2, u1, getProxiedUrl(u2), getProxiedUrl(u1)];
 
@@ -9425,9 +9741,13 @@
                                     headers: { 'Accept': 'application/json' },
                                     signal: AbortSignal.timeout(6000),
                                 });
-                                if (skipRes.status === 404 || skipRes.status === 502 || skipRes.status === 500) {
-                                  if (skipRes.status !== 404) failedAny.add(id); // Only mark ID as failed if it's a real server error
-                                  continue;
+                                if (skipRes.status === 404) {
+                                    failedAny.add(id);
+                                    break;
+                                }
+                                if (skipRes.status === 502 || skipRes.status === 500) {
+                                    failedAny.add(id);
+                                    break;
                                 }
                                 if (!skipRes.ok) continue;
                                 const skipJson = await skipRes.json();
@@ -9868,6 +10188,45 @@
             prefLabel.textContent = 'Preferences';
             preferencesMenu.appendChild(prefLabel);
 
+            const cinemaRow = document.createElement('label');
+            cinemaRow.className = 'menu-toggle-row';
+            cinemaRow.style.display = 'flex';
+
+            const cinemaLabel = document.createElement('span');
+            cinemaLabel.className = 'menu-toggle-label';
+            cinemaLabel.textContent = 'Cinema Audio';
+
+            const cinemaSwitchWrap = document.createElement('div');
+            cinemaSwitchWrap.className = 'menu-toggle-switch';
+
+            const cinemaCheckbox = document.createElement('input');
+            cinemaCheckbox.type = 'checkbox';
+            cinemaCheckbox.checked = audioEnhancementEnabled;
+            cinemaCheckbox.addEventListener('change', () => {
+                setAudioEnhancementEnabled(cinemaCheckbox.checked);
+                if (video && audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(() => { });
+                }
+            });
+
+            const cinemaTrack = document.createElement('span');
+            cinemaTrack.className = 'menu-toggle-track';
+            const cinemaThumb = document.createElement('span');
+            cinemaThumb.className = 'menu-toggle-thumb';
+
+            cinemaSwitchWrap.appendChild(cinemaCheckbox);
+            cinemaSwitchWrap.appendChild(cinemaTrack);
+            cinemaSwitchWrap.appendChild(cinemaThumb);
+
+            cinemaRow.appendChild(cinemaLabel);
+            cinemaRow.appendChild(cinemaSwitchWrap);
+            preferencesMenu.appendChild(cinemaRow);
+
+            const cinemaHint = document.createElement('div');
+            cinemaHint.className = 'menu-section-hint';
+            cinemaHint.textContent = 'Adds cinematic EQ and compression. Best with headphones or stereo speakers.';
+            preferencesMenu.appendChild(cinemaHint);
+
             // Auto Episode toggle row
             const toggleRow = document.createElement('label');
             toggleRow.className = 'menu-toggle-row';
@@ -10026,6 +10385,13 @@
                 updateCaptionsButtonVisibility();
                 bindSubtitleCueListeners();
                 buildCaptionsMenu();
+                if (playerWrap) {
+                    playerWrap.style.opacity = '1';
+                    playerWrap.style.visibility = 'visible';
+                }
+                if (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100) {
+                    updateAudioEnhancementChain();
+                }
                 
                 // Fallback seek for continue watching if canplay didn't work
                 if (!initialSeekDone && startT > 0 && video) {
@@ -10103,6 +10469,13 @@
                 hideLoader();
                 hideTransitionOverlay();
                 hideBufferingOverlaySoon(120);
+                if (playerWrap) {
+                    playerWrap.style.opacity = '1';
+                    playerWrap.style.visibility = 'visible';
+                }
+                if (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100) {
+                    updateAudioEnhancementChain();
+                }
             });
             video.addEventListener('seeking', () => {
                 isUserSeeking = true;
@@ -12798,10 +13171,12 @@
                     return result;
                 };
 
-                const hydrateProviders = Array.from(new Set([
-                    ...(FORCED_PROVIDER ? [FORCED_PROVIDER] : []),
-                    ...ANIME_PROVIDERS,
-                ]))
+                const forcedAnimeProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
+                const hydrateProviders = Array.from(new Set(
+                    forcedAnimeProvider && ANIME_PROVIDERS.includes(forcedAnimeProvider)
+                        ? [forcedAnimeProvider]
+                        : ANIME_PROVIDERS
+                ))
                     .map((p) => String(p || '').toLowerCase())
                     .filter((p) => ANIME_PROVIDERS.includes(p));
 
@@ -13843,10 +14218,14 @@
 
         async function hydrateTmdbSeasonEpisodeDetailsFromPublicPage(seasonNo) {
             const tmdbSeasonUrl = `https://www.themoviedb.org/tv/${encodeURIComponent(TMDB_ID)}/season/${encodeURIComponent(seasonNo)}`;
-            const apiOrigin = String(activeApiBase || API_BASE).split('/meta/tmdb')[0];
-            const proxyUrls = [
-                `${apiOrigin}/utils/proxy?url=${encodeURIComponent(tmdbSeasonUrl)}`,
-            ].filter(Boolean);
+            const apiOrigin = getProxyGatewayOrigin();
+            const proxyUrls = currentIsLikelyAnime
+                ? [
+                    `${apiOrigin}/utils/proxy?url=${encodeURIComponent(tmdbSeasonUrl)}`,
+                ].filter(Boolean)
+                : [
+                    `${apiOrigin}/utils/proxy?url=${encodeURIComponent(tmdbSeasonUrl)}`,
+                ].filter(Boolean);
             for (const url of proxyUrls) {
                 try {
                     const html = await fetchTextWithTimeout(url, 12000);
@@ -13911,7 +14290,15 @@
                     seasonNos.unshift(currentSeasonNo);
                 }
             }
-            seasonNos.slice(0, 24).forEach((seasonNo, hydrateIndex) => {
+            const hydrateSeasonNos = currentIsLikelyAnime
+                ? (() => {
+                    const currentSeasonNo = Number(tvSeasons?.[curSeason]?.seasonNo || tvSeasons?.[curSeason]?.season || curSeason + 1);
+                    const longSeasonNo = Number(getBestLongTmdbSeasonForAnime()?.seasonNo || 0);
+                    return [...new Set([currentSeasonNo, longSeasonNo])]
+                        .filter((n) => Number.isFinite(n) && n >= 0);
+                })()
+                : seasonNos.slice(0, 24);
+            hydrateSeasonNos.forEach((seasonNo, hydrateIndex) => {
                 const key = `${TMDB_ID}:s${seasonNo}`;
                 if (tmdbSeasonEpisodeDetailCache.has(key) || tmdbSeasonEpisodeDetailPromises.has(key)) return;
                 setTimeout(() => {
@@ -14906,13 +15293,17 @@
             const bootSeasonNo = useResumePosition ? RESUME_SEASON_FALLBACK : URL_SEASON;
             const bootEpisodeNo = useResumePosition ? RESUME_EPISODE_FALLBACK : URL_EPISODE;
             const bootAbsoluteEpisodeNo = useResumePosition ? continueAbsoluteEpisodeNo : URL_ABSOLUTE_EPISODE;
-            const urlEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(bootEpisodeId);
-            const continueEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(continueEpisodeId);
-            if (!pendingEpisodeSelectionHint && currentIsLikelyAnime && (bootEpisodeId || bootAbsoluteEpisodeNo > 0 || bootSeasonKey || continueEpisodeId || continueAbsoluteEpisodeNo > 0 || continueSeasonKey)) {
+            const urlEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(bootEpisodeId) || /^episode[-/]/i.test(bootEpisodeId);
+            const continueEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(continueEpisodeId) || /^episode[-/]/i.test(continueEpisodeId);
+            const shouldCreateProviderSelectionHint =
+                currentIsLikelyAnime ||
+                String(FORCED_PROVIDER || '').trim().toLowerCase() === 'flixhq' ||
+                /^episode[-/]/i.test(bootEpisodeId || continueEpisodeId);
+            if (!pendingEpisodeSelectionHint && shouldCreateProviderSelectionHint && (bootEpisodeId || bootAbsoluteEpisodeNo > 0 || bootSeasonKey || continueEpisodeId || continueAbsoluteEpisodeNo > 0 || continueSeasonKey)) {
                 const urlSeasonTitleLooksSpecial = /^(specials?|ovas?|extras?|recaps?)$/i.test(bootSeasonTitle);
                 const safeUrlSeasonTitle = urlSeasonTitleLooksSpecial && bootSeasonNo > 0 ? '' : bootSeasonTitle;
                 pendingEpisodeSelectionHint = {
-                    provider: (bootSeasonKey || continueSeasonKey) ? 'animesalt' : null,
+                    provider: /^episode[-/]/i.test(bootEpisodeId || continueEpisodeId) ? 'flixhq' : ((bootSeasonKey || continueSeasonKey) ? 'animesalt' : null),
                     episodeId: (urlEpisodeIdLooksProviderScoped ? bootEpisodeId : '') || (continueEpisodeIdLooksProviderScoped ? continueEpisodeId : '') || null,
                     seasonTitle: safeUrlSeasonTitle || String(CONTINUE_ENTRY?.seasonTitle || '').trim() || null,
                     seasonNo: bootSeasonNo > 0 ? bootSeasonNo : (Number(CONTINUE_ENTRY?.seasonNo || 0) > 0 ? Number(CONTINUE_ENTRY.seasonNo) : null),
@@ -15293,6 +15684,8 @@
                             const raw = String(value || '').trim().toLowerCase();
                             if (!raw) return false;
                             if (raw.startsWith('tv-watch-') || raw.startsWith('movie-watch-')) return true;
+                            if (raw.startsWith('episode-') || raw.startsWith('episode/')) return true;
+                            if (/\/s\d{1,2}-e\d{1,3}$/i.test(raw)) return true;
                             if (raw.includes('$episode$')) return true;
                             return false;
                         };
@@ -15368,10 +15761,11 @@
                         if (provider === 'flixhq' && provEpisodeId) {
                             // remember last flixhq episodeId so UI can query available servers
                             window._lastFlixhqEpisodeId = provEpisodeId;
-                            // Always try Vidking first for FlixHQ, then Videasy, then backend auto.
-                            watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=vidking${DIRECT_ONLY ? '&directOnly=true' : ''}`);
-                            watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=videasy${DIRECT_ONLY ? '&directOnly=true' : ''}`);
-                            watchCandidates.push(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`);
+                            // Start on Vidking, then keep the other FlixHQ servers available as fallbacks.
+                            watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=vidking${DIRECT_ONLY ? '&directOnly=true' : ''}`));
+                            watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=flixhq&strictServer=true${DIRECT_ONLY ? '&directOnly=true' : ''}`));
+                            watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=videasy${DIRECT_ONLY ? '&directOnly=true' : ''}`));
+                            watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`));
                         }
 
                         if ((provider !== 'flixhq' || (provider === 'flixhq' && MEDIA_TYPE === 'tv')) && !isVegamoviesProvider) {
@@ -15393,7 +15787,9 @@
                             const mediaId = isNetMirrorProvider ? normalizeNetMirrorId(mediaIdRaw) : mediaIdRaw;
                             const episodeId = isNetMirrorProvider ? normalizeNetMirrorId(episodeIdRaw) : episodeIdRaw;
                             watchCandidates.push(
-                                `${movieBase}/watch?episodeId=${encodeURIComponent(episodeId)}&mediaId=${encodeURIComponent(mediaId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`,
+                                provider === 'flixhq'
+                                    ? withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(episodeId)}&mediaId=${encodeURIComponent(mediaId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`)
+                                    : `${movieBase}/watch?episodeId=${encodeURIComponent(episodeId)}&mediaId=${encodeURIComponent(mediaId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`,
                             );
                         }
                     }
@@ -15461,7 +15857,8 @@
                             low.includes('getm3u8') ||
                             low.includes('.mp4') ||
                             low.includes('.mpd');
-                        if (src?.isEmbed || src?.isIframe || low.includes('/embed') || low.includes('/iframe') || !isDirectPlayable) {
+                        const isAllowedFlixhqEmbed = provider === 'flixhq' && (src?.isEmbed || src?.isIframe || /vidking\.net|\/embed/i.test(url));
+                        if (!isAllowedFlixhqEmbed && (src?.isEmbed || src?.isIframe || low.includes('/embed') || low.includes('/iframe') || !isDirectPlayable)) {
                             return false;
                         }
                         if (provider === 'vegamovies') {
@@ -15738,6 +16135,9 @@
         function isLikelyPlaceholderSource(url) {
             const u = String(url || '').toLowerCase();
             if (!u) return true;
+            if (u.includes('voorbeeld.com')) return true;
+            if (u.includes('example.com')) return true;
+            if (u.includes('/video.mp4') && (u.includes('voorbeeld') || u.includes('sample') || u.includes('placeholder'))) return true;
             if (u.includes('kaa.lt/intro.mp4')) return true;
             if (u.endsWith('/intro.mp4')) return true;
             if (u.includes('/trailer') || u.includes('/preview')) return true;
@@ -15785,8 +16185,8 @@
                                 event.stopPropagation();
                                 try {
                                     item.classList.add('loading');
-                                    const watchUrl = `${window._flixhqMovieBase}/watch?episodeId=${encodeURIComponent(window._lastFlixhqEpisodeId)}&server=${encodeURIComponent(serverId)}&strictServer=true${DIRECT_ONLY ? '&directOnly=true' : ''}`;
-                                    const { res: wres } = await fetchJsonWithApiFallback(watchUrl, { signal: AbortSignal.timeout(30000) });
+                                    const watchUrl = withFlixhqExtractionTimeout(`${window._flixhqMovieBase}/watch?episodeId=${encodeURIComponent(window._lastFlixhqEpisodeId)}&server=${encodeURIComponent(serverId)}&strictServer=true${DIRECT_ONLY ? '&directOnly=true' : ''}`);
+                                    const { res: wres } = await fetchJsonWithApiFallback(watchUrl, { signal: AbortSignal.timeout(getProviderTimeout('flixhq', 'watch', 75000)) });
                                     if (!wres || !wres.ok) throw new Error(`Server ${name} returned ${wres?.status || 'no response'}`);
                                     const wpayload = await wres.json();
                                     const rows = Array.isArray(wpayload?.sources) ? wpayload.sources : [];
@@ -15933,6 +16333,7 @@
                 // Remove only the video element, keep the brightness overlay
                 const oldVideo = wrap.querySelector('video');
                 if (oldVideo) oldVideo.remove();
+                wrap.querySelectorAll('.player-embed-frame').forEach((frame) => frame.remove());
                 
                 // Also clean up any extra plyr wrappers that might have been left behind
                 const extraWrappers = wrap.querySelectorAll('.plyr');
@@ -15949,7 +16350,6 @@
                 newVideo.playsInline = true;
                 newVideo.setAttribute('playsinline', '');
                 newVideo.setAttribute('webkit-playsinline', 'true');
-                newVideo.crossOrigin = 'anonymous';
                 newVideo.preload = 'auto';
                 wrap.insertBefore(newVideo, wrap.firstChild);
             }
@@ -15980,6 +16380,11 @@
             if (/\/(?:m3u8-proxy|utils\/proxy)(?:[/?]|$)/i.test(rawUrl)) {
                 return rawUrl;
             }
+            if (providerName === 'archive.org') {
+                const apiOrigin = getProxyGatewayOrigin();
+                const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
+                return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(rawUrl)}${ref}`;
+            }
             // StreamRuby HLS often rejects server-side proxy requests (403) even with referer,
             // but plays directly in browser context.
             if (/https?:\/\/[^/]*streamruby\.net\//i.test(rawUrl) && providerName !== 'justanime') {
@@ -15990,8 +16395,7 @@
             if (providerName === 'vegamovies') {
                 return rawUrl;
             }
-            const apiBaseUrl = new URL(activeApiBase || API_BASE, location.href);
-            let apiOrigin = `${apiBaseUrl.protocol}//${apiBaseUrl.host}`;
+            const apiOrigin = getProxyGatewayOrigin();
             const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
             return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(rawUrl)}${ref}`;
         }
@@ -16038,7 +16442,15 @@
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) {
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
             const sourceProvider = String(allSources?.[srcIdx]?.provider || '').toLowerCase();
-            const proxyOnlyProvider = sourceProvider === 'justanime' || sourceProvider === 'animesalt' || sourceProvider === 'animetsu';
+            const rawStreamUrlLower = String(url || '').toLowerCase();
+            const isFlixhqProtectedCdn =
+                sourceProvider === 'flixhq' &&
+                /nightspeedster\.app|vidking\.net|weneverbeenfree\.com|megacloud|upcloud|vidcloud|hydrogen|easy\./i.test(rawStreamUrlLower);
+            const proxyOnlyProvider =
+                sourceProvider === 'justanime' ||
+                sourceProvider === 'animesalt' ||
+                sourceProvider === 'animetsu' ||
+                isFlixhqProtectedCdn;
             const resumeTargetTime = Math.max(0, Number(startTime || 0));
             const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 20;
             let nextSourceFallbackUsed = false;
@@ -16076,7 +16488,36 @@
                     sourceProvider === 'vegamovies' &&
                     (reasonText.includes('manifest') || reasonText.includes('direct_url_failed') || reasonText.includes('fatal'));
                 let nextIdx = -1;
-                if (Array.isArray(allSources) && shouldPreferNonHlsFallback) {
+                if (Array.isArray(allSources) && sourceProvider === 'flixhq') {
+                    const currentUrl = String(url || '');
+                    const flixhqCandidates = allSources
+                        .map((s, i) => ({ s, i }))
+                        .filter(({ s, i }) => {
+                            if (i === srcIdx) return false;
+                            if (String(s?.provider || '').toLowerCase() !== 'flixhq') return false;
+                            const candidateUrl = String(s?.url || '');
+                            if (!candidateUrl || candidateUrl === currentUrl) return false;
+                            if (isBrokenEmbedUrl(candidateUrl) || isLikelyPlaceholderSource(candidateUrl)) return false;
+                            return Boolean(s?.isM3U8 || /\.m3u8(?:\?|$)/i.test(candidateUrl) || /\.mp4(?:\?|$)/i.test(candidateUrl) || s?.isEmbed);
+                        })
+                        .sort((a, b) => {
+                            const score = ({ s, i }) => {
+                                const label = String(s?.label || s?.server || s?.quality || '').toLowerCase();
+                                const candidateUrl = String(s?.url || '').toLowerCase();
+                                return (
+                                    (/backup/.test(label) ? 90 : 0) +
+                                    (/flixhq\s*-\s*flixhq/.test(label) ? 80 : 0) +
+                                    (/weneverbeenfree|flixhq/.test(candidateUrl) ? 60 : 0) +
+                                    (/vidking/.test(label) ? 35 : 0) +
+                                    (/videasy|nightspeedster/.test(label + ' ' + candidateUrl) ? -25 : 0) +
+                                    (i > srcIdx ? 5 : 0)
+                                );
+                            };
+                            return score(b) - score(a);
+                        });
+                    nextIdx = flixhqCandidates[0]?.i ?? -1;
+                }
+                if (nextIdx < 0 && Array.isArray(allSources) && shouldPreferNonHlsFallback) {
                     nextIdx = allSources.findIndex((s, i) => {
                         if (i === srcIdx) return false;
                         const srcUrl = String(s?.url || '').toLowerCase();
@@ -16111,15 +16552,15 @@
                 if (String(sourceProvider || '').toLowerCase() !== 'flixhq') return false;
                 const mediaType = String(MEDIA_TYPE || '').toLowerCase();
                 if (mediaType !== 'movie' && mediaType !== 'tv') return false;
-                const candidateServers = ['vidking', 'videasy', 'megacloud', 'vidcloud', 'upcloud', 'flixhq'];
+                const candidateServers = ['vidking', 'flixhq', 'videasy'];
                 for (const serverName of candidateServers) {
                     try {
                         const watchParams = new URLSearchParams();
                         watchParams.set('id', String(TMDB_ID || ''));
                         watchParams.set('type', mediaType);
                         watchParams.set('provider', 'flixhq');
-                        watchParams.set('directOnly', 'true');
                         watchParams.set('server', serverName);
+                        watchParams.set('directOnly', 'true');
                         if (mediaType === 'tv') {
                             const selectedSeason = tvSeasons?.[curSeason];
                             const selectedEpisode = selectedSeason?.episodes?.[curEpisode];
@@ -16139,7 +16580,7 @@
 
                         const watchUrl = `${API_BASE}/watch?${watchParams.toString()}`;
                         const { res } = await fetchJsonWithApiFallback(watchUrl, {
-                            signal: AbortSignal.timeout(30000),
+                            signal: AbortSignal.timeout(getProviderTimeout('flixhq', 'watch', 75000)),
                         });
                         if (!res.ok) continue;
                         const payload = await res.json();
@@ -16152,7 +16593,7 @@
                             })
                             .map((src, i) => {
                                 const low = String(src.url || '').toLowerCase();
-                                const isVegamoviesTokenizedPlaylist = provider === 'vegamovies' && low.includes('/playlist/') && low.includes('.txt');
+                                const isVegamoviesTokenizedPlaylist = sourceProvider === 'vegamovies' && low.includes('/playlist/') && low.includes('.txt');
                                 const isM3U8 = !isVegamoviesTokenizedPlaylist && (src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8'));
                                 const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
                                 return {
@@ -16230,6 +16671,11 @@
             currentStreamReferer = referer || null;
             currentStreamProvider = sourceProvider;
 
+            if (playerWrap) {
+                playerWrap.style.opacity = '0';
+                playerWrap.style.visibility = 'hidden';
+            }
+
             if (MEDIA_TYPE === 'tv' && currentIsLikelyAnime && sourceProvider && providerSeasonCatalog.has(sourceProvider) && (FORCED_PROVIDER || !providerSeasonCatalog.has('animesalt'))) {
                 activeMenuProvider = sourceProvider;
                 const previousScrollTop = getEpisodePanelScrollTop();
@@ -16274,6 +16720,7 @@
                 // Preserve the brightness overlay to keep gesture functionality working
                 const oldVideo = wrap.querySelector('video');
                 if (oldVideo) wrap.removeChild(oldVideo);
+                wrap.querySelectorAll('.player-embed-frame').forEach((frame) => frame.remove());
                 const newVideo = document.createElement('video');
                 newVideo.id = 'player-video';
                 newVideo.className = 'plyr-video';
@@ -16283,12 +16730,17 @@
                 newVideo.playsInline = true;
                 newVideo.setAttribute('playsinline', '');
                 newVideo.setAttribute('webkit-playsinline', 'true');
-                newVideo.crossOrigin = 'anonymous';
+                if (String(sourceProvider || '').toLowerCase() === 'archive.org') {
+                    newVideo.removeAttribute('crossorigin');
+                } else {
+                    newVideo.crossOrigin = 'anonymous';
+                }
                 newVideo.preload = 'auto';
                 wrap.insertBefore(newVideo, wrap.firstChild);
             }
             video = document.getElementById('player-video');
             if (video) { video.volume = savedVolume; video.muted = savedMuted; } // Restore volume across switches
+            if (controlSurface) controlSurface.style.display = '';
 
             // Some sources sound robotic when any prior non-1x rate or boosted
             // WebAudio gain remains active across source switches.
@@ -16539,6 +16991,20 @@
                         || lowerReason.includes('level_timeout')
                         || lowerReason.includes('network')
                     );
+                    if (isFlixHqStream && proxyOnlyProvider && shouldPreferDirectRetry) {
+                        if (failoverToNextSource(`proxy_only_failed:${reason}`)) {
+                            sameSourceRecoveryLock = false;
+                            return;
+                        }
+                        tryAlternateFlixhqServer(`proxy_only_failed:${reason}`).then((switched) => {
+                            if (switched) {
+                                sameSourceRecoveryLock = false;
+                                return;
+                            }
+                            showProviderExhaustedError(reason);
+                        });
+                        return;
+                    }
                     if (shouldPreferDirectRetry && !hlsDirectFallbackAttempted) {
                         const resumeTime = Number(video?.currentTime || startTime || 0);
                         const tried = recoverWithDirectUrl(resumeTime);
@@ -16803,7 +17269,10 @@
                     } else if (fallbackStep === 2) {
                         if (proxyOnlyProvider) {
                             console.warn('Native HLS: direct fallback disabled for proxy-only provider');
-                            showError('Playback Error', 'Proxy stream failed after retry. Please try another source.');
+                            tryAlternateFlixhqServer(`native_proxy_failed:${reason}`).then((switched) => {
+                                if (switched) return;
+                                showError('Playback Error', 'Proxy stream failed after retry. Please try another source.');
+                            });
                             return;
                         }
                         // Try direct URL (without proxy) — works when CDN allows browser access
@@ -16953,10 +17422,44 @@
                 if (!IS_IOS) video.play().catch(() => hideLoader());
 
             } else if (isEmbed) {
-                console.warn('Embed source skipped; native direct playback only.');
-                if (!failoverToNextSource('embed_source_skipped')) {
-                    showError('No Direct Stream', 'This server only returned an embed player. Please try another source.');
+                console.log('Branch: Embed iframe');
+                try {
+                    const embedUrl = new URL(String(url || ''), location.href);
+                    if (!/^https?:$/i.test(embedUrl.protocol)) throw new Error('Unsupported embed URL');
+                    const wrap = document.querySelector('.player-wrap');
+                    if (!wrap) throw new Error('Player wrapper missing');
+                    if (hlsInst) { try { hlsInst.destroy(); } catch (_) { } hlsInst = null; }
+                    if (dashInst) { try { dashInst.reset(); } catch (_) { } dashInst = null; }
+                    if (plyr) { try { plyr.destroy(); } catch (_) { } plyr = null; }
+                    clearVideoMediaSource();
+                    const oldVideo = wrap.querySelector('video');
+                    if (oldVideo) oldVideo.remove();
+                    wrap.querySelectorAll('.player-embed-frame').forEach((frame) => frame.remove());
+
+                    const frame = document.createElement('iframe');
+                    frame.className = 'player-embed-frame';
+                    frame.src = embedUrl.toString();
+                    frame.allow = 'autoplay; fullscreen; encrypted-media; picture-in-picture';
+                    frame.referrerPolicy = 'origin-when-cross-origin';
+                    frame.setAttribute('allowfullscreen', 'true');
+                    frame.setAttribute('webkitallowfullscreen', 'true');
+                    frame.setAttribute('mozallowfullscreen', 'true');
+                    wrap.insertBefore(frame, wrap.firstChild);
+
+                    if (controlSurface) controlSurface.style.display = 'none';
+                    if (playerWrap) {
+                        playerWrap.style.opacity = '1';
+                        playerWrap.style.visibility = 'visible';
+                    }
+                    isFirstLoad = false;
                     hideLoader();
+                    hideTransitionOverlay();
+                } catch (err) {
+                    console.warn('Embed source failed:', err);
+                    if (!failoverToNextSource('embed_source_failed')) {
+                        showError('Embed Failed', 'This embed server could not be loaded. Please try another source.');
+                        hideLoader();
+                    }
                 }
 
             } else if (!isM3U8) {
@@ -16968,15 +17471,20 @@
                 }
                 const proxiedMp4Url = proxiedStreamUrl(url, referer, sourceProvider);
                 const directMp4Url = url;
+                const isArchiveDirect = String(sourceProvider || '').toLowerCase() === 'archive.org';
                 let triedDirectFallback = false;
 
                 const tryDirectMp4Fallback = () => {
+                    if (isArchiveDirect) {
+                        console.warn('Archive.org MP4 must stay proxied to avoid browser CORS failures');
+                        return false;
+                    }
                     if (proxyOnlyProvider) return false;
                     if (triedDirectFallback) return false;
                     triedDirectFallback = true;
                     console.warn('Proxied MP4 failed, retrying with direct MP4 URL');
                     try {
-                        if (sourceProvider === 'archive.org') {
+                        if (isArchiveDirect) {
                             try {
                                 video.removeAttribute('crossorigin');
                             } catch (_) { }
@@ -17001,7 +17509,7 @@
                     }
                 });
 
-                // If proxy starts but never gets metadata, fallback to direct URL.
+                // If proxy starts but never gets metadata, fallback to direct URL when that is CORS-safe.
                 const metadataFallbackTimer = setTimeout(() => {
                     if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
                         tryDirectMp4Fallback();
@@ -17009,7 +17517,17 @@
                 }, 4500);
                 video.addEventListener('loadedmetadata', () => clearTimeout(metadataFallbackTimer), { once: true });
 
-                video.src = proxiedMp4Url;
+                if (isArchiveDirect) {
+                    try {
+                        video.removeAttribute('crossorigin');
+                    } catch (_) { }
+                    try {
+                        video.crossOrigin = null;
+                    } catch (_) { }
+                    video.src = proxiedMp4Url;
+                } else {
+                    video.src = proxiedMp4Url;
+                }
 
                 const previewVideo = document.getElementById('previewVideo');
                 if (previewVideo) {
@@ -17033,7 +17551,12 @@
                         video && video.removeEventListener('timeupdate', onFirstFrame);
                     };
                     video && video.addEventListener('timeupdate', onFirstFrame);
-                    setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
+                    setTimeout(() => {
+                        if (isFirstLoad && video && video.readyState >= 2) {
+                            isFirstLoad = false;
+                            hideLoader();
+                        }
+                    }, 10000);
                 }
 
                 if (!IS_IOS) video.play().catch(() => hideLoader());

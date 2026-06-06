@@ -3842,6 +3842,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
             else if (provider) params.set('provider', String(provider));
             params.set('seasonTitle', safeSeasonTitle);
             if (season.seasonKey) params.set('seasonKey', season.seasonKey);
+            if (episodeId) params.set('episodeId', episodeId);
             if (absoluteEpisodeNo > 0) params.set('absoluteEpisode', String(absoluteEpisodeNo));
 
             return `
