@@ -3761,25 +3761,29 @@
                     return new URL(LOCAL_MEDIA_PROXY_BASE, location.href).origin;
                 } catch (_) { }
             }
-            // For production media streams, use the dedicated Vercel proxy gateway, never the API base
+
+            // Keep prod media proxying on the same API host as metadata/watch calls.
+            // The VM API exposes /proxy/hls and /utils/proxy; the old Vercel proxy does not.
+            const apiOrigin = getProxyGatewayOrigin(activeApiBase || API_BASE);
+            if (apiOrigin) return apiOrigin;
+
             const proxyBase = String(PROXY_GATEWAY_BASE || '').trim();
             if (proxyBase && proxyBase.startsWith('http')) {
                 try {
                     return new URL(proxyBase).origin;
                 } catch (_) { }
             }
-            // Fallback to Vercel proxy if not configured
-            return 'https://proxy-jade-kappa-94.vercel.app';
-        }
 
+            return location.origin;
+        }
         function getProxiedUrl(url, referer = '') {
             if (!url) return '';
             try {
                 const u = new URL(url);
                 if (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || url.includes('/proxy')) return url;
-                // Use dedicated media proxy origin, NEVER the API base
+                // Use the active API origin for media proxying so prod matches local behavior
                 const mediaProxyOrigin = getMediaProxyOrigin();
-                // Route through Vercel proxy endpoint using 'url' parameter with full encoding
+                // Route through the API proxy endpoint using 'url' parameter with full encoding
                 return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(url)}`;
             } catch (_) { return url; }
         }
