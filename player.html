@@ -11,7 +11,7 @@
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="icon" href="logo.png">
-    <!-- PWA manifest — gives iOS the signal to run without browser chrome in standalone mode -->
+    <!-- PWA manifest Ã¢â‚¬â€ gives iOS the signal to run without browser chrome in standalone mode -->
     <link rel="manifest" href="manifest.json">
     <!-- Standard PWA meta (non-Apple) -->
     <meta name="mobile-web-app-capable" content="yes">
@@ -261,7 +261,7 @@
             z-index: 4;
         }
 
-        /* ── iOS Pseudo-Fullscreen ───────────────────────────────────────────
+        /* Ã¢â€â‚¬Ã¢â€â‚¬ iOS Pseudo-Fullscreen Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
            iOS Safari cannot grant true document fullscreen. When the user taps
            the fullscreen button on iPhone/iPad we instead apply this mode:
            the player-wrap and control-surface are promoted to a very high
@@ -270,7 +270,7 @@
 
            We use 100dvh (dynamic viewport height) so the player auto-adjusts
            as the address bar slides in/out during interaction.
-        ──────────────────────────────────────────────────────────────────── */
+        Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
         html.ios-pseudo-fs-active,
         html.ios-pseudo-fs-active body {
             overflow: hidden !important;
@@ -286,7 +286,7 @@
             position: fixed !important;
             inset: 0 !important;
             width: 100% !important;
-            height: 100dvh !important; /* dynamic viewport — handles address-bar collapse */
+            height: 100dvh !important; /* dynamic viewport Ã¢â‚¬â€ handles address-bar collapse */
             z-index: 99999 !important;
             background: #000 !important;
             overscroll-behavior: none !important; /* Prevent swipe-to-refresh/history navigation */
@@ -346,7 +346,7 @@
             transform: translateX(-50%) translateY(0);
         }
 
-        /* ── iOS Add to Home Screen banner ────────────────────────────────── */
+        /* Ã¢â€â‚¬Ã¢â€â‚¬ iOS Add to Home Screen banner Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
         #ios-a2hs-banner {
             position: fixed;
             bottom: 0;
@@ -1066,7 +1066,32 @@
         }
 
         #source-panel {
-            width: 180px;
+            width: 268px;
+            gap: 8px;
+            padding: 8px;
+            border-radius: 22px;
+            background: linear-gradient(135deg, rgba(12, 12, 14, 0.82), rgba(18, 18, 20, 0.56));
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.24) rgba(255, 255, 255, 0.06);
+        }
+
+        #source-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #source-panel::-webkit-scrollbar-track {
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        #source-panel::-webkit-scrollbar-thumb {
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.24);
+            border: 2px solid rgba(18, 18, 20, 0.94);
         }
 
         #ep-panel {
@@ -1118,7 +1143,32 @@
         }
 
         #audio-panel {
-            width: 160px;
+            width: 268px;
+            gap: 8px;
+            padding: 8px;
+            border-radius: 22px;
+            background: linear-gradient(135deg, rgba(12, 12, 14, 0.82), rgba(18, 18, 20, 0.56));
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.24) rgba(255, 255, 255, 0.06);
+        }
+
+        #audio-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #audio-panel::-webkit-scrollbar-track {
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        #audio-panel::-webkit-scrollbar-thumb {
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.24);
+            border: 2px solid rgba(18, 18, 20, 0.94);
         }
 
         #source-panel.open,
@@ -1922,7 +1972,7 @@
         }
 
         .next-episode-btn:hover {
-            /* Keep background dark — light hover + difference = invisible white text */
+            /* Keep background dark Ã¢â‚¬â€ light hover + difference = invisible white text */
             background: linear-gradient(135deg, rgba(18, 18, 20, 0.92), rgba(24, 24, 28, 0.66));
             border-color: rgba(229, 9, 20, 0.45);
             box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5), 0 0 22px rgba(229, 9, 20, 0.20);
@@ -1943,7 +1993,7 @@
 
         /* Keep skip/next buttons visible in lock mode per UX request */
 
-        /* ──────────────────────────────────────────────────────────────────
+        /* Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
            Subtitle rendering strategy:
            - Our custom overlay (#subtitleOverlay) renders subtitles in the
              web player via JS/cuechange events. We suppress browser's own
@@ -1954,9 +2004,9 @@
              natively inside that container. On webkitendfullscreen we restore
              track.mode = 'hidden' and our overlay takes back over.
            - body.ios-native-player is toggled by JS to allow native rendering.
-        ──────────────────────────────────────────────────────────────────── */
+        Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
 
-        /* Always hide Plyr's built-in caption UI — we never use it */
+        /* Always hide Plyr's built-in caption UI Ã¢â‚¬â€ we never use it */
         .plyr__captions,
         .plyr__caption,
         .plyr__video-wrapper [class*="captions"],
@@ -2101,29 +2151,61 @@
             padding: 4px 10px 8px;
         }
 
+        #source-panel .panel-label {
+            display: none;
+        }
+
+        #audio-panel .panel-label {
+            display: none;
+        }
+
         .src-item {
-            padding: 10px 14px;
-            border-radius: 8px;
+            min-height: 44px;
+            padding: 8px 12px;
+            border-radius: 10px;
             cursor: pointer;
-            font-size: .87rem;
-            color: var(--muted);
+            font-size: .8rem;
+            line-height: 1.2;
+            color: #ddd;
             transition: var(--transition);
             display: flex;
             align-items: center;
-            gap: 10px;
+            justify-content: center;
+            text-align: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-sizing: border-box !important;
+            overflow-wrap: anywhere;
         }
 
         .src-item:hover {
-            background: rgba(255, 255, 255, .07);
+            background: rgba(255, 255, 255, .08);
             color: #fff;
+            border-color: rgba(255, 255, 255, 0.15);
         }
 
         .src-item.active {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(12px) saturate(180%);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--primary);
-            font-weight: 700;
+            background: rgba(229, 9, 20, 0.22) !important;
+            border: 1px solid var(--primary) !important;
+            color: #fff !important;
+            font-weight: 600;
+            position: relative;
+            overflow: hidden;
+            min-height: 52px;
+            padding: 10px 14px !important;
+        }
+
+        .src-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 20%;
+            bottom: 20%;
+            width: 4px;
+            background: var(--primary);
+            border-radius: 0 4px 4px 0;
+            box-shadow: 0 0 10px var(--primary);
         }
 
         .src-item.loading {
@@ -2146,11 +2228,21 @@
         }
 
         .src-dot {
-            width: 7px;
-            height: 7px;
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
-            background: currentColor;
+            background: rgba(255, 255, 255, 0.62);
             flex-shrink: 0;
+            display: none;
+        }
+
+        .src-item.active .src-dot {
+            background: var(--primary);
+            box-shadow: 0 0 8px rgba(229, 9, 20, 0.8);
+        }
+
+        .src-item.loading .src-dot {
+            display: block;
         }
 
         /* EPISODE PANEL */
@@ -2473,28 +2565,56 @@
         /* Duplicate panel block removed */
 
         .audio-item {
+            min-height: 44px;
             padding: 8px 12px;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
-            font-size: .82rem;
-            color: var(--muted);
+            font-size: .8rem;
+            line-height: 1.2;
+            color: #ddd;
             transition: var(--transition);
             display: flex;
             align-items: center;
-            gap: 10px;
+            justify-content: center;
+            text-align: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-sizing: border-box !important;
+            overflow-wrap: anywhere;
         }
 
         .audio-item:hover {
-            background: rgba(255, 255, 255, .07);
+            background: rgba(255, 255, 255, .08);
             color: #fff;
+            border-color: rgba(255, 255, 255, 0.15);
         }
 
         .audio-item.active {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(12px) saturate(180%);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--primary);
-            font-weight: 700;
+            background: rgba(229, 9, 20, 0.22) !important;
+            border: 1px solid var(--primary) !important;
+            color: #fff !important;
+            font-weight: 600;
+            position: relative;
+            overflow: hidden;
+            min-height: 52px;
+            padding: 10px 14px !important;
+        }
+
+        .audio-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 20%;
+            bottom: 20%;
+            width: 4px;
+            background: var(--primary);
+            border-radius: 0 4px 4px 0;
+            box-shadow: 0 0 10px var(--primary);
+        }
+
+        .audio-item .src-dot {
+            display: none;
         }
 
         /* RIPPLE EFFECTS */
@@ -2729,6 +2849,15 @@
                 opacity: 0;
                 pointer-events: none;
                 visibility: hidden;
+            }
+
+            #source-panel,
+            #audio-panel {
+                background: linear-gradient(135deg, rgba(12, 12, 14, 0.82), rgba(18, 18, 20, 0.56)) !important;
+                border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48) !important;
+                backdrop-filter: blur(16px) !important;
+                -webkit-backdrop-filter: blur(16px) !important;
             }
 
             #source-panel.open,
@@ -3349,7 +3478,7 @@
 
     <!-- Transition overlay: lives OUTSIDE player-wrap so it escapes its stacking context -->
     <!-- iOS pseudo-fullscreen rotation hint -->
-    <div id="ios-rotate-hint">⟳ Rotate for best experience</div>
+    <div id="ios-rotate-hint">Ã¢Å¸Â³ Rotate for best experience</div>
 
     <!-- iOS "Add to Home Screen" install banner.
          Shows only on iOS Safari in browser mode (not in standalone PWA mode).
@@ -3359,9 +3488,9 @@
             <img src="logo.png" class="a2hs-icon" alt="StreamVerse">
             <div class="a2hs-text">
                 <strong>Get the full experience</strong>
-                <span>Tap <span class="a2hs-share-icon">⬆</span> then <em>"Add to Home Screen"</em> to watch without browser bars</span>
+                <span>Tap <span class="a2hs-share-icon">Ã¢Â¬â€ </span> then <em>"Add to Home Screen"</em> to watch without browser bars</span>
             </div>
-            <button class="a2hs-close" id="a2hs-close-btn" aria-label="Dismiss">✕</button>
+            <button class="a2hs-close" id="a2hs-close-btn" aria-label="Dismiss">Ã¢Å“â€¢</button>
         </div>
         <div class="a2hs-arrow"></div>
     </div>
@@ -3536,7 +3665,7 @@
     <script>
         // -----------------------------------------------------------------------
         //  CONFIG
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         const RUNTIME_CONFIG = window.__STREAMVERSE_CONFIG__ || {};
         const LOCAL_META_API = String(
             RUNTIME_CONFIG.LOCAL_META_API_BASE ||
@@ -3557,6 +3686,11 @@
             RUNTIME_CONFIG.PROXY_GATEWAY_BASE ||
             RUNTIME_CONFIG.PROXY_BASE ||
             'https://proxy-jade-kappa-94.vercel.app'
+        ).replace(/\/$/, '');
+        const LOCAL_MEDIA_PROXY_BASE = String(
+            RUNTIME_CONFIG.LOCAL_MEDIA_PROXY_BASE ||
+            RUNTIME_CONFIG.LOCAL_PROXY_BASE ||
+            'http://127.0.0.1:3000'
         ).replace(/\/$/, '');
         const STREAM_API_BASE = String(
             RUNTIME_CONFIG.STREAM_API_BASE ||
@@ -3602,6 +3736,7 @@
 
         const IS_LOCAL_API = /localhost|127\.0\.0\.1/i.test(API_BASE);
         let activeApiBase = API_BASE;
+        
         function getProxyGatewayOrigin(fallbackBase = activeApiBase || API_BASE) {
             const base = String(fallbackBase || '').trim();
             if (base.startsWith('http')) {
@@ -3620,14 +3755,32 @@
             return location.origin;
         }
 
+        function getMediaProxyOrigin() {
+            if (effectiveApiSource === 'local' && LOCAL_MEDIA_PROXY_BASE) {
+                try {
+                    return new URL(LOCAL_MEDIA_PROXY_BASE, location.href).origin;
+                } catch (_) { }
+            }
+            // For production media streams, use the dedicated Vercel proxy gateway, never the API base
+            const proxyBase = String(PROXY_GATEWAY_BASE || '').trim();
+            if (proxyBase && proxyBase.startsWith('http')) {
+                try {
+                    return new URL(proxyBase).origin;
+                } catch (_) { }
+            }
+            // Fallback to Vercel proxy if not configured
+            return 'https://proxy-jade-kappa-94.vercel.app';
+        }
+
         function getProxiedUrl(url, referer = '') {
             if (!url) return '';
             try {
                 const u = new URL(url);
-                if (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || url.includes('/utils/proxy')) return url;
-                const apiOrigin = getProxyGatewayOrigin();
-                const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
-                return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(url)}${ref}`;
+                if (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || url.includes('/proxy')) return url;
+                // Use dedicated media proxy origin, NEVER the API base
+                const mediaProxyOrigin = getMediaProxyOrigin();
+                // Route through Vercel proxy endpoint using 'url' parameter with full encoding
+                return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(url)}`;
             } catch (_) { return url; }
         }
 
@@ -3702,9 +3855,9 @@
             if (playable) return playable;
             try {
                 const apiOrigin = getProxyGatewayOrigin();
-                const match = decoded.match(/\/utils\/proxy\?url=([^\s"']+)/i);
+                const match = decoded.match(/\/proxy\?url=([^\s"']+)/i);
                 if (!match?.[1]) return '';
-                return `${apiOrigin}/utils/proxy?url=${match[1]}`;
+                return `${apiOrigin}${getMediaProxyPath(apiOrigin)}?url=${match[1]}`;
             } catch (_) {
                 return '';
             }
@@ -3914,7 +4067,7 @@
 
         // -----------------------------------------------------------------------
         //  DOM
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         let suppressClicksUntil = 0;
         let video = document.getElementById('player-video');
         const loader = document.getElementById('loader');
@@ -3963,7 +4116,7 @@
 
         // -----------------------------------------------------------------------
         //  STATE
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         let plyr = null;
         let hlsInst = null;
         let dashInst = null;
@@ -4094,14 +4247,14 @@
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
             // FlixHQ extraction can be slower on small cloud VMs because Chromium startup and mirrors compete for CPU.
-            flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 75000, extraction: 60000, metaInfo: 15000 },
+            flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 35000, extraction: 3000, metaInfo: 15000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
             const value = Number(raw);
             return Number.isFinite(value) && value > 0 ? value : fallbackMs;
         };
-        const getFlixhqExtractionTimeout = () => getProviderTimeout('flixhq', 'extraction', 60000);
+        const getFlixhqExtractionTimeout = () => getProviderTimeout('flixhq', 'extraction', 3000);
         const isTimeoutLikeError = (err) => {
             const msg = String(err?.message || err || '').toLowerCase();
             return msg.includes('timed out') || msg.includes('timeout') || msg.includes('aborted');
@@ -4204,6 +4357,23 @@
             errorBox.style.display = 'block';
         }
         function hideError() { errorBox.style.display = 'none'; }
+
+        function showPreviewPosterFallback(previewVideo) {
+            try {
+                const poster =
+                    (typeof resolveMediaPosterUrl === 'function' ? resolveMediaPosterUrl(currentMediaInfo || {}, currentCoverUrl || '') : '') ||
+                    pauseMediaPoster?.src ||
+                    video?.poster ||
+                    '';
+                if (!poster) return;
+                const previewThumbImage = document.getElementById('previewThumbImage');
+                if (previewThumbImage) {
+                    previewThumbImage.src = poster;
+                    previewThumbImage.style.display = 'block';
+                }
+                if (previewVideo) previewVideo.style.visibility = 'hidden';
+            } catch (_) { }
+        }
 
         function withFlixhqExtractionTimeout(url) {
             try {
@@ -4670,8 +4840,8 @@
             const isAnimetsu = String(provider || '').toLowerCase().includes('animetsu');
             const isVega = String(provider || '').toLowerCase().includes('vegamovies');
 
-            // Dynamic buffer sizing — keep buffers modest to avoid bufferFullError cascades
-            // (oversized buffers fill up, HLS.js panics → stall loop)
+            // Dynamic buffer sizing Ã¢â‚¬â€ keep buffers modest to avoid bufferFullError cascades
+            // (oversized buffers fill up, HLS.js panics Ã¢â€ â€™ stall loop)
             // Keep FlixHQ buffers modest. Large audio buffers can preserve decoder drift
             // after seeks/track refreshes, which sounds like robotic/distorted audio.
             const backBufferLength = isThumbnail ? 4 : (isVega ? 30 : (isAnimetsu ? 6 : (isFlixHq ? 8 : (isAnimeKai ? (mobileMain ? 6 : 10) : (mobileMain ? 8 : 12)))));
@@ -4683,6 +4853,7 @@
 
             return new Hls({
                 startPosition: startTime,
+                autoStartLoad: !isThumbnail,
                 enableWorker: !isThumbnail && !isFlixHq && !isAnimetsu,
                 lowLatencyMode: false,
                 backBufferLength: backBufferLength,
@@ -4703,7 +4874,7 @@
                 maxStarvationDelay: isThumbnail ? 4 : (isVega ? 12 : (isAnimetsu ? 10 : (isFlixHq ? 8 : 4))),
                 maxLoadingDelay: isThumbnail ? 4 : (isVega ? 12 : (isAnimetsu ? 10 : (isFlixHq ? 8 : 4))),
                 xhrSetup: (xhr, url) => {
-                    xhr.timeout = isThumbnail ? 5000 : (isVega ? 30000 : (isAnimetsu ? 42000 : (isAnimeKai ? 28000 : (isFlixHq ? 35000 : 25000))));
+                    xhr.timeout = isThumbnail ? (isFlixHq ? 3500 : 5000) : (isVega ? 30000 : (isAnimetsu ? 42000 : (isAnimeKai ? 28000 : (isFlixHq ? 35000 : 25000))));
                 },
             });
         }
@@ -4730,7 +4901,7 @@
                 if (isSourceSwitching) return;
                 if (isUserSeeking) return;
                 if (!video) return;
-                // On iOS native HLS, readyState is unreliable — the browser
+                // On iOS native HLS, readyState is unreliable Ã¢â‚¬â€ the browser
                 // reports readyState < 3 even while playing smoothly because
                 // it is pre-fetching ahead. Use actual playback progress instead:
                 // if the video is not paused and has started playing, hide.
@@ -4786,10 +4957,11 @@
 
             const clampedTarget = Math.max(0, Number(targetTime || 0));
             const isLargeJump = jumpDistance > 15;
+            const isFlixHqJump = isCurrentFlixHqStream();
 
             try {
-                // For any significant jump, immediately stop old loads and start at target
-                hlsInst.stopLoad();
+                // For FlixHQ, avoid stopLoad/startLoad churn during rapid seeks; stale XHR callbacks can race destroyed loaders.
+                if (!isFlixHqJump) hlsInst.stopLoad();
                 
                 if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) {
                     // Temporarily drop quality to load thumbnails/segments instantly
@@ -4801,7 +4973,7 @@
                     }, 1500);
                 }
                 
-                hlsInst.startLoad(clampedTarget);
+                hlsInst.startLoad(Math.max(0, clampedTarget - (isFlixHqJump ? 0.35 : 0)));
             } catch (_) { }
         }
 
@@ -4878,8 +5050,8 @@
                 return;
             }
 
-            jumpCooldownUntil = now + 80; // ENHANCED: Much faster repeat seeking
-            jumpInFlightUntil = now + 600; // ENHANCED: Faster flight window
+            jumpCooldownUntil = now + (isFlixHq ? 220 : 80);
+            jumpInFlightUntil = now + (isFlixHq ? 1200 : 600);
             if (jumpRecoveryTimer) {
                 clearTimeout(jumpRecoveryTimer);
                 jumpRecoveryTimer = null;
@@ -5081,6 +5253,7 @@
             let fragParseBurstCount = 0;
             let fragParseBurstStartAt = 0;
             let lastFragBypassAt = 0;
+            const watchdogAvoidStopLoad = () => typeof isCurrentFlixHqStream === 'function' && isCurrentFlixHqStream();
             const clearFatalRecoveryTimer = () => {
                 if (fatalRecoveryTimer) {
                     clearTimeout(fatalRecoveryTimer);
@@ -5276,13 +5449,13 @@
                     }
                 }
 
-                // ── bufferFullError: flush stale back-buffer instead of spiralling ──
+                // Ã¢â€â‚¬Ã¢â€â‚¬ bufferFullError: flush stale back-buffer instead of spiralling Ã¢â€â‚¬Ã¢â€â‚¬
                 if (isBufferFull && !d.fatal) {
                     consecutiveBufferErrors++;
                     const now = Date.now();
                     if (now - lastBufferFlushAt > 1500) {
                         lastBufferFlushAt = now;
-                        console.warn('[hls] bufferFullError – flushing back-buffer and reducing quality');
+                        console.warn('[hls] bufferFullError Ã¢â‚¬â€œ flushing back-buffer and reducing quality');
                         try {
                             // Drop to lowest quality so new fragments are tiny
                             if (hls.levels && hls.levels.length > 1) {
@@ -5457,8 +5630,8 @@
                         if (!isFragParsing && !isBufferAppend) hlsFragErrorBurst = 0;
                     }
 
-                // ── Fatal fragLoadError / levelLoadError: rebuild HLS in-place ──
-                // (This is the main cause of black-screen — proxy refused = fatal frag load)
+                // Ã¢â€â‚¬Ã¢â€â‚¬ Fatal fragLoadError / levelLoadError: rebuild HLS in-place Ã¢â€â‚¬Ã¢â€â‚¬
+                // (This is the main cause of black-screen Ã¢â‚¬â€ proxy refused = fatal frag load)
                 if (d.fatal && (isFragLoad || isLevelLoad)) {
                     const code = Number(d?.response?.code || 0);
                     if (isFlixHqStream && typeof onErrorFallback === 'function' && (code === 403 || code === 404 || code >= 500 || isLevelLoad)) {
@@ -5497,7 +5670,7 @@
                     consecutiveFragErrors = 0;
                 }
 
-                // ── Fatal media / other errors ──
+                // Ã¢â€â‚¬Ã¢â€â‚¬ Fatal media / other errors Ã¢â€â‚¬Ã¢â€â‚¬
                 if (d.fatal) {
                     if (isManifestParsing && typeof onErrorFallback === 'function') {
                         console.warn('[hls] Fatal manifest parsing error, requesting source fallback.');
@@ -5608,7 +5781,7 @@
                 }
             });
 
-            // Stall watchdog — checks every 2.5s, escalates after 3 consecutive stalls (~7.5s total)
+            // Stall watchdog Ã¢â‚¬â€ checks every 2.5s, escalates after 3 consecutive stalls (~7.5s total)
             let lastWatchdogTime = -1;
             let watchdogStallCount = 0;
             const watchdogInterval = setInterval(function () {
@@ -5629,7 +5802,10 @@
                     watchdogStallCount++;
                     if (watchdogStallCount === 1) {
                         console.warn('[hls-watchdog] Stall detected, nudging startLoad...');
-                        try { hls.stopLoad(); hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5)); } catch (_) { }
+                        try {
+                            if (!watchdogAvoidStopLoad()) hls.stopLoad();
+                            hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
+                        } catch (_) { }
                     } else if (watchdogStallCount === 2) {
                         // Second check: try quality drop + reload
                         console.warn('[hls-watchdog] Stall persists, dropping quality...');
@@ -5638,7 +5814,7 @@
                                 hls.autoLevelCapping = 0; hls.nextLevel = 0;
                                 setTimeout(() => { try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { } }, 4000);
                             }
-                            hls.stopLoad();
+                            if (!watchdogAvoidStopLoad()) hls.stopLoad();
                             hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
                         } catch (_) { }
                     } else if (watchdogStallCount >= 4) {
@@ -5688,20 +5864,19 @@
                     hlsInst.destroy();
                 } catch (_) { }
                 hlsInst = null;
-                clearVideoMediaSource();
             }
 
             // ENHANCED: For audio track switching, reuse HLS instance if possible
             if (isAudioTrackSwitch && hlsInst) {
                 console.log('Seamless audio track switch detected, reusing HLS instance');
-                hlsInst.loadSource(proxiedStreamUrl(url, referer));
+                hlsInst.loadSource(proxiedStreamUrl(url, referer, '', sourceOrigin));
                 try {
                     hlsInst.startLoad(Math.max(0, targetTime - 0.8));
                 } catch (_) { }
             } else {
                 hlsInst = svCreateHlsInstance(targetTime, false, currentStreamProvider);
                 svAttachHlsListeners(hlsInst, targetTime, onReady);
-                hlsInst.loadSource(proxiedStreamUrl(url, referer));
+                hlsInst.loadSource(proxiedStreamUrl(url, referer, '', sourceOrigin));
                 hlsInst.attachMedia(video);
                 try {
                     hlsInst.startLoad(Math.max(0, targetTime - 0.8));
@@ -6139,7 +6314,7 @@
 
         function parseEpisodeRangeToken(token) {
             const t = String(token || '')
-                .replace(/[â€“â€”âˆ’]/g, '-')
+                .replace(/[ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ÂÃƒÂ¢Ã‹â€ Ã¢â‚¬â„¢]/g, '-')
                 .replace(/\bto\b/gi, '-')
                 .replace(/[^\d,\-\s]/g, '')
                 .trim();
@@ -6161,14 +6336,14 @@
             if (!line) return [];
             return line
                 .replace(/\.\s*$/, '')
-                .replace(/[â€“â€”âˆ’]/g, '-')
+                .replace(/[ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ÂÃƒÂ¢Ã‹â€ Ã¢â‚¬â„¢]/g, '-')
                 .split(/[,;|]/)
                 .flatMap(parseEpisodeRangeToken);
         }
 
         function parseAnimeFillerMapFromText(text) {
             const out = new Map();
-            const body = String(text || '').replace(/[â€“â€”âˆ’]/g, '-');
+            const body = String(text || '').replace(/[ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ÂÃƒÂ¢Ã‹â€ Ã¢â‚¬â„¢]/g, '-');
             const capture = (re) => {
                 const m = body.match(re);
                 return m?.[1] ? String(m[1]).trim() : '';
@@ -6744,12 +6919,12 @@
             return String(getAnimeTitleText(raw) || '')
                 .normalize('NFKD')
                 .replace(/[\u0300-\u036f]/g, '')
-                .replace(/[’‘`´]/g, "'")
-                .replace(/[“”]/g, '"')
-                .replace(/[×✕]/g, 'x')
-                .replace(/[‐‑‒–—―]/g, '-')
+                .replace(/[Ã¢â‚¬â„¢Ã¢â‚¬Ëœ`Ã‚Â´]/g, "'")
+                .replace(/[Ã¢â‚¬Å“Ã¢â‚¬Â]/g, '"')
+                .replace(/[Ãƒâ€”Ã¢Å“â€¢]/g, 'x')
+                .replace(/[Ã¢â‚¬ÂÃ¢â‚¬â€˜Ã¢â‚¬â€™Ã¢â‚¬â€œÃ¢â‚¬â€Ã¢â‚¬â€¢]/g, '-')
                 .replace(/[_-]+/g, ' ')
-                .replace(/[:;,.!?()[\]{}"'’]/g, ' ') // Strip common punctuation for search
+                .replace(/[:;,.!?()[\]{}"'Ã¢â‚¬â„¢]/g, ' ') // Strip common punctuation for search
                 .replace(/\s+/g, ' ')
                 .trim();
         }
@@ -6890,7 +7065,7 @@
             let seriesSlug = animesaltSlugCache.get(cacheKey);
 
             if (!seriesSlug) {
-                // Generate search terms from base title only (no season label — AnimeSalt groups
+                // Generate search terms from base title only (no season label Ã¢â‚¬â€ AnimeSalt groups
                 // all seasons/arcs under one series). Try progressively simpler terms.
                 const baseTitle = normTitle;
                 const searchTerms = Array.from(new Set([
@@ -6953,7 +7128,7 @@
             if (!seriesSlug) return null;
 
             // For movies, AnimeSalt search returns IDs like "movie:series-slug-0".
-            // The watch endpoint expects this ID directly — NOT the series slug-SxE pattern.
+            // The watch endpoint expects this ID directly Ã¢â‚¬â€ NOT the series slug-SxE pattern.
             if (isMovieContext || seriesSlug.startsWith('movie:')) {
                 const movieId = seriesSlug.startsWith('movie:') ? seriesSlug : `movie:${seriesSlug}`;
                 console.log(`[animesalt] movie resolved: episodeId=${movieId}`);
@@ -7892,7 +8067,7 @@
                 absoluteEpisodeNo: Number.isFinite(Number(absoluteEpisodeNo)) && Number(absoluteEpisodeNo) > 0 ? Number(absoluteEpisodeNo) : null,
             };
 
-            // ── AnimeSalt resolution ─────────────────────────────────────────────────
+            // Ã¢â€â‚¬Ã¢â€â‚¬ AnimeSalt resolution Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             if (provider === 'animesalt') {
                 if (isMovie) {
                     resolved.seasonLabel = '';
@@ -7913,7 +8088,7 @@
                 return resolved;
             }
 
-            // ── Satoru resolution ───────────────────────────────────────────────────
+            // Ã¢â€â‚¬Ã¢â€â‚¬ Satoru resolution Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             if (provider === 'satoru') {
                 // Satoru exact resolve should use the base series title + numeric season/episode.
                 // Arc-heavy labels (e.g. "The Culling Game Part 1") can push matching to the wrong entry.
@@ -7968,7 +8143,7 @@
         }
 
         function findExactProviderSeasonMatch(provider, results, seasonLabel = '') {
-            // AnimeSalt: ALL seasons/arcs are under one series slug — no season matching needed,
+            // AnimeSalt: ALL seasons/arcs are under one series slug Ã¢â‚¬â€ no season matching needed,
             // just pick the best overall title match. Return null to let pickAnimeResultByTitle handle it.
             if (provider === 'animesalt') return null;
 
@@ -8226,7 +8401,7 @@
             const rawSrc = String(sub?.src || '').trim();
             if (!rawSrc) return '';
 
-            // iOS AVKit native fullscreen CANNOT load data: URI text tracks — needs a real HTTP URL.
+            // iOS AVKit native fullscreen CANNOT load data: URI text tracks Ã¢â‚¬â€ needs a real HTTP URL.
             // Route all subtitle fetching through /utils/vtt which does server-side fetch+convert
             // and returns proper text/vtt with CORS headers that iOS AVKit can load natively.
             try {
@@ -8236,8 +8411,10 @@
                 const providerParam = sub?.provider ? `&provider=${encodeURIComponent(String(sub.provider))}` : '';
                 const bustParam = String(sub?.provider || '').toLowerCase() === 'animesalt' ? `&_t=${Date.now()}` : '';
                 const vttUrl = `${apiOrigin}/utils/vtt?url=${encodeURIComponent(rawSrc)}${refParam}${providerParam}${bustParam}`;
-                console.log('[sub] track src → /utils/vtt proxy:', rawSrc.slice(0, 60));
-                if (IS_IOS) return vttUrl;
+                console.log('[sub] track src Ã¢â€ â€™ /utils/vtt proxy:', rawSrc.slice(0, 60));
+                const subtitleProvider = String(sub?.provider || '').toLowerCase();
+                const subtitleHost = (() => { try { return new URL(rawSrc, location.href).hostname; } catch (_) { return ''; } })();
+                if (IS_IOS || subtitleProvider === 'flixhq' || subtitleProvider === 'animesalt' || /(^|\.)qqqcdn\.cloud$/i.test(subtitleHost)) return vttUrl;
             } catch (_) { /* fall through to legacy data URI path */ }
 
             const proxied = proxiedStreamUrl(rawSrc, sub?.referer || null);
@@ -8369,6 +8546,9 @@
 
                         if (vttContent) {
                             subtitleBlobCache.set(lower, vttContent);
+                            const subtitleProvider = String(sub?.provider || "").toLowerCase();
+                            const subtitleHost = (() => { try { return new URL(rawSrc, location.href).hostname; } catch (_) { return ""; } })();
+                            if (subtitleProvider === "flixhq" || subtitleProvider === "animesalt" || /(^|\.)qqqcdn\.cloud$/i.test(subtitleHost)) return vttUrl;
                             return toVttBlobUrl(vttContent);
                         }
                     } catch (e) { console.warn('Sub fetch fail:', e); }
@@ -8435,9 +8615,7 @@
         async function applyExternalSubtitlesToVideo(videoEl) {
             if (!videoEl) return;
             const applyVersion = ++subtitleApplyVersion;
-            videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach((track) => {
-                if (String(track?.src || '').startsWith('blob:')) track.remove();
-            });
+            videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach((track) => track.remove());
 
             if (!Array.isArray(externalSubtitleTracks) || externalSubtitleTracks.length === 0) {
                 videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach((t) => t.remove());
@@ -8490,6 +8668,7 @@
                 // track.crossOrigin is not a valid property; handled by video element
                 track.addEventListener('load', () => {
                     console.log('[sub] track loaded:', track.label);
+                    silenceNativeTracks();
                     updateCaptionsButtonVisibility();
                     buildCaptionsMenu();
                     // If this was the intended active track, refresh
@@ -8799,8 +8978,8 @@
                 const nativeShowingIdx = tracks.findIndex(t => t.mode === 'showing');
 
                 if (nativeShowingIdx >= 0) {
-                    // iOS selected a track natively — sync our state
-                    console.log('[sub] iOS native track change → idx', nativeShowingIdx, tracks[nativeShowingIdx].label);
+                    // iOS selected a track natively Ã¢â‚¬â€ sync our state
+                    console.log('[sub] iOS native track change Ã¢â€ â€™ idx', nativeShowingIdx, tracks[nativeShowingIdx].label);
                     activeSubtitleTrackIndex = nativeShowingIdx;
                     localStorage.setItem('preferredSubtitleLabel', tracks[nativeShowingIdx].label);
 
@@ -8809,7 +8988,15 @@
                         renderSubtitleOverlayFromTrack(tracks[nativeShowingIdx]);
                     }
                 } else if (!_iosNativePlayerActive) {
-                    // iOS turned off all tracks — only sync 'Off' if NOT in native player
+                    const activeHiddenTrack = activeSubtitleTrackIndex >= 0
+                        ? (tracks[activeSubtitleTrackIndex] || null)
+                        : null;
+                    if (activeHiddenTrack && activeHiddenTrack.mode === 'hidden') {
+                        renderSubtitleOverlayFromTrack(activeHiddenTrack);
+                        buildCaptionsMenu();
+                        return;
+                    }
+                    // iOS turned off all tracks Ã¢â‚¬â€ only sync 'Off' if NOT in native player
                     // (Native player might briefly set all to hidden during transitions)
                     activeSubtitleTrackIndex = -1;
                     localStorage.removeItem('preferredSubtitleLabel');
@@ -9451,7 +9638,7 @@
                     const trimmed = list.slice(0, 5);
                     localStorage.setItem('sv_continue_watching', JSON.stringify(trimmed));
                 } catch (_) {
-                    // Storage completely full — skip silently
+                    // Storage completely full Ã¢â‚¬â€ skip silently
                 }
             }
         }
@@ -9764,7 +9951,7 @@
                                 const skipJson = await skipRes.json();
                                 const parsed = parseAniSkipResults(skipJson);
                                 if (parsed.intro || parsed.outro) {
-                                    console.log(`[aniskip] ✔ Found segments via ${url.includes('v1') ? 'v1' : 'v2'} API for ID ${id}`);
+                                    console.log(`[aniskip] Ã¢Å“â€ Found segments via ${url.includes('v1') ? 'v1' : 'v2'} API for ID ${id}`);
                                     animeSkipCache.set(cacheKey, parsed);
                                     applyApiSkipSegments(parsed);
                                     updateSkipSegmentButton();
@@ -10125,7 +10312,7 @@
             });
         }
 
-        // User preferences — persisted across sessions
+        // User preferences Ã¢â‚¬â€ persisted across sessions
         let autoEpisodeEnabled = localStorage.getItem('pref_autoEpisode') !== 'false';
         let autoSkipIntroEnabled = localStorage.getItem('pref_autoSkipIntro') === 'true';
         let autoSkipOutroEnabled = localStorage.getItem('pref_autoSkipOutro') === 'true';
@@ -10591,7 +10778,7 @@
 
         // -----------------------------------------------------------------------
         //  PROVIDER PROGRESS CHIPS
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         function buildChips() {
             progress.innerHTML = '';
             activeProviders.forEach(p => {
@@ -10604,12 +10791,14 @@
         }
         function chipState(provider, state) {
             const el = document.getElementById(`chip-${provider}`);
-            if (el) el.className = `prov-chip ${state}`;
+            if (!el) return;
+            el.classList.remove('trying', 'success', 'failed');
+            if (state) el.classList.add(state);
         }
 
         // -----------------------------------------------------------------------
         //  HEADER AUTO-HIDE
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         function resetHeaderTimer(e) {
             // Check suppression to avoid ghost-show on mobile
             if (Date.now() < suppressClicksUntil) return;
@@ -10627,7 +10816,7 @@
 
         // -----------------------------------------------------------------------
         //  PANEL TOGGLES
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         function positionMenuAbove(menu, button) {
             if (!menu || !button) return;
             if (menu === epPanel) {
@@ -11314,7 +11503,7 @@
                 if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
                 fullscreenPointerHandledAt = Date.now();
 
-                // ── iOS Pseudo-Fullscreen ──────────────────────────────────────
+                // Ã¢â€â‚¬Ã¢â€â‚¬ iOS Pseudo-Fullscreen Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
                 // iOS Safari's document.requestFullscreen() silently fails, and
                 // video.webkitEnterFullscreen() launches native AVKit which hides
                 // all custom UI (server switchers, skip buttons, episode list, etc.)
@@ -11352,7 +11541,7 @@
                         return;
                     }
 
-                    // ── iOS Pseudo-Fullscreen (PWA MODE ONLY) ──────────────────────
+                    // Ã¢â€â‚¬Ã¢â€â‚¬ iOS Pseudo-Fullscreen (PWA MODE ONLY) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
                     const html = document.documentElement;
                     const isPseudoFs = html.classList.contains('ios-pseudo-fs-active');
                     const fsIcon = fullscreenBtn.querySelector('i');
@@ -11360,22 +11549,22 @@
                     let rotateHintTimer = null;
 
                     if (!isPseudoFs) {
-                        // ── ENTER pseudo-fullscreen ──
+                        // Ã¢â€â‚¬Ã¢â€â‚¬ ENTER pseudo-fullscreen Ã¢â€â‚¬Ã¢â€â‚¬
                         // Save scroll position so we can restore it on exit
                         const scrollY = window.scrollY;
                         html.dataset.pseudoFsScrollY = scrollY;
 
-                        // ── TECHNIQUE 1: Auto-rotate screen ──────────────────────────
-                        // Toggle orientation: portrait ↔ landscape for fullscreen immersion
+                        // Ã¢â€â‚¬Ã¢â€â‚¬ TECHNIQUE 1: Auto-rotate screen Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+                        // Toggle orientation: portrait Ã¢â€ â€ landscape for fullscreen immersion
                         if (screen.orientation?.lock) {
                             const isCurrentlyLandscape = window.innerWidth > window.innerHeight;
                             const targetOrientation = isCurrentlyLandscape ? 'portrait' : 'landscape';
                             screen.orientation.lock(targetOrientation).catch(() => {
-                                // lock() not supported or denied — just continue
+                                // lock() not supported or denied Ã¢â‚¬â€ just continue
                             });
                         }
 
-                        // ── TECHNIQUE 2: Address-bar scroll-collapse ───────────────
+                        // Ã¢â€â‚¬Ã¢â€â‚¬ TECHNIQUE 2: Address-bar scroll-collapse Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
                         // Safari's URL bar is gesture-driven but it CAN be forced into
                         // its collapsed state by scrolling the page by at least 1px.
                         // We temporarily grow the body, scroll, then restore.
@@ -11384,7 +11573,7 @@
                             const prev = document.body.style.minHeight;
                             document.body.style.minHeight = `${window.innerHeight + 2}px`;
                             window.scrollTo({ top: 1, behavior: 'instant' });
-                            // After the bar has had time to animate closed (≈ 300ms),
+                            // After the bar has had time to animate closed (Ã¢â€°Ë† 300ms),
                             // remove the extra height and stay at top.
                             setTimeout(() => {
                                 document.body.style.minHeight = prev;
@@ -11415,7 +11604,7 @@
 
                         console.log('[ios-pseudo-fs] Entered pseudo-fullscreen');
                     } else {
-                        // ── EXIT pseudo-fullscreen ──
+                        // Ã¢â€â‚¬Ã¢â€â‚¬ EXIT pseudo-fullscreen Ã¢â€â‚¬Ã¢â€â‚¬
                         html.classList.remove('ios-pseudo-fs-active');
                         if (fsIcon) { fsIcon.className = 'fa-solid fa-expand'; }
                         if (rotateHint) rotateHint.classList.remove('show');
@@ -11434,7 +11623,7 @@
                     }
 
                     // Keep controls clearly visible after toggling so the user
-                    // has time to interact — holdControlsVisible prevents the
+                    // has time to interact Ã¢â‚¬â€ holdControlsVisible prevents the
                     // 3-second auto-hide from firing immediately on touch devices.
                     holdControlsVisible(4000);
                     syncFullscreenIcon();
@@ -11454,7 +11643,7 @@
                 }
             });
 
-            // ── iOS Pseudo-Fullscreen: Orientation + Visibility Handlers ──────
+            // Ã¢â€â‚¬Ã¢â€â‚¬ iOS Pseudo-Fullscreen: Orientation + Visibility Handlers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             if (IS_IOS) {
                 let iosOrientHintTimer = null;
 
@@ -11472,7 +11661,7 @@
                     if (!rotateHint) return;
                     const isPortrait = window.innerHeight > window.innerWidth;
                     if (isPortrait) {
-                        rotateHint.textContent = '⟳ Rotate for best experience';
+                        rotateHint.textContent = 'Ã¢Å¸Â³ Rotate for best experience';
                         rotateHint.classList.add('show');
                         if (iosOrientHintTimer) clearTimeout(iosOrientHintTimer);
                         iosOrientHintTimer = setTimeout(() => rotateHint.classList.remove('show'), 2500);
@@ -11490,10 +11679,10 @@
                 });
             }
 
-            // ── iOS "Add to Home Screen" banner ───────────────────────────────
+            // Ã¢â€â‚¬Ã¢â€â‚¬ iOS "Add to Home Screen" banner Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             // navigator.standalone is ONLY defined on iOS Safari.
-            //   true  = already running as installed PWA → never show banner
-            //   false = running in browser → show banner so user knows to install
+            //   true  = already running as installed PWA Ã¢â€ â€™ never show banner
+            //   false = running in browser Ã¢â€ â€™ show banner so user knows to install
             if (IS_IOS && navigator.standalone === false) {
                 const a2hsBanner  = document.getElementById('ios-a2hs-banner');
                 const a2hsClose   = document.getElementById('a2hs-close-btn');
@@ -11891,10 +12080,14 @@
                     if (cachedFrame) {
                         // Display cached frame immediately
                         showPreviewFrame(previewVideo, cachedFrame);
+                    } else if (window.previewUseCanvasFallbackOnly) {
+                        showPreviewPosterFallback(previewVideo);
                     } else if (window.previewPreferVideoElement && hasActivePreviewSource(previewVideo)) {
                         showPreviewFrame(previewVideo, null);
-                    } else if (!hasActivePreviewSource(previewVideo)) {
+                    } else if (hasActivePreviewSource(previewVideo)) {
                         showPreviewFrame(previewVideo, null);
+                    } else if (!hasActivePreviewSource(previewVideo)) {
+                        showPreviewPosterFallback(previewVideo);
                     }
 
                     const now = Date.now();
@@ -11932,6 +12125,16 @@
                 }
                 if (window.previewPreferVideoElement) window.previewSeekInFlight = false;
                 if (window.previewSeekInFlight) return;
+                if (isCurrentFlixHqStream() && video && (video.readyState < 3 || video.seeking)) {
+                    const rounded = Math.round(Number(window.previewTargetTime || 0));
+                    const cachedFrame = getPreviewFrameFromCache(rounded);
+                    if (cachedFrame) {
+                        showPreviewFrame(previewVideo, cachedFrame);
+                    } else {
+                        showPreviewPosterFallback(previewVideo);
+                    }
+                    return;
+                }
 
                 // ENHANCED: Canvas-only fallback for unstable preview pipelines.
                 if (window.previewPreferVideoElement) {
@@ -11964,7 +12167,7 @@
                     if (frameData) {
                         cachePreviewFrame(rounded, frameData);
                         showPreviewFrame(previewVideo, frameData);
-                    } else if (!hasActivePreviewSource(previewVideo)) {
+                    } else {
                         showPreviewPosterFallback(previewVideo);
                     }
                     return;
@@ -12000,7 +12203,7 @@
                             try {
                                 const levels = window.previewHlsInst.levels || [];
                                 // Use level 1 if available (middle quality), fallback to 0
-                                const targetLevel = levels.length > 1 ? 1 : 0;
+                                const targetLevel = isCurrentFlixHqStream() ? 0 : (levels.length > 1 ? 1 : 0);
                                 window.previewHlsInst.autoLevelCapping = targetLevel;
                                 window.previewHlsInst.currentLevel = targetLevel;
                                 window.previewHlsInst.nextLevel = targetLevel;
@@ -12253,7 +12456,7 @@
                 }
             });
 
-            // ─── ADVANCED INTERACTION HANDLER ───
+            // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ADVANCED INTERACTION HANDLER Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             // Handles: Double-tap Skip and Single-tap Hide. Play/pause stays on the play button only.
             function handleSurfaceInteraction(e) {
                 // UI Lock bypass
@@ -12362,7 +12565,7 @@
                     } else if (gestureType === 'volume') {
                         if (IS_IOS) {
                             // On iOS, video.volume is read-only (always 1). 
-                            // Use WebAudio GainNode — the only way to control volume on iOS.
+                            // Use WebAudio GainNode Ã¢â‚¬â€ the only way to control volume on iOS.
                             setVolumeBoost(Math.round(newVal * 100));
                         } else {
                             // Non-iOS: set video element volume directly
@@ -12391,7 +12594,7 @@
                     const dist = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
 
                     if (!isGesturing && !isUiLocked && duration < 300 && dist < 15) {
-                        // toggleControls() removed — visibility is handled by capture-phase blocker and bubble click handler
+                        // toggleControls() removed Ã¢â‚¬â€ visibility is handled by capture-phase blocker and bubble click handler
                     }
                 }
                 bOverlay.classList.remove('visible');
@@ -12455,7 +12658,7 @@
                     const dist = Math.sqrt(Math.pow(upEvent.clientX - startX, 2) + Math.pow(upEvent.clientY - startY, 2));
 
                     if (!isGesturing && !isUiLocked && duration < 300 && dist < 15) {
-                        // toggleControls() removed — visibility is handled by capture-phase blocker and bubble click handler
+                        // toggleControls() removed Ã¢â‚¬â€ visibility is handled by capture-phase blocker and bubble click handler
                     }
 
                     bOverlay.classList.remove('visible');
@@ -12473,7 +12676,7 @@
 
         // -----------------------------------------------------------------------
         //  MAIN INIT
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         async function init() {
             if (!TMDB_ID) { showError('Missing ID', 'No media ID was provided.'); return; }
 
@@ -12638,15 +12841,15 @@
                 } else if (currentIsLikelyAnime) {
                     // Anime detected: use only anime providers for best results
                     activeProviders = [...ANIME_PROVIDERS];
-                    console.log('🎌 Anime detected! Using anime-only providers:', activeProviders);
+                    console.log('Ã°Å¸Å½Å’ Anime detected! Using anime-only providers:', activeProviders);
                 } else if (MEDIA_TYPE === 'movie') {
                     // Non-anime movie: prioritize FlixHQ (fastest), then other non-anime providers
                     activeProviders = ['flixhq'];
-                    console.log('🎬 Non-anime movie: FlixHQ priority providers:', activeProviders);
+                    console.log('Ã°Å¸Å½Â¬ Non-anime movie: FlixHQ priority providers:', activeProviders);
                 } else if (isTv) {
                     // Non-anime TV: prioritize FlixHQ, then other non-anime providers
                     activeProviders = ['flixhq'];
-                    console.log('📺 Non-anime TV: FlixHQ priority providers:', activeProviders);
+                    console.log('Ã°Å¸â€œÂº Non-anime TV: FlixHQ priority providers:', activeProviders);
                 } else {
                     // Fallback for unknown types
                     activeProviders = ['flixhq', ...ANIME_PROVIDERS];
@@ -13696,7 +13899,7 @@
         function cleanEpisodeTitleText(value, episodeNo = 0) {
             let title = String(value || '').replace(/\s+/g, ' ').trim();
             title = title
-                .replace(/\s*(?:★|â˜…)\s*\d{1,3}%.*$/i, '')
+                .replace(/\s*(?:Ã¢Ëœâ€¦|ÃƒÂ¢Ã‹Å“Ã¢â‚¬Â¦)\s*\d{1,3}%.*$/i, '')
                 .replace(/\s+\d{1,3}%\s*Rate it!.*$/i, '')
                 .replace(/\s+Rate it!.*$/i, '')
                 .replace(/\s+[A-Z][a-z]+ \d{1,2}, \d{4}\b.*$/i, '')
@@ -14274,10 +14477,10 @@
             const apiOrigin = getProxyGatewayOrigin();
             const proxyUrls = currentIsLikelyAnime
                 ? [
-                    `${apiOrigin}/utils/proxy?url=${encodeURIComponent(tmdbSeasonUrl)}`,
+                    `${apiOrigin}${getMediaProxyPath(apiOrigin)}?url=${encodeURIComponent(tmdbSeasonUrl)}`,
                 ].filter(Boolean)
                 : [
-                    `${apiOrigin}/utils/proxy?url=${encodeURIComponent(tmdbSeasonUrl)}`,
+                    `${apiOrigin}${getMediaProxyPath(apiOrigin)}?url=${encodeURIComponent(tmdbSeasonUrl)}`,
                 ].filter(Boolean);
             for (const url of proxyUrls) {
                 try {
@@ -15263,11 +15466,11 @@
             nextEpisodeBtn.style.display = shouldShow ? 'inline-flex' : 'none';
 
             if (shouldShow && !_nextEpBtnWasVisible) {
-                // Just entered the last-30s window — start the countdown
+                // Just entered the last-30s window Ã¢â‚¬â€ start the countdown
                 _nextEpBtnWasVisible = true;
                 _startNextEpCountdown();
             } else if (!shouldShow && _nextEpBtnWasVisible) {
-                // Seeked back out — cancel the countdown
+                // Seeked back out Ã¢â‚¬â€ cancel the countdown
                 _nextEpBtnWasVisible = false;
                 _clearNextEpCountdown();
             }
@@ -15814,11 +16017,8 @@
                         if (provider === 'flixhq' && provEpisodeId) {
                             // remember last flixhq episodeId so UI can query available servers
                             window._lastFlixhqEpisodeId = provEpisodeId;
-                            // Start on Vidking, then keep the other FlixHQ servers available as fallbacks.
-                            watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=vidking${DIRECT_ONLY ? '&directOnly=true' : ''}`));
-                            watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=flixhq&strictServer=true${DIRECT_ONLY ? '&directOnly=true' : ''}`));
-                            watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=videasy${DIRECT_ONLY ? '&directOnly=true' : ''}`));
-                            watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}${DIRECT_ONLY ? '&directOnly=true' : ''}`));
+                            // Backend now benchmarks FlixHQ, VidKing, and Videasy in one request and returns fastest raw streams first.
+                            watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=auto${DIRECT_ONLY ? '&directOnly=true' : ''}`));
                         }
 
                         if ((provider !== 'flixhq' || (provider === 'flixhq' && MEDIA_TYPE === 'tv')) && !isVegamoviesProvider) {
@@ -15910,7 +16110,7 @@
                             low.includes('getm3u8') ||
                             low.includes('.mp4') ||
                             low.includes('.mpd');
-                        const isAllowedFlixhqEmbed = provider === 'flixhq' && (src?.isEmbed || src?.isIframe || /vidking\.net|\/embed/i.test(url));
+                        const isAllowedFlixhqEmbed = false;
                         if (!isAllowedFlixhqEmbed && (src?.isEmbed || src?.isIframe || low.includes('/embed') || low.includes('/iframe') || !isDirectPlayable)) {
                             return false;
                         }
@@ -15938,15 +16138,20 @@
                         const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
                         const isDub = src.isDub === true || src.dub === true || /\bdub\b/i.test(String(src.quality || ''));
                         const qualityLabel = src.quality || `Source ${i + 1}`;
+                        const flixhqServer = provider === 'flixhq' ? String(src.server || src.flixhqServer || '').trim() : '';
+                        const timingLabel = provider === 'flixhq' && Number.isFinite(Number(src.extractionTimeMs)) ? ` ${Math.round(Number(src.extractionTimeMs))}ms` : '';
+                        const providerPrefix = provider === 'flixhq' && flixhqServer ? `${providerLabel(provider)} ${flixhqServer}` : providerLabel(provider);
                         return {
-                            label: `${providerLabel(provider)} - ${qualityLabel}${(provider === 'animekai' || provider === 'animetsu') && isDub && !/\bdub/i.test(String(qualityLabel || '')) ? ' (Dub)' : ''}`,
+                            label: `${providerPrefix} - ${qualityLabel}${timingLabel}${(provider === 'animekai' || provider === 'animetsu') && isDub && !/\bdub/i.test(String(qualityLabel || '')) ? ' (Dub)' : ''}`,
                             audioLabel: isDub ? 'Dubbed' : (/\bsub/i.test(String(qualityLabel || '')) ? 'Subbed' : qualityLabel),
                             url: src.url,
                             isM3U8,
                             isEmbed,
                             referer: src.referer || data.headers?.Referer || null,
+                            origin: src.origin || data.headers?.Origin || null,
                             isDub,
                             provider,
+                            flixhqServer,
                         };
                     });
 
@@ -16074,7 +16279,7 @@
             const canvas = overlay.querySelector('canvas');
             if (!canvas) return false;
 
-            // Activate overlay immediately — spinner will show regardless of canvas success
+            // Activate overlay immediately Ã¢â‚¬â€ spinner will show regardless of canvas success
             let drewFrame = false;
 
             // Dimensions from the actual player wrap
@@ -16083,7 +16288,7 @@
             const vh = wrap ? wrap.offsetHeight : (window.innerHeight || 1080);
 
             // Helper: draw video frame onto canvas using object-fit:contain logic
-            // (exactly matches how #player-video renders — no zoom, no crop, letterbox/pillarbox)
+            // (exactly matches how #player-video renders Ã¢â‚¬â€ no zoom, no crop, letterbox/pillarbox)
             function drawVideoToCanvas(src) {
                 if (!src || !src.videoWidth || src.readyState < 2) return false;
                 try {
@@ -16098,13 +16303,13 @@
                     let drawW, drawH, drawX, drawY;
                     // CONTAIN: fit the whole frame inside the canvas, preserve aspect ratio
                     if (vAspect > cAspect) {
-                        // Video is wider than canvas → fit width, letterbox top/bottom
+                        // Video is wider than canvas Ã¢â€ â€™ fit width, letterbox top/bottom
                         drawW = vw;
                         drawH = vw / vAspect;
                         drawX = 0;
                         drawY = (vh - drawH) / 2;
                     } else {
-                        // Video is taller than canvas → fit height, pillarbox left/right
+                        // Video is taller than canvas Ã¢â€ â€™ fit height, pillarbox left/right
                         drawH = vh;
                         drawW = vh * vAspect;
                         drawX = (vw - drawW) / 2;
@@ -16113,7 +16318,7 @@
                     ctx.drawImage(src, drawX, drawY, drawW, drawH);
                     return true;
                 } catch (e) {
-                    // SecurityError from tainted canvas — that's okay, spinner still shows
+                    // SecurityError from tainted canvas Ã¢â‚¬â€ that's okay, spinner still shows
                     return false;
                 }
             }
@@ -16125,7 +16330,7 @@
                 const previewVideo = document.getElementById('previewVideo');
                 drewFrame = drawVideoToCanvas(previewVideo);
                 if (!drewFrame && allowBlackFallback) {
-                    // 3. No live frame — draw the cover/poster image instead of plain black
+                    // 3. No live frame Ã¢â‚¬â€ draw the cover/poster image instead of plain black
                     if (currentCoverUrl) {
                         const img = new Image();
                         const coverSrc = getProxiedUrl(currentCoverUrl);
@@ -16426,33 +16631,37 @@
             loadStream(src.url, src.isM3U8, src.isEmbed, src.referer, idx, startTime);
         }
 
-        function proxiedStreamUrl(url, referer, provider = '') {
+        function getMediaProxyPath(mediaProxyOrigin) {
+            try {
+                const proxyHost = new URL(String(mediaProxyOrigin || ''), location.href).host;
+                const apiHost = new URL(String(activeApiBase || API_BASE || ''), location.href).host;
+                if (proxyHost && apiHost && proxyHost === apiHost) return '/utils/proxy';
+            } catch (_) { }
+            return '/proxy';
+        }
+
+        function proxiedStreamUrl(url, referer, provider = '', origin = '') {
             const rawUrl = String(url || '').trim();
             const providerName = String(provider || '').toLowerCase();
             // Cinezo already returns proxy-wrapped HLS links; avoid double-proxying those.
-            if (/\/(?:m3u8-proxy|utils\/proxy)(?:[/?]|$)/i.test(rawUrl)) {
+            if (/\/(?:m3u8-proxy|\/proxy)(?:[/?]|$)/i.test(rawUrl)) {
                 return rawUrl;
             }
             if (providerName === 'archive.org') {
-                const apiOrigin = RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY
+                const mediaProxyOrigin = RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY
                     ? location.origin
-                    : getProxyGatewayOrigin();
-                const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
-                return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(rawUrl)}${ref}`;
+                    : getMediaProxyOrigin();
+                const params = new URLSearchParams({ url: rawUrl });
+                if (referer) params.set('referer', String(referer));
+                if (origin) params.set('origin', String(origin));
+                return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
             }
-            // StreamRuby HLS often rejects server-side proxy requests (403) even with referer,
-            // but plays directly in browser context.
-            if (/https?:\/\/[^/]*streamruby\.net\//i.test(rawUrl) && providerName !== 'justanime') {
-                return rawUrl;
-            }
-            // VegaMovies tokenized URLs are unstable with reverse proxy overhead;
-            // direct browser access often succeeds where proxy fails.
-            if (providerName === 'vegamovies') {
-                return rawUrl;
-            }
-            const apiOrigin = getProxyGatewayOrigin();
-            const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
-            return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(rawUrl)}${ref}`;
+            // Route all streaming URLs through the media proxy for consistent CORS/header handling.
+            const mediaProxyOrigin = getMediaProxyOrigin();
+            const params = new URLSearchParams({ url: rawUrl });
+            if (referer) params.set('referer', String(referer));
+            if (origin) params.set('origin', String(origin));
+            return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
         }
 
         function warmupPreviewVideo(previewVideo) {
@@ -16485,29 +16694,32 @@
             }
         }
 
-        function clearVideoMediaSource(videoEl = video) {
+        function clearVideoMediaSource(videoEl = video, callLoad = true) {
             if (!videoEl) return;
             try {
                 videoEl.removeAttribute('src');
                 videoEl.src = '';
-                videoEl.load();
+                if (callLoad) videoEl.load();
             } catch (_) { }
         }
 
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) {
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
-            const sourceProvider = String(allSources?.[srcIdx]?.provider || '').toLowerCase();
+            const selectedSource = allSources?.[srcIdx] || {};
+            const sourceProvider = String(selectedSource?.provider || '').toLowerCase();
+            if (sourceProvider) chipState(sourceProvider, 'success');
+            const sourceOrigin = selectedSource?.origin || null;
             const rawStreamUrlLower = String(url || '').toLowerCase();
             const isFlixhqProtectedCdn =
                 sourceProvider === 'flixhq' &&
-                /nightspeedster\.app|vidking\.net|weneverbeenfree\.com|megacloud|upcloud|vidcloud|hydrogen|easy\./i.test(rawStreamUrlLower);
+                /goldweather\.net|nightspeedster\.app|vidking\.net|weneverbeenfree\.com|tropicalforesty\.uk|megacloud|upcloud|vidcloud|hydrogen|easy\./i.test(rawStreamUrlLower);
             const proxyOnlyProvider =
                 sourceProvider === 'justanime' ||
                 sourceProvider === 'animesalt' ||
                 sourceProvider === 'animetsu' ||
                 isFlixhqProtectedCdn;
             const resumeTargetTime = Math.max(0, Number(startTime || 0));
-            const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 20;
+            const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 600;
             let nextSourceFallbackUsed = false;
             let sourceContextActive = true;
             let cancelHlsStartupWatchdog = () => { };
@@ -16560,11 +16772,15 @@
                                 const label = String(s?.label || s?.server || s?.quality || '').toLowerCase();
                                 const candidateUrl = String(s?.url || '').toLowerCase();
                                 return (
+                                    (/raze/.test(label) ? 1000 : 0) +
+                                    (/cypher|sage|fade|yoru/.test(label) ? 700 : 0) +
+                                    (/videasy/.test(label) ? 450 : 0) +
                                     (/backup/.test(label) ? 90 : 0) +
                                     (/flixhq\s*-\s*flixhq/.test(label) ? 80 : 0) +
                                     (/weneverbeenfree|flixhq/.test(candidateUrl) ? 60 : 0) +
-                                    (/vidking/.test(label) ? 35 : 0) +
-                                    (/videasy|nightspeedster/.test(label + ' ' + candidateUrl) ? -25 : 0) +
+                                    (/vidking/.test(label) ? 15 : 0) -
+                                    (/hydrogen/.test(label) ? 800 : 0) +
+                                    (/nightspeedster/.test(label + ' ' + candidateUrl) ? -25 : 0) +
                                     (i > srcIdx ? 5 : 0)
                                 );
                             };
@@ -16607,7 +16823,7 @@
                 if (String(sourceProvider || '').toLowerCase() !== 'flixhq') return false;
                 const mediaType = String(MEDIA_TYPE || '').toLowerCase();
                 if (mediaType !== 'movie' && mediaType !== 'tv') return false;
-                const candidateServers = ['vidking', 'flixhq', 'videasy'];
+                const candidateServers = ['auto', 'vidking', 'flixhq', 'videasy'];
                 for (const serverName of candidateServers) {
                     try {
                         const watchParams = new URLSearchParams();
@@ -16691,6 +16907,9 @@
             hlsFragErrorBurst = 0;
             hlsSessionIsFragile = false;
             initialSeekDone = false;
+            if (useWarmStartResume) {
+                initialSeekDone = true;
+            }
             lastRequestedPlaybackTarget = effectiveStartTime;
             jumpCooldownUntil = 0;
             jumpInFlightUntil = 0;
@@ -16741,7 +16960,7 @@
             }
 
             // Visual Bridge: capture current frame before we wipe anything.
-            // Skip on the very first load — the #loader (with cover art) is already
+            // Skip on the very first load Ã¢â‚¬â€ the #loader (with cover art) is already
             // covering everything, so there's no black gap to bridge.
             if (!isFirstLoad) {
                 captureVideoFrameToOverlay();
@@ -16762,7 +16981,7 @@
             if (plyr) { try { plyr.destroy(); } catch (_) { } plyr = null; }
 
             // Prepare video element with extra attributes for better mobile/chrome compatibility
-            // Overlay is already 'active' from captureVideoFrameToOverlay() — keep it visible
+            // Overlay is already 'active' from captureVideoFrameToOverlay() Ã¢â‚¬â€ keep it visible
             // so there's NO flash of a resized/blank video during teardown
             const overlay = document.getElementById('transition-overlay');
             if (!isFirstLoad && overlay && !overlay.classList.contains('active')) {
@@ -16987,7 +17206,7 @@
             // 1. HLS with hls.js
             if (isM3U8 && Hls.isSupported()) {
                 console.log('Branch: HLS.js');
-                const streamUrl = proxiedStreamUrl(url, referer, sourceProvider);
+                const streamUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin);
                 // Track whether we've already tried the raw (unproxied) URL.
                 // Some CDNs (e.g. satoru.one) block reverse-proxy user agents with 502/403
                 // but allow direct browser access, so we fall back to raw after proxy failure.
@@ -16998,7 +17217,7 @@
                     if (hlsDirectFallbackAttempted) return false;
                     hlsDirectFallbackAttempted = true;
                     const directUrl = String(url || '').trim();
-                    if (!directUrl || directUrl === streamUrl) return false; // same URL — nothing to try
+                    if (!directUrl || directUrl === streamUrl) return false; // same URL Ã¢â‚¬â€ nothing to try
                     console.warn('[hls] Proxy returned error; retrying with direct (unproxied) URL:', directUrl);
                     showBufferingOverlay();
                     try {
@@ -17203,17 +17422,23 @@
                         window.previewHlsErrorCount = 0;
                         window.previewHlsIsUnhealthy = true;
                         console.log('[preview] Using canvas-only preview mode for stream stability.');
+                        try {
+                            previewVideo.removeAttribute('src');
+                            previewVideo.src = '';
+                            previewVideo.load();
+                        } catch (_) { }
+                        showPreviewPosterFallback(previewVideo);
                         warmupPreviewVideo(previewVideo);
                     } else {
                     try {
                         previewVideo.removeAttribute('src');
                         previewVideo.load();
                     } catch (_) { }
-                    window.previewHlsInst = svCreateHlsInstance(0, true);
+                    window.previewHlsInst = svCreateHlsInstance(0, true, currentSourceProvider);
                     window.previewHlsInst.on(Hls.Events.MANIFEST_LOADED, () => {
                         // ENHANCED: Use level 1 (if available) instead of always lowest for better quality
                         if (window.previewHlsInst.levels && window.previewHlsInst.levels.length > 1) {
-                            const targetLevel = 1; // Medium quality
+                            const targetLevel = currentSourceProvider === 'flixhq' ? 0 : 1; // FlixHQ previews stay lightweight
                             window.previewHlsInst.autoLevelCapping = targetLevel;
                             window.previewHlsInst.currentLevel = targetLevel;
                             window.previewHlsInst.nextLevel = targetLevel;
@@ -17276,7 +17501,7 @@
                     window.previewHlsErrorCount = 0;
                     window.previewHlsIsUnhealthy = false;
 
-                    warmupPreviewVideo(previewVideo);
+                    showPreviewPosterFallback(previewVideo);
                     }
                 }
 
@@ -17289,7 +17514,7 @@
                 console.log('Branch: Native HLS (iOS Safari/WebKit)');
                 // On iOS, crossOrigin='anonymous' triggers CORS preflight for every segment
                 // request, which can cause failures when the CDN doesn't support CORS.
-                // Remove it for native HLS — canvas thumbnail capture isn't used on iOS.
+                // Remove it for native HLS Ã¢â‚¬â€ canvas thumbnail capture isn't used on iOS.
                 // Exception: 'justanime' keeps external subtitles as direct text tracks when possible.
                 // If we remove crossorigin, iOS WebKit instantly crashes the <video> when the <track> is added.
                 video.setAttribute('crossorigin', 'anonymous');
@@ -17304,7 +17529,7 @@
                 setTimeout(() => { if (video) activateTracksForIOSNativePlayer(); }, 2000);
                 }
 
-                const proxiedUrl = proxiedStreamUrl(url, referer, sourceProvider);
+                const proxiedUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin);
                 const directUrl = url;
                 let fallbackStep = 0; // 0=proxy, 1=proxy-retry, 2=direct
 
@@ -17331,7 +17556,7 @@
                             });
                             return;
                         }
-                        // Try direct URL (without proxy) — works when CDN allows browser access
+                        // Try direct URL (without proxy) Ã¢â‚¬â€ works when CDN allows browser access
                         console.warn('Native HLS: trying direct URL (no proxy)');
                         video.src = directUrl;
                         video.load();
@@ -17357,7 +17582,7 @@
                     if (fallbackStep < 3) tryNextHlsStep('video_error');
                 });
 
-                // Detect stalling (give proxy 12s — it fetches the CDN manifest server-side)
+                // Detect stalling (give proxy 12s Ã¢â‚¬â€ it fetches the CDN manifest server-side)
                 const hlsStallTimer = setTimeout(() => {
                     if (video && video.readyState < 2) {
                         console.warn('Native HLS: Stalling at start, attempting fallback');
@@ -17368,7 +17593,7 @@
                 video.addEventListener('canplay', () => clearTimeout(hlsStallTimer), { once: true });
                 video.addEventListener('playing', () => clearTimeout(hlsStallTimer), { once: true });
 
-                // Refresh audio track UI once metadata is parsed — iOS populates
+                // Refresh audio track UI once metadata is parsed Ã¢â‚¬â€ iOS populates
                 // video.audioTracks only AFTER loadedmetadata fires.
                 video.addEventListener('loadedmetadata', () => {
                     svApplyPreferredAudioToHls(null);
@@ -17426,7 +17651,7 @@
 
             } else if (isMPD && window.dashjs?.MediaPlayer) {
                 console.log('Branch: DASH.js');
-                const mpdUrl = proxiedStreamUrl(url, referer, sourceProvider);
+                const mpdUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin);
                 dashInst = window.dashjs.MediaPlayer().create();
                 dashInst.initialize(video, mpdUrl, true);
                 let dashErrCount = 0;
@@ -17527,15 +17752,14 @@
                         video.currentTime = startTime;
                     }, { once: true });
                 }
-                const proxiedMp4Url = proxiedStreamUrl(url, referer, sourceProvider);
+                const proxiedMp4Url = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin);
                 const directMp4Url = url;
                 const isArchiveDirect = String(sourceProvider || '').toLowerCase() === 'archive.org';
                 let triedDirectFallback = false;
                 let triedArchiveBackendProxyFallback = false;
                 const getArchiveBackendProxyUrl = () => {
-                    const apiOrigin = getProxyGatewayOrigin();
-                    const ref = referer ? `&referer=${encodeURIComponent(referer)}` : '';
-                    return `${apiOrigin}/utils/proxy?url=${encodeURIComponent(directMp4Url)}${ref}`;
+                    const mediaProxyOrigin = getMediaProxyOrigin();
+                    return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(directMp4Url)}`;
                 };
                 const tryArchiveBackendProxyFallback = () => {
                     if (!isArchiveDirect || triedArchiveBackendProxyFallback) return false;
@@ -17777,6 +18001,18 @@
     }
 
 </style>
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
