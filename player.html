@@ -16676,7 +16676,7 @@
                 if (origin) params.set('origin', String(origin));
                 return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
             }
-            if (providerName === 'flixhq' && /\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
+            if (/\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
                 const mediaProxyOrigin = getMediaProxyOrigin();
                 try {
                     const parsed = new URL(rawUrl);
@@ -16750,6 +16750,10 @@
                 sourceProvider === 'animesalt' ||
                 sourceProvider === 'animetsu' ||
                 isFlixhqProtectedCdn;
+            const originalStreamUrl = String(url || '').trim();
+            if (isM3U8 && originalStreamUrl) {
+                url = proxiedStreamUrl(originalStreamUrl, referer, sourceProvider, sourceOrigin);
+            }
             const resumeTargetTime = Math.max(0, Number(startTime || 0));
             const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 600;
             let nextSourceFallbackUsed = false;
