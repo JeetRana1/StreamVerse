@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -3863,9 +3863,24 @@
             }
         }
 
+        function normalizeStreamReferer(provider, src = {}, fallbackReferer = '') {
+            const providerName = String(provider || src.provider || '').toLowerCase();
+            const rawUrl = String(src?.url || '').toLowerCase();
+            const serverName = String(src?.server || src?.flixhqServer || '').toLowerCase();
+            const headerReferer = src?.headers?.Referer || src?.headers?.referer || fallbackReferer || src?.referer || '';
+            const isVidkingStream = serverName.includes('vidking') || /goldweather\.net|vidking\.net/i.test(rawUrl);
+            if (isVidkingStream) return 'https://www.vidking.net/';
+            const isFlixhqStream = providerName === 'flixhq' || /sb\d|mooncarpet|hydrogen|nightspeedster/i.test(rawUrl);
+            if (isFlixhqStream) return 'https://flixhq.one/';
+            return headerReferer || '';
+        }
+
         async function normalizeProviderSources(provider, rows, fallbackReferer = '') {
             if (!Array.isArray(rows) || !rows.length) return [];
-            return rows;
+            return rows.map((src) => ({
+                ...src,
+                referer: normalizeStreamReferer(provider, src, fallbackReferer),
+            }));
         }
         let preferredSourceLabelMatch = PARAMS_BOOT.get('audio') || null; // Persistence for Sub/Dub preference
         if (preferredSourceLabelMatch && !['subbed', 'dubbed'].includes(preferredSourceLabelMatch.toLowerCase())) {
@@ -16147,7 +16162,7 @@
                             url: src.url,
                             isM3U8,
                             isEmbed,
-                            referer: src.referer || data.headers?.Referer || null,
+                            referer: normalizeStreamReferer(provider, src, data.headers?.Referer || null),
                             origin: src.origin || data.headers?.Origin || null,
                             isDub,
                             provider,
@@ -16652,14 +16667,27 @@
                     ? location.origin
                     : getMediaProxyOrigin();
                 const params = new URLSearchParams({ url: rawUrl });
-                if (referer) params.set('referer', String(referer));
+                const safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
+                if (safeReferer) params.set('referer', String(safeReferer));
                 if (origin) params.set('origin', String(origin));
                 return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
+            }
+            if (providerName === 'flixhq' && /\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
+                const mediaProxyOrigin = getMediaProxyOrigin();
+                try {
+                    const parsed = new URL(rawUrl);
+                    const safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
+                    const proxyPath = `${mediaProxyOrigin}/proxy/hls/${parsed.host}${parsed.pathname}${parsed.search}`;
+                    return safeReferer ? `${proxyPath}${proxyPath.includes('?') ? '&' : '?'}referer=${encodeURIComponent(safeReferer)}` : proxyPath;
+                } catch (_) {
+                    return rawUrl;
+                }
             }
             // Route all streaming URLs through the media proxy for consistent CORS/header handling.
             const mediaProxyOrigin = getMediaProxyOrigin();
             const params = new URLSearchParams({ url: rawUrl });
-            if (referer) params.set('referer', String(referer));
+            const safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
+            if (safeReferer) params.set('referer', String(safeReferer));
             if (origin) params.set('origin', String(origin));
             return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
         }
@@ -16872,7 +16900,7 @@
                                     url: src.url,
                                     isM3U8,
                                     isEmbed,
-                                    referer: src.referer || payload?.headers?.Referer || null,
+                                    referer: normalizeStreamReferer('flixhq', src, payload?.headers?.Referer || null),
                                     provider: 'flixhq',
                                 };
                             });
