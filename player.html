@@ -3597,7 +3597,9 @@
                 <button class="ctrl-icon" id="preferencesBtn" aria-label="Preferences">
                     <i class="fa-solid fa-gears"></i>
                 </button>
-                <button class="ctrl-icon" id="fitBtn" aria-label="Screen Fit">
+                <button class="ctrl-icon" id="watchTogetherBtn" aria-label="Watch Together">
+                    <i class="fa-solid fa-user-group"></i>
+                </button>                <button class="ctrl-icon" id="fitBtn" aria-label="Screen Fit">
                     <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
                 </button>
                 <button class="ctrl-icon" id="muteBtn" aria-label="Mute">
@@ -3872,6 +3874,7 @@
             const rawUrl = String(src?.url || '').toLowerCase();
             const serverName = String(src?.server || src?.flixhqServer || '').toLowerCase();
             const headerReferer = src?.headers?.Referer || src?.headers?.referer || fallbackReferer || src?.referer || '';
+            if (providerName === 'animetsu' || /swiftstream\.top/i.test(rawUrl)) return 'https://animetsu.net/';
             const isVidkingStream = serverName.includes('vidking') || /goldweather\.net|vidking\.net/i.test(rawUrl);
             if (isVidkingStream) return 'https://www.vidking.net/';
             const isFlixhqStream = providerName === 'flixhq' || /sb\d|mooncarpet|hydrogen|nightspeedster/i.test(rawUrl);
@@ -3886,7 +3889,21 @@
                 referer: normalizeStreamReferer(provider, src, fallbackReferer),
             }));
         }
-        let preferredSourceLabelMatch = PARAMS_BOOT.get('audio') || null; // Persistence for Sub/Dub preference
+        const ANIME_AUDIO_PREF_KEY = 'streamverse_anime_audio_mode';
+        const readSavedAnimeAudioMode = () => {
+            try {
+                const value = String(localStorage.getItem(ANIME_AUDIO_PREF_KEY) || '').trim().toLowerCase();
+                return ['subbed', 'dubbed'].includes(value) ? value : '';
+            } catch (_) {
+                return '';
+            }
+        };
+        const saveAnimeAudioMode = (mode) => {
+            const normalized = String(mode || '').trim().toLowerCase();
+            if (!['subbed', 'dubbed'].includes(normalized)) return;
+            try { localStorage.setItem(ANIME_AUDIO_PREF_KEY, normalized); } catch (_) { }
+        };
+        let preferredSourceLabelMatch = PARAMS_BOOT.get('audio') || readSavedAnimeAudioMode() || null; // Persistence for Sub/Dub preference
         if (preferredSourceLabelMatch && !['subbed', 'dubbed'].includes(preferredSourceLabelMatch.toLowerCase())) {
             // If we have a custom token but not sub/dub, it's probably an HLS track pref
             // We'll keep it as is.
@@ -4011,7 +4028,7 @@
         const MEDIA_TYPE = (rawType === 'undefined' || !rawType) ? 'movie' : rawType;
         let FORCED_PROVIDER = params.get('provider') || '';
         if (String(FORCED_PROVIDER || '').toLowerCase() === 'animetsu' && !preferredSourceLabelMatch) {
-            preferredSourceLabelMatch = 'subbed';
+            preferredSourceLabelMatch = readSavedAnimeAudioMode() || 'subbed';
         }
         const DIRECT_ONLY = (params.get('directOnly') || 'true').toLowerCase() !== 'false';
         const URL_SEASON = Number(params.get('season') || 0);
@@ -4111,6 +4128,7 @@
         const qualityBtn = document.getElementById('qualityBtn');
         const playbackBtn = document.getElementById('playbackBtn');
         const preferencesBtn = document.getElementById('preferencesBtn');
+        const watchTogetherBtn = document.getElementById('watchTogetherBtn');
         const fitBtn = document.getElementById('fitBtn');
         const muteBtn = document.getElementById('muteBtn');
         const muteStatusToast = document.getElementById('mute-status-toast');
@@ -4148,6 +4166,29 @@
             externalSubtitleTracks = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
             window.externalSubtitleTracks = externalSubtitleTracks;
             return externalSubtitleTracks;
+        }
+
+        function getActiveExternalSubtitleTracks() {
+            if (!Array.isArray(externalSubtitleTracks) || externalSubtitleTracks.length === 0) return [];
+
+            const activeProvider = String(
+                currentStreamProvider ||
+                allSources?.[currentIdx]?.provider ||
+                allSources?.[currentIdx]?.sourceProvider ||
+                ''
+            ).toLowerCase();
+
+            if (!activeProvider) return externalSubtitleTracks;
+
+            const providerMatches = externalSubtitleTracks.filter((track) => {
+                const trackProvider = String(track?.provider || '').toLowerCase();
+                return !trackProvider || trackProvider === activeProvider;
+            });
+
+            return providerMatches.length ? providerMatches : externalSubtitleTracks.filter((track) => {
+                const trackProvider = String(track?.provider || '').toLowerCase();
+                return !trackProvider || trackProvider === 'animesalt';
+            });
         }
         const animeSubtitleCache = new Map();
         const justanimeAnimeIdCache = new Map(); // show-title -> justanime anime ID, persists across episodes
@@ -4216,7 +4257,7 @@
         let hasApiSkipSegments = false;
         let lastSuccessfulProvider = '';
         let satoruAudioSources = []; // background-fetched satoru sources used as virtual audio tracks
-        let currentAudioSource = 'animesalt'; // active stream provider for virtual/audio switching
+        let currentAudioSource = 'animetsu'; // active stream provider for virtual/audio switching
         let activeSatoruTrackIndex = -1; // -1 means none, or index in satoruAudioSources
         const ANIME_PROVIDER_INFO_CACHE_TTL_MS = 30 * 60 * 1000;
         const animeProviderInfoCache = new Map();
@@ -4812,7 +4853,7 @@
             if (FORCED_PROVIDER) u.searchParams.set('provider', FORCED_PROVIDER);
             else u.searchParams.delete('provider');
 
-            const audioVal = preferredAudioToken || preferredSourceLabelMatch;
+            const audioVal = preferredAudioToken || preferredSourceLabelMatch || (currentIsLikelyAnime ? readSavedAnimeAudioMode() : '');
             if (audioVal) u.searchParams.set('audio', audioVal);
             else u.searchParams.delete('audio');
 
@@ -4823,6 +4864,10 @@
             }
 
             history.replaceState(null, '', u.toString());
+            if (typeof window !== 'undefined') window.dispatchEvent(new Event('streamverse:routechange'));
+            if (watchPartyRole === 'host' && watchPartyRoomCode && typeof watchPartyScheduleHostRouteSync === 'function') {
+                watchPartyScheduleHostRouteSync();
+            }
         }
 
         function getActiveAnimeProviderName() {
@@ -5328,7 +5373,16 @@
             hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, () => {
                 const tracks = hls.audioTracks || [];
                 const sel = tracks[hls.audioTrack];
-                if (sel) rememberAudioPreference(sel);
+                if (sel) {
+                    rememberAudioPreference(sel);
+                    watchPartyEmitHostControl('audio', {
+                        kind: 'hls',
+                        label: sel.name || sel.lang || sel.language || 'Default',
+                        trackId: sel.id ?? hls.audioTrack,
+                        name: sel.name || '',
+                        lang: sel.lang || sel.language || '',
+                    });
+                }
                 updateAudioTracks();
             });
 
@@ -5888,14 +5942,14 @@
             // ENHANCED: For audio track switching, reuse HLS instance if possible
             if (isAudioTrackSwitch && hlsInst) {
                 console.log('Seamless audio track switch detected, reusing HLS instance');
-                hlsInst.loadSource(proxiedStreamUrl(url, referer, '', sourceOrigin));
+                hlsInst.loadSource(proxiedStreamUrl(url, referer, currentStreamProvider, sourceOrigin, true));
                 try {
                     hlsInst.startLoad(Math.max(0, targetTime - 0.8));
                 } catch (_) { }
             } else {
                 hlsInst = svCreateHlsInstance(targetTime, false, currentStreamProvider);
                 svAttachHlsListeners(hlsInst, targetTime, onReady);
-                hlsInst.loadSource(proxiedStreamUrl(url, referer, '', sourceOrigin));
+                hlsInst.loadSource(proxiedStreamUrl(url, referer, currentStreamProvider, sourceOrigin, true));
                 hlsInst.attachMedia(video);
                 try {
                     hlsInst.startLoad(Math.max(0, targetTime - 0.8));
@@ -7463,12 +7517,6 @@
             );
             if (exactTitleMatch) return true;
 
-            const strongTitleMatch = candidateTitles.some((candidateTitle) => {
-                const quality = getTitleMatchQuality(candidateTitle, wantedTitle);
-                return quality.strong && quality.contains;
-            });
-            if (strongTitleMatch) return true;
-
             const combined = [
                 ...candidateTitles,
                 row?.id,
@@ -7477,7 +7525,17 @@
                 row?.name,
             ].filter(Boolean).join(' ');
             const compactCombined = normalizeAnimeSearchQuery(combined).toLowerCase().replace(/[^a-z0-9]+/g, '');
-            if (compactCombined.includes(normalizeAnimeSearchQuery(wantedTitle).toLowerCase().replace(/[^a-z0-9]+/g, ''))) return true;
+            const compactWanted = normalizeAnimeSearchQuery(wantedTitle).toLowerCase().replace(/[^a-z0-9]+/g, '');
+            if (compactWanted === 'pokemon') {
+                return compactCombined === 'pokemon' || compactCombined.includes('pokemontheseriesthebeginning');
+            }
+
+            const strongTitleMatch = candidateTitles.some((candidateTitle) => {
+                const quality = getTitleMatchQuality(candidateTitle, wantedTitle);
+                return quality.strong && quality.contains;
+            });
+            if (strongTitleMatch) return true;
+            if (compactCombined.includes(compactWanted)) return true;
 
             return compactCombined.includes('pokemontheseriesthebeginning');
         }
@@ -8433,7 +8491,14 @@
                 console.log('[sub] track src Ã¢â€ â€™ /utils/vtt proxy:', rawSrc.slice(0, 60));
                 const subtitleProvider = String(sub?.provider || '').toLowerCase();
                 const subtitleHost = (() => { try { return new URL(rawSrc, location.href).hostname; } catch (_) { return ''; } })();
-                if (IS_IOS || subtitleProvider === 'flixhq' || subtitleProvider === 'animesalt' || /(^|\.)qqqcdn\.cloud$/i.test(subtitleHost)) return vttUrl;
+                if (
+                    IS_IOS ||
+                    subtitleProvider === 'flixhq' ||
+                    subtitleProvider === 'animesalt' ||
+                    /(^|\.)qqqcdn\.cloud$/i.test(subtitleHost) ||
+                    /(^|\.)swiftstream\.top$/i.test(subtitleHost) ||
+                    /(^|\.)subst\.krussdomi\.com$/i.test(subtitleHost)
+                ) return vttUrl;
             } catch (_) { /* fall through to legacy data URI path */ }
 
             const proxied = proxiedStreamUrl(rawSrc, sub?.referer || null);
@@ -8567,7 +8632,13 @@
                             subtitleBlobCache.set(lower, vttContent);
                             const subtitleProvider = String(sub?.provider || "").toLowerCase();
                             const subtitleHost = (() => { try { return new URL(rawSrc, location.href).hostname; } catch (_) { return ""; } })();
-                            if (subtitleProvider === "flixhq" || subtitleProvider === "animesalt" || /(^|\.)qqqcdn\.cloud$/i.test(subtitleHost)) return vttUrl;
+                            if (
+                                subtitleProvider === "flixhq" ||
+                                subtitleProvider === "animesalt" ||
+                                /(^|\.)qqqcdn\.cloud$/i.test(subtitleHost) ||
+                                /(^|\.)swiftstream\.top$/i.test(subtitleHost) ||
+                                /(^|\.)subst\.krussdomi\.com$/i.test(subtitleHost)
+                            ) return vttUrl;
                             return toVttBlobUrl(vttContent);
                         }
                     } catch (e) { console.warn('Sub fetch fail:', e); }
@@ -8587,7 +8658,8 @@
 
         function applyExternalSubtitlesToVideoSync(videoEl) {
             if (!IS_IOS) return;
-            if (!videoEl || !Array.isArray(window.externalSubtitleTracks) || window.externalSubtitleTracks.length === 0) return;
+            const activeTracks = getActiveExternalSubtitleTracks();
+            if (!videoEl || activeTracks.length === 0) return;
 
             // Derive API origin for proxy. Must point to the BACKEND server, not the frontend origin.
             let apiOrigin = '';
@@ -8600,7 +8672,7 @@
             console.log('[sub] iOS Sync Injection using API Origin:', apiOrigin);
             videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach(t => t.remove());
 
-            (window.externalSubtitleTracks || []).forEach((sub, i) => {
+            activeTracks.forEach((sub, i) => {
                 const track = document.createElement('track');
                 track.kind = 'captions';
                 track.label = sub.label || `Subtitle ${i + 1}`;
@@ -8628,7 +8700,7 @@
                     }
                 } catch(e) { }
             });
-            console.log(`[sub] iOS Sync Injection complete: ${window.externalSubtitleTracks.length} tracks added.`);
+            console.log(`[sub] iOS Sync Injection complete: ${activeTracks.length} tracks added.`);
         }
 
         async function applyExternalSubtitlesToVideo(videoEl) {
@@ -8636,7 +8708,8 @@
             const applyVersion = ++subtitleApplyVersion;
             videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach((track) => track.remove());
 
-            if (!Array.isArray(externalSubtitleTracks) || externalSubtitleTracks.length === 0) {
+            const activeTracks = getActiveExternalSubtitleTracks();
+            if (!activeTracks.length) {
                 videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach((t) => t.remove());
                 updateCaptionsButtonVisibility();
                 buildCaptionsMenu();
@@ -8645,7 +8718,7 @@
 
 
             const prepared = await Promise.all(
-                externalSubtitleTracks.map(async (sub) => ({
+                activeTracks.map(async (sub) => ({
                     ...sub,
                     resolvedSrc: await resolveSubtitleTrackSrc(sub),
                 })),
@@ -9280,7 +9353,9 @@
             offItem.className = `menu-item ${activeIdx === -1 ? 'selected' : ''}`;
             offItem.textContent = 'Off';
             offItem.onclick = () => {
+                if (watchPartyRole === 'guest' && !watchPartyApplyingControl) return watchPartyToast('Only the host can control subtitles');
                 selectSubtitleTrack(-1);
+                watchPartyEmitHostControl('captions', { trackIndex: -1 });
             };
             captionsMenu.appendChild(offItem);
 
@@ -9290,7 +9365,9 @@
                 item.className = `menu-item ${idx === activeIdx ? 'selected' : ''}`;
                 item.textContent = label;
                 item.onclick = () => {
+                    if (watchPartyRole === 'guest' && !watchPartyApplyingControl) return watchPartyToast('Only the host can control subtitles');
                     selectSubtitleTrack(idx);
+                    watchPartyEmitHostControl('captions', { trackIndex: idx });
                 };
                 captionsMenu.appendChild(item);
             });
@@ -10112,7 +10189,9 @@
         }
 
         function showControlSurface() {
+            document.body.classList.add('watch-party-controls-visible');
             if (isUiLocked || !video) {
+                document.body.classList.remove('watch-party-controls-visible');
                 controlSurface.classList.remove('visible');
                 playerHeader.classList.add('hidden');
                 document.body.classList.toggle('player-cursor-hidden', !isUiLocked);
@@ -10145,6 +10224,7 @@
                     controlSurface.classList.remove('visible');
                     playerHeader.classList.add('hidden');
                     document.body.classList.add('player-cursor-hidden');
+                    document.body.classList.remove('watch-party-controls-visible');
                     closeCustomMenus();
                 }
             }, hideDelay);
@@ -10178,6 +10258,7 @@
         }
 
         function hideControlSurfaceNow() {
+            document.body.classList.remove('watch-party-controls-visible');
             clearTimeout(controlsHideTimer);
             clearTimeout(headerTimer);
             controlSurface.classList.remove('visible');
@@ -10305,8 +10386,10 @@
             autoItem.className = `menu-item ${isAuto ? 'selected' : ''}`;
             autoItem.textContent = 'Auto';
             autoItem.onclick = () => {
+                if (watchPartyRole === 'guest' && !watchPartyApplyingControl) return watchPartyToast('Only the host can control quality');
                 changeQuality(0);
                 buildQualityMenuItems();
+                watchPartyEmitHostControl('quality', { height: 0 });
             };
             qualityMenu.appendChild(autoItem);
 
@@ -10324,8 +10407,10 @@
                 item.className = `menu-item ${isSelected ? 'selected' : ''}`;
                 item.textContent = formatQualityLabel(h);
                 item.onclick = () => {
+                    if (watchPartyRole === 'guest' && !watchPartyApplyingControl) return watchPartyToast('Only the host can control quality');
                     changeQuality(h);
                     buildQualityMenuItems();
+                    watchPartyEmitHostControl('quality', { height: h });
                 };
                 qualityMenu.appendChild(item);
             });
@@ -10388,8 +10473,10 @@
                 item.style.flex = '1 0 calc(25% - 6px)';
                 item.textContent = `${rate}x`;
                 item.onclick = () => {
+                    if (watchPartyRole === 'guest' && !watchPartyApplyingControl) return watchPartyToast('Only the host can control playback speed');
                     if (video) video.playbackRate = rate;
                     buildPlaybackMenu();
+                    watchPartyEmitHostControl('playbackRate', { rate });
                 };
                 speedRow.appendChild(item);
             });
@@ -10508,9 +10595,14 @@
                 </div>
             `;
             introRow.querySelector('input').addEventListener('change', (e) => {
+                if (watchPartyRole === 'guest' && !watchPartyApplyingControl) {
+                    e.target.checked = autoSkipIntroEnabled;
+                    return watchPartyToast('Only the host can control auto skip');
+                }
                 autoSkipIntroEnabled = e.target.checked;
                 localStorage.setItem('pref_autoSkipIntro', autoSkipIntroEnabled ? 'true' : 'false');
                 updateSkipSegmentButton();
+                watchPartyEmitHostControl('autoSkipIntro', { enabled: autoSkipIntroEnabled });
             });
             preferencesMenu.appendChild(introRow);
 
@@ -10527,13 +10619,678 @@
                 </div>
             `;
             outroRow.querySelector('input').addEventListener('change', (e) => {
+                if (watchPartyRole === 'guest' && !watchPartyApplyingControl) {
+                    e.target.checked = autoSkipOutroEnabled;
+                    return watchPartyToast('Only the host can control auto skip');
+                }
                 autoSkipOutroEnabled = e.target.checked;
                 localStorage.setItem('pref_autoSkipOutro', autoSkipOutroEnabled ? 'true' : 'false');
                 updateSkipSegmentButton();
+                watchPartyEmitHostControl('autoSkipOutro', { enabled: autoSkipOutroEnabled });
             });
             preferencesMenu.appendChild(outroRow);
         }
 
+        const WATCH_PARTY_DRIFT_TOLERANCE = 0.12;
+        let watchPartySocket = null;
+        let watchPartyRoomCode = '';
+        let watchPartyRole = '';
+        let watchPartyName = '';
+        let watchPartyApplyingRemote = false;
+        let watchPartyApplyingControl = false;
+        let watchPartySeekTimer = null;
+        let watchPartyRouteEmitTimer = null;
+        let watchPartyLastRouteSignature = '';
+        let watchPartyLastRemoteState = null;
+        let watchPartyAutoJoinStarted = false;
+        let watchPartyMediaRedirectInFlight = false;
+        let watchPartyPanelReady = false;
+        let watchPartyPendingMessages = [];
+
+        function getWatchPartyWsUrl() {
+            const apiRoot = String(activeApiBase || API_BASE || '').replace(/\/meta\/tmdb\/?$/i, '');
+            try {
+                const parsed = new URL(apiRoot || location.origin, location.href);
+                parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+                parsed.pathname = '/watch-party/ws';
+                parsed.search = '';
+                parsed.hash = '';
+                return parsed.toString();
+            } catch (_) {
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                return `${protocol}//${location.host}/watch-party/ws`;
+            }
+        }
+
+        function watchPartySend(type, payload = {}) {
+            const message = JSON.stringify({ type, ...payload });
+            if (watchPartySocket?.readyState === WebSocket.OPEN) {
+                watchPartySocket.send(message);
+                return true;
+            }
+            if (watchPartySocket?.readyState === WebSocket.CONNECTING) {
+                watchPartyPendingMessages.push(message);
+                return true;
+            }
+            return false;
+        }
+
+        function watchPartyToast(message) {
+            if (typeof showToast === 'function') showToast(message);
+            else console.log('[watch-party]', message);
+        }
+
+        function ensureWatchPartySocket() {
+            if (watchPartySocket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(watchPartySocket.readyState)) return watchPartySocket;
+            watchPartySocket = new WebSocket(getWatchPartyWsUrl());
+            watchPartySocket.addEventListener('open', () => {
+                watchPartySetStatus('Connected');
+                watchPartySocket.send(JSON.stringify({ type: 'rooms:list' }));
+                const pending = watchPartyPendingMessages.splice(0);
+                pending.forEach((message) => watchPartySocket.send(message));
+            });
+            watchPartySocket.addEventListener('close', () => {
+                watchPartySetStatus('Disconnected');
+                document.body.classList.remove('watch-party-guest');
+            });
+            watchPartySocket.addEventListener('error', () => watchPartySetStatus('Connection error'));
+            watchPartySocket.addEventListener('message', (event) => {
+                let msg = null;
+                try { msg = JSON.parse(String(event.data || '{}')); } catch (_) { return; }
+                handleWatchPartyMessage(msg);
+            });
+            return watchPartySocket;
+        }
+
+        function initWatchTogether() {
+            if (!watchTogetherBtn || watchPartyPanelReady) return;
+            watchPartyPanelReady = true;
+            injectWatchPartyStyles();
+            renderWatchPartyPanel();
+            watchTogetherBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                ensureWatchPartySocket();
+                document.body.classList.toggle('watch-party-open');
+            });
+            document.addEventListener('click', interceptGuestPlayerControls, true);
+            window.addEventListener('streamverse:routechange', watchPartyScheduleHostRouteSync);
+            setInterval(watchPartyScheduleHostRouteSync, 1200);
+            const bootRoom = String(PARAMS_BOOT.get('wpRoom') || '').trim().toUpperCase();
+            if (bootRoom && !watchPartyAutoJoinStarted) {
+                watchPartyAutoJoinStarted = true;
+                ensureWatchPartySocket();
+                setTimeout(() => joinWatchPartyRoom(bootRoom), 250);
+            }
+        }
+
+        function injectWatchPartyStyles() {
+            if (document.getElementById('watchPartyStyles')) return;
+            const style = document.createElement('style');
+            style.id = 'watchPartyStyles';
+            style.textContent = `
+                #watchPartyPanel {
+                    position: fixed;
+                    top: 92px;
+                    right: 18px;
+                    bottom: 92px;
+                    width: min(380px, calc(100vw - 24px));
+                    z-index: 10040;
+                    display: none;
+                    grid-template-rows: auto 1fr;
+                    gap: 10px;
+                    color: #fff;
+                    font-family: Outfit, system-ui, sans-serif;
+                    pointer-events: auto;
+                }
+                body.watch-party-open #watchPartyPanel { display: grid; }
+                .watch-party-card,
+                .watch-party-chat {
+                    background: linear-gradient(145deg, rgba(22,22,26,.88), rgba(42,28,30,.76));
+                    border: 1px solid rgba(255,255,255,.14);
+                    box-shadow: 0 18px 56px rgba(0,0,0,.42);
+                    backdrop-filter: blur(22px);
+                    border-radius: 12px;
+                    padding: 14px;
+                    min-height: 0;
+                }
+                .watch-party-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+                .watch-party-head strong { font-size: 16px; }
+                .watch-party-close { width:34px; height:34px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.08); color:#fff; cursor:pointer; }
+                .watch-party-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+                .watch-party-card input,
+                .watch-party-chat input {
+                    width: 100%;
+                    min-width: 0;
+                    border: 1px solid rgba(255,255,255,.12);
+                    border-radius: 8px;
+                    background: rgba(0,0,0,.28);
+                    color: #fff;
+                    padding: 10px 11px;
+                    outline: none;
+                }
+                .watch-party-card button,
+                .watch-party-chat button {
+                    border: 1px solid rgba(255,255,255,.12);
+                    border-radius: 8px;
+                    background: rgba(255,255,255,.08);
+                    color: #fff;
+                    padding: 10px 11px;
+                    font-weight: 800;
+                    cursor: pointer;
+                }
+                .watch-party-card button.primary,
+                .watch-party-chat button { background:#ef0712; border-color:#ef0712; }
+                .watch-party-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:8px 0; }
+                .watch-party-toggle { display:flex; align-items:center; gap:8px; color:rgba(255,255,255,.78); font-size:13px; }
+                .watch-party-meta { margin-top:10px; font-size:13px; color:rgba(255,255,255,.72); line-height:1.45; }
+                .watch-party-code { color:#fff; font-weight:900; letter-spacing:.18em; }
+                .watch-party-public-list { display:grid; gap:6px; max-height:104px; overflow:auto; margin-top:8px; }
+                .watch-party-public-room { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px; border-radius:8px; background:rgba(255,255,255,.07); cursor:pointer; }
+                .watch-party-chat { display:grid; grid-template-rows:auto 1fr auto; }
+                #watchPartyMessages { min-height:0; overflow:auto; display:flex; flex-direction:column; gap:8px; padding-right:4px; }
+                .watch-party-message { background:rgba(255,255,255,.08); border-radius:8px; padding:8px; }
+                .watch-party-message small { display:block; color:rgba(255,255,255,.55); margin-bottom:3px; }
+                #watchPartyChatForm { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:10px; }
+                body.watch-party-guest #playPauseBtn,
+                body.watch-party-guest #skipBackBtn,
+                body.watch-party-guest #skipFwdBtn,
+                body.watch-party-guest .seek-wrapper,
+                body.watch-party-guest #customServerBtn,
+                body.watch-party-guest #customEpisodeBtn,
+                body.watch-party-guest #custom-audio-btn,
+                body.watch-party-guest #captionsBtn,
+                body.watch-party-guest #qualityBtn,
+                body.watch-party-guest #playbackBtn,
+                body.watch-party-guest #preferencesBtn,
+                body.watch-party-guest #fitBtn {
+                    opacity: .28;
+                    filter: grayscale(1) saturate(.25);
+                    cursor: not-allowed;
+                }
+                body.watch-party-guest #playPauseBtn:hover,
+                body.watch-party-guest #skipBackBtn:hover,
+                body.watch-party-guest #skipFwdBtn:hover,
+                body.watch-party-guest #customServerBtn:hover,
+                body.watch-party-guest #customEpisodeBtn:hover,
+                body.watch-party-guest #custom-audio-btn:hover,
+                body.watch-party-guest #captionsBtn:hover,
+                body.watch-party-guest #qualityBtn:hover,
+                body.watch-party-guest #playbackBtn:hover,
+                body.watch-party-guest #preferencesBtn:hover,
+                body.watch-party-guest #fitBtn:hover {
+                    background: rgba(255,255,255,.04);
+                    border-color: rgba(255,255,255,.08);
+                    transform: none;
+                }
+                .watch-party-guest-pill { position:fixed; left:50%; bottom:154px; transform:translate(-50%, 10px); z-index:10030; padding:9px 13px; border-radius:999px; background:rgba(16,16,18,.72); border:1px solid rgba(255,255,255,.12); color:#fff; font-weight:800; backdrop-filter:blur(14px); opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease; }
+                body.watch-party-guest.watch-party-controls-visible .watch-party-guest-pill { opacity:1; transform:translate(-50%, 0); }
+                @media (max-width: 760px) { #watchPartyPanel { left:12px; right:12px; width:auto; top:84px; bottom:82px; } }
+            `;
+            document.head.appendChild(style);
+        }
+
+        function renderWatchPartyPanel() {
+            if (document.getElementById('watchPartyPanel')) return;
+            const panel = document.createElement('aside');
+            panel.id = 'watchPartyPanel';
+            panel.innerHTML = `
+                <section class="watch-party-card">
+                    <div class="watch-party-head">
+                        <strong>Watch Together</strong>
+                        <button class="watch-party-close" id="watchPartyCloseBtn" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="watch-party-grid">
+                        <input id="watchPartyName" maxlength="32" placeholder="Display name" />
+                        <label class="watch-party-toggle"><input id="watchPartyPublic" type="checkbox" /> Public</label>
+                        <button class="primary" id="watchPartyCreateBtn">Generate Room Code</button>
+                        <button id="watchPartyLeaveBtn">Leave</button>
+                        <input id="watchPartyJoinCode" maxlength="6" placeholder="Enter code" autocomplete="off" autocapitalize="characters" />
+                        <button id="watchPartyJoinBtn">Join</button>
+                    </div>
+                    <div class="watch-party-meta" id="watchPartyStatus">Not in a room</div>
+                    <div class="watch-party-public-list" id="watchPartyPublicRooms"></div>
+                </section>
+                <section class="watch-party-chat">
+                    <div class="watch-party-head"><strong>Live Chat</strong><span id="watchPartyMembers">0 watching</span></div>
+                    <div id="watchPartyMessages"></div>
+                    <form id="watchPartyChatForm">
+                        <input id="watchPartyChatInput" maxlength="500" placeholder="Message the room..." />
+                        <button type="submit">Send</button>
+                    </form>
+                </section>
+            `;
+            document.body.appendChild(panel);
+            const guestPill = document.createElement('div');
+            guestPill.className = 'watch-party-guest-pill';
+            guestPill.textContent = 'Synced to host';
+            document.body.appendChild(guestPill);
+            document.getElementById('watchPartyCloseBtn')?.addEventListener('click', () => document.body.classList.remove('watch-party-open'));
+            document.getElementById('watchPartyCreateBtn')?.addEventListener('click', createWatchPartyRoom);
+            document.getElementById('watchPartyJoinBtn')?.addEventListener('click', () => joinWatchPartyRoom());
+            document.getElementById('watchPartyLeaveBtn')?.addEventListener('click', leaveWatchPartyRoom);
+            document.getElementById('watchPartyChatForm')?.addEventListener('submit', sendWatchPartyChat);
+            panel.querySelectorAll('input').forEach((input) => {
+                input.addEventListener('focus', () => holdControlsVisible(5000));
+            });
+        }
+
+        function getWatchPartyName() {
+            const input = document.getElementById('watchPartyName');
+            const stored = localStorage.getItem('streamverse_watch_party_name') || '';
+            if (input && !input.value && stored) input.value = stored;
+            const name = String(input?.value || stored || '').trim() || `Viewer-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+            localStorage.setItem('streamverse_watch_party_name', name);
+            return name;
+        }
+
+        const WATCH_PARTY_ROUTE_KEYS = ['id', 'type', 'season', 'episode', 'seasonTitle', 'seasonKey', 'episodeId', 'absoluteEpisode', 'audio', 'provider', 'apiSource'];
+
+        function getWatchPartyRouteState() {
+            const params = new URLSearchParams(location.search);
+            const route = {};
+            WATCH_PARTY_ROUTE_KEYS.forEach((key) => {
+                const value = params.get(key);
+                if (value !== null && String(value).trim() !== '') route[key] = String(value);
+            });
+            return route;
+        }
+
+        function watchPartyRouteSignature(route = {}) {
+            return WATCH_PARTY_ROUTE_KEYS.map((key) => `${key}=${String(route?.[key] || '')}`).join('&');
+        }
+
+        function watchPartyMediaIdentitySignature(route = {}) {
+            const keys = ['id', 'type', 'provider', 'season', 'episode', 'seasonKey', 'episodeId', 'absoluteEpisode', 'apiSource'];
+            return keys.map((key) => `${key}=${String(route?.[key] || '').trim().toLowerCase()}`).join('&');
+        }
+
+        function watchPartyRouteDiffers(route = {}) {
+            const next = { ...route };
+            delete next.t;
+            return watchPartyRouteSignature(getWatchPartyRouteState()) !== watchPartyRouteSignature(next);
+        }
+
+        function getWatchPartyMediaChangePayload(route = getWatchPartyRouteState()) {
+            const currentTime = Number(video?.currentTime || route?.t || 0) || 0;
+            const targetUrl = new URL(location.href);
+            WATCH_PARTY_ROUTE_KEYS.forEach((key) => {
+                const value = route[key];
+                if (value === undefined || value === null || String(value).trim() === '') targetUrl.searchParams.delete(key);
+                else targetUrl.searchParams.set(key, String(value));
+            });
+            targetUrl.searchParams.set('t', formatWatchPartyTimeParam(currentTime));
+            return {
+                url: targetUrl.toString(),
+                params: { ...route, t: formatWatchPartyTimeParam(currentTime) },
+                currentTime,
+                paused: Boolean(video?.paused),
+            };
+        }
+
+        function watchPartyEmitHostRouteNow(force = false) {
+            if (watchPartyRole !== 'host' || !watchPartyRoomCode) return;
+            const route = getWatchPartyRouteState();
+            const signature = watchPartyRouteSignature(route);
+            if (!force && signature === watchPartyLastRouteSignature) return;
+            watchPartyLastRouteSignature = signature;
+            const payload = getWatchPartyMediaChangePayload(route);
+            console.log('[watch-party] change_media ->', payload.params);
+            watchPartySend('change_media', payload);
+            watchPartySend('host:state', {
+                action: 'route',
+                currentTime: payload.currentTime,
+                paused: payload.paused,
+                route,
+            });
+        }
+
+        function watchPartyScheduleHostRouteSync(force = false) {
+            if (watchPartyRole !== 'host' || !watchPartyRoomCode) return;
+            if (watchPartyRouteEmitTimer) clearTimeout(watchPartyRouteEmitTimer);
+            watchPartyRouteEmitTimer = setTimeout(() => watchPartyEmitHostRouteNow(force), 120);
+        }
+
+        function formatWatchPartyTimeParam(time) {
+            const value = Math.max(0, Number(time || 0));
+            if (!Number.isFinite(value)) return '0';
+            return value.toFixed(3).replace(/\.?0+$/, '');
+        }
+        function getAdjustedWatchPartyTime(payload = {}) {
+            const baseTime = Number(payload.currentTime ?? payload.params?.t ?? payload.route?.t ?? 0) || 0;
+            const paused = payload.paused === true;
+            const stamp = Number(payload.updatedAt || payload.timestamp || 0);
+            const elapsed = (!paused && stamp > 0) ? Math.max(0, (Date.now() - stamp) / 1000) : 0;
+            return Math.max(0, baseTime + elapsed);
+        }
+
+        function updateWatchPartyUrlTime(time) {
+            try {
+                const nextUrl = new URL(location.href);
+                nextUrl.searchParams.set('t', formatWatchPartyTimeParam(time));
+                history.replaceState(null, '', nextUrl.toString());
+            } catch (_) { }
+        }
+
+        function applyWatchPartyRouteState(route = {}, currentTime = 0, payload = {}) {
+            if (watchPartyRole !== 'guest' || !route || typeof route !== 'object') return false;
+            const adjustedTime = getAdjustedWatchPartyTime({ ...payload, params: route, currentTime });
+            if (!watchPartyRouteDiffers(route)) {
+                updateWatchPartyUrlTime(adjustedTime);
+                return false;
+            }
+            return applyWatchPartyMediaChanged({ ...payload, params: route, currentTime: adjustedTime });
+        }
+
+        function applyWatchPartyMediaChanged(payload = {}) {
+            if (watchPartyRole !== 'guest') return false;
+            if (watchPartyMediaRedirectInFlight) return true;
+            const params = (payload.params && typeof payload.params === 'object') ? payload.params : (payload.route || {});
+            const nextUrl = payload.url ? new URL(String(payload.url), location.href) : new URL(location.href);
+            WATCH_PARTY_ROUTE_KEYS.forEach((key) => {
+                const value = params[key] ?? nextUrl.searchParams.get(key);
+                if (value === undefined || value === null || String(value).trim() === '') nextUrl.searchParams.delete(key);
+                else nextUrl.searchParams.set(key, String(value));
+            });
+            const currentTime = getAdjustedWatchPartyTime({ ...payload, params });
+            nextUrl.searchParams.set('t', formatWatchPartyTimeParam(currentTime));
+            if (watchPartyRoomCode) nextUrl.searchParams.set('wpRoom', watchPartyRoomCode);
+            nextUrl.searchParams.set('wpGuest', '1');
+            const currentRoute = getWatchPartyRouteState();
+            const currentSig = watchPartyRouteSignature(currentRoute);
+            const nextRoute = {};
+            WATCH_PARTY_ROUTE_KEYS.forEach((key) => {
+                const value = nextUrl.searchParams.get(key);
+                if (value) nextRoute[key] = value;
+            });
+            const currentIdentity = watchPartyMediaIdentitySignature(currentRoute);
+            const nextIdentity = watchPartyMediaIdentitySignature(nextRoute);
+            const pendingIdentity = sessionStorage.getItem('streamverse_watch_party_pending_media') || '';
+            if (currentSig === watchPartyRouteSignature(nextRoute) || currentIdentity === nextIdentity || pendingIdentity === nextIdentity) {
+                updateWatchPartyUrlTime(currentTime);
+                if (currentIdentity === nextIdentity) sessionStorage.removeItem('streamverse_watch_party_pending_media');
+                return false;
+            }
+            watchPartyMediaRedirectInFlight = true;
+            sessionStorage.setItem('streamverse_watch_party_pending_media', nextIdentity);
+            console.log('[watch-party] media_changed redirect ->', nextRoute);
+            watchPartyToast('Switching to host episode...');
+            window.location.href = nextUrl.toString();
+            return true;
+        }
+        function createWatchPartyRoom() {
+            ensureWatchPartySocket();
+            const isPublic = Boolean(document.getElementById('watchPartyPublic')?.checked);
+            watchPartyName = getWatchPartyName();
+            watchPartySend('room:create', {
+                isPublic,
+                name: watchPartyName,
+                title: currentMediaInfo?.title || document.title || 'Watch Party',
+                currentTime: Number(video?.currentTime || 0),
+                paused: Boolean(video?.paused),
+                route: getWatchPartyRouteState(),
+            });
+        }
+
+        function joinWatchPartyRoom(codeOverride = '') {
+            ensureWatchPartySocket();
+            watchPartyName = getWatchPartyName();
+            const explicitCode = typeof codeOverride === 'string' ? codeOverride : '';
+            const code = String(explicitCode || document.getElementById('watchPartyJoinCode')?.value || '').trim().toUpperCase();
+            if (!code) return watchPartyToast('Enter a room code');
+            watchPartySend('room:join', { code, name: watchPartyName });
+        }
+
+        function leaveWatchPartyRoom() {
+            watchPartySend('room:leave');
+            watchPartyRoomCode = '';
+            watchPartyRole = '';
+            document.body.classList.remove('watch-party-guest');
+            watchPartySetStatus('Left room');
+        }
+
+        function sendWatchPartyChat(event) {
+            event.preventDefault();
+            const input = document.getElementById('watchPartyChatInput');
+            const text = String(input?.value || '').trim();
+            if (!text || !watchPartyRoomCode) return;
+            watchPartySend('chat:send', { text });
+            input.value = '';
+        }
+
+        function watchPartySetStatus(text) {
+            const status = document.getElementById('watchPartyStatus');
+            if (status) status.innerHTML = text;
+        }
+
+        function renderWatchPartyPublicRooms(rooms = []) {
+            const root = document.getElementById('watchPartyPublicRooms');
+            if (!root) return;
+            root.innerHTML = '';
+            rooms.slice(0, 8).forEach((room) => {
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'watch-party-public-room';
+                row.innerHTML = `<span>${escapeWatchPartyHtml(room.title || 'Watch Party')}</span><span>${room.code} · ${room.count}</span>`;
+                row.addEventListener('click', () => joinWatchPartyRoom(room.code));
+                root.appendChild(row);
+            });
+        }
+
+        function renderWatchPartyMembers(count, members = []) {
+            const node = document.getElementById('watchPartyMembers');
+            if (node) node.textContent = `${Number(count || 0)} watching`;
+        }
+
+        function appendWatchPartyMessage(msg) {
+            const root = document.getElementById('watchPartyMessages');
+            if (!root) return;
+            const item = document.createElement('div');
+            item.className = 'watch-party-message';
+            item.innerHTML = `<small>${escapeWatchPartyHtml(msg.name || 'Viewer')} · ${new Date(Number(msg.timestamp || Date.now())).toLocaleTimeString()}</small><div>${escapeWatchPartyHtml(msg.text || '')}</div>`;
+            root.appendChild(item);
+            root.scrollTop = root.scrollHeight;
+        }
+
+        function handleWatchPartyMessage(msg) {
+            if (msg.type === 'rooms:public') renderWatchPartyPublicRooms(msg.rooms || []);
+            if (msg.type === 'room:created' || msg.type === 'room:joined') {
+                watchPartyRoomCode = msg.code;
+                watchPartyRole = msg.role;
+                document.body.classList.toggle('watch-party-guest', watchPartyRole === 'guest');
+                watchPartySetStatus(`<div>Code: <span class="watch-party-code">${watchPartyRoomCode}</span></div><div>You are ${watchPartyRole}</div>`);
+                if (watchPartyRole === 'host') watchPartyLastRouteSignature = watchPartyRouteSignature(getWatchPartyRouteState());
+                renderWatchPartyMembers(msg.room?.count || msg.members?.length || 1, msg.members || []);
+                if (watchPartyRole === 'guest') {
+                    closeCustomMenus();
+                    hideControlSurfaceNow();
+                    if (msg.state) applyWatchPartyRemoteState(msg.state);
+                }
+            }
+            if (msg.type === 'room:error') watchPartyToast(msg.message || 'Watch party error');
+            if (msg.type === 'room:left') {
+                watchPartyRoomCode = '';
+                watchPartyRole = '';
+                document.body.classList.remove('watch-party-guest');
+                watchPartySetStatus('Not in a room');
+            }
+            if (msg.type === 'room:members') renderWatchPartyMembers(msg.count, msg.members || []);
+            if (msg.type === 'player:sync') applyWatchPartyRemoteState(msg);
+            if (msg.type === 'media_changed') applyWatchPartyMediaChanged(msg);
+            if (msg.type === 'control:sync') applyWatchPartyControlSync(msg);
+            if (msg.type === 'chat:message') appendWatchPartyMessage(msg);
+            if (msg.type === 'room:destroyed') {
+                watchPartyToast(msg.reason || 'Host ended the watch party');
+                watchPartyRoomCode = '';
+                watchPartyRole = '';
+                document.body.classList.remove('watch-party-guest');
+                watchPartySetStatus('Room ended by host');
+            }
+        }
+
+        function watchPartyEmitHostState(action) {
+            if (watchPartyRole !== 'host' || watchPartyApplyingRemote || !watchPartyRoomCode || !video) return;
+            watchPartySend('host:state', { action, currentTime: Number(video.currentTime || 0), paused: Boolean(video.paused), route: getWatchPartyRouteState() });
+        }
+
+        function watchPartyHandleSeeked() {
+            if (watchPartySeekTimer) clearTimeout(watchPartySeekTimer);
+            watchPartySeekTimer = setTimeout(() => watchPartyEmitHostState('seek'), 50);
+        }
+
+        function watchPartyEmitHostControl(control, value = null) {
+            if (watchPartyRole !== 'host' || watchPartyApplyingControl || !watchPartyRoomCode) return;
+            watchPartySend('host:control', {
+                control,
+                value,
+                currentTime: Number(video?.currentTime || 0),
+            });
+        }
+
+        function normalizeWatchPartyLabel(value) {
+            return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        }
+
+        function applyWatchPartyControlSync(msg) {
+            if (watchPartyRole !== 'guest') return;
+            watchPartyApplyingControl = true;
+            try {
+                const control = String(msg.control || '');
+                const value = msg.value;
+                if (control === 'quality') {
+                    changeQuality(Number(value?.height || 0));
+                    buildQualityMenuItems();
+                } else if (control === 'playbackRate' && video) {
+                    video.playbackRate = Number(value?.rate || 1) || 1;
+                    buildPlaybackMenu();
+                } else if (control === 'fit') {
+                    const nextIndex = Number(value?.fitIndex);
+                    if (Number.isInteger(nextIndex) && fitModes[nextIndex]) {
+                        fitIndex = nextIndex;
+                        applyFitMode();
+                    }
+                } else if (control === 'captions') {
+                    const idx = Number(value?.trackIndex);
+                    selectSubtitleTrack(Number.isInteger(idx) ? idx : -1);
+                    buildCaptionsMenu();
+                } else if (control === 'autoSkipIntro') {
+                    autoSkipIntroEnabled = Boolean(value?.enabled);
+                    localStorage.setItem('pref_autoSkipIntro', autoSkipIntroEnabled ? 'true' : 'false');
+                    updateSkipSegmentButton();
+                } else if (control === 'autoSkipOutro') {
+                    autoSkipOutroEnabled = Boolean(value?.enabled);
+                    localStorage.setItem('pref_autoSkipOutro', autoSkipOutroEnabled ? 'true' : 'false');
+                    updateSkipSegmentButton();
+                } else if (control === 'audio') {
+                    updateAudioTracks();
+                    const audioValue = value || {};
+                    if (audioValue.kind === 'hls' && hlsInst && Array.isArray(hlsInst.audioTracks)) {
+                        let idx = hlsInst.audioTracks.findIndex((track) => Number(track?.id) === Number(audioValue.trackId));
+                        if (idx < 0) {
+                            const wantedName = normalizeWatchPartyLabel(audioValue.name || audioValue.label || audioValue.lang);
+                            idx = hlsInst.audioTracks.findIndex((track) => {
+                                const hay = normalizeWatchPartyLabel(`${track?.name || ''} ${track?.lang || track?.language || ''}`);
+                                return hay.includes(wantedName) || wantedName.includes(hay);
+                            });
+                        }
+                        if (idx >= 0) {
+                            hlsInst.audioTrack = hlsInst.audioTracks[idx]?.id ?? idx;
+                            rememberAudioPreference(hlsInst.audioTracks[idx]);
+                            updateAudioTracks();
+                            return;
+                        }
+                    }
+                    if (audioValue.kind === 'native' && video?.audioTracks?.length) {
+                        const tracks = Array.from(video.audioTracks);
+                        const wantedName = normalizeWatchPartyLabel(audioValue.name || audioValue.label || audioValue.lang);
+                        const idx = tracks.findIndex((track) => normalizeWatchPartyLabel(`${track?.label || ''} ${track?.language || ''}`).includes(wantedName));
+                        if (idx >= 0) {
+                            tracks.forEach((track, i) => { track.enabled = i === idx; });
+                            rememberAudioPreference({ lang: tracks[idx].language, name: tracks[idx].label });
+                            updateAudioTracks();
+                            return;
+                        }
+                    }
+                    if (audioValue.kind === 'source') {
+                        let idx = allSources.findIndex((row) => String(row?.url || '') === String(audioValue.sourceUrl || ''));
+                        if (idx < 0 && audioValue.provider) {
+                            const wantedProvider = String(audioValue.provider || '').toLowerCase();
+                            const wantedToken = normalizeWatchPartyLabel(audioValue.audioToken || audioValue.label);
+                            idx = allSources.findIndex((row) => {
+                                if (String(row?.provider || '').toLowerCase() !== wantedProvider) return false;
+                                const hay = normalizeWatchPartyLabel(`${row?.audioLabel || ''} ${row?.audio || ''} ${row?.lang || ''} ${row?.language || ''} ${row?.label || ''} ${row?.isDub ? 'dubbed dub' : ''} ${row?.isSub ? 'subbed sub' : ''}`);
+                                return hay.includes(wantedToken) || wantedToken.includes(hay);
+                            });
+                        }
+                        if (idx >= 0) {
+                            const resumeAt = Math.max(0, Number(video?.currentTime || msg.currentTime || 0));
+                            currentAudioSource = String(audioValue.provider || allSources[idx]?.provider || currentAudioSource || '').toLowerCase();
+                            preferredAudioToken = normalizeWatchPartyLabel(audioValue.audioToken || audioValue.label);
+                            preferredSourceLabelMatch = preferredAudioToken;
+                            if (currentAudioSource === 'animetsu') saveAnimeAudioMode(preferredAudioToken);
+                            rememberProviderPreference(currentAudioSource);
+                            if (typeof selectSource === 'function') selectSource(idx, resumeAt);
+                            else loadStream(allSources[idx].url, !!allSources[idx].isM3U8, !!allSources[idx].isEmbed, allSources[idx].referer, idx, resumeAt);
+                            return;
+                        }
+                    }
+                    const wanted = normalizeWatchPartyLabel(audioValue.label);
+                    const item = [...audioPanel.querySelectorAll('.audio-item')]
+                        .find((row) => normalizeWatchPartyLabel(row.textContent) === wanted);
+                    if (item) item.click();
+                }
+            } finally {
+                setTimeout(() => { watchPartyApplyingControl = false; }, 250);
+                closeCustomMenus();
+                hideControlSurfaceNow();
+            }
+        }
+
+        function enforceWatchPartyRemotePlayback(state = watchPartyLastRemoteState, options = {}) {
+            if (watchPartyRole !== 'guest' || !state || !video) return;
+            const hostTime = getAdjustedWatchPartyTime(state || {});
+            const shouldForceSeek = options.forceSeek === true || state.action === 'seek' || state.action === 'route';
+            const drift = Math.abs(Number(video.currentTime || 0) - hostTime);
+            watchPartyApplyingRemote = true;
+            if (shouldForceSeek || drift > WATCH_PARTY_DRIFT_TOLERANCE) {
+                const seekToHost = () => { try { video.currentTime = Math.max(0, hostTime); } catch (_) { } };
+                if (video.readyState >= 1) seekToHost();
+                else video.addEventListener('loadedmetadata', seekToHost, { once: true });
+            }
+            if (state.paused === true || state.action === 'pause') {
+                try { video.pause(); } catch (_) { }
+            } else if (state.paused === false || state.action === 'play') {
+                Promise.resolve(video.play()).catch(() => { });
+            }
+            setTimeout(() => { watchPartyApplyingRemote = false; }, 300);
+        }
+
+        function applyWatchPartyRemoteState(state) {
+            if (watchPartyRole !== 'guest') return;
+            watchPartyLastRemoteState = state || null;
+            const hostTime = getAdjustedWatchPartyTime(state || {});
+            if (state?.route && applyWatchPartyRouteState(state.route, hostTime, state)) return;
+            updateWatchPartyUrlTime(hostTime);
+            enforceWatchPartyRemotePlayback(state, { forceSeek: state?.action === 'route' });
+            setTimeout(() => enforceWatchPartyRemotePlayback(state), 450);
+            setTimeout(() => enforceWatchPartyRemotePlayback(state), 1400);
+        }
+
+        function interceptGuestPlayerControls(event) {
+            if (watchPartyRole !== 'guest') return;
+            const target = event.target;
+            if (!target?.closest) return;
+            if (target.closest('#watchPartyPanel, #watchTogetherBtn, #fullscreenBtn, #muteBtn, #volumeMenu')) return;
+            if (target.closest('#player-video, .player-wrap, .control-center, #playPauseBtn, #skipBackBtn, #skipFwdBtn, .seek-wrapper, #customServerBtn, #customEpisodeBtn, #custom-audio-btn, #audio-panel, #source-panel, #ep-panel, #captionsBtn, #captionsMenu, #qualityBtn, #qualityMenu, #playbackBtn, #playbackMenu, #preferencesBtn, #preferencesMenu, #fitBtn')) {
+                event.preventDefault();
+                event.stopPropagation();
+                watchPartyToast('Only the host can control playback');
+            }
+        }
+
+        function escapeWatchPartyHtml(value) {
+            return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
+        }
         function bindVideoEvents() {
             if (!video || video.dataset.customBound === '1') return;
             video.dataset.customBound = '1';
@@ -10619,14 +11376,17 @@
                 }
                 
                 // Fallback seek for continue watching if canplay didn't work
-                if (!initialSeekDone && startT > 0 && video) {
+                if (!URL_DISABLE_RESUME && !initialSeekDone && startT > 0 && video) {
                     console.log('[loadedmetadata] Fallback resume seek to:', startT);
                     video.currentTime = startT;
                     initialSeekDone = true;
                 }
+                            enforceWatchPartyRemotePlayback(watchPartyLastRemoteState, { forceSeek: true });
+                setTimeout(() => enforceWatchPartyRemotePlayback(watchPartyLastRemoteState), 450);
             });
             video.addEventListener('loadeddata', () => {
                 clearOverlaysOnPlaybackProgress(0.01);
+                enforceWatchPartyRemotePlayback(watchPartyLastRemoteState);
             });
             if (video.textTracks && typeof video.textTracks.addEventListener === 'function') {
                 video.textTracks.addEventListener('addtrack', (e) => {
@@ -10648,6 +11408,9 @@
             });
             video.addEventListener('playing', () => {
                 if (!_iosNativePlayerActive) silenceNativeTracks();
+                if (watchPartyRole === 'guest' && watchPartyLastRemoteState?.paused === true) {
+                    enforceWatchPartyRemotePlayback(watchPartyLastRemoteState);
+                }
             });
             video.addEventListener('webkitbeginfullscreen', () => {
                 console.log('[ios] Native fullscreen begin');
@@ -10681,10 +11444,15 @@
                 }
             });
             video.addEventListener('play', () => {
+                watchPartyEmitHostState('play');
                 setPlayIcon(true);
                 showControlSurface();
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(false);
+            });
+            video.addEventListener('pause', () => {
+                setPlayIcon(false);
+                watchPartyEmitHostState('pause');
             });
             video.addEventListener('playing', () => {
                 setPlayIcon(true); // Chrome sometimes only fires 'playing' on autostart
@@ -10709,6 +11477,7 @@
                 kickHlsLoadNearCurrentTime();
             });
             video.addEventListener('seeked', () => {
+                watchPartyHandleSeeked();
                 isUserSeeking = false;
                 kickHlsLoadNearCurrentTime();
                 if (bufferingRecoveryTimer) clearTimeout(bufferingRecoveryTimer);
@@ -10762,7 +11531,7 @@
                     } else if (lastRequestedPlaybackTarget > 0) {
                         seekTo = lastRequestedPlaybackTarget;
                         console.log('[canplay] Using lastRequestedPlaybackTarget');
-                    } else if (startT > 0) {
+                    } else if (!URL_DISABLE_RESUME && startT > 0) {
                         seekTo = startT;
                         console.log('[canplay] Using startT from URL');
                     }
@@ -10884,13 +11653,15 @@
             closeAllPopups();
             if (willOpen) {
                 positionMenuAbove(epPanel, btn);
-                const previousScrollTop = getEpisodePanelScrollTop();
                 buildEpPanel();
-                setEpisodePanelScrollTop(previousScrollTop);
                 epPanel.classList.add('open');
+                epPanelUserScrollUntil = 0;
                 epPanelAllowNextAutoScroll = true;
-                updateEpUI(curSeason, curEpisode, { scroll: true });
-                requestAnimationFrame(() => updateEpUI(curSeason, curEpisode, { scroll: true, smooth: false }));
+                updateEpUI(curSeason, curEpisode, { scroll: true, forceScroll: true });
+                requestAnimationFrame(() => {
+                    updateEpUI(curSeason, curEpisode, { scroll: true, forceScroll: true, smooth: false });
+                    requestAnimationFrame(() => updateEpUI(curSeason, curEpisode, { scroll: true, forceScroll: true, smooth: false }));
+                });
             }
         }
         function toggleAudioPanel(btn = customAudioBtn) {
@@ -10899,14 +11670,18 @@
 
             // ENHANCED: Check if satoruAudioSources are still being populated
             const hasSatoruSources = satoruAudioSources.length > 0;
+            const animesaltAudioSources = Array.isArray(allSources)
+                ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animesalt' && !s?.isEmbed)
+                : [];
             const animetsuAudioSources = Array.isArray(allSources)
                 ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animetsu' && (s?.isDub || /\b(?:dub|sub)/i.test(String(s?.label || s?.audioLabel || ''))))
                 : [];
+            const hasAnimesaltAudioSources = animesaltAudioSources.length > 1;
             const hasAnimetsuAudioSources = animetsuAudioSources.length > 1;
             const hasHlsTracks = hlsTracks.length > 1;
 
             // Only show "no tracks" message if we're sure there are none
-            if (!hasHlsTracks && !hasSatoruSources && !hasAnimetsuAudioSources) {
+            if (!hasHlsTracks && !hasSatoruSources && !hasAnimesaltAudioSources && !hasAnimetsuAudioSources) {
                 // Check if satoru sources might be loading in background
                 const satoruLoading = activeProviders.includes('satoru') && currentIsLikelyAnime;
                 if (!satoruLoading) {
@@ -11056,14 +11831,14 @@
             const hlsTracks = (hlsInst && Array.isArray(hlsInst.audioTracks)) ? hlsInst.audioTracks : [];
             const hasSatoruSources = satoruAudioSources.length > 0;
             const animesaltAudioSources = Array.isArray(allSources)
-                ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animesalt' && (s?.isDub || /\b(?:dub|sub)\b/i.test(String(s?.label || s?.audioLabel || ''))))
+                ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animesalt' && !s?.isEmbed)
                 : [];
             const animetsuAudioSources = Array.isArray(allSources)
                 ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animetsu' && (s?.isDub || /\b(?:dub|sub)/i.test(String(s?.label || s?.audioLabel || ''))))
                 : [];
             const hasAnimesaltAudioSources = animesaltAudioSources.length > 1;
             const hasAnimetsuAudioSources = animetsuAudioSources.length > 1;
-            const useProviderPrefixedAudioLabels = hasAnimesaltAudioSources && hasAnimetsuAudioSources;
+            const useProviderPrefixedAudioLabels = [hasAnimesaltAudioSources, hasAnimetsuAudioSources, hasSatoruSources].filter(Boolean).length > 1;
 
             // iOS Safari uses native HLS (no HLS.js), so hlsInst is null.
             // Read WebKit's native AudioTrackList from the <video> element instead.
@@ -11071,7 +11846,7 @@
                 ? Array.from(video.audioTracks)
                 : [];
 
-            const hasAnyTracks = hlsTracks.length > 0 || hasSatoruSources || hasAnimetsuAudioSources || iosNativeTracks.length > 0;
+            const hasAnyTracks = hlsTracks.length > 0 || hasSatoruSources || hasAnimesaltAudioSources || hasAnimetsuAudioSources || iosNativeTracks.length > 0;
 
             audioBtn.style.display = 'flex';
 
@@ -11089,13 +11864,18 @@
             audioPanel.innerHTML = '<div class="panel-label">Audio Track</div>';
 
             const renderedLabels = new Set();
-            const addItem = (label, isActive, onClick) => {
+            const addItem = (label, isActive, onClick, syncMeta = {}) => {
                 if (renderedLabels.has(label)) return;
                 renderedLabels.add(label);
                 const item = document.createElement('div');
                 item.className = 'audio-item' + (isActive ? ' active' : '');
+                item.dataset.watchPartyAudio = JSON.stringify({ label, ...syncMeta });
                 item.innerHTML = `<span class="src-dot"></span>${label}`;
-                item.onclick = onClick;
+                item.onclick = () => {
+                    if (watchPartyRole === 'guest' && !watchPartyApplyingControl) return watchPartyToast('Only the host can control audio');
+                    onClick();
+                    watchPartyEmitHostControl('audio', { label, ...syncMeta });
+                };
                 audioPanel.appendChild(item);
             };
 
@@ -11118,7 +11898,7 @@
                             rememberAudioPreference(track);
                             updateAudioTracks();
                         }
-                    });
+                    }, { kind: 'hls', trackId: track.id, name: track.name || '', lang: track.lang || track.language || '' });
                 });
 
                 // iOS Safari native AudioTrackList (when HLS.js is not used)
@@ -11136,7 +11916,7 @@
                             }
                             rememberAudioPreference({ lang: track.language, name: track.label });
                             updateAudioTracks();
-                        });
+                        }, { kind: 'native', name: track.label || '', lang: track.language || '' });
                     });
                 }
             }
@@ -11162,41 +11942,44 @@
                         }
                     });
                 }
-                    if (hasAnimesaltAudioSources) {
-                        animesaltAudioSources.forEach((src) => {
-                            const isCurrent = String(allSources?.[currentIdx]?.url || '') === String(src.url || '');
-                            const cleanLabel = String(src.audioLabel || src.label || '')
-                                .replace(/^AnimeSalt\s*-\s*/i, '')
-                                .replace(/^Animesalt\s*-\s*/i, '')
-                                .replace(/\s+master\b/i, '')
-                                .replace(/\s+auto\b/i, '')
-                                .trim() || (src.isDub ? 'Dubbed' : 'Subbed');
-                            const displayLabel = useProviderPrefixedAudioLabels
-                                ? `${providerLabel('animesalt')} - ${cleanLabel}`
-                                : cleanLabel;
-                            addItem(displayLabel, isCurrent, () => {
-                                if (isCurrent) return;
-                                const idx = allSources.findIndex((row) => String(row?.url || '') === String(src.url || ''));
-                                if (idx < 0) return;
-                                const resumeAt = Math.max(0, Number(video?.currentTime || 0));
-                                audioSwitchInFlightUntil = Date.now() + 9000;
-                                currentAudioSource = 'animesalt';
-                                preferredAudioToken = src.isDub ? 'dubbed' : 'subbed';
-                                preferredSourceLabelMatch = preferredAudioToken;
-                                rememberProviderPreference('animesalt');
-                                if (typeof selectSource === 'function') {
-                                    selectSource(idx, resumeAt);
-                                } else {
-                                    currentIdx = idx;
-                                    syncUrlState();
-                                    loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, idx, resumeAt);
-                                }
-                            });
-                        });
-                    }
-
             }
 
+            const renderProviderAudioSources = (providerName, providerSources) => {
+                if (!Array.isArray(providerSources) || providerSources.length <= 1) return;
+                providerSources.forEach((src) => {
+                    const isCurrent = String(allSources?.[currentIdx]?.url || '') === String(src.url || '');
+                    const cleanLabel = String(src.audioLabel || src.audio || src.lang || src.language || src.quality || src.label || '')
+                        .replace(new RegExp(`^${providerLabel(providerName)}\\s*-\\s*`, 'i'), '')
+                        .replace(new RegExp(`^${providerName}\\s*-\\s*`, 'i'), '')
+                        .replace(/\s+master\b/i, '')
+                        .replace(/\s+auto\b/i, '')
+                        .replace(/\s*\((?:sub|dub)bed\)\s*$/i, '')
+                        .trim() || (src.isDub ? 'Dubbed' : (src.isSub ? 'Subbed' : 'Default'));
+                    const displayLabel = useProviderPrefixedAudioLabels
+                        ? `${providerLabel(providerName)} - ${cleanLabel}`
+                        : cleanLabel;
+                    addItem(displayLabel, isCurrent, () => {
+                        if (isCurrent) return;
+                        const idx = allSources.findIndex((row) => String(row?.url || '') === String(src.url || ''));
+                        if (idx < 0) return;
+                        const resumeAt = Math.max(0, Number(video?.currentTime || 0));
+                        audioSwitchInFlightUntil = Date.now() + 9000;
+                        currentAudioSource = providerName;
+                        preferredAudioToken = cleanLabel.toLowerCase();
+                        preferredSourceLabelMatch = preferredAudioToken;
+                        rememberProviderPreference(providerName);
+                        if (typeof selectSource === 'function') {
+                            selectSource(idx, resumeAt);
+                        } else {
+                            currentIdx = idx;
+                            syncUrlState();
+                            loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, idx, resumeAt);
+                        }
+                    }, { kind: 'source', provider: providerName, sourceUrl: src.url, sourceIndex: allSources.findIndex((row) => String(row?.url || '') === String(src.url || '')), audioToken: cleanLabel.toLowerCase(), isDub: !!src.isDub, isSub: !!src.isSub });
+                });
+            };
+
+            renderProviderAudioSources('animesalt', animesaltAudioSources);
 
             if (hasAnimetsuAudioSources) {
                 animetsuAudioSources.forEach((src) => {
@@ -11218,6 +12001,7 @@
                         currentAudioSource = 'animetsu';
                         preferredAudioToken = src.isDub ? 'dubbed' : 'subbed';
                         preferredSourceLabelMatch = preferredAudioToken;
+                        saveAnimeAudioMode(preferredAudioToken);
                         rememberProviderPreference('animetsu');
                         if (typeof selectSource === 'function') {
                             selectSource(idx, resumeAt);
@@ -11226,7 +12010,7 @@
                             syncUrlState();
                             loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, idx, resumeAt);
                         }
-                    });
+                    }, { kind: 'source', provider: 'animetsu', sourceUrl: src.url, sourceIndex: allSources.findIndex((row) => String(row?.url || '') === String(src.url || '')), audioToken: src.isDub ? 'dubbed' : 'subbed', isDub: !!src.isDub, isSub: !!src.isSub });
                 });
             }
             // Virtual source-backed tracks (used for multi-language variants)
@@ -11324,7 +12108,7 @@
                                 loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt);
                             }
                         }
-                    });
+                    }, { kind: 'source', provider: 'satoru', sourceUrl: src.url, sourceIndex: allSources.findIndex((row) => String(row?.url || '') === String(src.url || '')), audioToken: String(src.hlsTrackName || src.label || '').replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase() });
                 });
             }
         }
@@ -11498,8 +12282,10 @@
             fitBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (wakeControlsIfHidden()) return;
+                if (watchPartyRole === 'guest') return watchPartyToast('Only the host can control screen fit');
                 fitIndex = (fitIndex + 1) % fitModes.length;
                 applyFitMode();
+                watchPartyEmitHostControl('fit', { fitIndex });
                 showControlSurface();
             });
 
@@ -12413,7 +13199,7 @@
                 const isControlsVisible = controlSurface.classList.contains('visible');
 
                 // 1. Identify other interactive elements
-                const isOnInteractive = e.target.closest('button, input[type="range"], .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
+                const isOnInteractive = e.target.closest('#watchPartyPanel, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
 
                 // 2. Hide logic: Let buttons and specific bubble-phase handlers handle hiding.
                 // We ONLY intercept here if we need to reveal the UI.
@@ -12466,7 +13252,7 @@
                 if (now - lastInteractionAt < 100) return; // Prevent double-toggle from reveal-tap
 
                 // Identify if clicked on an actual button/control
-                const isOnInteractive = e.target.closest('button, input[type="range"], .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn');
+                const isOnInteractive = e.target.closest('#watchPartyPanel, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn');
 
                 if (!isOnInteractive) {
                     e.preventDefault();
@@ -12482,7 +13268,7 @@
                 const isLockedAction = e.target.closest('#uiLockBtn, .ui-lock-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return; 
                 if (isUiLocked) return;
-                const isOnInteractive = e.target.closest('button, input[type="range"], .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
+                const isOnInteractive = e.target.closest('#watchPartyPanel, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
                 if (isOnInteractive) return;
 
                 const now = Date.now();
@@ -13101,7 +13887,7 @@
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v14';
+                    const seasonCacheVersion = 'v18';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -13338,7 +14124,20 @@
                     let providerInfo = await infoRes.json();
                     if (providerInfo?.data) providerInfo = providerInfo.data;
                     if (providerName === 'animetsu') {
-                        const relatedEntries = [providerInfo, ...(Array.isArray(providerInfo?.relatedSeasons) ? providerInfo.relatedSeasons : (Array.isArray(providerInfo?.seasons) ? providerInfo.seasons : []))]
+                        const siteSeasonRows = Array.isArray(providerInfo?.relatedSeasons)
+                            ? providerInfo.relatedSeasons
+                            : (Array.isArray(providerInfo?.seasons) ? providerInfo.seasons : []);
+                        const relatedEntries = (siteSeasonRows.length ? [...siteSeasonRows] : [providerInfo]);
+                        if (!relatedEntries.some((entry) => String(entry?.id || '').trim() === String(bestResult.id || '').trim())) {
+                            relatedEntries.unshift(providerInfo);
+                        }
+                        const siteSeasonLabel = (entry, entryInfo, seasonNo) => {
+                            const relationLabel = String(entry?.relation || '').trim();
+                            if (relationLabel) return relationLabel;
+                            const titleLabel = getAnimeTitleText(entry?.title || entry?.name || entryInfo?.title || '').trim();
+                            return titleLabel || `Part ${seasonNo}`;
+                        };
+                        const filteredRelatedEntries = relatedEntries
                             .filter((entry) => String(entry?.id || '').trim())
                             .filter((entry) => {
                                 const format = String(entry?.format || '').toUpperCase();
@@ -13350,7 +14149,7 @@
                             });
                         const uniqueRelated = [];
                         const seenRelatedIds = new Set();
-                        relatedEntries.forEach((entry) => {
+                        filteredRelatedEntries.forEach((entry) => {
                             const entryId = String(entry?.id || '').trim();
                             if (!entryId || seenRelatedIds.has(entryId)) return;
                             seenRelatedIds.add(entryId);
@@ -13384,17 +14183,18 @@
                                 || 0,
                             ) || 0;
                             const seasonNo = explicitSeasonNo > 0 ? explicitSeasonNo : (animetsuSeasons.length + 1);
+                            const seasonName = siteSeasonLabel(entry, entryInfo, seasonNo);
                             const built = buildSeasonListFromEpisodes(
                                 providerName,
                                 entryId,
-                                entryInfo?.title || getAnimeTitleText(entry?.title || entry?.name || '') || animeSeriesTitle,
+                                seasonName,
                                 entryEpisodes,
                                 seasonNo,
                             ).map((season) => ({
                                 ...season,
                                 seasonNo,
                                 seasonPartNo: 0,
-                                name: `Part ${seasonNo}`,
+                                name: seasonName,
                                 providerAnimeId: entryId,
                             }));
                             animetsuSeasons = mergeSeasonLists(animetsuSeasons, built);
@@ -13480,14 +14280,27 @@
                 const preferredMenuProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
                 if (preferredMenuProvider && providerSeasonCatalog.has(preferredMenuProvider)) {
                     activeMenuProvider = preferredMenuProvider;
+                } else if (providerSeasonCatalog.has('animetsu')) {
+                    activeMenuProvider = 'animetsu';
                 } else if (providerSeasonCatalog.has('animesalt')) {
                     activeMenuProvider = 'animesalt';
                 } else {
                     activeMenuProvider = Array.from(providerSeasonCatalog.keys())[0] || '';
                 }
 
+                const animetsuCatalog = providerSeasonCatalog.get('animetsu');
                 const animeSaltCatalog = providerSeasonCatalog.get('animesalt');
                 if (
+                    !preferredMenuProvider &&
+                    Array.isArray(animetsuCatalog) &&
+                    countMenuSeasonEpisodes(animetsuCatalog) > 1
+                ) {
+                    tvSeasons = cloneAndSortMenuSeasons(mergeMenuSeasonsBySeasonNo(animetsuCatalog));
+                    console.log('[initTv] pinned anime episode catalog to Animetsu:', tvSeasons.map((season) => ({
+                        seasonNo: season.seasonNo,
+                        episodes: Array.isArray(season.episodes) ? season.episodes.length : 0,
+                    })));
+                } else if (
                     !preferredMenuProvider &&
                     Array.isArray(animeSaltCatalog) &&
                     countMenuSeasonEpisodes(animeSaltCatalog) > 1
@@ -13626,11 +14439,13 @@
         function getActiveEpisodeMenuProvider() {
             if (!currentIsLikelyAnime) return '';
             const forcedProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
-            if (!forcedProvider && providerSeasonCatalog.has('animesalt')) return 'animesalt';
             if (forcedProvider && providerSeasonCatalog.has(forcedProvider)) return forcedProvider;
 
             const pinnedProvider = String(activeMenuProvider || '').trim().toLowerCase();
             if (pinnedProvider && providerSeasonCatalog.has(pinnedProvider)) return pinnedProvider;
+
+            if (!forcedProvider && providerSeasonCatalog.has('animetsu')) return 'animetsu';
+            if (!forcedProvider && providerSeasonCatalog.has('animesalt')) return 'animesalt';
 
             const playingProvider = String(currentStreamProvider || '').trim().toLowerCase();
             if (playingProvider && providerSeasonCatalog.has(playingProvider)) return playingProvider;
@@ -14868,9 +15683,18 @@
                         tmdbEpisode?.image ||
                         tmdbEpisode?.thumbnail
                     );
-                    const epTitle = tmdbTitle && !isGenericEpisodeTitle(tmdbTitle, absoluteEpisodeNo) && (hasTmdbRichMeta || !providerTitle || isGenericEpisodeTitle(providerTitle, epNo))
-                        ? tmdbTitle
-                        : (providerTitle && !isGenericEpisodeTitle(providerTitle, epNo) ? providerTitle : `Episode ${epNo}`);
+                    const shouldPreferProviderEpisodeMeta =
+                        currentIsLikelyAnime &&
+                        ['animetsu', 'animesalt', 'satoru'].includes(scopedProvider) &&
+                        providerTitle &&
+                        !isGenericEpisodeTitle(providerTitle, epNo);
+                    const epTitle = shouldPreferProviderEpisodeMeta
+                        ? providerTitle
+                        : (
+                            tmdbTitle && !isGenericEpisodeTitle(tmdbTitle, absoluteEpisodeNo) && (hasTmdbRichMeta || !providerTitle || isGenericEpisodeTitle(providerTitle, epNo))
+                                ? tmdbTitle
+                                : (providerTitle && !isGenericEpisodeTitle(providerTitle, epNo) ? providerTitle : `Episode ${epNo}`)
+                        );
                     const seriesDescription = String(
                         currentMediaInfo?.overview ||
                         currentMediaInfo?.description ||
@@ -14879,22 +15703,45 @@
                         currentMediaInfo?.tagline ||
                         ''
                     ).trim();
-                    const epDescription = String(
-                        tmdbEpisode?.overview ||
-                        tmdbEpisode?.description ||
-                        tmdbEpisode?.summary ||
-                        tmdbEpisode?.synopsis ||
-                        tmdbEpisode?.plot ||
+                    const providerDescription = String(
                         ep.description ||
                         ep.desc ||
                         ep.overview ||
                         ep.summary ||
                         ep.synopsis ||
                         ep.plot ||
-                        seriesDescription ||
                         ''
                     ).trim();
-                    const epThumb = getEpisodeThumbnailUrl(ep, tmdbEpisode);
+                    const tmdbDescription = String(
+                        tmdbEpisode?.overview ||
+                        tmdbEpisode?.description ||
+                        tmdbEpisode?.summary ||
+                        tmdbEpisode?.synopsis ||
+                        tmdbEpisode?.plot ||
+                        ''
+                    ).trim();
+                    const epDescription = (
+                        shouldPreferProviderEpisodeMeta
+                            ? (providerDescription || tmdbDescription || seriesDescription)
+                            : (tmdbDescription || providerDescription || seriesDescription)
+                    ).trim();
+                    const providerThumbRaw = String(
+                        ep?.image ||
+                        ep?.img ||
+                        ep?.thumbnail ||
+                        ep?.thumb ||
+                        ep?.poster ||
+                        ep?.posterUrl ||
+                        ep?.still ||
+                        ep?.still_path ||
+                        ep?.stillPath ||
+                        ep?.backdrop ||
+                        ep?.backdrop_path ||
+                        ''
+                    ).trim();
+                    const epThumb = shouldPreferProviderEpisodeMeta && providerThumbRaw
+                        ? (buildTmdbImageUrl(providerThumbRaw, 'w342') || providerThumbRaw)
+                        : getEpisodeThumbnailUrl(ep, tmdbEpisode);
                     const progressKeys = getWatchedKeysForEpisodeIdentity({
                         provider: String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase(),
                         providerAnimeId: String(s?.providerAnimeId || '').trim().toLowerCase(),
@@ -15058,7 +15905,8 @@
             const sel = matches[0] || epPanel.querySelector('.ep-item.active');
             const shouldScroll = options.scroll === true || epPanelAllowNextAutoScroll;
             const userIsScrolling = Date.now() < epPanelUserScrollUntil;
-            if (sel && shouldScroll && !userIsScrolling) {
+            const forceScroll = options.forceScroll === true;
+            if (sel && shouldScroll && (forceScroll || !userIsScrolling)) {
                 epPanelAllowNextAutoScroll = false;
                 const scrollRoot = getEpisodePanelScrollRoot();
                 if (scrollRoot && scrollRoot !== epPanel) {
@@ -15523,6 +16371,10 @@
             }
 
             updateEpisodeUrlState(false);
+            if (watchPartyRole === 'host' && watchPartyRoomCode && typeof watchPartyEmitHostRouteNow === 'function') {
+                watchPartyEmitHostRouteNow(true);
+                setTimeout(() => watchPartyEmitHostRouteNow(true), 650);
+            }
             const season = tvSeasons[si];
             const ep = (season?.episodes || [])[ei];
             if (!ep) return;
@@ -15549,7 +16401,7 @@
             allSources.length = 0;
             activeFlixhqServerName = '';
             satoruAudioSources = [];
-            currentAudioSource = 'animesalt';
+            currentAudioSource = 'animetsu';
             activeSatoruTrackIndex = -1;
             setExternalSubtitleTracks([]);
             currentIdx = 0;
@@ -15568,8 +16420,10 @@
             const bootSeasonNo = useResumePosition ? RESUME_SEASON_FALLBACK : URL_SEASON;
             const bootEpisodeNo = useResumePosition ? RESUME_EPISODE_FALLBACK : URL_EPISODE;
             const bootAbsoluteEpisodeNo = useResumePosition ? continueAbsoluteEpisodeNo : URL_ABSOLUTE_EPISODE;
-            const urlEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(bootEpisodeId) || /^episode[-/]/i.test(bootEpisodeId);
-            const continueEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(continueEpisodeId) || /^episode[-/]/i.test(continueEpisodeId);
+            const isAnimetsuScopedId = (value) => /^[a-f0-9]{24}\$episode\$\d+$/i.test(String(value || '').trim());
+            const isAnimetsuSeasonKey = (value) => /^[a-f0-9]{24}$/i.test(String(value || '').trim());
+            const urlEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(bootEpisodeId) || /^episode[-/]/i.test(bootEpisodeId) || isAnimetsuScopedId(bootEpisodeId);
+            const continueEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(continueEpisodeId) || /^episode[-/]/i.test(continueEpisodeId) || isAnimetsuScopedId(continueEpisodeId);
             const shouldCreateProviderSelectionHint =
                 currentIsLikelyAnime ||
                 String(FORCED_PROVIDER || '').trim().toLowerCase() === 'flixhq' ||
@@ -15578,7 +16432,9 @@
                 const urlSeasonTitleLooksSpecial = /^(specials?|ovas?|extras?|recaps?)$/i.test(bootSeasonTitle);
                 const safeUrlSeasonTitle = urlSeasonTitleLooksSpecial && bootSeasonNo > 0 ? '' : bootSeasonTitle;
                 pendingEpisodeSelectionHint = {
-                    provider: /^episode[-/]/i.test(bootEpisodeId || continueEpisodeId) ? 'flixhq' : ((bootSeasonKey || continueSeasonKey) ? 'animesalt' : null),
+                    provider: isAnimetsuScopedId(bootEpisodeId || continueEpisodeId) || isAnimetsuSeasonKey(bootSeasonKey || continueSeasonKey)
+                        ? 'animetsu'
+                        : (/^episode[-/]/i.test(bootEpisodeId || continueEpisodeId) ? 'flixhq' : ((bootSeasonKey || continueSeasonKey) ? 'animesalt' : null)),
                     episodeId: (urlEpisodeIdLooksProviderScoped ? bootEpisodeId : '') || (continueEpisodeIdLooksProviderScoped ? continueEpisodeId : '') || null,
                     seasonTitle: safeUrlSeasonTitle || String(CONTINUE_ENTRY?.seasonTitle || '').trim() || null,
                     seasonNo: bootSeasonNo > 0 ? bootSeasonNo : (Number(CONTINUE_ENTRY?.seasonNo || 0) > 0 ? Number(CONTINUE_ENTRY.seasonNo) : null),
@@ -15692,7 +16548,7 @@
             providersToRun.forEach(p => providerResults[p] = []);
 
             let isFirstLoaded = false;
-            if (pendingEpisodeStartTime !== null) {
+            if (!URL_DISABLE_RESUME && pendingEpisodeStartTime !== null) {
                 startT = Math.max(0, Number(pendingEpisodeStartTime || 0));
             } else {
                 startT = Number.isFinite(URL_TIME) && URL_TIME > 0 ? URL_TIME : 0;
@@ -15705,6 +16561,9 @@
 
             const updateSourceList = () => {
                 const newAllSources = [];
+                const activeSourceBefore = allSources?.[currentIdx] || null;
+                const activeRawUrlBefore = String(activeSourceBefore?.url || '').trim();
+                const activeProviderBefore = String(activeSourceBefore?.provider || '').trim().toLowerCase();
                 // Re-compile allSources in the correct priority order
                 orderedProviders.forEach(p => {
                     const provSources = providerResults[p] || [];
@@ -15713,9 +16572,19 @@
 
                 // Standard sorting: Direct streams (M3U8/MP4) first, then Embeds
                 newAllSources.sort((a, b) => {
+                    const sourceText = (s) => String([s?.label, s?.quality, s?.audioLabel, s?.audio, s?.lang, s?.language].filter(Boolean).join(' ')).toLowerCase();
+                    const desiredAudio = String(preferredSourceLabelMatch || preferredAudioToken || (currentIsLikelyAnime ? readSavedAnimeAudioMode() : '') || '').toLowerCase();
+                    if (desiredAudio) {
+                        const aText = sourceText(a);
+                        const bText = sourceText(b);
+                        const aMatch = aText.includes(desiredAudio) || (desiredAudio === 'dubbed' && a?.isDub) || (desiredAudio === 'subbed' && a?.isSub);
+                        const bMatch = bText.includes(desiredAudio) || (desiredAudio === 'dubbed' && b?.isDub) || (desiredAudio === 'subbed' && b?.isSub);
+                        if (aMatch && !bMatch) return -1;
+                        if (!aMatch && bMatch) return 1;
+                    }
                     const rank = (s) => {
                         const provider = String(s?.provider || '').toLowerCase();
-                        const label = String(s?.label || s?.quality || s?.audioLabel || '').toLowerCase();
+                        const label = sourceText(s);
                         let score = s.isEmbed ? 100 : 0;
                         if (provider === 'animetsu') {
                             if (s?.isDub || label.includes('dubbed')) score += 2;
@@ -15725,12 +16594,6 @@
                     };
                     const r = rank(a) - rank(b);
                     if (r !== 0) return r;
-                    if (preferredSourceLabelMatch) {
-                        const aMatch = String(a.label).toLowerCase().includes(preferredSourceLabelMatch);
-                        const bMatch = String(b.label).toLowerCase().includes(preferredSourceLabelMatch);
-                        if (aMatch && !bMatch) return -1;
-                        if (!aMatch && bMatch) return 1;
-                    }
                     return 0;
                 });
 
@@ -15739,8 +16602,26 @@
                 if (allSources.length > 0) {
                     // Re-sync currentIdx after sort: find where the currently-streaming
                     // URL ended up so the active highlight and index stay accurate.
-                    if (currentStreamUrl) {
-                        const syncedIdx = allSources.findIndex(s => s.url === currentStreamUrl);
+                    if (currentStreamUrl || activeRawUrlBefore) {
+                        const activePlaybackUrl = String(currentStreamUrl || '').trim();
+                        const syncedIdx = allSources.findIndex((s) => {
+                            const rawUrl = String(s?.url || '').trim();
+                            if (!rawUrl) return false;
+                            if (activeRawUrlBefore && rawUrl === activeRawUrlBefore) return true;
+                            if (activePlaybackUrl && rawUrl === activePlaybackUrl) return true;
+                            if (
+                                activeProviderBefore &&
+                                String(s?.provider || '').trim().toLowerCase() !== activeProviderBefore
+                            ) {
+                                return false;
+                            }
+                            if (!activePlaybackUrl) return false;
+                            try {
+                                return proxiedStreamUrl(rawUrl, s?.referer, s?.provider, s?.origin, true) === activePlaybackUrl;
+                            } catch (_) {
+                                return false;
+                            }
+                        });
                         if (syncedIdx >= 0) currentIdx = syncedIdx;
                     }
 
@@ -15876,6 +16757,23 @@
                                     } else {
                                         console.warn('[animesalt] rejected stale/provider-scoped episode id for current title:', selectedEpisodeId, 'wanted:', resContext.mediaTitle);
                                     }
+                                }
+                            }
+                            if (provider === 'animetsu') {
+                                const animetsuEpisodeId = String(selectedEpisodeId || '').trim();
+                                const animetsuSeasonId = String(
+                                    selectionHint?.providerAnimeId ||
+                                    selectedSeasonMeta?.providerAnimeId ||
+                                    selectedSeason?.providerAnimeId ||
+                                    ''
+                                ).trim();
+                                if (/^[a-f0-9]{24}\$episode\$\d+$/i.test(animetsuEpisodeId)) {
+                                    provEpisodeId = animetsuEpisodeId;
+                                } else if (/^[a-f0-9]{24}$/i.test(animetsuSeasonId) && Number(resContext.episodeNo || 0) > 0) {
+                                    provEpisodeId = `${animetsuSeasonId}$episode$${Number(resContext.episodeNo || 1)}`;
+                                }
+                                if (provEpisodeId) {
+                                    console.log('[animetsu] using scoped episode id:', provEpisodeId);
                                 }
                             }
 
@@ -16120,10 +17018,14 @@
                         const url = String(src?.url || '');
                         if (!url || isBrokenEmbedUrl(url) || isLikelyPlaceholderSource(url)) return false;
                         const low = url.toLowerCase();
+                        const isAnimetsuNativeProxy = provider === 'animetsu' && /swiftstream\.top\/proxy\/oppai\//i.test(url);
                         const isDirectPlayable =
                             src?.isM3U8 ||
                             src?.isM3u8 ||
                             src?.isDASH ||
+                            src?.isMP4 ||
+                            src?.type === 'video/mp4' ||
+                            isAnimetsuNativeProxy ||
                             low.includes('.m3u8') ||
                             low.includes('m3u8-proxy') ||
                             low.includes('getm3u8') ||
@@ -16154,7 +17056,8 @@
                         const low = String(src.url).toLowerCase();
                         const isVegamoviesTokenizedPlaylist = provider === 'vegamovies' && low.includes('/playlist/') && low.includes('.txt');
                         const isM3U8 = !isVegamoviesTokenizedPlaylist && (src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8'));
-                        const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
+                        const isAnimetsuNativeProxy = provider === 'animetsu' && /swiftstream\.top\/proxy\/oppai\//i.test(String(src.url || ''));
+                        const isEmbed = src.isEmbed ?? (!isM3U8 && !isAnimetsuNativeProxy && !low.includes('.mp4'));
                         const isDub = src.isDub === true || src.dub === true || /\bdub\b/i.test(String(src.quality || ''));
                         const qualityLabel = src.quality || `Source ${i + 1}`;
                         const flixhqServer = provider === 'flixhq' ? String(src.server || src.flixhqServer || '').trim() : '';
@@ -16212,7 +17115,7 @@
                 !currentIsLikelyAnime &&
                 orderedProviders.includes('flixhq');
 
-            const preferredAnimeProvider = orderedProviders.includes('animesalt') ? 'animesalt' : (orderedProviders.includes('animetsu') ? 'animetsu' : '');
+            const preferredAnimeProvider = orderedProviders.find((p) => ['animetsu', 'animesalt', 'satoru'].includes(String(p || '').toLowerCase())) || '';
             const shouldPreferAnimeProviderFirst =
                 !effectiveForcedProvider &&
                 currentIsLikelyAnime &&
@@ -16568,9 +17471,11 @@
             if (label.includes('dubbed')) {
                 preferredSourceLabelMatch = 'dubbed';
                 preferredAudioToken = 'dubbed';
+                if (String(src.provider || '').toLowerCase() === 'animetsu') saveAnimeAudioMode('dubbed');
             } else if (label.includes('subbed')) {
                 preferredSourceLabelMatch = 'subbed';
                 preferredAudioToken = 'subbed';
+                if (String(src.provider || '').toLowerCase() === 'animetsu') saveAnimeAudioMode('subbed');
             }
 
             // Also remember the provider preference
@@ -16659,12 +17564,21 @@
             return '/proxy';
         }
 
-        function proxiedStreamUrl(url, referer, provider = '', origin = '') {
+        function proxiedStreamUrl(url, referer, provider = '', origin = '', forceHls = false) {
             const rawUrl = String(url || '').trim();
             const providerName = String(provider || '').toLowerCase();
-            // Cinezo already returns proxy-wrapped HLS links; avoid double-proxying those.
-            if (/\/(?:m3u8-proxy|\/proxy)(?:[/?]|$)/i.test(rawUrl)) {
-                return rawUrl;
+            // Already proxy-wrapped streams must not be wrapped again.
+            try {
+                const parsedRaw = new URL(rawUrl, location.href);
+                const proxyLikePath = /^\/(?:proxy|utils\/proxy|m3u8-proxy)(?:[/?]|$)/i.test(parsedRaw.pathname);
+                const localHosts = new Set([
+                    location.host,
+                    new URL(String(activeApiBase || API_BASE || ''), location.href).host,
+                    new URL(String(getMediaProxyOrigin()), location.href).host,
+                ]);
+                if (proxyLikePath && localHosts.has(parsedRaw.host)) return rawUrl;
+            } catch (_) {
+                if (/^\/(?:proxy|utils\/proxy|m3u8-proxy)(?:[/?]|$)/i.test(rawUrl)) return rawUrl;
             }
             if (providerName === 'archive.org') {
                 const mediaProxyOrigin = RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY
@@ -16676,7 +17590,7 @@
                 if (origin) params.set('origin', String(origin));
                 return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
             }
-            if (/\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
+            if (forceHls || /\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
                 const mediaProxyOrigin = getMediaProxyOrigin();
                 try {
                     const parsed = new URL(rawUrl);
@@ -16752,7 +17666,7 @@
                 isFlixhqProtectedCdn;
             const originalStreamUrl = String(url || '').trim();
             if (isM3U8 && originalStreamUrl) {
-                url = proxiedStreamUrl(originalStreamUrl, referer, sourceProvider, sourceOrigin);
+                url = proxiedStreamUrl(originalStreamUrl, referer, sourceProvider, sourceOrigin, true);
             }
             const resumeTargetTime = Math.max(0, Number(startTime || 0));
             const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 600;
@@ -17242,7 +18156,7 @@
             // 1. HLS with hls.js
             if (isM3U8 && Hls.isSupported()) {
                 console.log('Branch: HLS.js');
-                const streamUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin);
+                const streamUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin, true);
                 // Track whether we've already tried the raw (unproxied) URL.
                 // Some CDNs (e.g. satoru.one) block reverse-proxy user agents with 502/403
                 // but allow direct browser access, so we fall back to raw after proxy failure.
@@ -17793,6 +18707,31 @@
                 const isArchiveDirect = String(sourceProvider || '').toLowerCase() === 'archive.org';
                 let triedDirectFallback = false;
                 let triedArchiveBackendProxyFallback = false;
+                let mp4StallWatchdogTimer = null;
+                const isAnimetsuDirectMp4 = sourceProvider === 'animetsu';
+                const clearMp4StallWatchdog = () => {
+                    if (mp4StallWatchdogTimer) {
+                        clearTimeout(mp4StallWatchdogTimer);
+                        mp4StallWatchdogTimer = null;
+                    }
+                };
+                const armMp4StallWatchdog = (delayMs = 8500) => {
+                    if (!isAnimetsuDirectMp4) return;
+                    clearMp4StallWatchdog();
+                    const startVideoTime = Number(video?.currentTime || 0);
+                    mp4StallWatchdogTimer = setTimeout(() => {
+                        mp4StallWatchdogTimer = null;
+                        if (!isCurrentMp4Load()) return;
+                        const progressed = Math.abs(Number(video?.currentTime || 0) - startVideoTime) > 0.35;
+                        const hasEnoughData = Number(video?.readyState || 0) >= 3;
+                        if (!progressed && !hasEnoughData) {
+                            console.warn('[animetsu] Direct MP4 stalled, trying alternate source');
+                            if (!failoverToNextSource('animetsu_mp4_stall')) {
+                                tryDirectMp4Fallback();
+                            }
+                        }
+                    }, delayMs);
+                };
                 const getArchiveBackendProxyUrl = () => {
                     const mediaProxyOrigin = getMediaProxyOrigin();
                     return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(directMp4Url)}`;
@@ -17846,7 +18785,39 @@
                     }
                 };
 
+                const mp4LoadToken = Symbol('mp4-load');
+                video.__svMp4LoadToken = mp4LoadToken;
+                const isCurrentMp4Load = () => {
+                    if (!video || video.__svMp4LoadToken !== mp4LoadToken) return false;
+                    if (isStaleSourceContext()) return false;
+                    const activeVideoUrl = String(video.currentSrc || video.src || '');
+                    return !activeVideoUrl || activeVideoUrl === proxiedMp4Url || activeVideoUrl === directMp4Url || (isArchiveDirect && activeVideoUrl === getArchiveBackendProxyUrl());
+                };
+                const clearMp4ErrorUiIfRecovered = () => {
+                    if (!isCurrentMp4Load()) return;
+                    if (video.readyState >= 2 && !video.paused && !video.ended) {
+                        hideError();
+                        hideLoader();
+                    }
+                };
+                video.addEventListener('playing', () => {
+                    clearMp4ErrorUiIfRecovered();
+                    clearMp4StallWatchdog();
+                });
+                video.addEventListener('canplay', () => {
+                    clearMp4ErrorUiIfRecovered();
+                    clearMp4StallWatchdog();
+                });
+                video.addEventListener('waiting', () => armMp4StallWatchdog(6500));
+                video.addEventListener('stalled', () => armMp4StallWatchdog(6500));
+                video.addEventListener('pause', clearMp4StallWatchdog);
+                video.addEventListener('ended', clearMp4StallWatchdog);
                 video.addEventListener('error', () => {
+                    if (!isCurrentMp4Load()) return;
+                    if (video.readyState >= 2 && !video.paused && !video.ended) {
+                        clearMp4ErrorUiIfRecovered();
+                        return;
+                    }
                     const switched = tryArchiveBackendProxyFallback() || tryDirectMp4Fallback();
                     if (!switched) {
                         console.warn('Direct MP4 failed, recovering same source');
@@ -17856,6 +18827,7 @@
 
                 // If proxy starts but never gets metadata, fallback to direct URL when that is CORS-safe.
                 const metadataFallbackTimer = setTimeout(() => {
+                    if (!isCurrentMp4Load()) return;
                     if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
                         tryArchiveBackendProxyFallback() || tryDirectMp4Fallback();
                     }
@@ -17916,6 +18888,7 @@
                     }, 10000);
                 }
 
+                armMp4StallWatchdog(9000);
                 if (!IS_IOS) video.play().catch(() => hideLoader());
 
             } else {
@@ -17932,7 +18905,16 @@
                 const key = String(e.key || '').toLowerCase();
                 const code = String(e.code || '').toLowerCase();
                 
-                switch (key === ' ' || key === 'spacebar' || code === 'space' ? 'space' : key) {
+                const normalizedKey = key === ' ' || key === 'spacebar' || code === 'space' ? 'space' : key;
+                if (watchPartyRole === 'guest' && ['space', 'arrowleft', 'arrowright'].includes(normalizedKey)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                    watchPartyToast('Only the host can control playback');
+                    return;
+                }
+
+                switch (normalizedKey) {
                     case 'space':
                         e.preventDefault();
                         e.stopPropagation();
@@ -17995,6 +18977,7 @@
         // -----------------------------------------------------------------------
         initCustomControls();
         bindVideoEvents();
+        initWatchTogether();
         document.addEventListener('fullscreenchange', showControlSurface);
         document.addEventListener('webkitfullscreenchange', showControlSurface);
         document.addEventListener('mozfullscreenchange', showControlSurface);
@@ -18037,6 +19020,28 @@
     }
 
 </style>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
