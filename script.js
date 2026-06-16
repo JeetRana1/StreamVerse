@@ -1,4 +1,4 @@
-// ------------------ API CONFIGURATION -------------------------------------
+﻿// ------------------ API CONFIGURATION -------------------------------------
 const RUNTIME_CONFIG = window.__STREAMVERSE_CONFIG__ || {};
 
 function normalizeMetaApiBase(value, fallback) {
@@ -22,7 +22,7 @@ const PROD_API = String(
         RUNTIME_CONFIG.PROD_API_BASE ||
         RUNTIME_CONFIG.META_API_BASE ||
         RUNTIME_CONFIG.API_BASE,
-        'https://streamverse-api.ddns.net/meta/tmdb'
+        'https://streamverse-api.duckdns.org/meta/tmdb'
     )
 );
 const FALLBACK_API = String(
@@ -1109,7 +1109,7 @@ function createContinueWatchingCard(item) {
         <div class="movie-card-info">
             <h3 class="movie-card-title">${item.title}${tvLabel}</h3>
             <div class="continue-meta">
-                <span>${formatTime(item.currentTime)} watched • ${formatTime(timeLeft)} left</span>
+                <span>${formatTime(item.currentTime)} watched â€¢ ${formatTime(timeLeft)} left</span>
                 <span>Last watched: ${lastWatchedDate}</span>
             </div>
             <div class="continue-progress-label">${Math.round(watchedPercent)}% watched</div>
@@ -1418,7 +1418,7 @@ function updateGenreFilterButtonState() {
     genreFilterBtn.classList.toggle('active', Array.isArray(activeGenreFilterIds) && activeGenreFilterIds.length > 0);
     genreFilterBtn.setAttribute('aria-expanded', String(genreFilterPanelOpen));
     genreFilterBtn.title = (Array.isArray(activeGenreFilterIds) && activeGenreFilterIds.length > 0)
-        ? `Genre: ${label} • ${getActiveGenreScopeLabel()} • ${getActiveGenreMatchLabel()} • ${getActiveGenreSortLabel()}`
+        ? `Genre: ${label} â€¢ ${getActiveGenreScopeLabel()} â€¢ ${getActiveGenreMatchLabel()} â€¢ ${getActiveGenreSortLabel()}`
         : 'Filter by genre';
 
     const labelNode = genreFilterBtn.querySelector('span');
@@ -5661,3 +5661,4 @@ function toggleDescription() {
         btn.innerHTML = 'Read More <i class="fa-solid fa-chevron-down"></i>';
     }
 }
+
