@@ -10634,6 +10634,7 @@
         const WATCH_PARTY_DRIFT_TOLERANCE = 0.55;
         const WATCH_PARTY_SOFT_DRIFT_TOLERANCE = 0.18;
         const WATCH_PARTY_SYNC_HEARTBEAT_MS = 3000;
+        const WATCH_PARTY_GUEST_PLAYBACK_LATENCY = 1.6;
         let watchPartySocket = null;
         let watchPartyRoomCode = '';
         let watchPartyRole = '';
@@ -11272,24 +11273,27 @@
         function enforceWatchPartyRemotePlayback(state = watchPartyLastRemoteState, options = {}) {
             if (watchPartyRole !== 'guest' || !state || !video) return;
             const hostTime = getAdjustedWatchPartyTime(state || {});
+            const isLivePlayback = state.paused === false && state.action !== 'pause' && state.action !== 'seek' && state.action !== 'route';
+            const targetTime = isLivePlayback ? Math.max(0, hostTime - WATCH_PARTY_GUEST_PLAYBACK_LATENCY) : hostTime;
             const shouldForceSeek = options.forceSeek === true || state.action === 'seek' || state.action === 'route' || state.action === 'pause';
             const currentTime = Number(video.currentTime || 0);
-            const signedDrift = currentTime - hostTime;
+            const signedDrift = currentTime - targetTime;
             const drift = Math.abs(signedDrift);
             const canSoftCorrect = video.readyState >= 3 && !video.seeking && !isSourceSwitching;
             watchPartyApplyingRemote = true;
             if (shouldForceSeek || drift > WATCH_PARTY_DRIFT_TOLERANCE) {
-                const seekToHost = () => { try { video.currentTime = Math.max(0, hostTime); } catch (_) { } };
+                const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
                 if (video.readyState >= 1) seekToHost();
                 else video.addEventListener('loadedmetadata', seekToHost, { once: true });
-            } else if (state.paused === false && canSoftCorrect && drift > WATCH_PARTY_SOFT_DRIFT_TOLERANCE) {
+            } else if (isLivePlayback && canSoftCorrect && drift > WATCH_PARTY_SOFT_DRIFT_TOLERANCE) {
                 const baseRate = Math.max(0.25, Number(watchPartyBasePlaybackRate || video.playbackRate || 1) || 1);
                 setWatchPartyGuestPlaybackRate(signedDrift > 0 ? baseRate * 0.97 : baseRate * 1.03, 1200);
             }
             if (state.paused === true || state.action === 'pause') {
                 try { video.pause(); } catch (_) { }
             } else if (state.paused === false || state.action === 'play') {
-                Promise.resolve(video.play()).catch(() => { });
+                if (video.readyState >= 2 || video.currentTime > 0) Promise.resolve(video.play()).catch(() => { });
+                else video.addEventListener('canplay', () => Promise.resolve(video.play()).catch(() => { }), { once: true });
             }
             setTimeout(() => { watchPartyApplyingRemote = false; }, 300);
         }
@@ -19049,6 +19053,7 @@
     }
 
 </style>
+
 
 
 
