@@ -10631,9 +10631,9 @@
             preferencesMenu.appendChild(outroRow);
         }
 
-        const WATCH_PARTY_DRIFT_TOLERANCE = 0.12;
-        const WATCH_PARTY_SOFT_DRIFT_TOLERANCE = 0.035;
-        const WATCH_PARTY_SYNC_HEARTBEAT_MS = 1600;
+        const WATCH_PARTY_DRIFT_TOLERANCE = 0.55;
+        const WATCH_PARTY_SOFT_DRIFT_TOLERANCE = 0.18;
+        const WATCH_PARTY_SYNC_HEARTBEAT_MS = 3000;
         let watchPartySocket = null;
         let watchPartyRoomCode = '';
         let watchPartyRole = '';
@@ -11272,19 +11272,19 @@
         function enforceWatchPartyRemotePlayback(state = watchPartyLastRemoteState, options = {}) {
             if (watchPartyRole !== 'guest' || !state || !video) return;
             const hostTime = getAdjustedWatchPartyTime(state || {});
-            const shouldForceSeek = options.forceSeek === true || state.action === 'seek' || state.action === 'route';
+            const shouldForceSeek = options.forceSeek === true || state.action === 'seek' || state.action === 'route' || state.action === 'pause';
             const currentTime = Number(video.currentTime || 0);
             const signedDrift = currentTime - hostTime;
             const drift = Math.abs(signedDrift);
-            const actionNeedsTightSync = state.action === 'play' || state.action === 'pause';
+            const canSoftCorrect = video.readyState >= 3 && !video.seeking && !isSourceSwitching;
             watchPartyApplyingRemote = true;
-            if (shouldForceSeek || drift > WATCH_PARTY_DRIFT_TOLERANCE || (actionNeedsTightSync && drift > WATCH_PARTY_SOFT_DRIFT_TOLERANCE)) {
+            if (shouldForceSeek || drift > WATCH_PARTY_DRIFT_TOLERANCE) {
                 const seekToHost = () => { try { video.currentTime = Math.max(0, hostTime); } catch (_) { } };
                 if (video.readyState >= 1) seekToHost();
                 else video.addEventListener('loadedmetadata', seekToHost, { once: true });
-            } else if (state.paused === false && drift > WATCH_PARTY_SOFT_DRIFT_TOLERANCE) {
+            } else if (state.paused === false && canSoftCorrect && drift > WATCH_PARTY_SOFT_DRIFT_TOLERANCE) {
                 const baseRate = Math.max(0.25, Number(watchPartyBasePlaybackRate || video.playbackRate || 1) || 1);
-                setWatchPartyGuestPlaybackRate(signedDrift > 0 ? baseRate * 0.94 : baseRate * 1.04, 850);
+                setWatchPartyGuestPlaybackRate(signedDrift > 0 ? baseRate * 0.97 : baseRate * 1.03, 1200);
             }
             if (state.paused === true || state.action === 'pause') {
                 try { video.pause(); } catch (_) { }
@@ -19049,6 +19049,7 @@
     }
 
 </style>
+
 
 
 
