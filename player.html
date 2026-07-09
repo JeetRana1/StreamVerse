@@ -3782,6 +3782,7 @@
             if (!url) return '';
             try {
                 const u = new URL(url);
+                if (u.hostname === 'image.tmdb.org') return url;
                 if (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || url.includes('/proxy')) return url;
                 // Use the active API origin for media proxying so prod matches local behavior
                 const mediaProxyOrigin = getMediaProxyOrigin();
@@ -4018,15 +4019,19 @@
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['animesalt'];
         
         // NOTE: MOVIE_PROVIDERS is legacy - replaced with intelligent anime detection
-        // For non-anime content: FlixHQ first, then AnimeSalt fallback
+        // For non-anime content: HDStream4u first, then FlixHQ fallback
         // For anime content: ANIME_PROVIDERS only (most reliable)
-        const MOVIE_PROVIDERS = ['flixhq', 'animesalt'];
+        const MOVIE_PROVIDERS = ['hdstream4u', 'flixhq', 'animesalt'];
 
         const params = new URLSearchParams(location.search);
         const TMDB_ID = params.get('id');
         const rawType = (params.get('type') || 'movie').toLowerCase();
         const MEDIA_TYPE = (rawType === 'undefined' || !rawType) ? 'movie' : rawType;
+        let effectiveMediaType = MEDIA_TYPE;
         let FORCED_PROVIDER = params.get('provider') || '';
+        if (!FORCED_PROVIDER && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv')) {
+            FORCED_PROVIDER = 'hdstream4u';
+        }
         if (String(FORCED_PROVIDER || '').toLowerCase() === 'animetsu' && !preferredSourceLabelMatch) {
             preferredSourceLabelMatch = readSavedAnimeAudioMode() || 'subbed';
         }
@@ -4044,6 +4049,22 @@
         const URL_TIME = Number(params.get('t') || 0);
         const URL_DISABLE_RESUME = String(params.get('resume') || '').trim() === '0';
         const URL_AUDIO = String(params.get('audio') || '').trim().toLowerCase();
+
+        function getAlternateMediaType(type) {
+            return String(type || '').toLowerCase() === 'tv' ? 'movie' : 'tv';
+        }
+
+        function resolveMediaTypeFromInfo(info, fallback = effectiveMediaType) {
+            const explicit = String(info?.media_type || info?.type || info?.format || '').toLowerCase().trim();
+            if (explicit === 'movie' || explicit === 'film' || explicit.includes('movie')) return 'movie';
+            if (explicit === 'tv' || explicit.includes('tv') || explicit.includes('series') || explicit.includes('show')) return 'tv';
+            if (Array.isArray(info?.seasons) && info.seasons.length) return 'tv';
+            if (info?.first_air_date && !info?.release_date) return 'tv';
+            if (info?.release_date && !info?.first_air_date) return 'movie';
+            if (info?.name && !info?.title) return 'tv';
+            if (info?.title && !info?.name) return 'movie';
+            return fallback === 'tv' ? 'tv' : 'movie';
+        }
 
         function sanitizeTvUrlParamsOnBoot() {
             if (MEDIA_TYPE !== 'tv') return;
@@ -5942,14 +5963,14 @@
             // ENHANCED: For audio track switching, reuse HLS instance if possible
             if (isAudioTrackSwitch && hlsInst) {
                 console.log('Seamless audio track switch detected, reusing HLS instance');
-                hlsInst.loadSource(proxiedStreamUrl(url, referer, currentStreamProvider, sourceOrigin, true));
+                hlsInst.loadSource(proxiedStreamUrl(url, referer, currentStreamProvider, sourceOrigin, true, sourceCookieHeader));
                 try {
                     hlsInst.startLoad(Math.max(0, targetTime - 0.8));
                 } catch (_) { }
             } else {
                 hlsInst = svCreateHlsInstance(targetTime, false, currentStreamProvider);
                 svAttachHlsListeners(hlsInst, targetTime, onReady);
-                hlsInst.loadSource(proxiedStreamUrl(url, referer, currentStreamProvider, sourceOrigin, true));
+                hlsInst.loadSource(proxiedStreamUrl(url, referer, currentStreamProvider, sourceOrigin, true, sourceCookieHeader));
                 hlsInst.attachMedia(video);
                 try {
                     hlsInst.startLoad(Math.max(0, targetTime - 0.8));
@@ -6007,7 +6028,7 @@
                     escalatedToHardReload = true;
                     console.warn('[hls] Silent recovery still unhealthy, escalating to hard reload at target time.');
                     pendingJumpTarget = { time: targetTime, reason: pendingJumpTarget?.reason || 'seek' };
-                    loadStream(url, true, false, referer, sourceIdx, targetTime);
+                    loadStream(url, true, false, referer, sourceIdx, targetTime, (allSources?.[sourceIdx]?.cookieHeader || ''));
                 }
             }, 2200);
             setTimeout(hideTransitionOverlay, 8000);
@@ -6028,6 +6049,7 @@
             const useResumePosition = shouldUseContinueWatchingPositionOnBoot();
             const urlSeason = Number(currentParams.get('season') || 0);
             const urlEpisode = Number(currentParams.get('episode') || currentParams.get('ep') || 0);
+            console.log('[getInitialTvPositionFromUrl] urlSeason=' + urlSeason + ' urlEpisode=' + urlEpisode + ' seasonsLen=' + safeSeasons.length + ' epCount=' + (safeSeasons[0]?.episodes?.length || 0));
             const currentSeason = useResumePosition ? RESUME_SEASON_FALLBACK : urlSeason;
             const currentEpisode = useResumePosition ? RESUME_EPISODE_FALLBACK : urlEpisode;
             const rawSeasonTitle = useResumePosition ? '' : String(currentParams.get('seasonTitle') || '').trim();
@@ -6130,6 +6152,18 @@
                 return (Number.isFinite(n) && n >= 0) ? n : fallback;
             };
 
+            const isSpecialSeason = (season) => {
+                const seasonNo = Number(season?.seasonNo || 0);
+                const seasonName = String(season?.name || '').trim();
+                return seasonNo <= 0 || /^(specials?|extras?|recaps?|ovas?)$/i.test(seasonName);
+            };
+
+            const dropSpecialSeasonsByDefault = (seasons) => {
+                const list = Array.isArray(seasons) ? seasons : [];
+                const normalSeasons = list.filter((season) => !isSpecialSeason(season));
+                return normalSeasons.length ? normalSeasons : list;
+            };
+
             // 1. Try to use TMDB's season structure as the skeleton
             if (rawSeasons.length > 0) {
                 const buckets = rawSeasons.map((s, idx) => {
@@ -6189,7 +6223,7 @@
                     console.log(`Anime detected with single large season (${rawEpisodes.length} eps). Forcing seasonal split.`);
                 } else if (final.length > 0) {
                     console.log(`Loaded ${final.length} seasons from API metadata.`);
-                    return final;
+                    return dropSpecialSeasonsByDefault(final);
                 }
             }
 
@@ -6231,7 +6265,7 @@
                         });
                     });
                     if (distributed.length > 0) {
-                        return distributed;
+                        return dropSpecialSeasonsByDefault(distributed);
                     }
                 }
                 const chunks = [];
@@ -6243,7 +6277,7 @@
                         episodes: rawEpisodes.slice(i, i + 24)
                     });
                 }
-                return chunks;
+                return dropSpecialSeasonsByDefault(chunks);
             }
 
             // 2. Fallback: Group by season property in flat list
@@ -6255,13 +6289,13 @@
                     grouped.get(sNo).push(ep);
                 });
 
-                return [...grouped.entries()]
+                return dropSpecialSeasonsByDefault([...grouped.entries()]
                     .sort((a, b) => a[0] - b[0])
                     .map(([seasonNo, episodes]) => ({
                         seasonNo,
                         name: currentIsLikelyAnime ? `Part ${seasonNo}` : `Season ${seasonNo}`,
                         episodes
-                    }));
+                    })));
             }
 
             return [];
@@ -6361,7 +6395,13 @@
                 };
             });
 
-            return removeDuplicateExtrasMenuSeasons(deduped);
+            const cleaned = removeDuplicateExtrasMenuSeasons(deduped);
+            const normalSeasons = cleaned.filter((season) => {
+                const seasonNo = Number(season?.seasonNo || 0);
+                const seasonName = String(season?.name || '').trim();
+                return seasonNo > 0 && !/^(specials?|extras?|recaps?|ovas?)$/i.test(seasonName);
+            });
+            return normalSeasons.length ? normalSeasons : cleaned;
         }
 
         function buildAnimeFillerSlugCandidates(title) {
@@ -8519,8 +8559,23 @@
                 }
             };
             const sanitizeText = (text) => String(text || '').replace(/\r+/g, '').replace(/^\uFEFF/, '');
+            const stripSubtitleMarkup = (text) => String(text || '')
+                .replace(/<\/?(i|b|u|font|c|ruby|rt|v)(?:\s+[^>]*)?>/gi, '')
+                .replace(/<[^>]+>/g, '');
+            const sanitizeCueText = (text) => sanitizeText(text)
+                .split('\n')
+                .map((line) => {
+                    const trimmed = String(line || '').trim();
+                    if (!trimmed) return '';
+                    if (/^WEBVTT$/i.test(trimmed)) return line;
+                    if (/^(NOTE|STYLE|REGION)(\s|$)/i.test(trimmed)) return line;
+                    if (/^\d+$/.test(trimmed)) return line;
+                    if (/-->/.test(line)) return line;
+                    return stripSubtitleMarkup(line);
+                })
+                .join('\n');
             const srtToVtt = (srtText) => {
-                const clean = sanitizeText(srtText);
+                const clean = sanitizeCueText(srtText);
                 return `WEBVTT\n\n${clean.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')}`;
             };
             const assTimeToVtt = (t) => {
@@ -8546,6 +8601,7 @@
                         .replace(/\{[^}]*\}/g, '')
                         .replace(/\\N/gi, '\n')
                         .replace(/\\n/g, '\n')
+                        .replace(/<[^>]+>/g, '')
                         .trim();
                     if (!text) continue;
                     cues.push(`${idx++}\n${start} --> ${end}\n${text}`);
@@ -8626,7 +8682,7 @@
                         if (looksLikeSrt || (finalHasCue && finalHasSrt && !finalLn.startsWith('webvtt'))) vttContent = srtToVtt(content);
                         else if (looksLikeAss || looksAssBody) vttContent = assToVtt(content);
                         else if (finalLn.startsWith('webvtt')) vttContent = sanitizeText(content);
-                        else if (finalHasCue) vttContent = `WEBVTT\n\n${sanitizeText(content)}`;
+                        else if (finalHasCue) vttContent = `WEBVTT\n\n${sanitizeCueText(content)}`;
 
                         if (vttContent) {
                             subtitleBlobCache.set(lower, vttContent);
@@ -9020,6 +9076,9 @@
 
         function renderSubtitleOverlayFromTrack(track) {
             const overlay = ensureSubtitleOverlay();
+            const stripRenderedSubtitleMarkup = (value) => String(value || '')
+                .replace(/<\/?(i|b|u|font|c|ruby|rt|v)(?:\s+[^>]*)?>/gi, '')
+                .replace(/<[^>]+>/g, '');
             if (!track || track.mode === 'disabled') {
                 overlay.innerHTML = '';
                 overlay.style.display = 'none';
@@ -9030,7 +9089,10 @@
             const visibleCues = subtitleSettings.delay === 0 && activeCues.length
                 ? activeCues
                 : Array.from(track.cues || []).filter((cue) => effectiveTime >= cue.startTime && effectiveTime <= cue.endTime);
-            const text = visibleCues.map((c) => c.text || '').filter(Boolean).join('\n');
+            const text = visibleCues
+                .map((c) => stripRenderedSubtitleMarkup(c.text || ''))
+                .filter(Boolean)
+                .join('\n');
             
             // Optimization: Only update DOM if the content has changed to avoid flickering
             if (overlay.textContent !== text) {
@@ -10631,10 +10693,10 @@
             preferencesMenu.appendChild(outroRow);
         }
 
-        const WATCH_PARTY_DRIFT_TOLERANCE = 0.55;
-        const WATCH_PARTY_SOFT_DRIFT_TOLERANCE = 0.18;
-        const WATCH_PARTY_SYNC_HEARTBEAT_MS = 3000;
-        const WATCH_PARTY_GUEST_PLAYBACK_LATENCY = 1.6;
+        const WATCH_PARTY_DRIFT_TOLERANCE = 0.2;
+        const WATCH_PARTY_SOFT_DRIFT_TOLERANCE = 0.05;
+        const WATCH_PARTY_SYNC_HEARTBEAT_MS = 250;
+        const WATCH_PARTY_GUEST_PLAYBACK_LATENCY = 0;
         let watchPartySocket = null;
         let watchPartyRoomCode = '';
         let watchPartyRole = '';
@@ -10651,6 +10713,15 @@
         let watchPartyPendingMessages = [];
         let watchPartyBasePlaybackRate = 1;
         let watchPartyRateRestoreTimer = null;
+        let watchPartyUiStep = 'identify';
+        let watchPartyVisibility = 'private';
+        let watchPartyPublicRoomsData = [];
+        let watchPartyHostName = '';
+        let watchPartyCopyActive = false;
+        let watchPartyCopyResetTimer = null;
+        let watchPartyCardCollapsed = false;
+        let watchPartyChatCollapsed = false;
+        let watchPartyHasUnread = false;
 
         function getWatchPartyWsUrl() {
             const apiRoot = String(activeApiBase || API_BASE || '').replace(/\/meta\/tmdb\/?$/i, '');
@@ -10716,7 +10787,18 @@
                 e.preventDefault();
                 e.stopPropagation();
                 ensureWatchPartySocket();
-                document.body.classList.toggle('watch-party-open');
+                watchPartyHasUnread = false;
+                updateWatchPartyButtonState();
+                const wasOpen = document.body.classList.contains('watch-party-open');
+                if (wasOpen) {
+                    document.body.classList.remove('watch-party-open');
+                    renderWatchPartyView();
+                } else {
+                    watchPartyCardCollapsed = false;
+                    watchPartyChatCollapsed = false;
+                    renderWatchPartyView();
+                    document.body.classList.add('watch-party-open');
+                }
             });
             document.addEventListener('click', interceptGuestPlayerControls, true);
             window.addEventListener('streamverse:routechange', watchPartyScheduleHostRouteSync);
@@ -10726,6 +10808,15 @@
                     watchPartyEmitHostState('play');
                 }
             }, WATCH_PARTY_SYNC_HEARTBEAT_MS);
+            let watchPartyLastDriftCheck = 0;
+            (function watchPartyGuestDriftLoop() {
+                const now = Date.now();
+                if (watchPartyRole === 'guest' && watchPartyLastRemoteState && video && !watchPartyApplyingRemote && now - watchPartyLastDriftCheck > 200) {
+                    watchPartyLastDriftCheck = now;
+                    enforceWatchPartyRemotePlayback(watchPartyLastRemoteState);
+                }
+                requestAnimationFrame(watchPartyGuestDriftLoop);
+            })();
             const bootRoom = String(PARAMS_BOOT.get('wpRoom') || '').trim().toUpperCase();
             if (bootRoom && !watchPartyAutoJoinStarted) {
                 watchPartyAutoJoinStarted = true;
@@ -10741,67 +10832,552 @@
             style.textContent = `
                 #watchPartyPanel {
                     position: fixed;
-                    top: 92px;
+                    top: auto;
                     right: 18px;
-                    bottom: 92px;
-                    width: min(380px, calc(100vw - 24px));
+                    bottom: 156px;
+                    width: min(420px, calc(100vw - 28px));
                     z-index: 10040;
                     display: none;
-                    grid-template-rows: auto 1fr;
-                    gap: 10px;
                     color: #fff;
                     font-family: Outfit, system-ui, sans-serif;
                     pointer-events: auto;
                 }
-                body.watch-party-open #watchPartyPanel { display: grid; }
+                body.watch-party-in-room #watchPartyPanel {
+                    top: 84px;
+                    bottom: 92px;
+                    width: min(980px, calc(100vw - 28px));
+                }
+                body.watch-party-open #watchPartyPanel { display: block; }
+                #watchPartyCollapsedChips {
+                    position: fixed;
+                    display: none;
+                    align-items: center;
+                    gap: 6px;
+                    z-index: 360;
+                    pointer-events: auto;
+                }
+                #watchPartyCollapsedChips.has-chips {
+                    display: inline-flex;
+                }
+                #watchPartyCollapsedChips:not(.chips-all) {
+                    top: 26px;
+                    right: 104px;
+                }
+                #watchPartyCollapsedChips.chips-all {
+                    top: 26px;
+                    right: 120px;
+                }
+                .watch-party-floating-chip {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    height: 44px;
+                    padding: 0 10px;
+                    background: linear-gradient(180deg, rgba(17,17,18,.96), rgba(22,18,20,.94));
+                    border: 1px solid rgba(120,130,145,.18);
+                    box-shadow: 0 18px 64px rgba(0,0,0,.42);
+                    backdrop-filter: blur(18px);
+                    border-radius: 30px;
+                    cursor: pointer;
+                    color: #fff;
+                    font-size: 13px;
+                    font-weight: 600;
+                    letter-spacing: 0;
+                    line-height: 1;
+                    white-space: nowrap;
+                    pointer-events: auto;
+                    flex-shrink: 0;
+                }
+                .watch-party-floating-chip i {
+                    font-size: 15px;
+                    width: 22px;
+                    text-align: center;
+                }
+                .watch-party-floating-chip span {
+                    margin: 0;
+                }
+                .watch-party-chip-btn {
+                    width: 28px;
+                    height: 28px;
+                    min-width: 28px;
+                    padding: 0;
+                    border-radius: 8px;
+                    background: rgba(255,255,255,.08);
+                    border: 1px solid rgba(255,255,255,.12);
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    color: #fff;
+                    font-size: 13px;
+                    pointer-events: auto;
+                    flex-shrink: 0;
+                }
+                .watch-party-chip-btn:hover {
+                    background: rgba(255,255,255,.15);
+                }
+
+                #watchTogetherBtn.watch-party-unread::after {
+                    content: '';
+                    position: absolute;
+                    top: 6px;
+                    right: 6px;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 999px;
+                    border: 2px solid rgba(8,8,10,.95);
+                    background: #ef4444;
+                }
+                .watch-party-shell {
+                    height: auto;
+                    max-height: 100%;
+                    display: grid;
+                    grid-template-columns: minmax(320px, 400px);
+                    gap: 14px;
+                    align-items: start;
+                    justify-content: end;
+                }
+                body.watch-party-in-room .watch-party-shell {
+                    height: 100%;
+                    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+                    align-items: stretch;
+                }
                 .watch-party-card,
                 .watch-party-chat {
-                    background: linear-gradient(145deg, rgba(22,22,26,.88), rgba(42,28,30,.76));
-                    border: 1px solid rgba(255,255,255,.14);
-                    box-shadow: 0 18px 56px rgba(0,0,0,.42);
-                    backdrop-filter: blur(22px);
-                    border-radius: 12px;
-                    padding: 14px;
+                    justify-self: stretch;
+                    align-self: stretch;
+                }
+                .watch-party-card,
+                .watch-party-chat {
+                    background: linear-gradient(180deg, rgba(17,17,18,.96), rgba(22,18,20,.94));
+                    border: 1px solid rgba(120,130,145,.18);
+                    box-shadow: 0 18px 64px rgba(0,0,0,.42);
+                    backdrop-filter: blur(18px);
+                    border-radius: 30px;
                     min-height: 0;
                 }
-                .watch-party-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
-                .watch-party-head strong { font-size: 16px; }
-                .watch-party-close { width:34px; height:34px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.08); color:#fff; cursor:pointer; }
-                .watch-party-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+                .watch-party-card {
+                    padding: 18px 18px 16px;
+                    display: flex;
+                    flex-direction: column;
+                }
+                .watch-party-chat {
+                    display: none;
+                    min-width: 0;
+                }
+                body.watch-party-in-room .watch-party-chat {
+                    display: grid;
+                    grid-template-rows: auto auto 1fr auto;
+                    padding: 16px;
+                }
+                .watch-party-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+                .watch-party-head-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+                .watch-party-card-title {
+                    font-family: "Courier Prime", "Courier New", monospace;
+                    font-size: 20px;
+                    font-weight: 700;
+                    letter-spacing: .03em;
+                    margin: 0;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .watch-party-chat-title {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .watch-party-card-title i,
+                .watch-party-chat-title i {
+                    font-size: 16px;
+                    width: 22px;
+                    text-align: center;
+                }
+                .watch-party-card:not(.collapsed) .watch-party-card-title i,
+                .watch-party-chat:not(.collapsed) .watch-party-chat-title i {
+                    display: none;
+                }
+                .watch-party-card-subtitle {
+                    margin-top: 8px;
+                    color: rgba(235,235,235,.72);
+                    font-size: 12px;
+                    line-height: 1.45;
+                }
+                .watch-party-divider {
+                    height: 1px;
+                    background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.22), rgba(255,255,255,.06));
+                    margin: 18px 0 16px;
+                }
+                .watch-party-close {
+                    width: 42px;
+                    height: 42px;
+                    border-radius: 14px;
+                    border: 1px solid rgba(255,255,255,.12);
+                    background: rgba(255,255,255,.06);
+                    color: #fff;
+                    cursor: pointer;
+                    flex-shrink: 0;
+                }
+                .watch-party-collapse {
+                    width: 42px;
+                    height: 42px;
+                    border-radius: 14px;
+                    border: 1px solid rgba(255,255,255,.12);
+                    background: rgba(255,255,255,.06);
+                    color: #fff;
+                    cursor: pointer;
+                    flex-shrink: 0;
+                }
+                .watch-party-stage {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    min-height: 0;
+                }
+                .watch-party-card.collapsed .watch-party-stage,
+                .watch-party-card.collapsed .watch-party-divider,
+                .watch-party-chat.collapsed #watchPartyMessages,
+                .watch-party-chat.collapsed #watchPartyChatForm,
+                .watch-party-chat.collapsed .watch-party-chat-name {
+                    display: none;
+                }
+                .watch-party-card.collapsed {
+                    padding: 0 10px;
+                    min-height: auto;
+                    height: 44px;
+                    max-height: none;
+                    border-radius: 12px;
+                    width: fit-content;
+                    min-width: unset;
+                    max-width: none;
+                    margin-left: 0;
+                    align-self: center;
+                    background: linear-gradient(135deg, rgba(12,12,14,0.82), rgba(18,18,20,0.56));
+                    border-color: rgba(255,255,255,0.10);
+                    border: 1px solid rgba(255,255,255,0.10);
+                    box-shadow: 0 12px 28px rgba(0,0,0,0.34);
+                    backdrop-filter: blur(16px);
+                    -webkit-backdrop-filter: blur(16px);
+                    display: inline-flex;
+                    flex-direction: row;
+                    align-items: center;
+                    gap: 6px;
+                    cursor: pointer;
+                    transition: var(--transition);
+                }
+                .watch-party-card.collapsed:hover {
+                    background: linear-gradient(135deg, rgba(18,18,20,0.92), rgba(24,24,28,0.66));
+                    border-color: rgba(229,9,20,0.45);
+                    box-shadow: 0 14px 32px rgba(0,0,0,0.40), 0 0 16px rgba(229,9,20,0.16);
+                }
+                .watch-party-chat.collapsed {
+                    grid-template-rows: none;
+                    display: inline-flex;
+                    flex-direction: row;
+                    align-items: center;
+                    gap: 6px;
+                    min-height: auto;
+                    height: 44px;
+                    max-height: none;
+                    padding: 0 10px;
+                    border-radius: 12px;
+                    width: fit-content;
+                    min-width: unset;
+                    max-width: none;
+                    margin-left: 0;
+                    align-self: center;
+                    background: linear-gradient(135deg, rgba(12,12,14,0.82), rgba(18,18,20,0.56));
+                    border: 1px solid rgba(255,255,255,0.10);
+                    box-shadow: 0 12px 28px rgba(0,0,0,0.34);
+                    backdrop-filter: blur(16px);
+                    -webkit-backdrop-filter: blur(16px);
+                    cursor: pointer;
+                    transition: var(--transition);
+                }
+                .watch-party-chat.collapsed:hover {
+                    background: linear-gradient(135deg, rgba(18,18,20,0.92), rgba(24,24,28,0.66));
+                    border-color: rgba(229,9,20,0.45);
+                    box-shadow: 0 14px 32px rgba(0,0,0,0.40), 0 0 16px rgba(229,9,20,0.16);
+                }
+                .watch-party-card.collapsed .watch-party-card-head {
+                    margin: 0;
+                    padding: 0;
+                    align-items: center;
+                    justify-content: flex-start;
+                    gap: 8px;
+                    display: inline-flex;
+                    width: auto;
+                    flex: none;
+                    min-height: 0;
+                }
+                .watch-party-card.collapsed .watch-party-card-head > div:first-child {
+                    display: inline-flex;
+                    align-items: center;
+                    min-height: 0;
+                }
+                .watch-party-chat.collapsed .watch-party-chat-head {
+                    margin: 0;
+                    padding: 0;
+                    align-items: center;
+                    justify-content: flex-start;
+                    gap: 6px;
+                    display: inline-flex;
+                    width: auto;
+                    flex: none;
+                    min-height: 0;
+                }
+                .watch-party-chat.collapsed .watch-party-chat-title {
+                    margin: 0;
+                }
+                .watch-party-card.collapsed .watch-party-card-subtitle,
+                .watch-party-chat.collapsed .watch-party-chat-status {
+                    display: none;
+                }
+                .watch-party-card.collapsed .watch-party-card-title,
+                .watch-party-chat.collapsed .watch-party-chat-title {
+                    font-size: 13px;
+                    white-space: nowrap;
+                    font-weight: 600;
+                    letter-spacing: 0;
+                    line-height: 1;
+                    color: #fff;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    margin: 0;
+                }
+
+                .watch-party-card.collapsed .watch-party-close,
+                .watch-party-card.collapsed .watch-party-collapse,
+                .watch-party-chat.collapsed .watch-party-collapse,
+                .watch-party-chat.collapsed .watch-party-close {
+                    width: 28px;
+                    height: 28px;
+                    min-width: 28px;
+                    padding: 0;
+                    border-radius: 8px;
+                    background: rgba(255,255,255,.08);
+                    border-color: rgba(255,255,255,.12);
+                    border: 1px solid rgba(255,255,255,.12);
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    color: #fff;
+                }
+                .watch-party-card.collapsed .watch-party-close:hover,
+                .watch-party-card.collapsed .watch-party-collapse:hover,
+                .watch-party-chat.collapsed .watch-party-collapse:hover,
+                .watch-party-chat.collapsed .watch-party-close:hover {
+                    background: rgba(255,255,255,.14);
+                }
+                .watch-party-card.collapsed .watch-party-close i,
+                .watch-party-card.collapsed .watch-party-collapse i,
+                .watch-party-chat.collapsed .watch-party-close i,
+                .watch-party-chat.collapsed .watch-party-collapse i {
+                    font-size: 12px;
+                    line-height: 1;
+                }
+                .watch-party-card.collapsed .watch-party-head-actions,
+                .watch-party-chat.collapsed .watch-party-head-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                    margin-left: 0;
+                }
+                .watch-party-label {
+                    color: rgba(255,255,255,.82);
+                    font-weight: 700;
+                    font-size: 13px;
+                    line-height: 1.35;
+                }
                 .watch-party-card input,
                 .watch-party-chat input {
                     width: 100%;
                     min-width: 0;
                     border: 1px solid rgba(255,255,255,.12);
-                    border-radius: 8px;
-                    background: rgba(0,0,0,.28);
+                    border-radius: 14px;
+                    background: rgba(255,255,255,.05);
                     color: #fff;
-                    padding: 10px 11px;
+                    padding: 12px 14px;
                     outline: none;
+                    font-size: 14px;
                 }
                 .watch-party-card button,
                 .watch-party-chat button {
                     border: 1px solid rgba(255,255,255,.12);
-                    border-radius: 8px;
+                    border-radius: 14px;
                     background: rgba(255,255,255,.08);
                     color: #fff;
-                    padding: 10px 11px;
+                    padding: 12px 14px;
                     font-weight: 800;
                     cursor: pointer;
+                    transition: background .18s ease, border-color .18s ease, transform .18s ease;
                 }
+                .watch-party-card button:hover,
+                .watch-party-chat button:hover { transform: translateY(-1px); }
                 .watch-party-card button.primary,
-                .watch-party-chat button { background:#ef0712; border-color:#ef0712; }
-                .watch-party-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:8px 0; }
-                .watch-party-toggle { display:flex; align-items:center; gap:8px; color:rgba(255,255,255,.78); font-size:13px; }
-                .watch-party-meta { margin-top:10px; font-size:13px; color:rgba(255,255,255,.72); line-height:1.45; }
+                .watch-party-chat button.primary {
+                    background: #dcdcdc;
+                    border-color: #dcdcdc;
+                    color: #161616;
+                }
+                .watch-party-inline-row {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) auto;
+                    gap: 10px;
+                    align-items: center;
+                }
+                .watch-party-segmented {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 10px;
+                }
+                .watch-party-segmented button {
+                    background: rgba(255,255,255,.04);
+                    border-color: rgba(255,255,255,.14);
+                }
+                .watch-party-segmented button.active {
+                    background: linear-gradient(180deg, rgba(188,94,129,.95), rgba(131,57,89,.95));
+                    border-color: rgba(235,158,191,.62);
+                    color: #fff;
+                    box-shadow: inset 5px 0 0 rgba(255,208,224,.55);
+                }
+                .watch-party-helper { color: rgba(255,255,255,.58); font-size: 11px; text-align: center; }
+                .watch-party-meta { margin-top: 4px; font-size:13px; color:rgba(255,255,255,.72); line-height:1.45; }
                 .watch-party-code { color:#fff; font-weight:900; letter-spacing:.18em; }
-                .watch-party-public-list { display:grid; gap:6px; max-height:104px; overflow:auto; margin-top:8px; }
-                .watch-party-public-room { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px; border-radius:8px; background:rgba(255,255,255,.07); cursor:pointer; }
-                .watch-party-chat { display:grid; grid-template-rows:auto 1fr auto; }
+                .watch-party-public-list {
+                    display:grid;
+                    gap:10px;
+                    max-height: min(46vh, 360px);
+                    overflow:auto;
+                    padding-right: 4px;
+                }
+                .watch-party-public-empty {
+                    color: rgba(255,255,255,.72);
+                    font-size: 15px;
+                    line-height: 1.35;
+                    font-weight: 700;
+                }
+                .watch-party-public-room {
+                    display:grid;
+                    grid-template-columns: minmax(0, 1fr) auto;
+                    gap:10px;
+                    align-items:center;
+                    padding:0;
+                    background: transparent;
+                    border: none;
+                }
+                .watch-party-public-room-code {
+                    min-width: 0;
+                    border: 1px solid rgba(255,255,255,.18);
+                    border-radius: 14px;
+                    background: rgba(255,255,255,.04);
+                    padding: 11px 14px;
+                    font-weight: 800;
+                    text-align: center;
+                    color: rgba(255,255,255,.9);
+                }
+                .watch-party-public-room button {
+                    min-width: 90px;
+                    background: #dcdcdc;
+                    border-color: #dcdcdc;
+                    color: #161616;
+                }
+                .watch-party-room-badge {
+                    display:grid;
+                    gap:10px;
+                    padding:12px;
+                    border-radius:14px;
+                    background: rgba(255,255,255,.05);
+                    border: 1px solid rgba(255,255,255,.12);
+                    font-size: 13px;
+                    color: rgba(255,255,255,.82);
+                }
+                .watch-party-room-line {
+                    display:flex;
+                    align-items:center;
+                    justify-content:space-between;
+                    gap:10px;
+                }
+                .watch-party-room-line.stack {
+                    align-items:flex-start;
+                    flex-direction:column;
+                    gap:6px;
+                }
+                .watch-party-room-label {
+                    display:flex;
+                    align-items:center;
+                    gap:8px;
+                    flex-wrap:wrap;
+                }
+                .watch-party-room-actions {
+                    display:flex;
+                    align-items:center;
+                    gap:8px;
+                    flex-shrink: 0;
+                }
+                .watch-party-copy-btn {
+                    width: 38px;
+                    height: 38px;
+                    padding: 0;
+                    border-radius: 12px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                }
+                .watch-party-copy-btn.copied {
+                    background: #1f9d55;
+                    border-color: #1f9d55;
+                    color: #fff;
+                }
+                .watch-party-join-row {
+                    display:grid;
+                    grid-template-columns: minmax(0, 1fr) auto auto;
+                    gap:8px;
+                    align-items:center;
+                }
+                .watch-party-paste-btn {
+                    width: 46px;
+                    min-width: 46px;
+                    padding: 0;
+                    display:inline-flex;
+                    align-items:center;
+                    justify-content:center;
+                }
+                .watch-party-chat-head {
+                    display:flex;
+                    align-items:center;
+                    justify-content:space-between;
+                    gap:12px;
+                    margin-bottom: 12px;
+                }
+                .watch-party-chat-title {
+                    font-size: 18px;
+                    font-weight: 800;
+                }
+                .watch-party-chat-status {
+                    color: rgba(255,255,255,.72);
+                    font-size: 12px;
+                    font-weight: 700;
+                }
+                .watch-party-chat-name {
+                    margin-bottom: 10px;
+                    color: rgba(255,255,255,.86);
+                    font-size: 13px;
+                    font-weight: 700;
+                }
                 #watchPartyMessages { min-height:0; overflow:auto; display:flex; flex-direction:column; gap:8px; padding-right:4px; }
-                .watch-party-message { background:rgba(255,255,255,.08); border-radius:8px; padding:8px; }
+                .watch-party-message { background:rgba(255,255,255,.06); border-radius:14px; padding:10px 12px; }
                 .watch-party-message small { display:block; color:rgba(255,255,255,.55); margin-bottom:3px; }
-                #watchPartyChatForm { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:10px; }
+                #watchPartyChatForm { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:12px; }
+                #watchPartyChatForm button {
+                    min-width: 86px;
+                    background:#ef0712;
+                    border-color:#ef0712;
+                    color:#fff;
+                }
                 body.watch-party-guest #playPauseBtn,
                 body.watch-party-guest #skipBackBtn,
                 body.watch-party-guest #skipFwdBtn,
@@ -10835,7 +11411,103 @@
                 }
                 .watch-party-guest-pill { position:fixed; left:50%; bottom:154px; transform:translate(-50%, 10px); z-index:10030; padding:9px 13px; border-radius:999px; background:rgba(16,16,18,.72); border:1px solid rgba(255,255,255,.12); color:#fff; font-weight:800; backdrop-filter:blur(14px); opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease; }
                 body.watch-party-guest.watch-party-controls-visible .watch-party-guest-pill { opacity:1; transform:translate(-50%, 0); }
-                @media (max-width: 760px) { #watchPartyPanel { left:12px; right:12px; width:auto; top:84px; bottom:82px; } }
+                @media (max-width: 980px) {
+                    #watchPartyPanel {
+                        top: auto;
+                        bottom: 144px;
+                        left: 12px;
+                        right: 12px;
+                        width: auto;
+                    }
+                    body.watch-party-in-room #watchPartyPanel {
+                        top: 84px;
+                        bottom: 82px;
+                    }
+                    .watch-party-shell {
+                        grid-template-columns: 1fr;
+                        justify-content: stretch;
+                    }
+                    .watch-party-chat {
+                        min-height: 280px;
+                    }
+                }
+                @media (max-width: 980px) and (max-height: 540px) {
+                    #watchPartyPanel {
+                        top: 74px;
+                        bottom: 84px;
+                        left: auto;
+                        right: 12px;
+                        width: min(360px, calc(100vw - 24px));
+                    }
+                    body.watch-party-in-room #watchPartyPanel {
+                        left: 12px;
+                        width: auto;
+                    }
+                    .watch-party-card,
+                    .watch-party-chat {
+                        border-radius: 24px;
+                    }
+                    .watch-party-card {
+                        padding: 14px 14px 12px;
+                    }
+                    .watch-party-card-title {
+                        font-size: 17px;
+                    }
+                    .watch-party-card-subtitle,
+                    .watch-party-label,
+                    .watch-party-chat-name {
+                        font-size: 11px;
+                    }
+                    .watch-party-chat {
+                        min-height: 220px;
+                    }
+                }
+                @media (max-width: 640px) and (min-height: 541px) {
+                    #watchPartyPanel {
+                        top: auto;
+                        bottom: 108px;
+                        left: 10px;
+                        right: 10px;
+                        width: auto;
+                    }
+                    .watch-party-shell {
+                        max-height: min(72vh, 620px);
+                    }
+                    .watch-party-card,
+                    .watch-party-chat {
+                        border-radius: 22px;
+                    }
+                    .watch-party-card {
+                        padding: 16px 14px 14px;
+                    }
+                    .watch-party-card-title {
+                        font-size: 18px;
+                    }
+                    .watch-party-card-subtitle {
+                        font-size: 11px;
+                    }
+                    .watch-party-inline-row,
+                    #watchPartyChatForm {
+                        grid-template-columns: 1fr;
+                    }
+                    .watch-party-join-row {
+                        grid-template-columns: minmax(0, 1fr) auto;
+                    }
+                    .watch-party-join-row .watch-party-paste-btn {
+                        width: 100%;
+                        min-width: 0;
+                        padding: 12px 14px;
+                    }
+                    .watch-party-public-room {
+                        grid-template-columns: 1fr;
+                    }
+                    .watch-party-public-room button {
+                        width: 100%;
+                    }
+                    .watch-party-chat {
+                        min-height: 300px;
+                    }
+                }
             `;
             document.head.appendChild(style);
         }
@@ -10845,44 +11517,319 @@
             const panel = document.createElement('aside');
             panel.id = 'watchPartyPanel';
             panel.innerHTML = `
-                <section class="watch-party-card">
-                    <div class="watch-party-head">
-                        <strong>Watch Together</strong>
-                        <button class="watch-party-close" id="watchPartyCloseBtn" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
-                    </div>
-                    <div class="watch-party-grid">
-                        <input id="watchPartyName" maxlength="32" placeholder="Display name" />
-                        <label class="watch-party-toggle"><input id="watchPartyPublic" type="checkbox" /> Public</label>
-                        <button class="primary" id="watchPartyCreateBtn">Generate Room Code</button>
-                        <button id="watchPartyLeaveBtn">Leave</button>
-                        <input id="watchPartyJoinCode" maxlength="6" placeholder="Enter code" autocomplete="off" autocapitalize="characters" />
-                        <button id="watchPartyJoinBtn">Join</button>
-                    </div>
-                    <div class="watch-party-meta" id="watchPartyStatus">Not in a room</div>
-                    <div class="watch-party-public-list" id="watchPartyPublicRooms"></div>
-                </section>
-                <section class="watch-party-chat">
-                    <div class="watch-party-head"><strong>Live Chat</strong><span id="watchPartyMembers">0 watching</span></div>
-                    <div id="watchPartyMessages"></div>
-                    <form id="watchPartyChatForm">
-                        <input id="watchPartyChatInput" maxlength="500" placeholder="Message the room..." />
-                        <button type="submit">Send</button>
-                    </form>
-                </section>
+                <div class="watch-party-shell">
+                    <section class="watch-party-card" id="watchPartyCardPanel">
+                        <div class="watch-party-card-head">
+                            <div>
+                                <h3 class="watch-party-card-title"><i class="fa-solid fa-user-group"></i> Watch Together</h3>
+                                <div class="watch-party-card-subtitle">Sync playback with friends in real-time</div>
+                            </div>
+                            <div class="watch-party-head-actions">
+                                <button class="watch-party-collapse" id="watchPartyCardCollapseBtn" aria-label="Collapse watch together"><i class="fa-solid fa-minus"></i></button>
+                                <button class="watch-party-close" id="watchPartyCloseBtn" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        </div>
+                        <div class="watch-party-divider"></div>
+                        <div class="watch-party-stage" id="watchPartyStage"></div>
+                    </section>
+                    <section class="watch-party-chat" id="watchPartyChatPanel">
+                        <div class="watch-party-chat-head">
+                            <div class="watch-party-chat-title"><i class="fa-solid fa-comment"></i> Live Chat</div>
+                            <div class="watch-party-head-actions">
+                                <div class="watch-party-chat-status" id="watchPartyMembers">1 watching</div>
+                                <button class="watch-party-collapse" id="watchPartyChatCollapseBtn" aria-label="Collapse live chat"><i class="fa-solid fa-minus"></i></button>
+                                <button class="watch-party-close" id="watchPartyChatCloseBtn" aria-label="Close live chat"><i class="fa-solid fa-xmark"></i></button>
+                            </div>
+                        </div>
+                        <div class="watch-party-chat-name" id="watchPartyChatIdentity">Display name,</div>
+                        <div id="watchPartyMessages"></div>
+                        <form id="watchPartyChatForm">
+                            <input id="watchPartyChatInput" maxlength="500" placeholder="Message the room..." />
+                            <button type="submit">Send</button>
+                        </form>
+                    </section>
+                </div>
             `;
             document.body.appendChild(panel);
+            const chipsEl = document.createElement('div');
+            chipsEl.id = 'watchPartyCollapsedChips';
+            document.body.appendChild(chipsEl);
             const guestPill = document.createElement('div');
             guestPill.className = 'watch-party-guest-pill';
             guestPill.textContent = 'Synced to host';
             document.body.appendChild(guestPill);
-            document.getElementById('watchPartyCloseBtn')?.addEventListener('click', () => document.body.classList.remove('watch-party-open'));
-            document.getElementById('watchPartyCreateBtn')?.addEventListener('click', createWatchPartyRoom);
-            document.getElementById('watchPartyJoinBtn')?.addEventListener('click', () => joinWatchPartyRoom());
-            document.getElementById('watchPartyLeaveBtn')?.addEventListener('click', leaveWatchPartyRoom);
+            document.getElementById('watchPartyCloseBtn')?.addEventListener('click', () => {
+                document.body.classList.remove('watch-party-open');
+                renderWatchPartyView();
+            });
+            document.getElementById('watchPartyChatCloseBtn')?.addEventListener('click', () => {
+                document.body.classList.remove('watch-party-open');
+                renderWatchPartyView();
+            });
+            document.getElementById('watchPartyCardCollapseBtn')?.addEventListener('click', toggleWatchPartyCardCollapsed);
+            document.getElementById('watchPartyChatCollapseBtn')?.addEventListener('click', toggleWatchPartyChatCollapsed);
             document.getElementById('watchPartyChatForm')?.addEventListener('submit', sendWatchPartyChat);
-            panel.querySelectorAll('input').forEach((input) => {
+            panel.addEventListener('click', handleWatchPartyPanelClick);
+            panel.addEventListener('change', handleWatchPartyPanelChange);
+            panel.addEventListener('keydown', handleWatchPartyPanelKeydown);
+            panel.querySelector('.watch-party-card')?.addEventListener('click', (e) => {
+                if (watchPartyCardCollapsed && !e.target.closest('button')) {
+                    watchPartyCardCollapsed = false;
+                    renderWatchPartyView();
+                    document.body.classList.add('watch-party-open');
+                }
+            });
+            panel.querySelector('.watch-party-chat')?.addEventListener('click', (e) => {
+                if (watchPartyChatCollapsed && !e.target.closest('button')) {
+                    watchPartyChatCollapsed = false;
+                    renderWatchPartyView();
+                    document.body.classList.add('watch-party-open');
+                }
+            });
+            renderWatchPartyView();
+        }
+
+        function updateWatchPartyButtonState() {
+            if (!watchTogetherBtn) return;
+            watchTogetherBtn.classList.toggle('watch-party-live', Boolean(watchPartyRoomCode));
+            watchTogetherBtn.classList.toggle('watch-party-unread', Boolean(watchPartyHasUnread));
+        }
+
+        function toggleWatchPartyCardCollapsed(e) {
+            e?.stopPropagation();
+            watchPartyCardCollapsed = !watchPartyCardCollapsed;
+            if (watchPartyCardCollapsed && watchPartyChatCollapsed) {
+                document.body.classList.remove('watch-party-open');
+            } else {
+                document.body.classList.add('watch-party-open');
+            }
+            renderWatchPartyView();
+        }
+
+        function toggleWatchPartyChatCollapsed(e) {
+            e?.stopPropagation();
+            watchPartyChatCollapsed = !watchPartyChatCollapsed;
+            if (watchPartyCardCollapsed && watchPartyChatCollapsed) {
+                document.body.classList.remove('watch-party-open');
+            } else {
+                document.body.classList.add('watch-party-open');
+            }
+            renderWatchPartyView();
+        }
+
+        function handleWatchPartyPanelKeydown(event) {
+            if (event.key !== 'Enter') return;
+            const target = event.target;
+            if (target?.id === 'watchPartyName') {
+                event.preventDefault();
+                saveWatchPartyIdentity();
+            }
+            if (target?.id === 'watchPartyJoinCode') {
+                event.preventDefault();
+                joinWatchPartyRoom();
+            }
+        }
+
+        function handleWatchPartyPanelChange(event) {
+            const target = event.target;
+            if (target?.id === 'watchPartyName') {
+                localStorage.setItem('streamverse_watch_party_name', String(target.value || '').trim());
+            }
+        }
+
+        function handleWatchPartyPanelClick(event) {
+            const actionEl = event.target?.closest?.('[data-watch-party-action]');
+            if (!actionEl) return;
+            const action = String(actionEl.getAttribute('data-watch-party-action') || '').trim();
+            if (!action) return;
+            if (action === 'save-name') saveWatchPartyIdentity();
+            if (action === 'set-public') { watchPartyVisibility = 'public'; renderWatchPartyView(); }
+            if (action === 'set-private') { watchPartyVisibility = 'private'; renderWatchPartyView(); }
+            if (action === 'create-room') createWatchPartyRoom();
+            if (action === 'join-room') joinWatchPartyRoom(actionEl.getAttribute('data-room-code') || '');
+            if (action === 'copy-room-code') copyWatchPartyRoomCode();
+            if (action === 'paste-room-code') pasteWatchPartyRoomCode();
+            if (action === 'refresh-public') {
+                ensureWatchPartySocket();
+                watchPartySend('rooms:list');
+            }
+            if (action === 'leave-room') leaveWatchPartyRoom();
+        }
+
+        function saveWatchPartyIdentity() {
+            watchPartyName = getWatchPartyName();
+            watchPartyUiStep = 'mode';
+            renderWatchPartyView();
+        }
+
+        function getWatchPartyNameInputMarkup() {
+            const stored = localStorage.getItem('streamverse_watch_party_name') || '';
+            return `
+                <div class="watch-party-label">Username:</div>
+                <div class="watch-party-inline-row">
+                    <input id="watchPartyName" maxlength="32" placeholder="Display name" value="${escapeWatchPartyHtml(stored)}" />
+                </div>
+                <button class="primary" data-watch-party-action="save-name">Create User</button>
+            `;
+        }
+
+        function getWatchPartyModeMarkup() {
+            const currentName = escapeWatchPartyHtml(watchPartyName || getWatchPartyName());
+            return `
+                <div class="watch-party-label">${currentName} - Would you like to make a public or private room?</div>
+                <div class="watch-party-segmented">
+                    <button type="button" class="${watchPartyVisibility === 'public' ? 'active' : ''}" data-watch-party-action="set-public">Public</button>
+                    <button type="button" class="${watchPartyVisibility === 'private' ? 'active' : ''}" data-watch-party-action="set-private">Private</button>
+                </div>
+                ${watchPartyVisibility === 'private' ? `
+                    <button class="primary" data-watch-party-action="create-room">Create Room</button>
+                    <div class="watch-party-helper">Or Join</div>
+                    <div class="watch-party-join-row">
+                        <input id="watchPartyJoinCode" maxlength="6" placeholder="Room Code" autocomplete="off" autocapitalize="characters" />
+                        <button type="button" class="watch-party-paste-btn" data-watch-party-action="paste-room-code" aria-label="Paste room code"><i class="fa-solid fa-paste"></i></button>
+                        <button type="button" class="primary" data-watch-party-action="join-room">Join</button>
+                    </div>
+                ` : `
+                    <div class="watch-party-label">${currentName},<br>Public Server List:</div>
+                    <div class="watch-party-public-list" id="watchPartyPublicRooms"></div>
+                    <button type="button" data-watch-party-action="refresh-public">Refresh</button>
+                `}
+            `;
+        }
+
+        function getWatchPartyRoomMarkup() {
+            const hostLabel = escapeWatchPartyHtml(watchPartyHostName || (watchPartyRole === 'host' ? (watchPartyName || getWatchPartyName()) : 'Unknown'));
+            return `
+                <div class="watch-party-label">${escapeWatchPartyHtml(watchPartyName || getWatchPartyName())},</div>
+                <div class="watch-party-room-badge">
+                    <div class="watch-party-room-line">
+                        <span class="watch-party-room-label">Room Code: <span class="watch-party-code">${escapeWatchPartyHtml(watchPartyRoomCode)}</span></span>
+                        <div class="watch-party-room-actions">
+                            <button type="button" class="watch-party-copy-btn ${watchPartyCopyActive ? 'copied' : ''}" data-watch-party-action="copy-room-code" aria-label="Copy room code">
+                                <i class="fa-solid ${watchPartyCopyActive ? 'fa-check' : 'fa-copy'}"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="watch-party-room-line stack">
+                        <span class="watch-party-room-label">Host: ${hostLabel}</span>
+                    </div>
+                </div>
+                <div class="watch-party-meta" id="watchPartyStatus"></div>
+                <button type="button" data-watch-party-action="leave-room">Leave Room</button>
+            `;
+        }
+
+        async function pasteWatchPartyRoomCode() {
+            try {
+                const text = navigator.clipboard?.readText ? await navigator.clipboard.readText() : '';
+                const input = document.getElementById('watchPartyJoinCode');
+                if (input && text) input.value = String(text || '').trim().toUpperCase().slice(0, 12);
+            } catch (_) {
+                watchPartyToast('Clipboard paste not available');
+            }
+        }
+
+        async function copyWatchPartyRoomCode() {
+            const code = String(watchPartyRoomCode || '').trim();
+            if (!code) return;
+            try {
+                if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(code);
+                else {
+                    const input = document.createElement('input');
+                    input.value = code;
+                    document.body.appendChild(input);
+                    input.select();
+                    document.execCommand('copy');
+                    input.remove();
+                }
+                watchPartyCopyActive = true;
+                renderWatchPartyView();
+                if (watchPartyCopyResetTimer) clearTimeout(watchPartyCopyResetTimer);
+                watchPartyCopyResetTimer = setTimeout(() => {
+                    watchPartyCopyActive = false;
+                    renderWatchPartyView();
+                }, 1800);
+            } catch (_) {
+                watchPartyToast('Failed to copy room code');
+            }
+        }
+
+        function renderWatchPartyView() {
+            const panel = document.getElementById('watchPartyPanel');
+            const shell = document.querySelector('#watchPartyPanel .watch-party-shell');
+            const chips = document.getElementById('watchPartyCollapsedChips');
+            const stage = document.getElementById('watchPartyStage');
+            const card = document.getElementById('watchPartyCardPanel');
+            const chat = document.getElementById('watchPartyChatPanel');
+            const cardCollapseBtn = document.getElementById('watchPartyCardCollapseBtn');
+            const chatCollapseBtn = document.getElementById('watchPartyChatCollapseBtn');
+            if (!stage) return;
+            const inRoom = Boolean(watchPartyRoomCode);
+            document.body.classList.toggle('watch-party-in-room', inRoom);
+            if (panel) panel.style.cssText = '';
+            const anyCollapsed = watchPartyCardCollapsed || watchPartyChatCollapsed;
+            if (card) {
+                if (watchPartyCardCollapsed) {
+                    card.classList.add('collapsed');
+                    card.style.setProperty('visibility', 'hidden', 'important');
+                    card.style.setProperty('pointer-events', 'none', 'important');
+                } else {
+                    card.classList.remove('collapsed');
+                    card.style.removeProperty('visibility');
+                    card.style.removeProperty('pointer-events');
+                }
+            }
+            if (chat) {
+                if (watchPartyChatCollapsed) {
+                    chat.classList.add('collapsed');
+                    chat.style.setProperty('visibility', 'hidden', 'important');
+                    chat.style.setProperty('pointer-events', 'none', 'important');
+                } else {
+                    chat.classList.remove('collapsed');
+                    chat.style.removeProperty('visibility');
+                    chat.style.removeProperty('pointer-events');
+                }
+            }
+            if (chips) {
+                chips.innerHTML = '';
+                if (watchPartyCardCollapsed) {
+                    const c = document.createElement('div');
+                    c.className = 'watch-party-floating-chip watch-party-floating-chip-card';
+                    c.innerHTML = '<i class="fa-solid fa-user-group"></i><span>Watch Together</span><button class="watch-party-chip-btn watch-party-chip-expand" aria-label="Expand"><i class="fa-solid fa-plus"></i></button><button class="watch-party-chip-btn watch-party-chip-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>';
+                    c.querySelector('.watch-party-chip-expand')?.addEventListener('click', (e) => { e.stopPropagation(); watchPartyCardCollapsed = false; document.body.classList.add('watch-party-open'); renderWatchPartyView(); });
+                    c.querySelector('.watch-party-chip-close')?.addEventListener('click', (e) => { e.stopPropagation(); document.body.classList.remove('watch-party-open'); renderWatchPartyView(); });
+                    c.addEventListener('click', (e) => { if (!e.target.closest('.watch-party-chip-btn')) { watchPartyCardCollapsed = false; document.body.classList.add('watch-party-open'); renderWatchPartyView(); } });
+                    chips.appendChild(c);
+                }
+                if (watchPartyChatCollapsed) {
+                    const c = document.createElement('div');
+                    c.className = 'watch-party-floating-chip watch-party-floating-chip-chat';
+                    c.innerHTML = '<i class="fa-solid fa-comment"></i><span>Live Chat</span><button class="watch-party-chip-btn watch-party-chip-expand" aria-label="Expand"><i class="fa-solid fa-plus"></i></button><button class="watch-party-chip-btn watch-party-chip-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>';
+                    c.querySelector('.watch-party-chip-expand')?.addEventListener('click', (e) => { e.stopPropagation(); watchPartyChatCollapsed = false; document.body.classList.add('watch-party-open'); renderWatchPartyView(); });
+                    c.querySelector('.watch-party-chip-close')?.addEventListener('click', (e) => { e.stopPropagation(); document.body.classList.remove('watch-party-open'); renderWatchPartyView(); });
+                    c.addEventListener('click', (e) => { if (!e.target.closest('.watch-party-chip-btn')) { watchPartyChatCollapsed = false; document.body.classList.add('watch-party-open'); renderWatchPartyView(); } });
+                    chips.appendChild(c);
+                }
+                chips.classList.toggle('has-chips', anyCollapsed);
+                chips.classList.toggle('chips-all', watchPartyCardCollapsed && watchPartyChatCollapsed);
+            }
+            if (cardCollapseBtn) cardCollapseBtn.innerHTML = `<i class="fa-solid ${watchPartyCardCollapsed ? 'fa-plus' : 'fa-minus'}"></i>`;
+            if (chatCollapseBtn) chatCollapseBtn.innerHTML = `<i class="fa-solid ${watchPartyChatCollapsed ? 'fa-plus' : 'fa-minus'}"></i>`;
+            if (watchPartyRoomCode) {
+                stage.innerHTML = getWatchPartyRoomMarkup();
+                watchPartySetStatus(`Synced as ${escapeWatchPartyHtml(watchPartyRole || 'guest')}.`);
+            } else if (watchPartyUiStep === 'mode') {
+                stage.innerHTML = getWatchPartyModeMarkup();
+                renderWatchPartyPublicRooms(watchPartyPublicRoomsData);
+            } else {
+                stage.innerHTML = getWatchPartyNameInputMarkup();
+            }
+            const chatIdentity = document.getElementById('watchPartyChatIdentity');
+            if (chatIdentity) chatIdentity.textContent = `${watchPartyName || getWatchPartyName()},`;
+            stage.querySelectorAll('input').forEach((input) => {
                 input.addEventListener('focus', () => holdControlsVisible(5000));
             });
+            updateWatchPartyButtonState();
         }
 
         function getWatchPartyName() {
@@ -10970,7 +11917,7 @@
             const baseTime = Number(payload.currentTime ?? payload.params?.t ?? payload.route?.t ?? 0) || 0;
             const paused = payload.paused === true;
             const stamp = Number(payload.updatedAt || payload.timestamp || 0);
-            const elapsed = (!paused && stamp > 0) ? Math.max(0, (Date.now() - stamp) / 1000) : 0;
+            const elapsed = (!paused && stamp > 0) ? Math.min(1, Math.max(0, (Date.now() - stamp) / 1000)) : 0;
             return Math.max(0, baseTime + elapsed);
         }
 
@@ -11030,7 +11977,7 @@
         }
         function createWatchPartyRoom() {
             ensureWatchPartySocket();
-            const isPublic = Boolean(document.getElementById('watchPartyPublic')?.checked);
+            const isPublic = watchPartyVisibility === 'public';
             watchPartyName = getWatchPartyName();
             watchPartySend('room:create', {
                 isPublic,
@@ -11055,8 +12002,11 @@
             watchPartySend('room:leave');
             watchPartyRoomCode = '';
             watchPartyRole = '';
+            watchPartyUiStep = 'mode';
             document.body.classList.remove('watch-party-guest');
+            document.body.classList.remove('watch-party-in-room');
             watchPartySetStatus('Left room');
+            renderWatchPartyView();
         }
 
         function sendWatchPartyChat(event) {
@@ -11074,15 +12024,22 @@
         }
 
         function renderWatchPartyPublicRooms(rooms = []) {
+            watchPartyPublicRoomsData = Array.isArray(rooms) ? rooms : [];
             const root = document.getElementById('watchPartyPublicRooms');
             if (!root) return;
             root.innerHTML = '';
-            rooms.slice(0, 8).forEach((room) => {
-                const row = document.createElement('button');
-                row.type = 'button';
+            const list = watchPartyPublicRoomsData.slice(0, 8);
+            if (!list.length) {
+                root.innerHTML = `<div class="watch-party-public-empty">No servers are on right now come back later!</div>`;
+                return;
+            }
+            list.forEach((room) => {
+                const row = document.createElement('div');
                 row.className = 'watch-party-public-room';
-                row.innerHTML = `<span>${escapeWatchPartyHtml(room.title || 'Watch Party')}</span><span>${room.code} · ${room.count}</span>`;
-                row.addEventListener('click', () => joinWatchPartyRoom(room.code));
+                row.innerHTML = `
+                    <div class="watch-party-public-room-code">${escapeWatchPartyHtml(room.code || 'ROOM')}</div>
+                    <button type="button" data-watch-party-action="join-room" data-room-code="${escapeWatchPartyHtml(room.code || '')}">Join</button>
+                `;
                 root.appendChild(row);
             });
         }
@@ -11090,6 +12047,9 @@
         function renderWatchPartyMembers(count, members = []) {
             const node = document.getElementById('watchPartyMembers');
             if (node) node.textContent = `${Number(count || 0)} watching`;
+            const hostMember = (Array.isArray(members) ? members : []).find((member) => String(member?.role || '').toLowerCase() === 'host');
+            watchPartyHostName = String(hostMember?.name || '').trim() || (watchPartyRole === 'host' ? (watchPartyName || getWatchPartyName()) : watchPartyHostName);
+            if (watchPartyRoomCode) renderWatchPartyView();
         }
 
         function appendWatchPartyMessage(msg) {
@@ -11107,8 +12067,12 @@
             if (msg.type === 'room:created' || msg.type === 'room:joined') {
                 watchPartyRoomCode = msg.code;
                 watchPartyRole = msg.role;
+                watchPartyUiStep = 'room';
+                watchPartyHasUnread = false;
                 document.body.classList.toggle('watch-party-guest', watchPartyRole === 'guest');
+                document.body.classList.add('watch-party-in-room');
                 watchPartySetStatus(`<div>Code: <span class="watch-party-code">${watchPartyRoomCode}</span></div><div>You are ${watchPartyRole}</div>`);
+                renderWatchPartyView();
                 if (watchPartyRole === 'host') watchPartyLastRouteSignature = watchPartyRouteSignature(getWatchPartyRouteState());
                 renderWatchPartyMembers(msg.room?.count || msg.members?.length || 1, msg.members || []);
                 if (watchPartyRole === 'guest') {
@@ -11121,31 +12085,51 @@
             if (msg.type === 'room:left') {
                 watchPartyRoomCode = '';
                 watchPartyRole = '';
+                watchPartyUiStep = 'mode';
+                watchPartyHostName = '';
+                watchPartyHasUnread = false;
                 document.body.classList.remove('watch-party-guest');
+                document.body.classList.remove('watch-party-in-room');
                 watchPartySetStatus('Not in a room');
+                renderWatchPartyView();
             }
             if (msg.type === 'room:members') renderWatchPartyMembers(msg.count, msg.members || []);
             if (msg.type === 'player:sync') applyWatchPartyRemoteState(msg);
             if (msg.type === 'media_changed') applyWatchPartyMediaChanged(msg);
             if (msg.type === 'control:sync') applyWatchPartyControlSync(msg);
-            if (msg.type === 'chat:message') appendWatchPartyMessage(msg);
+            if (msg.type === 'chat:message') {
+                appendWatchPartyMessage(msg);
+                if (!document.body.classList.contains('watch-party-open') || watchPartyChatCollapsed) {
+                    watchPartyHasUnread = true;
+                    updateWatchPartyButtonState();
+                }
+            }
             if (msg.type === 'room:destroyed') {
                 watchPartyToast(msg.reason || 'Host ended the watch party');
                 watchPartyRoomCode = '';
                 watchPartyRole = '';
+                watchPartyUiStep = 'mode';
+                watchPartyHostName = '';
+                watchPartyHasUnread = false;
                 document.body.classList.remove('watch-party-guest');
+                document.body.classList.remove('watch-party-in-room');
                 watchPartySetStatus('Room ended by host');
+                renderWatchPartyView();
             }
         }
 
+        let watchPartyLastEmitTime = 0;
         function watchPartyEmitHostState(action) {
             if (watchPartyRole !== 'host' || watchPartyApplyingRemote || !watchPartyRoomCode || !video) return;
+            const now = Date.now();
+            if (action === 'play' && now - watchPartyLastEmitTime < 100) return;
+            watchPartyLastEmitTime = now;
             watchPartySend('host:state', { action, currentTime: Number(video.currentTime || 0), paused: Boolean(video.paused), route: getWatchPartyRouteState() });
         }
 
         function watchPartyHandleSeeked() {
             if (watchPartySeekTimer) clearTimeout(watchPartySeekTimer);
-            watchPartySeekTimer = setTimeout(() => watchPartyEmitHostState('seek'), 50);
+            watchPartySeekTimer = setTimeout(() => watchPartyEmitHostState('seek'), 20);
         }
 
         function watchPartyEmitHostControl(control, value = null) {
@@ -11240,7 +12224,7 @@
                             if (currentAudioSource === 'animetsu') saveAnimeAudioMode(preferredAudioToken);
                             rememberProviderPreference(currentAudioSource);
                             if (typeof selectSource === 'function') selectSource(idx, resumeAt);
-                            else loadStream(allSources[idx].url, !!allSources[idx].isM3U8, !!allSources[idx].isEmbed, allSources[idx].referer, idx, resumeAt);
+                            else loadStream(allSources[idx].url, !!allSources[idx].isM3U8, !!allSources[idx].isEmbed, allSources[idx].referer, idx, resumeAt, allSources[idx].cookieHeader || '');
                             return;
                         }
                     }
@@ -11270,28 +12254,50 @@
             }, durationMs);
         }
 
+        function getWatchPartyDynamicRate(signedDrift) {
+            const absDrift = Math.abs(signedDrift);
+            const baseRate = Math.max(0.25, Number(watchPartyBasePlaybackRate || 1) || 1);
+            let factor;
+            if (absDrift > 0.5) factor = signedDrift > 0 ? 0.85 : 1.20;
+            else if (absDrift > 0.25) factor = signedDrift > 0 ? 0.90 : 1.14;
+            else if (absDrift > 0.12) factor = signedDrift > 0 ? 0.94 : 1.08;
+            else if (absDrift > 0.05) factor = signedDrift > 0 ? 0.97 : 1.05;
+            else factor = signedDrift > 0 ? 0.985 : 1.02;
+            return Math.max(0.25, Math.min(4, baseRate * factor));
+        }
+
         function enforceWatchPartyRemotePlayback(state = watchPartyLastRemoteState, options = {}) {
             if (watchPartyRole !== 'guest' || !state || !video) return;
             const hostTime = getAdjustedWatchPartyTime(state || {});
             const isLivePlayback = state.paused === false && state.action !== 'pause' && state.action !== 'seek' && state.action !== 'route';
-            const targetTime = isLivePlayback ? Math.max(0, hostTime - WATCH_PARTY_GUEST_PLAYBACK_LATENCY) : hostTime;
-            const shouldForceSeek = options.forceSeek === true || state.action === 'seek' || state.action === 'route' || state.action === 'pause';
+            const targetTime = Math.max(0, hostTime);
+            const shouldForceSeek = options.forceSeek === true || state.action === 'seek' || state.action === 'route';
             const currentTime = Number(video.currentTime || 0);
             const signedDrift = currentTime - targetTime;
             const drift = Math.abs(signedDrift);
             const canSoftCorrect = video.readyState >= 3 && !video.seeking && !isSourceSwitching;
             watchPartyApplyingRemote = true;
-            if (shouldForceSeek || drift > WATCH_PARTY_DRIFT_TOLERANCE) {
-                const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
-                if (video.readyState >= 1) seekToHost();
-                else video.addEventListener('loadedmetadata', seekToHost, { once: true });
-            } else if (isLivePlayback && canSoftCorrect && drift > WATCH_PARTY_SOFT_DRIFT_TOLERANCE) {
-                const baseRate = Math.max(0.25, Number(watchPartyBasePlaybackRate || video.playbackRate || 1) || 1);
-                setWatchPartyGuestPlaybackRate(signedDrift > 0 ? baseRate * 0.97 : baseRate * 1.03, 1200);
-            }
             if (state.paused === true || state.action === 'pause') {
                 try { video.pause(); } catch (_) { }
+                if (shouldForceSeek || drift > WATCH_PARTY_DRIFT_TOLERANCE) {
+                    const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
+                    if (video.readyState >= 1) seekToHost();
+                    else video.addEventListener('loadedmetadata', seekToHost, { once: true });
+                }
             } else if (state.paused === false || state.action === 'play') {
+                if (shouldForceSeek) {
+                    const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
+                    if (video.readyState >= 1) seekToHost();
+                    else video.addEventListener('loadedmetadata', seekToHost, { once: true });
+                } else if (drift > WATCH_PARTY_DRIFT_TOLERANCE) {
+                    const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
+                    if (video.readyState >= 1) seekToHost();
+                    else video.addEventListener('loadedmetadata', seekToHost, { once: true });
+                } else if (isLivePlayback && canSoftCorrect && drift > WATCH_PARTY_SOFT_DRIFT_TOLERANCE) {
+                    const nextRate = getWatchPartyDynamicRate(signedDrift);
+                    const dur = Math.max(800, Math.min(3000, drift * 60 * 5));
+                    setWatchPartyGuestPlaybackRate(nextRate, dur);
+                }
                 if (video.readyState >= 2 || video.currentTime > 0) Promise.resolve(video.play()).catch(() => { });
                 else video.addEventListener('canplay', () => Promise.resolve(video.play()).catch(() => { }), { once: true });
             }
@@ -11305,8 +12311,8 @@
             if (state?.route && applyWatchPartyRouteState(state.route, hostTime, state)) return;
             updateWatchPartyUrlTime(hostTime);
             enforceWatchPartyRemotePlayback(state, { forceSeek: state?.action === 'route' });
-            setTimeout(() => enforceWatchPartyRemotePlayback(state), 450);
-            setTimeout(() => enforceWatchPartyRemotePlayback(state), 1400);
+            setTimeout(() => enforceWatchPartyRemotePlayback(state), 350);
+            setTimeout(() => enforceWatchPartyRemotePlayback(state), 1000);
         }
 
         function interceptGuestPlayerControls(event) {
@@ -11351,6 +12357,9 @@
                 saveProgress();
                 saveCurrentEpisodeProgress();
                 updateUrlTime();
+                if (watchPartyRole === 'host' && watchPartyRoomCode && !video.paused && !watchPartyApplyingRemote) {
+                    watchPartyEmitHostState('play');
+                }
                 
                 // Continuous Subtitle Sync: Ensures image-based and text subtitles are 
                 // always rendered even if the 'cuechange' event was missed or delayed.
@@ -11971,7 +12980,7 @@
                         if (jaSource.isM3U8 && Hls.isSupported() && typeof hlsInst !== 'undefined' && hlsInst) {
                             svSwitchHlsSourceSilent(jaSource.url, jaSource.referer, () => { }, resumeAt);
                         } else {
-                            loadStream(jaSource.url, !!jaSource.isM3U8, !!jaSource.isEmbed, jaSource.referer, currentIdx, resumeAt);
+                            loadStream(jaSource.url, !!jaSource.isM3U8, !!jaSource.isEmbed, jaSource.referer, currentIdx, resumeAt, jaSource.cookieHeader || '');
                         }
                     });
                 }
@@ -12006,7 +13015,7 @@
                         } else {
                             currentIdx = idx;
                             syncUrlState();
-                            loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, idx, resumeAt);
+                            loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, idx, resumeAt, src.cookieHeader || '');
                         }
                     }, { kind: 'source', provider: providerName, sourceUrl: src.url, sourceIndex: allSources.findIndex((row) => String(row?.url || '') === String(src.url || '')), audioToken: cleanLabel.toLowerCase(), isDub: !!src.isDub, isSub: !!src.isSub });
                 });
@@ -12041,7 +13050,7 @@
                         } else {
                             currentIdx = idx;
                             syncUrlState();
-                            loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, idx, resumeAt);
+                            loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, idx, resumeAt, src.cookieHeader || '');
                         }
                     }, { kind: 'source', provider: 'animetsu', sourceUrl: src.url, sourceIndex: allSources.findIndex((row) => String(row?.url || '') === String(src.url || '')), audioToken: src.isDub ? 'dubbed' : 'subbed', isDub: !!src.isDub, isSub: !!src.isSub });
                 });
@@ -12130,7 +13139,7 @@
                                     }, resumeAt);
                                 }
                             } else {
-                                loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt);
+                                loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt, src.cookieHeader || '');
                             }
                         } else {
                             if (hlsInst && src.isM3U8) {
@@ -12138,7 +13147,7 @@
                                 updateAudioTracks();
                             } else {
                                 // Already on virtual-mode playback with non-HLS source.
-                                loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt);
+                                loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, currentIdx, resumeAt, src.cookieHeader || '');
                             }
                         }
                     }, { kind: 'source', provider: 'satoru', sourceUrl: src.url, sourceIndex: allSources.findIndex((row) => String(row?.url || '') === String(src.url || '')), audioToken: String(src.hlsTrackName || src.label || '').replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase() });
@@ -13531,14 +14540,15 @@
             try {
                 const isAnimeOnlyProvider = ['satoru', 'animesalt', 'animetsu'].includes(FORCED_PROVIDER);
                 const providerNeedsMetaInfo = false;
-                const infoUrls = (FORCED_PROVIDER && !isAnimeOnlyProvider && !providerNeedsMetaInfo)
+                const buildInfoUrls = (type) => (FORCED_PROVIDER && !isAnimeOnlyProvider && !providerNeedsMetaInfo)
                     ? [
-                        `${API_BASE.replace('/meta/tmdb', '/movies/' + FORCED_PROVIDER)}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`,
+                        `${API_BASE.replace('/meta/tmdb', '/movies/' + FORCED_PROVIDER)}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(type)}`,
                     ]
                     : [
-                        `${API_BASE}/info/${TMDB_ID}?type=${MEDIA_TYPE}`,
-                        `${API_BASE}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`,
+                        `${API_BASE}/info/${TMDB_ID}?type=${type}`,
+                        `${API_BASE}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(type)}`,
                     ];
+                const infoUrls = buildInfoUrls(effectiveMediaType);
 
                 let info = readCachedMediaInfo();
                 if (info) {
@@ -13562,12 +14572,22 @@
                 } else {
                     let parsed = null;
                     let lastErr = null;
-                    for (const infoUrl of infoUrls) {
-                        try {
-                            parsed = await fetchJsonWithRetry(infoUrl, 10000, 15000);
-                            if (parsed) break;
-                        } catch (e) {
-                            lastErr = e;
+                    const attemptedTypes = [effectiveMediaType];
+                    for (const requestedType of attemptedTypes) {
+                        for (const infoUrl of buildInfoUrls(requestedType)) {
+                            try {
+                                parsed = await fetchJsonWithRetry(infoUrl, 10000, 15000);
+                                if (parsed) {
+                                    effectiveMediaType = requestedType;
+                                    break;
+                                }
+                            } catch (e) {
+                                lastErr = e;
+                            }
+                        }
+                        if (parsed) break;
+                        if ((requestedType === 'movie' || requestedType === 'tv') && attemptedTypes.length === 1) {
+                            attemptedTypes.push(getAlternateMediaType(requestedType));
                         }
                     }
                     info = parsed?.data || parsed;
@@ -13578,7 +14598,7 @@
                             id: TMDB_ID,
                             title: 'Unknown Title',
                             name: 'Unknown Title',
-                            type: MEDIA_TYPE,
+                            type: effectiveMediaType,
                             genres: [],
                             original_language: 'en'
                         };
@@ -13586,16 +14606,18 @@
                     }
                 }
 
-                const needsTmdbFallback = MEDIA_TYPE === 'tv' && (
+                const needsTmdbFallback = (
                     !info ||
                     !String(info.title || info.name || '').trim() ||
                     String(info.title || info.name || '').toLowerCase() === 'unknown' ||
-                    !Array.isArray(info.seasons) ||
-                    info.seasons.length === 0
+                    (effectiveMediaType === 'tv' && (
+                        !Array.isArray(info.seasons) ||
+                        info.seasons.length === 0
+                    ))
                 );
                 if (needsTmdbFallback) {
                     try {
-                        const fallbackInfo = await fetchJsonWithRetry(`${API_BASE}/info/${encodeURIComponent(TMDB_ID)}?type=${encodeURIComponent(MEDIA_TYPE)}`, 10000, 15000);
+                        const fallbackInfo = await fetchJsonWithRetry(`${API_BASE}/info/${encodeURIComponent(TMDB_ID)}?type=${encodeURIComponent(effectiveMediaType)}`, 10000, 15000);
                         const fallbackPayload = fallbackInfo?.data || fallbackInfo;
                         if (fallbackPayload && typeof fallbackPayload === 'object') {
                             info = {
@@ -13606,8 +14628,8 @@
                                 seasons: Array.isArray(info?.seasons) && info.seasons.length ? info.seasons : (Array.isArray(fallbackPayload.seasons) ? fallbackPayload.seasons : []),
                                 episodes: Array.isArray(info?.episodes) && info.episodes.length ? info.episodes : (Array.isArray(fallbackPayload.episodes) ? fallbackPayload.episodes : []),
                                 original_language: info?.original_language || info?.originalLanguage || fallbackPayload.original_language || fallbackPayload.originalLanguage || 'en',
-                                media_type: info?.media_type || info?.type || fallbackPayload.media_type || fallbackPayload.type || MEDIA_TYPE,
-                                type: info?.type || fallbackPayload.type || MEDIA_TYPE,
+                                media_type: info?.media_type || info?.type || fallbackPayload.media_type || fallbackPayload.type || effectiveMediaType,
+                                type: info?.type || fallbackPayload.type || effectiveMediaType,
                             };
                             console.warn('[init] Applied TMDB fallback metadata for TV seasons/episodes.');
                         }
@@ -13616,6 +14638,7 @@
                     }
                 }
 
+                effectiveMediaType = resolveMediaTypeFromInfo(info, effectiveMediaType);
                 currentMediaInfo = info;
                 console.log('currentMediaInfo.title:', currentMediaInfo?.title, 'TMDB_ID:', TMDB_ID);
                 updatePauseMediaPoster();
@@ -13637,10 +14660,10 @@
                         id: TMDB_ID,
                         title: 'Unknown Title',
                         name: 'Unknown Title',
-                        type: MEDIA_TYPE,
-                        genres: [],
-                        original_language: 'en'
-                    };
+                            type: effectiveMediaType,
+                            genres: [],
+                            original_language: 'en'
+                        };
                 }
 
                 const title = info.title || info.name || 'Unknown Title';
@@ -13652,7 +14675,7 @@
                 }
                 updatePauseMediaPoster();
 
-                const isTv = MEDIA_TYPE === 'tv' ||
+                const isTv = effectiveMediaType === 'tv' ||
                     (info.type || '').toLowerCase().includes('tv') ||
                     (info.type || '').toLowerCase().includes('series');
 
@@ -13668,8 +14691,8 @@
                 // Provider pool selection with anime detection:
                 // - Forced provider: run only that provider.
                 // - Anime content: use anime providers exclusively (most reliable for anime).
-                // - Non-anime movies: FlixHQ first priority (fastest), then other non-anime providers.
-                // - Non-anime TV: FlixHQ first, then other non-anime providers.
+                // - Non-anime movies: HDStream4u first, then FlixHQ fallback.
+                // - Non-anime TV: HDStream4u first, then FlixHQ fallback.
                 if (['animekai', 'justanime'].includes(String(FORCED_PROVIDER || '').toLowerCase())) {
                     console.warn('[providers] Disabled anime provider ignored:', FORCED_PROVIDER);
                     FORCED_PROVIDER = '';
@@ -13681,16 +14704,14 @@
                     activeProviders = [...ANIME_PROVIDERS];
                     console.log('Ã°Å¸Å½Å’ Anime detected! Using anime-only providers:', activeProviders);
                 } else if (MEDIA_TYPE === 'movie') {
-                    // Non-anime movie: prioritize FlixHQ (fastest), then other non-anime providers
-                    activeProviders = ['flixhq'];
-                    console.log('Ã°Å¸Å½Â¬ Non-anime movie: FlixHQ priority providers:', activeProviders);
+                    activeProviders = ['hdstream4u', 'flixhq'];
+                    console.log('Non-anime movie: HDStream4u priority providers:', activeProviders);
                 } else if (isTv) {
-                    // Non-anime TV: prioritize FlixHQ, then other non-anime providers
-                    activeProviders = ['flixhq'];
-                    console.log('Ã°Å¸â€œÂº Non-anime TV: FlixHQ priority providers:', activeProviders);
+                    activeProviders = ['hdstream4u', 'flixhq'];
+                    console.log('Non-anime TV: HDStream4u priority providers:', activeProviders);
                 } else {
                     // Fallback for unknown types
-                    activeProviders = ['flixhq', ...ANIME_PROVIDERS];
+                    activeProviders = ['hdstream4u', 'flixhq', ...ANIME_PROVIDERS];
                 }
                 console.log('activeProviders:', activeProviders, 'FORCED_PROVIDER:', FORCED_PROVIDER, 'isAnime:', currentIsLikelyAnime);
                 buildChips();
@@ -15861,8 +16882,7 @@
                         };
                         activeEpisodeSelectionHint = { ...pendingEpisodeSelectionHint };
                         epPanel.classList.remove('open');
-                        const savedEpisodeTime = getResumeTimeFromEpisodeProgress(progressInfo);
-                        playTvEp(target.seasonIndex, target.episodeIndex, savedEpisodeTime);
+                        playTvEp(target.seasonIndex, target.episodeIndex, 0);
                     };
                     scrollRoot.appendChild(item);
                 });
@@ -16390,6 +17410,8 @@
         }
 
         async function playTvEp(si, ei, startTime = null) {
+            console.log('[playTvEp] si=' + si + ' ei=' + ei + ' season=' + (tvSeasons?.[si]?.seasonNo) + ' episode=' + (tvSeasons?.[si]?.episodes?.[ei]?.episode) + ' curEpIdx=' + curEpisode + ' loadingFrom=' + (fetchSourcesRunning ? 'yes' : 'no'));
+            console.log('[playTvEp] stack:', new Error().stack?.split('\n').slice(2,6).join(' -> '));
             saveCurrentEpisodeProgress(true);
             curSeason = si; curEpisode = ei;
             pendingEpisodeStartTime = Number.isFinite(startTime) ? Number(startTime) : null;
@@ -16424,7 +17446,10 @@
         // -----------------------------------------------------------------------
         //  FETCH SOURCES - per-provider: get that provider's own episodeId, then watch
         // -----------------------------------------------------------------------
+        let fetchSourcesRunning = false;
         async function fetchSources(forcedProviderOverride = null) {
+            if (fetchSourcesRunning) { console.log('[fetchSources] ALREADY RUNNING, returning'); return; }
+            fetchSourcesRunning = true;
             if (forcedProviderOverride !== null) FORCED_PROVIDER = forcedProviderOverride;
             
             // Use the anime detection status that was already determined in init()
@@ -16705,8 +17730,8 @@
                 return;
             }
 
-            // Fast boot: if we recently played this media with FlixHQ, start immediately from cache.
-            const preferProviderForFastBoot = FORCED_PROVIDER || (!currentIsLikelyAnime && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv') ? 'flixhq' : '');
+            // Fast boot: if we recently played this media with HDStream4u, start immediately from cache.
+            const preferProviderForFastBoot = FORCED_PROVIDER || (!currentIsLikelyAnime && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv') ? 'hdstream4u' : '');
             if (preferProviderForFastBoot) {
                 const cachedSources = readCachedProviderSources(preferProviderForFastBoot);
                 if (cachedSources.length) {
@@ -16879,13 +17904,13 @@
                                         provEpisodeId = buildAnimesaltEpisodeId(infoSlug, selectedSeasonNo, selectedEpisodeNo);
                                     }
                                 }
-                                if (provider === 'justanime' && info.id) provEpisodeId = provEpisodeId || `${info.id}$episode$${MEDIA_TYPE === 'tv' ? selectedEpisodeNo : 1}`;
+                                if (provider === 'justanime' && info.id) provEpisodeId = provEpisodeId || `${info.id}$episode$${effectiveMediaType === 'tv' ? selectedEpisodeNo : 1}`;
                             }
                         }
                     } else {
                         // Movie/TV Providers (FlixHQ, etc.)
                         const isVegamoviesProvider = provider === 'vegamovies';
-                        const isFlixhqProvider = provider === 'flixhq' && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv');
+                        const isFlixhqProvider = provider === 'flixhq' && (effectiveMediaType === 'movie' || effectiveMediaType === 'tv');
                         const isLikelyFlixhqProviderEpisodeId = (value) => {
                             const raw = String(value || '').trim().toLowerCase();
                             if (!raw) return false;
@@ -16900,24 +17925,24 @@
                             // is not already a FlixHQ provider ID.
                             const flixhqSelectedEpisodeId = String(selectionHint?.episodeId || bootEpisodeId || selectedEpisode?.id || '').trim();
                             const canUseSelectedEpisodeId = isLikelyFlixhqProviderEpisodeId(flixhqSelectedEpisodeId);
-                            if (MEDIA_TYPE === 'movie' || !canUseSelectedEpisodeId) {
-                                const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, MEDIA_TYPE, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
+                            if (effectiveMediaType === 'movie' || !canUseSelectedEpisodeId) {
+                                const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, effectiveMediaType, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
                                 provEpisodeId = resolved?.episodeId;
                                 if (resolved?.info) info = resolved.info;
-                            } else if (MEDIA_TYPE === 'tv' && canUseSelectedEpisodeId) {
+                            } else if (effectiveMediaType === 'tv' && canUseSelectedEpisodeId) {
                                 provEpisodeId = flixhqSelectedEpisodeId;
                             }
                         }
-                        if (!provEpisodeId && !isFlixhqProvider && !isVegamoviesProvider) {
-                            const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, MEDIA_TYPE, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
+                        if (!provEpisodeId && !isFlixhqProvider && !isVegamoviesProvider && provider !== 'hdstream4u') {
+                            const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, effectiveMediaType, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
                             provEpisodeId = resolved?.episodeId;
                             if (resolved?.info) info = resolved.info;
                         }
-                        if (!provEpisodeId && !isFlixhqProvider && !isVegamoviesProvider) {
-                            const { res: infoRes } = await fetchJsonWithApiFallback(`${API_BASE}/info/${TMDB_ID}?type=${MEDIA_TYPE}&provider=${provider}`, { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) });
+                        if (!provEpisodeId && !isFlixhqProvider && !isVegamoviesProvider && provider !== 'hdstream4u') {
+                            const { res: infoRes } = await fetchJsonWithApiFallback(`${API_BASE}/info/${TMDB_ID}?type=${effectiveMediaType}&provider=${provider}`, { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) });
                             if (infoRes.ok) { 
                                 let d = await infoRes.json(); info = d.data || d; 
-                                if (MEDIA_TYPE === 'tv') {
+                                if (effectiveMediaType === 'tv') {
                                     const s = (info.seasons || []).find(s => Number(s.number || s.season) === selectedSeasonNo) || info.seasons?.[curSeason];
                                     const e = (s?.episodes || []).find(e => Number(e.number || e.episode) === selectedEpisodeNo) || s?.episodes?.[curEpisode];
                                     provEpisodeId = e?.id || e?.episodeId;
@@ -16928,7 +17953,7 @@
                         }
                     }
 
-                    const canResolveOnWatch = (provider === 'flixhq' && MEDIA_TYPE === 'tv') || provider === 'vegamovies';
+                    const canResolveOnWatch = (provider === 'flixhq' && effectiveMediaType === 'tv') || provider === 'vegamovies' || provider === 'hdstream4u';
                     if (!provEpisodeId && !canResolveOnWatch) throw new Error('No episode ID found');
 
                     // Watch (try TMDB provider watch first so backend can resolve missing TV episode IDs)
@@ -16952,9 +17977,9 @@
                         if (isVegamoviesProvider) {
                             const vegaTmdbWatchParams = new URLSearchParams();
                             vegaTmdbWatchParams.set('id', String(TMDB_ID || ''));
-                            vegaTmdbWatchParams.set('type', String(MEDIA_TYPE || 'movie'));
+                            vegaTmdbWatchParams.set('type', String(effectiveMediaType || 'movie'));
                             vegaTmdbWatchParams.set('provider', 'vegamovies');
-                            if (MEDIA_TYPE === 'tv') {
+                            if (effectiveMediaType === 'tv') {
                                 vegaTmdbWatchParams.set('season', String(selectedSeasonNo || 1));
                                 vegaTmdbWatchParams.set('episode', String(selectedEpisodeNo || 1));
                             }
@@ -16971,12 +17996,13 @@
                             watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=auto${DIRECT_ONLY ? '&directOnly=true' : ''}`));
                         }
 
-                        if ((provider !== 'flixhq' || (provider === 'flixhq' && MEDIA_TYPE === 'tv')) && !isVegamoviesProvider) {
+                        if ((provider !== 'flixhq' || (provider === 'flixhq' && effectiveMediaType === 'tv')) && !isVegamoviesProvider) {
+                        console.log('[hdstream4u] building TMDB watch URL: type=' + effectiveMediaType + ' season=' + (selectedSeasonNo || 1) + ' episode=' + (selectedEpisodeNo || 1) + ' curEpisode=' + curEpisode);
                             const tmdbWatchParams = new URLSearchParams();
                             tmdbWatchParams.set('id', String(TMDB_ID || ''));
-                            tmdbWatchParams.set('type', String(MEDIA_TYPE || 'movie'));
+                            tmdbWatchParams.set('type', String(effectiveMediaType || 'movie'));
                             tmdbWatchParams.set('provider', String(provider || ''));
-                            if (MEDIA_TYPE === 'tv') {
+                            if (effectiveMediaType === 'tv') {
                                 tmdbWatchParams.set('season', String(selectedSeasonNo || 1));
                                 tmdbWatchParams.set('episode', String(selectedEpisodeNo || 1));
                             }
@@ -16997,6 +18023,7 @@
                         }
                     }
 
+                    console.log('[hdstream4u] watchCandidates:', watchCandidates);
                     let data = null;
                     let lastWatchErr = null;
                     for (const watchUrl of watchCandidates) {
@@ -17104,6 +18131,7 @@
                             isEmbed,
                             referer: normalizeStreamReferer(provider, src, data.headers?.Referer || null),
                             origin: src.origin || data.headers?.Origin || null,
+                            cookieHeader: src.cookieHeader || data.headers?.Cookie || null,
                             isDub,
                             provider,
                             flixhqServer,
@@ -17207,6 +18235,7 @@
             if (allSources.length === 0 && !currentStreamUrl && !(video && video.currentSrc)) {
                 showError('No Streams Found', `None of the providers could find a stream for this title.\n\nDetails:\n- ${failReasons.slice(0, 5).join('\n- ')}`);
             }
+            fetchSourcesRunning = false;
         }
         // ----------------------------------------------------------------------------------------------------
         //  SOURCE PANEL
@@ -17585,7 +18614,7 @@
 
             const statusLabel = startTime > 0 ? 'Switching Server...' : 'Buffering...';
             setLoader(statusLabel, src.label);
-            loadStream(src.url, src.isM3U8, src.isEmbed, src.referer, idx, startTime);
+            loadStream(src.url, src.isM3U8, src.isEmbed, src.referer, idx, startTime, src.cookieHeader || '');
         }
 
         function getMediaProxyPath(mediaProxyOrigin) {
@@ -17597,7 +18626,7 @@
             return '/proxy';
         }
 
-        function proxiedStreamUrl(url, referer, provider = '', origin = '', forceHls = false) {
+        function proxiedStreamUrl(url, referer, provider = '', origin = '', forceHls = false, cookieHeader = '') {
             const rawUrl = String(url || '').trim();
             const providerName = String(provider || '').toLowerCase();
             // Already proxy-wrapped streams must not be wrapped again.
@@ -17621,15 +18650,17 @@
                 const safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
                 if (safeReferer) params.set('referer', String(safeReferer));
                 if (origin) params.set('origin', String(origin));
+                if (cookieHeader) params.set('cookie', String(cookieHeader));
                 return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
             }
             if (forceHls || /\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
-                const mediaProxyOrigin = getMediaProxyOrigin();
                 try {
                     const parsed = new URL(rawUrl);
+                    const mediaProxyOrigin = getMediaProxyOrigin();
                     const safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
                     const proxyPath = `${mediaProxyOrigin}/proxy/hls/${parsed.host}${parsed.pathname}${parsed.search}`;
-                    return safeReferer ? `${proxyPath}${proxyPath.includes('?') ? '&' : '?'}referer=${encodeURIComponent(safeReferer)}` : proxyPath;
+                    const withReferer = safeReferer ? `${proxyPath}${proxyPath.includes('?') ? '&' : '?'}referer=${encodeURIComponent(safeReferer)}` : proxyPath;
+                    return cookieHeader ? `${withReferer}${withReferer.includes('?') ? '&' : '?'}cookie=${encodeURIComponent(String(cookieHeader))}` : withReferer;
                 } catch (_) {
                     return rawUrl;
                 }
@@ -17640,6 +18671,7 @@
             const safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
             if (safeReferer) params.set('referer', String(safeReferer));
             if (origin) params.set('origin', String(origin));
+            if (cookieHeader) params.set('cookie', String(cookieHeader));
             return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
         }
 
@@ -17682,7 +18714,7 @@
             } catch (_) { }
         }
 
-        function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0) {
+        function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0, sourceCookieHeader = '') {
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
             const selectedSource = allSources?.[srcIdx] || {};
             const sourceProvider = String(selectedSource?.provider || '').toLowerCase();
@@ -17699,7 +18731,7 @@
                 isFlixhqProtectedCdn;
             const originalStreamUrl = String(url || '').trim();
             if (isM3U8 && originalStreamUrl) {
-                url = proxiedStreamUrl(originalStreamUrl, referer, sourceProvider, sourceOrigin, true);
+                url = proxiedStreamUrl(originalStreamUrl, referer, sourceProvider, sourceOrigin, true, sourceCookieHeader);
             }
             const resumeTargetTime = Math.max(0, Number(startTime || 0));
             const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 600;
@@ -18189,7 +19221,7 @@
             // 1. HLS with hls.js
             if (isM3U8 && Hls.isSupported()) {
                 console.log('Branch: HLS.js');
-                const streamUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin, true);
+                const streamUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin, true, sourceCookieHeader);
                 // Track whether we've already tried the raw (unproxied) URL.
                 // Some CDNs (e.g. satoru.one) block reverse-proxy user agents with 502/403
                 // but allow direct browser access, so we fall back to raw after proxy failure.
@@ -18512,7 +19544,7 @@
                 setTimeout(() => { if (video) activateTracksForIOSNativePlayer(); }, 2000);
                 }
 
-                const proxiedUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin);
+                const proxiedUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin, false, sourceCookieHeader);
                 const directUrl = url;
                 let fallbackStep = 0; // 0=proxy, 1=proxy-retry, 2=direct
 
@@ -18634,7 +19666,7 @@
 
             } else if (isMPD && window.dashjs?.MediaPlayer) {
                 console.log('Branch: DASH.js');
-                const mpdUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin);
+                const mpdUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin, false, sourceCookieHeader);
                 dashInst = window.dashjs.MediaPlayer().create();
                 dashInst.initialize(video, mpdUrl, true);
                 let dashErrCount = 0;
@@ -18735,7 +19767,7 @@
                         video.currentTime = startTime;
                     }, { once: true });
                 }
-                const proxiedMp4Url = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin);
+                const proxiedMp4Url = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin, false, sourceCookieHeader);
                 const directMp4Url = url;
                 const isArchiveDirect = String(sourceProvider || '').toLowerCase() === 'archive.org';
                 let triedDirectFallback = false;

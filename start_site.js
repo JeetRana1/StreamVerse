@@ -5,8 +5,8 @@ const net = require('net');
 const { Readable } = require('stream');
 const { spawn } = require('child_process');
 
-const DEFAULT_SITE_PORT = 8080;
-const SITE_DIR = 'C:\\Users\\Jeet\\Music\\WTEHMOVIESCONSUMETAPITEST';
+const DEFAULT_SITE_PORT = 3005;
+const SITE_DIR = __dirname;
 const API_DIR = 'C:\\Users\\Jeet\\Videos\\fewfwewfd\\api.consumet.org';
 const ENV_PATH = path.join(SITE_DIR, '.env');
 const API_ENV_PATH = path.join(API_DIR, '.env');
@@ -293,7 +293,14 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    let filePath = path.join(SITE_DIR, req.url === '/' ? 'index.html' : req.url.split('?')[0]);
+    const requestPath = String(req.url || '/').split('?')[0] || '/';
+    const routeMap = {
+        '/': 'index.html',
+        '/player': 'player.html',
+        '/manga': 'manga.html',
+        '/favicon.ico': 'logo.png',
+    };
+    let filePath = path.join(SITE_DIR, routeMap[requestPath] || requestPath.replace(/^\/+/, ''));
     const extname = String(path.extname(filePath)).toLowerCase();
     const contentType = MIME_TYPES[extname] || 'application/octet-stream';
 

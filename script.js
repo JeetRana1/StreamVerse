@@ -679,7 +679,16 @@ function getItemProvider(item) {
     if (source.includes('animesalt')) return 'animesalt';
     if (source.includes('justanime')) return 'justanime';
     if (source.includes('satoru')) return 'satoru';
+    if (source.includes('hdstream4u') || source.includes('hubstream')) return 'hdstream4u';
 
+    return '';
+}
+
+function getDefaultPlaybackProvider(type, provider = '') {
+    const explicit = String(provider || '').trim().toLowerCase();
+    if (explicit) return explicit;
+    const normalizedType = String(type || '').trim().toLowerCase();
+    if (normalizedType === 'movie' || normalizedType === 'tv') return 'hdstream4u';
     return '';
 }
 
@@ -696,6 +705,18 @@ function normalizeTmdbId(id) {
     // Avoid guessing from slug tails (they can be provider episode IDs, not TMDB IDs).
     // Prefer explicit TMDB mapping fields at call sites when available.
     return raw;
+}
+
+function getCanonicalTmdbId(item, fallbackId = '') {
+    const mapped =
+        item?.mappings?.tmdb ||
+        item?.mapping?.tmdb ||
+        item?.tmdbId ||
+        item?.tmdb ||
+        fallbackId ||
+        item?.id ||
+        '';
+    return normalizeTmdbId(mapped);
 }
 
 function readDetailCache(id, type, provider = '') {
@@ -1145,7 +1166,7 @@ function createContinueWatchingCard(item) {
         }
         const seasonEpisodePart = item.type === 'tv' ? `&${extraTvParams.toString()}` : '';
         const apiSource = getCurrentApiSource();
-        const url = `player.html?id=${encodeURIComponent(item.id)}&type=${item.type}${providerPart}${seasonEpisodePart}&t=${Math.floor(item.currentTime)}&audio=${encodeURIComponent(item.audio || '')}&apiSource=${encodeURIComponent(apiSource)}`;
+        const url = `player?id=${encodeURIComponent(item.id)}&type=${item.type}${providerPart}${seasonEpisodePart}&t=${Math.floor(item.currentTime)}&audio=${encodeURIComponent(item.audio || '')}&apiSource=${encodeURIComponent(apiSource)}`;
         window.location.href = url;
     };
 
@@ -3848,7 +3869,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
             return `
                 <button type="button"
                         class="modal-episode-item ${isWatched ? 'watched' : ''} ${isCurrentlyWatching ? 'currently-watching' : ''}"
-                        data-watch-url="player.html?${escapeModalHtml(params.toString())}">
+                        data-watch-url="player?${escapeModalHtml(params.toString())}">
                     <div class="modal-episode-thumb ${thumb ? '' : 'no-thumb'}">
                         ${thumb ? `<img src="${escapeModalHtml(thumb)}" alt="" loading="lazy"
                              onerror="this.parentElement.classList.add('no-thumb'); this.remove(); this.parentElement.insertAdjacentHTML('beforeend', '<span>${episodeNo}</span>');">` : `<span>${episodeNo}</span>`}
@@ -3957,7 +3978,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
 
 function renderDetailsModal(movie, id, type, provider = '') {
     currentModalMovie = movie;
-    const resolvedProvider = provider || getItemProvider(movie);
+    const resolvedProvider = getDefaultPlaybackProvider(type, provider || getItemProvider(movie));
     const isAdded = isInWatchlist(id);
     const title = getTitle(movie);
     const cover = getCover(movie);
@@ -4276,7 +4297,7 @@ function renderDetailsModal(movie, id, type, provider = '') {
                 const rating = getRating(movie);
                 const ratingNum = Math.max(0, Math.min(10, Number(rating) || 0));
                 const ratingProgress = Math.round(ratingNum * 10);
-                const movieId = movie.id;
+                const movieId = getCanonicalTmdbId(movie, movie.id);
                 const movieType = inferMediaType(movie, type);
                 const movieProvider = getItemProvider(movie);
                 
@@ -4679,7 +4700,8 @@ function displayHero(item) {
     const rating = getRating(item);
     const bg = getCover(item);
     const type = getType(item);
-    const id = item.id;
+    const id = getCanonicalTmdbId(item, item.id);
+    const provider = getDefaultPlaybackProvider(type, getItemProvider(item));
 
     heroSection.style.backgroundImage = `url('${bg}')`;
     heroSection.classList.add('is-switching');
@@ -4709,7 +4731,7 @@ function displayHero(item) {
                 </div>
                 <p class="hero-description">${item.description || item.overview || ''}</p>
                 <div class="hero-btns">
-                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}')">
+                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}','${provider}')">
                         <i class="fa-solid fa-play"></i> Watch Now
                     </button>
                     <button class="btn btn-more-info" onclick="openDetails('${id}','${type}')">
@@ -4898,7 +4920,7 @@ function displayGrid(items, container, forcedType = null, options = {}) {
         const ratingProgress = Math.round(ratingNum * 10);
         const detectedType = getType(normalizedItem);
         const type = detectedType || forcedType || 'movie';
-        const id = normalizedItem.id;
+        const id = getCanonicalTmdbId(normalizedItem, normalizedItem.id);
         if (shouldRememberFeaturedKey) {
             homepageFeaturedMediaKeys.add(makeMediaDedupeKey({ ...normalizedItem, media_type: type, type }));
         }
@@ -5392,8 +5414,10 @@ function closeTrailer() {
 async function watchNow(id, type, provider = '') {
     const apiSource = getCurrentApiSource();
     const params = new URLSearchParams();
-    params.set('id', String(id || ''));
+    const canonicalId = normalizeTmdbId(id);
+    params.set('id', String(canonicalId || ''));
     const safeType = (String(type || '').trim().toLowerCase() === 'tv') ? 'tv' : 'movie';
+    const resolvedProvider = getDefaultPlaybackProvider(safeType, provider);
     params.set('type', safeType);
     params.set('apiSource', String(apiSource || ''));
 
@@ -5404,7 +5428,7 @@ async function watchNow(id, type, provider = '') {
             const rows = JSON.parse(raw);
             if (!Array.isArray(rows)) return null;
             return rows.find((row) =>
-                String(row?.id || '') === String(id) &&
+                String(row?.id || '') === String(canonicalId) &&
                 String(row?.type || '').toLowerCase() === String(type).toLowerCase()
             ) || null;
         } catch (_) {
@@ -5435,7 +5459,7 @@ async function watchNow(id, type, provider = '') {
         }
 
         if (resumeChoice === 'continue') {
-            const chosenProvider = provider || String(continueEntry.provider || '').trim();
+            const chosenProvider = getDefaultPlaybackProvider(safeType, provider || String(continueEntry.provider || '').trim());
             if (chosenProvider) params.set('provider', chosenProvider);
             params.set('t', String(Math.floor(Number(continueEntry.currentTime || 0))));
             if (String(type).toLowerCase() === 'tv') {
@@ -5443,18 +5467,18 @@ async function watchNow(id, type, provider = '') {
                 if (episodeNo > 0) params.set('episode', String(episodeNo));
             }
             if (continueEntry.audio) params.set('audio', String(continueEntry.audio));
-            window.location.href = `player.html?${params.toString()}`;
+            window.location.href = `player?${params.toString()}`;
             return;
         }
 
         // User explicitly chose Start Over.
-        removeContinueWatchingEntry(id, type);
+        removeContinueWatchingEntry(canonicalId, type);
         params.set('resume', '0');
         params.set('t', '0');
     }
 
-    if (provider) params.set('provider', String(provider));
-    window.location.href = `player.html?${params.toString()}`;
+    if (resolvedProvider) params.set('provider', String(resolvedProvider));
+    window.location.href = `player?${params.toString()}`;
 }
 
 function prefetchDetails(id, type, provider = '') {
@@ -5568,6 +5592,8 @@ function updateSwitcherState() {
 
 // Fast modal override: render immediately from seed/cache, then hydrate full details.
 async function openDetails(id, type, provider = '', seedItem = null) {
+    const canonicalId = provider ? String(id || '') : getCanonicalTmdbId(seedItem, id);
+
     // Store scroll position before opening modal
     window.storedScrollPosition = window.scrollY;
     
@@ -5575,11 +5601,11 @@ async function openDetails(id, type, provider = '', seedItem = null) {
     document.body.classList.add('modal-open');
     const requestId = ++activeModalRequestId;
 
-    const cached = readDetailCache(id, type, provider);
-    const initial = cached || (seedItem && typeof seedItem === 'object' ? { ...seedItem, id: seedItem.id || id } : null);
+    const cached = readDetailCache(canonicalId, type, provider);
+    const initial = cached || (seedItem && typeof seedItem === 'object' ? { ...seedItem, id: getCanonicalTmdbId(seedItem, canonicalId) } : null);
 
     if (initial) {
-        renderDetailsModal(initial, id, type, provider);
+        renderDetailsModal(initial, canonicalId, type, provider);
     } else {
         modalBody.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:center;min-height:400px;">
@@ -5592,10 +5618,10 @@ async function openDetails(id, type, provider = '', seedItem = null) {
         let movie = null;
         try {
             // Always revalidate against backend so newly-available trailer URLs are picked up.
-            movie = await fetchDetails(id, type, provider);
+            movie = await fetchDetails(canonicalId, type, provider);
         } catch (err) {
             // If network fails, gracefully fall back to cached/stale payload.
-            movie = cached || readStaleDetailCache(id, type, provider);
+            movie = cached || readStaleDetailCache(canonicalId, type, provider);
             if (!movie) throw err;
         }
 
@@ -5610,7 +5636,7 @@ async function openDetails(id, type, provider = '', seedItem = null) {
             if (!movie.releaseDate) movie.releaseDate = initial.releaseDate || initial.release_date || initial.first_air_date;
         }
 
-        renderDetailsModal(movie, id, type, provider);
+        renderDetailsModal(movie, canonicalId, type, provider);
 
         // --- BACKGROUND ENRICHMENT ---
         // Improve images/info in the background if they look bad.
@@ -5628,7 +5654,7 @@ async function openDetails(id, type, provider = '', seedItem = null) {
                         movie.description = tmdb.description || tmdb.overview;
                         changed = true;
                     }
-                    if (changed) renderDetailsModal(movie, id, type, provider);
+                    if (changed) renderDetailsModal(movie, canonicalId, type, provider);
                 }
             }).catch(() => { });
         }
