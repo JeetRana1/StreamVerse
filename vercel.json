@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/player", "destination": "/player.html" },
+    { "source": "/manga", "destination": "/manga.html" }
+  ]
+}
