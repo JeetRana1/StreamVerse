@@ -1166,7 +1166,7 @@ function createContinueWatchingCard(item) {
         }
         const seasonEpisodePart = item.type === 'tv' ? `&${extraTvParams.toString()}` : '';
         const apiSource = getCurrentApiSource();
-        const url = `player?id=${encodeURIComponent(item.id)}&type=${item.type}${providerPart}${seasonEpisodePart}&t=${Math.floor(item.currentTime)}&audio=${encodeURIComponent(item.audio || '')}&apiSource=${encodeURIComponent(apiSource)}`;
+        const url = `/player?id=${encodeURIComponent(item.id)}&type=${item.type}${providerPart}${seasonEpisodePart}&t=${Math.floor(item.currentTime)}&audio=${encodeURIComponent(item.audio || '')}&apiSource=${encodeURIComponent(apiSource)}`;
         window.location.href = url;
     };
 
@@ -3869,7 +3869,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
             return `
                 <button type="button"
                         class="modal-episode-item ${isWatched ? 'watched' : ''} ${isCurrentlyWatching ? 'currently-watching' : ''}"
-                        data-watch-url="player?${escapeModalHtml(params.toString())}">
+                        data-watch-url="/player?${escapeModalHtml(params.toString())}">
                     <div class="modal-episode-thumb ${thumb ? '' : 'no-thumb'}">
                         ${thumb ? `<img src="${escapeModalHtml(thumb)}" alt="" loading="lazy"
                              onerror="this.parentElement.classList.add('no-thumb'); this.remove(); this.parentElement.insertAdjacentHTML('beforeend', '<span>${episodeNo}</span>');">` : `<span>${episodeNo}</span>`}
@@ -5467,7 +5467,7 @@ async function watchNow(id, type, provider = '') {
                 if (episodeNo > 0) params.set('episode', String(episodeNo));
             }
             if (continueEntry.audio) params.set('audio', String(continueEntry.audio));
-            window.location.href = `player?${params.toString()}`;
+            window.location.href = `/player?${params.toString()}`;
             return;
         }
 
@@ -5478,7 +5478,7 @@ async function watchNow(id, type, provider = '') {
     }
 
     if (resolvedProvider) params.set('provider', String(resolvedProvider));
-    window.location.href = `player?${params.toString()}`;
+    window.location.href = `/player?${params.toString()}`;
 }
 
 function prefetchDetails(id, type, provider = '') {
