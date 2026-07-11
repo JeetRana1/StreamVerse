@@ -4329,6 +4329,7 @@
             justanime: { subtitleFallback: 8000 },
             // FlixHQ extraction can be slower on small cloud VMs because Chromium startup and mirrors compete for CPU.
             flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 35000, extraction: 3000, metaInfo: 15000 },
+            hdstream4u: { watch: 45000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
