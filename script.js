@@ -675,20 +675,17 @@ function getItemProvider(item) {
 
     if (source.includes('dramacool')) return 'dramacool';
     if (source.includes('flixhq')) return 'flixhq';
-    if (source.includes('animekai')) return 'animekai';
     if (source.includes('animesalt')) return 'animesalt';
-    if (source.includes('justanime')) return 'justanime';
-    if (source.includes('satoru')) return 'satoru';
+    if (source.includes('justanime')) return 'animesalt';
+    if (source.includes('satoru')) return 'animesalt';
     if (source.includes('hdstream4u') || source.includes('hubstream')) return 'hdstream4u';
 
     return '';
 }
 
-function getDefaultPlaybackProvider(type, provider = '') {
+function getDefaultPlaybackProvider(type, provider = '', animeLike = false) {
     const explicit = String(provider || '').trim().toLowerCase();
     if (explicit) return explicit;
-    const normalizedType = String(type || '').trim().toLowerCase();
-    if (normalizedType === 'movie' || normalizedType === 'tv') return 'hdstream4u';
     return '';
 }
 
@@ -3577,7 +3574,6 @@ function getModalEpisodeProviderOptions(movie = {}, provider = '') {
 
     if (isModalAnimeLike(movie)) {
         addProvider('animesalt', 'AnimeSalt');
-        addProvider('satoru', 'Satoru');
     }
 
     return options;
@@ -3828,11 +3824,15 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
         if (!season) return;
         syncDropdownSelection(season);
 
+        const modalAnimeLike = isModalAnimeLike(movie);
         list.innerHTML = season.episodes.map((ep, idx) => {
             const episodeNo = Number(ep.episodeNo || idx + 1);
             const episodeId = String(ep.id || ep.episodeId || '').trim();
             const absoluteEpisodeNo = getModalEpisodeAbsoluteNo(seasons, season.seasonNo, episodeNo);
-            const activeProvider = selectedProvider === 'tmdb' ? provider : selectedProvider;
+            const activeProviderRaw = selectedProvider === 'tmdb' ? provider : selectedProvider;
+            const activeProvider = modalAnimeLike && String(activeProviderRaw || '').trim().toLowerCase() !== 'animesalt'
+                ? ''
+                : activeProviderRaw;
             const keys = getModalEpisodeKeys({
                 provider: activeProvider,
                 seasonKey: season.seasonKey,
@@ -3859,8 +3859,14 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
             params.set('episode', String(episodeNo));
             params.set('resume', '0');
             params.set('t', String(resumeTime));
-            if (activeProvider && selectedProvider !== 'tmdb') params.set('provider', String(activeProvider));
-            else if (provider) params.set('provider', String(provider));
+            if (activeProvider && selectedProvider !== 'tmdb') {
+                params.set('provider', String(activeProvider));
+            } else if (provider) {
+                const fallbackProvider = String(provider || '').trim().toLowerCase();
+                if (!modalAnimeLike || fallbackProvider === 'animesalt') {
+                    params.set('provider', String(provider));
+                }
+            }
             params.set('seasonTitle', safeSeasonTitle);
             if (season.seasonKey) params.set('seasonKey', season.seasonKey);
             if (episodeId) params.set('episodeId', episodeId);
@@ -3978,7 +3984,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
 
 function renderDetailsModal(movie, id, type, provider = '') {
     currentModalMovie = movie;
-    const resolvedProvider = getDefaultPlaybackProvider(type, provider || getItemProvider(movie));
+    const resolvedProvider = getDefaultPlaybackProvider(type, provider || getItemProvider(movie), isModalAnimeLike(movie));
     const isAdded = isInWatchlist(id);
     const title = getTitle(movie);
     const cover = getCover(movie);
@@ -4212,7 +4218,7 @@ function renderDetailsModal(movie, id, type, provider = '') {
                 </div>
                 
                 <div class="modal-action-buttons">
-                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}', '${resolvedProvider}')">
+                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}', '${resolvedProvider}', ${isModalAnimeLike(movie) ? 'true' : 'false'})">
                         <i class="fa-solid fa-play"></i> Watch Now
                     </button>
                     <button id="modal-watchlist-btn" class="btn btn-list ${isAdded ? 'btn-in-list' : 'btn-add-list'}" 
@@ -4701,7 +4707,7 @@ function displayHero(item) {
     const bg = getCover(item);
     const type = getType(item);
     const id = getCanonicalTmdbId(item, item.id);
-    const provider = getDefaultPlaybackProvider(type, getItemProvider(item));
+    const provider = getDefaultPlaybackProvider(type, getItemProvider(item), isModalAnimeLike(item));
 
     heroSection.style.backgroundImage = `url('${bg}')`;
     heroSection.classList.add('is-switching');
@@ -4731,7 +4737,7 @@ function displayHero(item) {
                 </div>
                 <p class="hero-description">${item.description || item.overview || ''}</p>
                 <div class="hero-btns">
-                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}','${provider}')">
+                    <button class="btn btn-watch-now" onclick="watchNow('${id}','${type}','${provider}', ${isModalAnimeLike(item) ? 'true' : 'false'})">
                         <i class="fa-solid fa-play"></i> Watch Now
                     </button>
                     <button class="btn btn-more-info" onclick="openDetails('${id}','${type}')">
@@ -5411,13 +5417,13 @@ function closeTrailer() {
     }
 }
 
-async function watchNow(id, type, provider = '') {
+async function watchNow(id, type, provider = '', animeLike = false) {
     const apiSource = getCurrentApiSource();
     const params = new URLSearchParams();
     const canonicalId = normalizeTmdbId(id);
     params.set('id', String(canonicalId || ''));
     const safeType = (String(type || '').trim().toLowerCase() === 'tv') ? 'tv' : 'movie';
-    const resolvedProvider = getDefaultPlaybackProvider(safeType, provider);
+    const resolvedProvider = getDefaultPlaybackProvider(safeType, provider, animeLike);
     params.set('type', safeType);
     params.set('apiSource', String(apiSource || ''));
 
@@ -5459,7 +5465,7 @@ async function watchNow(id, type, provider = '') {
         }
 
         if (resumeChoice === 'continue') {
-            const chosenProvider = getDefaultPlaybackProvider(safeType, provider || String(continueEntry.provider || '').trim());
+            const chosenProvider = getDefaultPlaybackProvider(safeType, provider || String(continueEntry.provider || '').trim(), animeLike);
             if (chosenProvider) params.set('provider', chosenProvider);
             params.set('t', String(Math.floor(Number(continueEntry.currentTime || 0))));
             if (String(type).toLowerCase() === 'tv') {
