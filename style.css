@@ -350,11 +350,28 @@ header.scrolled {
 }
 
 .search-bar {
-    background: rgba(12, 12, 14, 0.48);
-    border-color: rgba(255, 255, 255, 0.14);
-    padding: 0.35rem 0.45rem 0.35rem 1rem;
-    gap: 0.35rem;
+    background: rgba(10, 10, 12, 0.42);
+    border-color: rgba(255, 255, 255, 0.12);
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
     overflow: hidden;
+    border-radius: 16px;
+    cursor: text;
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+        min-width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 220ms ease,
+        border-color 220ms ease,
+        box-shadow 220ms ease,
+        padding 280ms cubic-bezier(0.22, 1, 0.36, 1),
+        border-radius 220ms ease,
+        transform 220ms ease;
 }
 
 .search-bar::before {
@@ -363,27 +380,43 @@ header.scrolled {
     inset: 1px;
     border-radius: inherit;
     pointer-events: none;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 48%);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02) 42%, transparent 72%);
     opacity: 0.55;
+}
+
+.search-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.03), transparent 38%);
+    opacity: 1;
 }
 
 .search-bar:focus-within {
     border-color: var(--primary);
-    box-shadow: 0 0 0 1px rgba(229, 9, 20, 0.16), 0 14px 34px rgba(0, 0, 0, 0.44);
+    box-shadow: 0 0 0 1px rgba(229, 9, 20, 0.14), 0 18px 38px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
     transform: translateY(-1px);
-    background: rgba(12, 12, 14, 0.62);
+    background: rgba(10, 10, 12, 0.56);
 }
 
 .search-bar input {
     position: relative;
     z-index: 1;
-    width: 210px;
+    order: 2;
+    width: 0;
+    min-width: 0;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(10px);
     font-size: 0.96rem;
     font-weight: 500;
+    transition: width 240ms ease, opacity 200ms ease, transform 240ms ease;
 }
 
 .search-bar input::placeholder {
-    color: rgba(255, 255, 255, 0.42);
+    color: rgba(255, 255, 255, 0.5);
 }
 
 .search-bar button {
@@ -396,10 +429,54 @@ header.scrolled {
     align-items: center;
     justify-content: center;
     background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 50%;
-    color: rgba(255, 255, 255, 0.72);
+    color: rgba(255, 255, 255, 0.78);
     font-size: 0.95rem;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     transition: var(--transition);
+}
+
+#search-btn {
+    order: 1;
+}
+
+.search-bar .search-close-btn {
+    order: 3;
+    display: none;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.search-bar.search-expanded,
+.search-bar.mobile-search-expanded {
+    width: clamp(240px, 28vw, 360px);
+    min-width: clamp(240px, 28vw, 360px);
+    padding: 0.35rem 0.45rem 0.35rem 0.85rem;
+    gap: 0.45rem;
+    justify-content: space-between;
+    border-radius: 999px;
+    background: rgba(10, 10, 12, 0.52);
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+.search-bar.search-expanded input,
+.search-bar.mobile-search-expanded input {
+    width: auto;
+    flex: 1 1 auto;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+}
+
+.search-bar.search-expanded .search-close-btn,
+.search-bar.mobile-search-expanded .search-close-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .search-bar button:hover {
@@ -720,6 +797,8 @@ header.scrolled {
     align-items: center;
     background-size: cover;
     background-position: center;
+    background-repeat: no-repeat;
+    background-color: #0c0c0e;
     transition: background-image 0.5s ease, filter 0.35s ease;
 }
 
@@ -733,6 +812,7 @@ header.scrolled {
     left: 0;
     width: 100%;
     height: 100%;
+    z-index: 2;
     background:
         linear-gradient(to right, rgba(12, 12, 14, 0.92) 0%, rgba(18, 18, 20, 0.54) 52%, rgba(18, 18, 20, 0.18) 100%),
         linear-gradient(to top, #0c0c0e 0%, rgba(12, 12, 14, 0.72) 18%, transparent 46%);
@@ -3448,6 +3528,12 @@ footer {
     header {
         padding-top: calc(2rem + env(safe-area-inset-top, 15px));
     }
+
+    input,
+    textarea,
+    select {
+        font-size: 16px !important;
+    }
     
     header.scrolled {
         padding-top: calc(1.2rem + env(safe-area-inset-top, 10px));
@@ -3557,9 +3643,23 @@ footer {
     #main-header.mobile-search-open .header-actions {
         width: 100%;
         justify-content: flex-end;
+        gap: 0.45rem;
     }
 
     #main-header.mobile-search-open .genre-filter-btn {
+        width: 0;
+        min-width: 0;
+        padding: 0;
+        margin: 0;
+        border: 0;
+        opacity: 0;
+        overflow: hidden;
+        pointer-events: none;
+    }
+
+    #main-header.mobile-search-open .cache-clear-btn,
+    #main-header.mobile-search-open .watch-party-header-btn,
+    #main-header.mobile-search-open .mobile-menu-btn {
         width: 0;
         min-width: 0;
         padding: 0;
@@ -3576,8 +3676,8 @@ footer {
     }
 
     #main-header.mobile-search-open .search-bar.mobile-search-expanded {
-        width: min(82vw, 320px);
-        min-width: min(82vw, 320px);
+        width: min(calc(100vw - 2rem), 320px);
+        min-width: min(calc(100vw - 2rem), 320px);
     }
 
     .search-bar.mobile-search-expanded input {
@@ -4108,8 +4208,8 @@ body.trailer-open {
     }
 
     .search-bar.mobile-search-expanded {
-        width: min(82vw, 340px);
-        min-width: min(82vw, 340px);
+        width: min(calc(100vw - 2.5rem), 320px);
+        min-width: min(calc(100vw - 2.5rem), 320px);
         height: 46px;
         gap: 0.45rem;
         padding: 0.35rem 0.45rem 0.35rem 0.5rem;
@@ -4120,8 +4220,8 @@ body.trailer-open {
     }
 
     #main-header.mobile-search-open .search-bar.mobile-search-expanded {
-        width: min(88vw, 360px);
-        min-width: min(88vw, 360px);
+        width: min(calc(100vw - 1.5rem), 340px);
+        min-width: min(calc(100vw - 1.5rem), 340px);
     }
 
     .search-bar button {
@@ -4352,4 +4452,650 @@ body.trailer-open {
     background: var(--primary-hover);
     transform: translateY(-2px);
     box-shadow: var(--shadow);
+}
+
+/* === Watch Together Homepage Panel === */
+.watch-party-header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,74,93,.35);
+    background: rgba(255,74,93,.1);
+    color: #ff6b6b;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s;
+    white-space: nowrap;
+}
+.watch-party-header-btn:hover {
+    background: rgba(255,74,93,.18);
+    border-color: rgba(255,74,93,.55);
+    color: #fff;
+    transform: translateY(-1px);
+}
+.watch-party-header-btn i {
+    font-size: 14px;
+}
+.watch-party-home-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.watch-party-home-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,.65);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+.watch-party-home-card {
+    position: relative;
+    width: 420px;
+    max-width: 92vw;
+    max-height: 85vh;
+    overflow-y: auto;
+    background: linear-gradient(180deg, rgba(17,17,18,.96), rgba(22,18,20,.94));
+    border: 1px solid rgba(120,130,145,.18);
+    box-shadow: 0 18px 64px rgba(0,0,0,.42);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-radius: 30px;
+    padding: 18px 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.watch-party-home-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.watch-party-home-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.watch-party-home-title {
+    font-family: "Courier Prime", "Courier New", monospace;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.watch-party-home-title i {
+    font-size: 16px;
+    width: 22px;
+    text-align: center;
+}
+.watch-party-home-subtitle {
+    margin-top: 8px;
+    color: rgba(235,235,235,.72);
+    font-size: 12px;
+    line-height: 1.45;
+}
+.watch-party-home-collapse,
+.watch-party-home-settings,
+.watch-party-home-close {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    color: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all .15s;
+}
+.watch-party-home-settings {
+    color: rgba(255,255,255,.5);
+}
+.watch-party-home-collapse:hover,
+.watch-party-home-settings:hover,
+.watch-party-home-close:hover {
+    background: rgba(255,255,255,.12);
+    border-color: rgba(255,255,255,.2);
+}
+.watch-party-home-settings:hover {
+    color: #fff;
+}
+.watch-party-home-divider {
+    height: 1px;
+    background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.22), rgba(255,255,255,.06));
+    margin: 18px 0 16px;
+}
+.watch-party-home-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+}
+.watch-party-home-card input {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 14px;
+    background: rgba(255,255,255,.05);
+    color: #fff;
+    padding: 12px 14px;
+    outline: none;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+.watch-party-home-card input:focus {
+    border-color: rgba(255,74,93,.5);
+    box-shadow: 0 0 0 2px rgba(255,74,93,.1);
+}
+.watch-party-home-card .primary {
+    width: 100%;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(77,159,255,.5);
+    background: rgba(77,159,255,.14);
+    color: #6ab0ff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .15s;
+}
+.watch-party-home-card .primary:hover {
+    background: rgba(77,159,255,.2);
+    border-color: rgba(77,159,255,.65);
+    color: #8bc3ff;
+    transform: translateY(-1px);
+}
+.watch-party-home-label {
+    color: rgba(255,255,255,.82);
+    font-weight: 700;
+    font-size: 13px;
+    line-height: 1.35;
+}
+.watch-party-home-helper {
+    color: rgba(255,255,255,.35);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
+.watch-party-home-segmented {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    border-radius: 12px;
+    padding: 4px;
+}
+.watch-party-home-segmented button {
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    color: rgba(255,255,255,.6);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s;
+}
+.watch-party-home-segmented button.active {
+    background: rgba(255,74,93,.14);
+    border: 1px solid rgba(255,31,62,.72);
+    color: #ff727e;
+    box-shadow: 0 0 18px rgba(255,31,62,.12);
+}
+.watch-party-home-copy-btn {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px;
+    color: rgba(255,255,255,.5);
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all .15s;
+    flex-shrink: 0;
+}
+.watch-party-home-copy-btn:hover {
+    background: rgba(255,255,255,.12);
+    color: #fff;
+}
+.watch-party-home-copy-btn.copied {
+    color: #4ade80;
+    border-color: rgba(74,222,128,.3);
+}
+.watch-party-home-settings-card {
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.watch-party-home-settings-back-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,.5);
+    cursor: pointer;
+    padding: 0;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: color .2s;
+}
+.watch-party-home-settings-back-btn:hover {
+    color: #fff;
+}
+.watch-party-home-settings-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.watch-party-home-settings-label {
+    color: rgba(255,255,255,.5);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+.watch-party-home-room-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+}
+.watch-party-home-join-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 8px;
+    align-items: center;
+}
+.watch-party-home-join-row input {
+    padding: 10px 12px;
+    font-size: 13px;
+}
+.watch-party-home-join-row button {
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    color: #fff;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    transition: all .15s;
+    white-space: nowrap;
+}
+.watch-party-home-join-row button:hover {
+    background: rgba(255,255,255,.12);
+}
+.watch-party-home-public-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+}
+.watch-party-home-public-room {
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.06);
+    align-items: center;
+}
+.watch-party-home-public-poster {
+    width: 48px;
+    height: 64px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: rgba(255,255,255,.05);
+}
+.watch-party-home-public-poster-fallback {
+    width: 48px;
+    height: 64px;
+    border-radius: 8px;
+    background: rgba(255,255,255,.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255,255,255,.2);
+    font-size: 18px;
+}
+.watch-party-home-public-body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.watch-party-home-public-title {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.watch-party-home-public-meta {
+    color: rgba(255,255,255,.45);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.watch-party-home-public-join {
+    flex-shrink: 0;
+    padding: 7px 16px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(229,9,20,.2), rgba(255,77,77,.15));
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(229,9,20,.5);
+    color: #ff6b6b;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all .15s;
+    box-shadow: 0 8px 20px rgba(229,9,20,.2), inset 0 1px 0 rgba(255,255,255,.1);
+    position: relative;
+    overflow: hidden;
+}
+.watch-party-home-public-join::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.2), transparent);
+    transition: left .5s;
+}
+.watch-party-home-public-join:hover::before {
+    left: 100%;
+}
+.watch-party-home-public-join:hover {
+    background: linear-gradient(135deg, rgba(229,9,20,.3), rgba(255,77,77,.25));
+    border-color: rgba(229,9,20,.7);
+    color: #fff;
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+    box-shadow: 0 10px 24px rgba(229,9,20,.35), inset 0 1px 0 rgba(255,255,255,.2);
+}
+.watch-party-home-room-badge {
+    display: grid;
+    gap: 6px;
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    font-size: 13px;
+    text-align: center;
+}
+.watch-party-home-room-code {
+    font-size: 28px;
+    font-weight: 900;
+    letter-spacing: .15em;
+    color: #fff;
+    line-height: 1.2;
+}
+.watch-party-home-room-role {
+    color: rgba(255,255,255,.5);
+    font-size: 12px;
+}
+.watch-party-home-status {
+    color: rgba(255,255,255,.6);
+    font-size: 13px;
+    text-align: center;
+    padding: 8px 0;
+}
+.watch-party-home-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 0;
+}
+.watch-party-home-member {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: rgba(255,255,255,.06);
+    color: rgba(255,255,255,.7);
+    font-size: 12px;
+    font-weight: 600;
+}
+.watch-party-home-member-host {
+    background: linear-gradient(135deg, rgba(255,215,0,.15), rgba(255,200,0,.08));
+    border: 1px solid rgba(255,215,0,.25);
+    color: #ffd700;
+}
+.watch-party-home-member-host i {
+    color: #ffd700;
+    filter: drop-shadow(0 0 4px rgba(255,215,0,.5));
+}
+.watch-party-home-chatbox {
+    margin-top: 8px;
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(7,7,9,.62);
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+.watch-party-home-chat-head {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: rgba(255,255,255,.82);
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+.watch-party-home-chat-messages {
+    max-height: 180px;
+    overflow-y: auto;
+    display: grid;
+    gap: 8px;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,.22) rgba(255,255,255,.05);
+}
+.watch-party-home-chat-messages::-webkit-scrollbar {
+    width: 10px;
+}
+.watch-party-home-chat-messages::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 999px;
+}
+.watch-party-home-chat-messages::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,.12));
+    border: 2px solid rgba(7,7,9,.72);
+    border-radius: 999px;
+}
+.watch-party-home-chat-messages::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.16));
+}
+body.watch-party-home-open {
+    overflow: hidden !important;
+    height: 100vh;
+}
+.watch-party-home-chat-empty {
+    color: rgba(255,255,255,.42);
+    font-size: 12px;
+    text-align: center;
+    padding: 12px 8px;
+}
+.watch-party-home-chat-msg {
+    display: grid;
+    gap: 4px;
+    justify-items: start;
+}
+.watch-party-home-chat-msg.is-self {
+    justify-items: end;
+}
+.watch-party-home-chat-user {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255,255,255,.58);
+    padding: 0 4px;
+}
+.watch-party-home-chat-bubble {
+    max-width: min(100%, 280px);
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.08);
+    color: rgba(255,255,255,.9);
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+.watch-party-home-chat-msg.is-self .watch-party-home-chat-bubble {
+    background: rgba(229,9,20,.14);
+    border-color: rgba(229,9,20,.22);
+    color: #fff;
+}
+.watch-party-home-chat-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+.watch-party-home-chat-form input {
+    min-width: 0;
+    margin: 0;
+}
+.watch-party-home-chat-form button {
+    border: none;
+    border-radius: 12px;
+    padding: 0 14px;
+    background: rgba(229,9,20,.16);
+    border: 1px solid rgba(229,9,20,.24);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.watch-party-home-chat-form button:hover {
+    background: rgba(229,9,20,.24);
+}
+.watch-party-home-leave {
+    width: 100%;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,74,93,.3);
+    background: rgba(255,74,93,.1);
+    color: #ff6b6b;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .15s;
+}
+.watch-party-home-leave:hover {
+    background: rgba(255,74,93,.18);
+    border-color: rgba(255,74,93,.5);
+    color: #fff;
+}
+.watch-party-home-toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    border-radius: 10px;
+    background: rgba(0,0,0,.85);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    z-index: 999999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .25s;
+}
+.watch-party-home-toast.show {
+    opacity: 1;
+}
+.watch-party-home-waiting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 24px 16px;
+    text-align: center;
+    color: rgba(255,255,255,.6);
+}
+.watch-party-home-waiting i {
+    font-size: 32px;
+    color: rgba(255,255,255,.15);
+}
+.watch-party-home-waiting strong {
+    color: rgba(255,255,255,.8);
+    font-size: 15px;
+}
+@media (max-width: 768px) {
+    .watch-party-header-btn span {
+        display: none;
+    }
+    .watch-party-header-btn {
+        padding: 8px 10px;
+    }
+    .watch-party-home-card {
+        padding: 14px;
+        max-width: 96vw;
+        border-radius: 22px;
+    }
+    .watch-party-home-title {
+        font-size: 16px;
+    }
+    .watch-party-home-subtitle {
+        font-size: 11px;
+    }
+    .watch-party-home-collapse,
+    .watch-party-home-settings,
+    .watch-party-home-close {
+        width: 36px;
+        height: 36px;
+    }
+    .watch-party-home-public-room {
+        grid-template-columns: 40px 1fr auto;
+        gap: 8px;
+    }
+    .watch-party-home-public-poster,
+    .watch-party-home-public-poster-fallback {
+        width: 40px;
+        height: 54px;
+    }
+    .watch-party-home-chat-form {
+        grid-template-columns: 1fr;
+    }
+    .watch-party-home-chat-form button {
+        min-height: 40px;
+    }
+}
+@media (max-width: 480px) {
+    .watch-party-home-join-row {
+        grid-template-columns: 1fr;
+    }
 }

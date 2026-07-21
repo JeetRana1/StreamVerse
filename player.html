@@ -56,6 +56,12 @@
             user-select: none;
         }
 
+        input,
+        textarea,
+        select {
+            font-size: 16px;
+        }
+
         /* LOADER */
         #loader {
             position: fixed;
@@ -527,6 +533,7 @@
 
         /* Allow lock button and skip buttons to always be clickable */
         .control-surface:not(.visible) #uiLockBtn,
+        .control-surface:not(.visible) #uiChatBtn,
         .control-surface:not(.visible) .ui-lock-btn,
         .control-surface:not(.visible) #skipBackBtn,
         .control-surface:not(.visible) #skipFwdBtn,
@@ -1804,7 +1811,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            z-index: 350;
+            z-index: 10020;
             transition: var(--transition);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
@@ -1820,6 +1827,81 @@
         .ui-lock-btn.locked {
             border-color: rgba(229, 9, 20, .65);
             box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48), 0 0 18px rgba(229, 9, 20, .25);
+        }
+
+        .ui-watchparty-btn {
+            position: fixed;
+            top: 26px;
+            right: 156px;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            background: linear-gradient(135deg, rgba(12, 12, 14, 0.82), rgba(18, 18, 20, 0.56));
+            color: #fff;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10020;
+            transition: var(--transition);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
+        }
+
+        .ui-watchparty-btn:hover {
+            background: linear-gradient(135deg, rgba(18, 18, 20, 0.92), rgba(24, 24, 28, 0.66));
+            border-color: rgba(229, 9, 20, 0.45);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5), 0 0 22px rgba(229, 9, 20, 0.20);
+        }
+
+        .ui-watchparty-btn.visible {
+            display: inline-flex;
+        }
+
+        .ui-chat-btn {
+            position: fixed;
+            top: 26px;
+            right: 104px;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            background: linear-gradient(135deg, rgba(12, 12, 14, 0.82), rgba(18, 18, 20, 0.56));
+            color: #fff;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10020;
+            transition: var(--transition);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
+        }
+
+        .ui-chat-btn:hover {
+            background: linear-gradient(135deg, rgba(18, 18, 20, 0.92), rgba(24, 24, 28, 0.66));
+            border-color: rgba(229, 9, 20, 0.45);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5), 0 0 22px rgba(229, 9, 20, 0.20);
+        }
+
+        .ui-chat-btn.visible {
+            display: inline-flex;
+        }
+
+        .ui-chat-btn.watch-party-unread::after {
+            content: '';
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 9px;
+            height: 9px;
+            border-radius: 999px;
+            border: 2px solid rgba(8,8,10,.9);
+            background: #ef4444;
+            box-shadow: 0 0 10px rgba(239,68,68,.35);
         }
 
         .skip-segment-btn {
@@ -3599,7 +3681,8 @@
                 </button>
                 <button class="ctrl-icon" id="watchTogetherBtn" aria-label="Watch Together">
                     <i class="fa-solid fa-user-group"></i>
-                </button>                <button class="ctrl-icon" id="fitBtn" aria-label="Screen Fit">
+                </button>
+                <button class="ctrl-icon" id="fitBtn" aria-label="Screen Fit">
                     <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
                 </button>
                 <button class="ctrl-icon" id="muteBtn" aria-label="Mute">
@@ -3630,8 +3713,14 @@
     <div class="control-menu" id="playbackMenu"></div>
     <div class="control-menu" id="preferencesMenu"></div>
     <div class="control-menu" id="volumeMenu"></div>
+    <button class="ui-watchparty-btn" id="uiWatchPartyBtn" aria-label="Open watch together">
+        <i class="fa-solid fa-window-restore"></i>
+    </button>
     <button class="ui-lock-btn" id="uiLockBtn" aria-label="Lock controls">
         <i class="fa-solid fa-lock-open"></i>
+    </button>
+    <button class="ui-chat-btn" id="uiChatBtn" aria-label="Open live chat">
+        <i class="fa-solid fa-comment"></i>
     </button>
     <button class="skip-segment-btn" id="skipSegmentBtn" aria-label="Skip segment"></button>
     <button class="next-episode-btn" id="nextEpisodeBtn" aria-label="Next episode">
@@ -3701,6 +3790,11 @@
         ).replace(/\/$/, '');
         const DEFAULT_META_API = PROD_META_API;
         const PARAMS_BOOT = new URLSearchParams(location.search);
+
+        // Host refresh/back is handled via popstate + sessionStorage auto-join.
+        // No IIFE redirect needed — the popstate handler navigates directly,
+        // and auto-join (from bootRoom or savedCode) rejoins the room on page load.
+
         const requestedApiSource = String(PARAMS_BOOT.get('apiSource') || '').toLowerCase();
         const storedApiSource = String(localStorage.getItem('api_source') || '').toLowerCase();
         const autoDefaultApiSource = /localhost|127\.0\.0\.1/i.test(location.hostname || '') ? 'local' : 'prod';
@@ -4161,6 +4255,8 @@
         const muteStatusText = document.getElementById('mute-status-text');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
         const uiLockBtn = document.getElementById('uiLockBtn');
+        const uiWatchPartyBtn = document.getElementById('uiWatchPartyBtn');
+        const uiChatBtn = document.getElementById('uiChatBtn');
         const skipSegmentBtn = document.getElementById('skipSegmentBtn');
         const nextEpisodeBtn = document.getElementById('nextEpisodeBtn');
         const seekBar = document.getElementById('seekBar');
@@ -4185,6 +4281,7 @@
         let shakaInst = null;
         window.allSources = [];
         let allSources = window.allSources;
+        let providerResults = {};
         let externalSubtitleTracks = []; // [{label, srclang, src, provider}]
         window.externalSubtitleTracks = externalSubtitleTracks;
 
@@ -4870,10 +4967,15 @@
                 const seasonKey = String(hint?.providerAnimeId || seasonRef?.providerAnimeId || '').trim().toLowerCase();
                 if (seasonKey) u.searchParams.set('seasonKey', seasonKey);
                 else u.searchParams.delete('seasonKey');
-                const episodeId = String(hint?.episodeId || '').trim();
+                const episodeId = String(hint?.episodeId || epRef?.id || epRef?.episodeId || '').trim();
                 if (episodeId && !(seasonNo > 0 && /s0e\d+/i.test(episodeId))) u.searchParams.set('episodeId', episodeId);
                 else u.searchParams.delete('episodeId');
-                const absoluteEpisodeNo = Number(hint?.absoluteEpisodeNo || 0);
+                const absoluteEpisodeNo = Number(
+                    hint?.absoluteEpisodeNo ||
+                    epRef?.absoluteEpisodeNo ||
+                    epRef?.absoluteEpisode ||
+                    0
+                );
                 if (Number.isFinite(absoluteEpisodeNo) && absoluteEpisodeNo > 0) u.searchParams.set('absoluteEpisode', String(absoluteEpisodeNo));
                 else u.searchParams.delete('absoluteEpisode');
             }
@@ -4915,6 +5017,9 @@
         let lastEstimatedBandwidth = 0;
         let bandwidthSampleCount = 0;
         let isBandwidthConstrained = false;
+        // Stall-based adaptive quality
+        let stallAdaptiveLowest = false;
+        let stallRecoveryTimer = null;
 
         function estimateNetworkQuality() {
             // Simple heuristic: if bandwidth is consistently low, flag as constrained
@@ -5375,8 +5480,12 @@
                 svApplyPreferredAudioToHls(hls);
                 if (onParsedAction) onParsedAction();
                 updateAudioTracks();
-                hideBufferingOverlaySoon(40); // ENHANCED: Faster hiding
+                hideBufferingOverlaySoon(40);
                 clearFatalRecoveryTimer();
+                // Start at highest quality
+                if (Array.isArray(hls.levels) && hls.levels.length > 1) {
+                    hls.nextLevel = hls.levels.length - 1;
+                }
             });
 
             hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
@@ -9858,6 +9967,30 @@
 
         window.addEventListener('pagehide', flushPlaybackPositionBeforeExit);
         window.addEventListener('beforeunload', flushPlaybackPositionBeforeExit);
+        function watchPartySetBackNav() {
+            if (!watchPartyRoomCode) return;
+            if (watchPartyRole === 'host') {
+                try { sessionStorage.setItem('wpBackNav', watchPartyRoomCode); } catch (_) {}
+                try { sessionStorage.setItem('wpRoomCode', watchPartyRoomCode); } catch (_) {}
+                try { sessionStorage.setItem('wpUserId', (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })()); } catch (_) {}
+            } else {
+                try { sessionStorage.removeItem('wpRoomCode'); } catch (_) {}
+                try { sessionStorage.removeItem('wpUserId'); } catch (_) {}
+                try { sessionStorage.removeItem('wpRoomName'); } catch (_) {}
+            }
+        }
+        window.addEventListener('beforeunload', function watchPartyBeforeUnload() {
+            if (watchPartyRoomCode) {
+                if (watchPartyRole === 'host') {
+                    try { sessionStorage.setItem('wpHostPauseOnReload', '1'); } catch (_) {}
+                } else {
+                    try { sessionStorage.removeItem('wpRoomCode'); } catch (_) {}
+                    try { sessionStorage.removeItem('wpUserId'); } catch (_) {}
+                    try { sessionStorage.removeItem('wpRoomName'); } catch (_) {}
+                }
+            }
+        });
+        window.addEventListener('pagehide', watchPartySetBackNav);
 
         function resetAnimeSkipState() {
             animeSkipSegments = { intro: null, outro: null };
@@ -10698,6 +10831,8 @@
         let watchPartyApplyingRemote = false;
         let watchPartyApplyingControl = false;
         let watchPartySeekTimer = null;
+        let watchPartyRetryTimer1 = null;
+        let watchPartyRetryTimer2 = null;
         let watchPartyRouteEmitTimer = null;
         let watchPartyLastRouteSignature = '';
         let watchPartyLastRemoteState = null;
@@ -10707,7 +10842,7 @@
         let watchPartyPendingMessages = [];
         let watchPartyBasePlaybackRate = 1;
         let watchPartyRateRestoreTimer = null;
-        let watchPartyUiStep = 'identify';
+        let watchPartyUiStep = (() => { try { return localStorage.getItem('streamverse_watch_party_name') ? 'mode' : 'identify'; } catch (_) { return 'identify'; } })();
         let watchPartyVisibility = 'private';
         let watchPartyPublicRoomsData = [];
         let watchPartyHostName = '';
@@ -10716,6 +10851,35 @@
         let watchPartyCardCollapsed = false;
         let watchPartyChatCollapsed = false;
         let watchPartyHasUnread = false;
+        let watchPartyPauseOnNextLoad = (() => { try { return sessionStorage.getItem('wpHostPauseOnReload') === '1'; } catch (_) { return false; } })();
+        let watchPartyManualResumeArmed = false;
+        let watchPartyForcePaused = false;
+        let watchPartyPauseGuardTimer = null;
+        function shouldAutoplayCurrentLoad() {
+            return !IS_IOS && !watchPartyPauseOnNextLoad && !watchPartyForcePaused;
+        }
+        function refreshWatchPartyPauseGuard() {
+            const shouldGuard = Boolean(watchPartyPauseOnNextLoad || watchPartyForcePaused);
+            if (shouldGuard) {
+                if (watchPartyPauseGuardTimer) return;
+                watchPartyPauseGuardTimer = setInterval(() => {
+                    if (!video) return;
+                    try { video.autoplay = false; } catch (_) { }
+                    try { video.pause(); } catch (_) { }
+                    setPlayIcon(false);
+                }, 120);
+                return;
+            }
+            if (watchPartyPauseGuardTimer) {
+                clearInterval(watchPartyPauseGuardTimer);
+                watchPartyPauseGuardTimer = null;
+            }
+        }
+        let watchPartyIntentionallyLeft = false;
+        let watchPartyReconnectTimeout = null;
+        let watchPartyReconnectAttempts = 0;
+        let watchPartyMembersData = { count: 1, members: [] };
+        let watchPartyReclaimTimer = null;
 
         function getWatchPartyWsUrl() {
             const apiRoot = String(activeApiBase || API_BASE || '').replace(/\/meta\/tmdb\/?$/i, '');
@@ -10762,6 +10926,14 @@
             watchPartySocket.addEventListener('close', () => {
                 watchPartySetStatus('Disconnected');
                 document.body.classList.remove('watch-party-guest');
+                if (watchPartyRoomCode && !watchPartyIntentionallyLeft) {
+                    watchPartyReconnectAttempts++;
+                    if (watchPartyReconnectAttempts > 10) { watchPartyReconnectAttempts = 0; return; }
+                    const delay = Math.min(1000 * watchPartyReconnectAttempts, 8000);
+                    watchPartySetStatus(`Reconnecting in ${Math.round(delay / 1000)}s...`);
+                    if (watchPartyReconnectTimeout) clearTimeout(watchPartyReconnectTimeout);
+                    watchPartyReconnectTimeout = setTimeout(() => watchPartyReconnect(), delay);
+                }
             });
             watchPartySocket.addEventListener('error', () => watchPartySetStatus('Connection error'));
             watchPartySocket.addEventListener('message', (event) => {
@@ -10770,6 +10942,25 @@
                 handleWatchPartyMessage(msg);
             });
             return watchPartySocket;
+        }
+
+        function watchPartyReconnect() {
+            watchPartyIntentionallyLeft = false;
+            watchPartySocket = null;
+            const savedCode = (() => { try { return String(sessionStorage.getItem('wpRoomCode') || '').trim().toUpperCase(); } catch (_) { return ''; } })();
+            const savedName = (() => { try { return String(sessionStorage.getItem('wpRoomName') || '').trim(); } catch (_) { return ''; } })();
+            if (!savedCode || !watchPartyRoomCode) { watchPartyReconnectAttempts = 0; return; }
+            if (savedName) watchPartyName = savedName;
+            ensureWatchPartySocket();
+            const prevUserId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
+            const attemptJoin = () => {
+                if (watchPartySocket?.readyState === WebSocket.OPEN) {
+                    watchPartySend('room:join', { code: savedCode, name: watchPartyName, previousUserId: prevUserId });
+                } else if (watchPartySocket?.readyState === WebSocket.CONNECTING) {
+                    setTimeout(attemptJoin, 200);
+                }
+            };
+            setTimeout(attemptJoin, 300);
         }
 
         function initWatchTogether() {
@@ -10788,11 +10979,24 @@
                     document.body.classList.remove('watch-party-open');
                     renderWatchPartyView();
                 } else {
+                    closeCustomMenus();
                     watchPartyCardCollapsed = false;
-                    watchPartyChatCollapsed = false;
+                    watchPartyChatCollapsed = true;
                     renderWatchPartyView();
                     document.body.classList.add('watch-party-open');
                 }
+            });
+            uiChatBtn?.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!watchPartyRoomCode) return;
+                toggleWatchPartyChatOnly();
+            });
+            uiWatchPartyBtn?.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!watchPartyRoomCode) return;
+                toggleWatchPartyMainQuick();
             });
             document.addEventListener('click', interceptGuestPlayerControls, true);
             window.addEventListener('streamverse:routechange', watchPartyScheduleHostRouteSync);
@@ -10811,12 +11015,75 @@
                 }
                 requestAnimationFrame(watchPartyGuestDriftLoop);
             })();
+            // If guest navigated back, don't auto-join
+            const wpCancel = (() => { try { return sessionStorage.getItem('wpCancel'); } catch (_) { return null; } })();
+            if (wpCancel) {
+                try { sessionStorage.removeItem('wpCancel'); } catch (_) {}
+                try { sessionStorage.removeItem('wpRoomCode'); } catch (_) {}
+                try { sessionStorage.removeItem('wpUserId'); } catch (_) {}
+            }
+
             const bootRoom = String(PARAMS_BOOT.get('wpRoom') || '').trim().toUpperCase();
-            if (bootRoom && !watchPartyAutoJoinStarted) {
+            if (bootRoom && !watchPartyAutoJoinStarted && !wpCancel) {
                 watchPartyAutoJoinStarted = true;
                 ensureWatchPartySocket();
                 setTimeout(() => joinWatchPartyRoom(bootRoom), 250);
             }
+            // Also try sessionStorage auto-rejoin as a fallback (handles page refresh
+            // where wpRoom is in the URL but the first join attempt failed)
+            if (!watchPartyAutoJoinStarted && !wpCancel) {
+                const savedCode = (() => { try { return String(sessionStorage.getItem('wpRoomCode') || '').trim().toUpperCase(); } catch (_) { return ''; } })();
+                const savedName = (() => { try { return String(sessionStorage.getItem('wpRoomName') || '').trim(); } catch (_) { return ''; } })();
+                if (savedCode) {
+                    watchPartyAutoJoinStarted = true;
+                    if (savedName) watchPartyName = savedName;
+                    watchPartyUiStep = 'mode';
+                    ensureWatchPartySocket();
+                    setTimeout(() => joinWatchPartyRoom(savedCode), 400);
+                }
+            }
+
+            // Intercept back/forward navigation when in a room — go to homepage.
+            // For guests, skip pushState entirely so the browser's own back button
+            // naturally goes to the previous page (typically the homepage).
+            const isGuestBoot = !!PARAMS_BOOT.get('wpGuest');
+            if (!isGuestBoot) {
+                try {
+                    history.pushState({ wpIntercept: true }, '');
+                } catch (_) {}
+            }
+            window.addEventListener('popstate', (e) => {
+                try {
+                    const isGuest = watchPartyRole === 'guest' || PARAMS_BOOT.get('wpGuest') === '1';
+                    const code = watchPartyRoomCode || (() => { try { return String(sessionStorage.getItem('wpRoomCode') || '').trim(); } catch (_) { return ''; } })();
+                    if (!code) {
+                        if (isGuest) {
+                            try { sessionStorage.removeItem('wpRoomCode'); } catch (_) {}
+                            try { sessionStorage.removeItem('wpUserId'); } catch (_) {}
+                            try { sessionStorage.removeItem('wpBackNav'); } catch (_) {}
+                            window.location.href = '/';
+                        }
+                        return;
+                    }
+                    watchPartyIntentionallyLeft = true;
+                    if (watchPartyReconnectTimeout) { clearTimeout(watchPartyReconnectTimeout); watchPartyReconnectTimeout = null; }
+                    const hostBack = watchPartyRole === 'host' || PARAMS_BOOT.get('wpGuest') !== '1';
+                    if (hostBack) {
+                        watchPartySend('host:navigating-home', { code });
+                        try { sessionStorage.setItem('wpBackNav', code); } catch (_) {}
+                        const url = new URL('/', location.href);
+                        url.searchParams.set('wpRoom', code);
+                        const storedUserId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
+                        if (storedUserId) url.searchParams.set('wpUser', storedUserId);
+                        window.location.href = url.toString();
+                    } else {
+                        try { sessionStorage.removeItem('wpRoomCode'); } catch (_) {}
+                        try { sessionStorage.removeItem('wpUserId'); } catch (_) {}
+                        try { sessionStorage.removeItem('wpBackNav'); } catch (_) {}
+                        window.location.href = '/';
+                    }
+                } catch (_) {}
+            });
         }
 
         function injectWatchPartyStyles() {
@@ -10834,11 +11101,11 @@
                     display: none;
                     color: #fff;
                     font-family: Outfit, system-ui, sans-serif;
-                    pointer-events: auto;
+                    pointer-events: none;
                 }
                 body.watch-party-in-room #watchPartyPanel {
                     top: 84px;
-                    bottom: 92px;
+                    bottom: 168px;
                     width: min(980px, calc(100vw - 28px));
                 }
                 body.watch-party-open #watchPartyPanel { display: block; }
@@ -10851,15 +11118,15 @@
                     pointer-events: auto;
                 }
                 #watchPartyCollapsedChips.has-chips {
-                    display: inline-flex;
+                    display: none;
                 }
                 #watchPartyCollapsedChips:not(.chips-all) {
                     top: 26px;
-                    right: 104px;
+                    right: 156px;
                 }
                 #watchPartyCollapsedChips.chips-all {
                     top: 26px;
-                    right: 120px;
+                    right: 172px;
                 }
                 .watch-party-floating-chip {
                     display: inline-flex;
@@ -10933,13 +11200,15 @@
                 }
                 body.watch-party-in-room .watch-party-shell {
                     height: 100%;
-                    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+                    grid-template-columns: minmax(320px, 400px);
                     align-items: stretch;
+                    justify-content: end;
                 }
                 .watch-party-card,
                 .watch-party-chat {
                     justify-self: stretch;
                     align-self: stretch;
+                    pointer-events: auto;
                 }
                 .watch-party-card,
                 .watch-party-chat {
@@ -10954,6 +11223,34 @@
                     padding: 18px 18px 16px;
                     display: flex;
                     flex-direction: column;
+                    min-height: 0;
+                    max-height: min(74vh, 720px);
+                    overflow: hidden;
+                    padding-right: 0;
+                }
+                .watch-party-stage {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    min-height: 0;
+                    flex: 1 1 auto;
+                    overflow-y: auto;
+                    padding-right: 8px;
+                    scrollbar-width: thin;
+                    scrollbar-gutter: stable;
+                }
+                .watch-party-stage::-webkit-scrollbar { width: 10px; }
+                .watch-party-stage::-webkit-scrollbar-track {
+                    background: rgba(8,8,10,.28);
+                    border-radius: 999px;
+                }
+                .watch-party-stage::-webkit-scrollbar-thumb {
+                    background: linear-gradient(180deg, rgba(28,28,32,.92), rgba(16,16,20,.92));
+                    border-radius: 999px;
+                    border: 2px solid rgba(8,8,10,.32);
+                }
+                .watch-party-stage::-webkit-scrollbar-thumb:hover {
+                    background: linear-gradient(180deg, rgba(38,38,42,.96), rgba(22,22,26,.96));
                 }
                 .watch-party-chat {
                     display: none;
@@ -10961,8 +11258,13 @@
                 }
                 body.watch-party-in-room .watch-party-chat {
                     display: grid;
-                    grid-template-rows: auto auto 1fr auto;
-                    padding: 16px;
+                    grid-template-rows: 1fr auto;
+                    padding: 0;
+                    background: transparent;
+                    border: none;
+                    box-shadow: none;
+                    backdrop-filter: none;
+                    -webkit-backdrop-filter: none;
                 }
                 .watch-party-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
                 .watch-party-head-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
@@ -11022,11 +11324,38 @@
                     cursor: pointer;
                     flex-shrink: 0;
                 }
-                .watch-party-stage {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 12px;
-                    min-height: 0;
+                .watch-party-settings {
+                    width: 42px;
+                    height: 42px;
+                    border-radius: 14px;
+                    border: 1px solid rgba(255,255,255,.12);
+                    background: rgba(255,255,255,.06);
+                    color: rgba(255,255,255,.5);
+                    cursor: pointer;
+                    flex-shrink: 0;
+                    transition: all .2s;
+                }
+                .watch-party-settings:hover {
+                    color: #fff;
+                    background: rgba(255,255,255,.1);
+                    border-color: rgba(255,255,255,.2);
+                }
+                @media (min-width: 1281px) {
+                    body.watch-party-in-room #watchPartyPanel {
+                        top: auto;
+                        bottom: 104px;
+                    }
+                    .watch-party-card-head {
+                        padding-right: 8px;
+                    }
+                    .watch-party-head-actions {
+                        margin-right: 6px;
+                    }
+                }
+                body.watch-party-open .ui-watchparty-btn,
+                body.watch-party-open .ui-chat-btn,
+                body.watch-party-open .ui-lock-btn {
+                    z-index: 10020;
                 }
                 .watch-party-card.collapsed .watch-party-stage,
                 .watch-party-card.collapsed .watch-party-divider,
@@ -11143,6 +11472,7 @@
 
                 .watch-party-card.collapsed .watch-party-close,
                 .watch-party-card.collapsed .watch-party-collapse,
+                .watch-party-card.collapsed .watch-party-settings,
                 .watch-party-chat.collapsed .watch-party-collapse,
                 .watch-party-chat.collapsed .watch-party-close {
                     width: 28px;
@@ -11161,6 +11491,7 @@
                 }
                 .watch-party-card.collapsed .watch-party-close:hover,
                 .watch-party-card.collapsed .watch-party-collapse:hover,
+                .watch-party-card.collapsed .watch-party-settings:hover,
                 .watch-party-chat.collapsed .watch-party-collapse:hover,
                 .watch-party-chat.collapsed .watch-party-close:hover {
                     background: rgba(255,255,255,.14);
@@ -11184,6 +11515,42 @@
                     font-weight: 700;
                     font-size: 13px;
                     line-height: 1.35;
+                }
+                .watch-party-settings-card {
+                    background: rgba(255,255,255,.04);
+                    border: 1px solid rgba(255,255,255,.08);
+                    border-radius: 16px;
+                    padding: 16px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 14px;
+                }
+                .watch-party-settings-back-btn {
+                    background: none;
+                    border: none;
+                    color: rgba(255,255,255,.5);
+                    cursor: pointer;
+                    padding: 0;
+                    font-size: 13px;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    transition: color .2s;
+                }
+                .watch-party-settings-back-btn:hover {
+                    color: #fff;
+                }
+                .watch-party-settings-field {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
+                .watch-party-settings-label {
+                    color: rgba(255,255,255,.5);
+                    font-size: 12px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: .5px;
                 }
                 .watch-party-card input,
                 .watch-party-chat input {
@@ -11212,9 +11579,11 @@
                 .watch-party-chat button:hover { transform: translateY(-1px); }
                 .watch-party-card button.primary,
                 .watch-party-chat button.primary {
-                    background: #dcdcdc;
-                    border-color: #dcdcdc;
-                    color: #161616;
+                    background: rgba(77,159,255,.14);
+                    border-color: rgba(77,159,255,.55);
+                    color: #a6cbff;
+                    box-shadow: 0 0 18px rgba(77,159,255,.1), inset 0 1px 0 rgba(255,255,255,.06);
+                    font-weight: 900;
                 }
                 .watch-party-inline-row {
                     display: grid;
@@ -11225,21 +11594,101 @@
                 .watch-party-segmented {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
-                    gap: 10px;
+                    gap: 8px;
                 }
                 .watch-party-segmented button {
-                    background: rgba(255,255,255,.04);
-                    border-color: rgba(255,255,255,.14);
+                    background: rgba(255,255,255,.06);
+                    border: 1px solid rgba(255,255,255,.12);
+                    border-radius: 10px;
+                    color: rgba(255,255,255,.6);
                 }
                 .watch-party-segmented button.active {
-                    background: linear-gradient(180deg, rgba(188,94,129,.95), rgba(131,57,89,.95));
-                    border-color: rgba(235,158,191,.62);
-                    color: #fff;
-                    box-shadow: inset 5px 0 0 rgba(255,208,224,.55);
+                    background: rgba(255,74,93,.14);
+                    border-color: rgba(255,31,62,.72);
+                    color: #ff727e;
+                    box-shadow: 0 0 18px rgba(255,31,62,.12), inset 0 1px 0 rgba(255,255,255,.06);
+                    font-weight: 900;
                 }
                 .watch-party-helper { color: rgba(255,255,255,.58); font-size: 11px; text-align: center; }
                 .watch-party-meta { margin-top: 4px; font-size:13px; color:rgba(255,255,255,.72); line-height:1.45; }
-                .watch-party-code { color:#fff; font-weight:900; letter-spacing:.18em; }
+                .watch-party-member-count {
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: rgba(255,255,255,.5);
+                    text-transform: uppercase;
+                    letter-spacing: .06em;
+                    margin-top: 12px;
+                    margin-bottom: 6px;
+                }
+                .watch-party-members-list {
+                    background: rgba(255,255,255,.04);
+                    border: 1px solid rgba(255,255,255,.08);
+                    border-radius: 12px;
+                    padding: 4px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1px;
+                    max-height: none;
+                    overflow: visible;
+                }
+                .watch-party-members-list:empty {
+                    display: none;
+                }
+                .watch-party-member-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 13px;
+                    color: rgba(255,255,255,.82);
+                    padding: 5px 8px;
+                    border-radius: 8px;
+                    transition: background .15s;
+                    border-bottom: 1px solid rgba(255,255,255,.06);
+                }
+                .watch-party-member-row:last-child {
+                    border-bottom: none;
+                }
+                .watch-party-member-row:hover {
+                    background: rgba(255,255,255,.06);
+                }
+                .watch-party-member-row.is-host {
+                    background: rgba(255,215,0,.1);
+                }
+                .watch-party-member-row.is-host:hover {
+                    background: rgba(255,215,0,.14);
+                }
+                .watch-party-member-name {
+                    flex: 1;
+                    min-width: 0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    font-weight: 500;
+                }
+                .watch-party-member-actions {
+                    display: flex;
+                    gap: 1px;
+                    flex-shrink: 0;
+                }
+                .watch-party-member-btn {
+                    background: none;
+                    border: none;
+                    color: rgba(255,255,255,.4);
+                    cursor: pointer;
+                    font-size: 11px;
+                    padding: 3px 7px;
+                    border-radius: 6px;
+                    transition: all .15s;
+                    line-height: 1;
+                }
+                .watch-party-member-btn:hover {
+                    color: rgba(255,255,255,.9);
+                    background: rgba(255,255,255,.1);
+                }
+                .watch-party-member-btn.danger:hover {
+                    color: #ff6b6b;
+                    background: rgba(255,0,0,.15);
+                }
                 .watch-party-public-list {
                     display:grid;
                     gap:10px;
@@ -11254,37 +11703,112 @@
                     font-weight: 700;
                 }
                 .watch-party-public-room {
-                    display:grid;
-                    grid-template-columns: minmax(0, 1fr) auto;
-                    gap:10px;
-                    align-items:center;
-                    padding:0;
-                    background: transparent;
-                    border: none;
+                    display:flex;
+                    gap:12px;
+                    padding:10px;
+                    border-radius:12px;
+                    background: rgba(255,255,255,.05);
+                    border: 1px solid rgba(255,255,255,.08);
+                    transition: background .15s;
                 }
-                .watch-party-public-room-code {
+                .watch-party-public-room:hover {
+                    background: rgba(255,255,255,.08);
+                }
+                .watch-party-public-poster {
+                    width: 56px;
+                    height: 84px;
+                    border-radius: 8px;
+                    object-fit: cover;
+                    flex-shrink: 0;
+                    background: rgba(255,255,255,.06);
+                }
+                .watch-party-public-poster-fallback {
+                    width: 56px;
+                    height: 84px;
+                    border-radius: 8px;
+                    flex-shrink: 0;
+                    background: linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: rgba(255,255,255,.25);
+                    font-size: 20px;
+                }
+                .watch-party-public-body {
+                    flex: 1;
                     min-width: 0;
-                    border: 1px solid rgba(255,255,255,.18);
-                    border-radius: 14px;
-                    background: rgba(255,255,255,.04);
-                    padding: 11px 14px;
-                    font-weight: 800;
-                    text-align: center;
-                    color: rgba(255,255,255,.9);
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    justify-content: center;
                 }
-                .watch-party-public-room button {
-                    min-width: 90px;
-                    background: #dcdcdc;
-                    border-color: #dcdcdc;
-                    color: #161616;
+                .watch-party-public-title {
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: rgba(255,255,255,.9);
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .watch-party-public-meta {
+                    font-size: 11px;
+                    color: rgba(255,255,255,.5);
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    flex-wrap: wrap;
+                }
+                .watch-party-public-code {
+                    font-weight: 700;
+                    color: rgba(255,255,255,.7);
+                    letter-spacing: .12em;
+                }
+                .watch-party-public-join {
+                    flex-shrink: 0;
+                    align-self: center;
+                    padding: 9px 20px;
+                    border-radius: 10px;
+                    background: linear-gradient(135deg, rgba(229,9,20,.2), rgba(255,77,77,.15));
+                    backdrop-filter: blur(20px);
+                    -webkit-backdrop-filter: blur(20px);
+                    border: 1px solid rgba(229,9,20,.5);
+                    color: #ff6b6b !important;
+                    box-shadow: 0 8px 20px rgba(229,9,20,.2), inset 0 1px 0 rgba(255,255,255,.1);
+                    font-size: 12px;
+                    font-weight: 800;
+                    cursor: pointer;
+                    transition: all .15s;
+                    position: relative;
+                    overflow: hidden;
+                }
+                .watch-party-public-join::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: -100%;
+                    width: 100%;
+                    height: 100%;
+                    background: linear-gradient(90deg, transparent, rgba(255,255,255,.2), transparent);
+                    transition: left .5s;
+                }
+                .watch-party-public-join:hover::before {
+                    left: 100%;
+                }
+                .watch-party-public-join:hover {
+                    background: linear-gradient(135deg, rgba(229,9,20,.3), rgba(255,77,77,.25));
+                    border-color: rgba(229,9,20,.7);
+                    color: #fff !important;
+                    transform: translateY(-2px);
+                    filter: brightness(1.1);
+                    box-shadow: 0 10px 24px rgba(229,9,20,.35), inset 0 1px 0 rgba(255,255,255,.2);
                 }
                 .watch-party-room-badge {
                     display:grid;
-                    gap:10px;
-                    padding:12px;
+                    gap:6px;
+                    padding:14px;
                     border-radius:14px;
                     background: rgba(255,255,255,.05);
-                    border: 1px solid rgba(255,255,255,.12);
+                    border: 1px solid rgba(255,255,255,.1);
                     font-size: 13px;
                     color: rgba(255,255,255,.82);
                 }
@@ -11295,8 +11819,8 @@
                     gap:10px;
                 }
                 .watch-party-room-line.stack {
-                    align-items:flex-start;
                     flex-direction:column;
+                    align-items:stretch;
                     gap:6px;
                 }
                 .watch-party-room-label {
@@ -11305,11 +11829,81 @@
                     gap:8px;
                     flex-wrap:wrap;
                 }
+                .watch-party-room-label .watch-party-code {
+                    color:#fff;
+                    font-weight:900;
+                    letter-spacing:.18em;
+                    background: rgba(255,255,255,.08);
+                    padding: 3px 10px;
+                    border-radius: 8px;
+                    font-size: 14px;
+                }
+                .watch-party-host-tag {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    background: linear-gradient(135deg, rgba(255,215,0,.15), rgba(255,215,0,.08));
+                    border: 1px solid rgba(255,215,0,.25);
+                    border-radius: 8px;
+                    padding: 5px 12px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: rgba(255,215,0,.95);
+                    box-shadow: 0 0 12px rgba(255,215,0,.08);
+                }
+                .watch-party-host-tag i {
+                    font-size: 13px;
+                    filter: drop-shadow(0 0 3px rgba(255,215,0,.4));
+                }
                 .watch-party-room-actions {
                     display:flex;
                     align-items:center;
                     gap:8px;
-                    flex-shrink: 0;
+                    flex-shrink:0;
+                }
+                .watch-party-leave-btn {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    width: 100%;
+                    margin-top: 6px;
+                    padding: 10px;
+                    border-radius: 10px;
+                    background: rgba(255,255,255,.04);
+                    border: 1px solid rgba(255,255,255,.1);
+                    color: rgba(255,255,255,.65);
+                    font-size: 13px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all .15s;
+                }
+                .watch-party-leave-btn:hover {
+                    background: rgba(255,70,70,.12);
+                    border-color: rgba(255,70,70,.25);
+                    color: #ff6b6b;
+                }
+                .watch-party-reconnect-btn {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    width: 100%;
+                    margin-top: 6px;
+                    padding: 10px;
+                    border-radius: 10px;
+                    background: rgba(255,215,0,.08);
+                    border: 1px solid rgba(255,215,0,.2);
+                    color: rgba(255,215,0,.8);
+                    font-size: 13px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all .15s;
+                }
+                .watch-party-reconnect-btn:hover {
+                    background: rgba(255,215,0,.15);
+                    border-color: rgba(255,215,0,.35);
+                    color: rgba(255,215,0,1);
                 }
                 .watch-party-copy-btn {
                     width: 38px;
@@ -11341,7 +11935,7 @@
                     justify-content:center;
                 }
                 .watch-party-chat-head {
-                    display:flex;
+                    display:none;
                     align-items:center;
                     justify-content:space-between;
                     gap:12px;
@@ -11357,20 +11951,30 @@
                     font-weight: 700;
                 }
                 .watch-party-chat-name {
-                    margin-bottom: 10px;
-                    color: rgba(255,255,255,.86);
-                    font-size: 13px;
-                    font-weight: 700;
+                    display: none;
                 }
-                #watchPartyMessages { min-height:0; overflow:auto; display:flex; flex-direction:column; gap:8px; padding-right:4px; }
-                .watch-party-message { background:rgba(255,255,255,.06); border-radius:14px; padding:10px 12px; }
+                #watchPartyMessages { position: fixed; right: 42px; bottom: 214px; min-height: 0; max-height: 160px; overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; pointer-events: none !important; display: block; padding: 4px 2px 8px 0; width: min(320px, calc(100vw - 84px)); margin: 0; scrollbar-width: none; -ms-overflow-style: none; z-index: 10049; }
+                #watchPartyMessages::-webkit-scrollbar { width: 0; height: 0; display: none; }
+                .watch-party-message { max-width: 100%; width: fit-content; margin: 0 auto 8px 0; background:rgba(12,12,14,.62); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 12px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); overflow-wrap:anywhere; word-break:break-word; pointer-events: auto; }
+                .watch-party-message:last-child { margin-bottom: 0; }
+                .watch-party-message.is-self { margin: 0 0 8px auto; background: rgba(229,9,20,.14); border-color: rgba(229,9,20,.22); }
                 .watch-party-message small { display:block; color:rgba(255,255,255,.55); margin-bottom:3px; }
-                #watchPartyChatForm { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:12px; }
+                #watchPartyChatForm { position: fixed; right: 42px; bottom: 156px; display:block; width: min(320px, calc(100vw - 84px)); margin: 0; padding: 0; pointer-events: none; z-index: 10050; }
+                #watchPartyChatForm input { width: 100%; background: rgba(12,12,14,.68); border-color: rgba(255,255,255,.08); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding-right: 56px; pointer-events: auto; }
                 #watchPartyChatForm button {
-                    min-width: 86px;
+                    position: absolute;
+                    top: 50%;
+                    right: 8px;
+                    transform: translateY(-50%);
+                    width: 38px;
+                    min-width: 38px;
+                    height: 38px;
+                    padding: 0;
+                    border-radius: 12px;
                     background:#ef0712;
                     border-color:#ef0712;
                     color:#fff;
+                    pointer-events: auto;
                 }
                 body.watch-party-guest #playPauseBtn,
                 body.watch-party-guest #skipBackBtn,
@@ -11382,8 +11986,7 @@
                 body.watch-party-guest #captionsBtn,
                 body.watch-party-guest #qualityBtn,
                 body.watch-party-guest #playbackBtn,
-                body.watch-party-guest #preferencesBtn,
-                body.watch-party-guest #fitBtn {
+                body.watch-party-guest #preferencesBtn {
                     opacity: .28;
                     filter: grayscale(1) saturate(.25);
                     cursor: not-allowed;
@@ -11397,15 +12000,22 @@
                 body.watch-party-guest #captionsBtn:hover,
                 body.watch-party-guest #qualityBtn:hover,
                 body.watch-party-guest #playbackBtn:hover,
-                body.watch-party-guest #preferencesBtn:hover,
-                body.watch-party-guest #fitBtn:hover {
+                body.watch-party-guest #preferencesBtn:hover {
                     background: rgba(255,255,255,.04);
                     border-color: rgba(255,255,255,.08);
                     transform: none;
                 }
                 .watch-party-guest-pill { position:fixed; left:50%; bottom:154px; transform:translate(-50%, 10px); z-index:10030; padding:9px 13px; border-radius:999px; background:rgba(16,16,18,.72); border:1px solid rgba(255,255,255,.12); color:#fff; font-weight:800; backdrop-filter:blur(14px); opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease; }
                 body.watch-party-guest.watch-party-controls-visible .watch-party-guest-pill { opacity:1; transform:translate(-50%, 0); }
-                @media (max-width: 980px) {
+                @media (max-width: 1280px), (max-height: 700px) {
+                    #watchPartyCollapsedChips:not(.chips-all) {
+                        top: 22px;
+                        right: 144px;
+                    }
+                    #watchPartyCollapsedChips.chips-all {
+                        top: 22px;
+                        right: 160px;
+                    }
                     #watchPartyPanel {
                         top: auto;
                         bottom: 144px;
@@ -11414,18 +12024,40 @@
                         width: auto;
                     }
                     body.watch-party-in-room #watchPartyPanel {
-                        top: 84px;
-                        bottom: 82px;
+                        top: auto;
+                        bottom: 28px;
                     }
                     .watch-party-shell {
                         grid-template-columns: 1fr;
                         justify-content: stretch;
+                        max-height: 100%;
+                        align-content: end;
+                    }
+                    .watch-party-card {
+                        width: 100%;
+                        max-height: min(78vh, calc(100vh - 120px));
+                        align-self: end;
                     }
                     .watch-party-chat {
                         min-height: 280px;
                     }
+                    #watchPartyMessages {
+                        right: 12px;
+                        bottom: 240px;
+                        width: min(calc(100vw - 24px), 200px);
+                    }
+                    #watchPartyChatForm {
+                        position: fixed;
+                        left: auto;
+                        right: 12px;
+                        bottom: 156px;
+                        transform: none;
+                        width: min(calc(100vw - 24px), 200px);
+                        z-index: 10050;
+                        margin: 0;
+                    }
                 }
-                @media (max-width: 980px) and (max-height: 540px) {
+                @media (max-width: 1280px) and (max-height: 700px) {
                     #watchPartyPanel {
                         top: 74px;
                         bottom: 84px;
@@ -11435,7 +12067,16 @@
                     }
                     body.watch-party-in-room #watchPartyPanel {
                         left: 12px;
+                        bottom: 24px;
+                        top: auto;
                         width: auto;
+                    }
+                    .watch-party-shell {
+                        align-content: end;
+                    }
+                    .watch-party-card {
+                        max-height: min(82vh, calc(100vh - 110px));
+                        align-self: end;
                     }
                     .watch-party-card,
                     .watch-party-chat {
@@ -11455,8 +12096,26 @@
                     .watch-party-chat {
                         min-height: 220px;
                     }
+                    #watchPartyMessages {
+                        right: 10px;
+                        bottom: 228px;
+                        width: min(calc(100vw - 20px), 196px);
+                    }
+                    #watchPartyChatForm {
+                        bottom: 148px;
+                        right: 10px;
+                        width: min(calc(100vw - 20px), 196px);
+                    }
                 }
                 @media (max-width: 640px) and (min-height: 541px) {
+                    #watchPartyCollapsedChips:not(.chips-all) {
+                        top: 18px;
+                        right: 132px;
+                    }
+                    #watchPartyCollapsedChips.chips-all {
+                        top: 18px;
+                        right: 148px;
+                    }
                     #watchPartyPanel {
                         top: auto;
                         bottom: 108px;
@@ -11464,8 +12123,17 @@
                         right: 10px;
                         width: auto;
                     }
+                    body.watch-party-in-room #watchPartyPanel {
+                        bottom: 28px;
+                        top: auto;
+                    }
                     .watch-party-shell {
                         max-height: min(72vh, 620px);
+                        align-content: end;
+                    }
+                    .watch-party-card {
+                        max-height: min(80vh, calc(100vh - 110px));
+                        align-self: end;
                     }
                     .watch-party-card,
                     .watch-party-chat {
@@ -11480,8 +12148,7 @@
                     .watch-party-card-subtitle {
                         font-size: 11px;
                     }
-                    .watch-party-inline-row,
-                    #watchPartyChatForm {
+                    .watch-party-inline-row {
                         grid-template-columns: 1fr;
                     }
                     .watch-party-join-row {
@@ -11500,6 +12167,16 @@
                     }
                     .watch-party-chat {
                         min-height: 300px;
+                    }
+                    #watchPartyMessages {
+                        right: 8px;
+                        bottom: 236px;
+                        width: min(calc(100vw - 16px), 188px);
+                    }
+                    #watchPartyChatForm {
+                        bottom: 152px;
+                        right: 8px;
+                        width: min(calc(100vw - 16px), 188px);
                     }
                 }
             `;
@@ -11520,6 +12197,7 @@
                             </div>
                             <div class="watch-party-head-actions">
                                 <button class="watch-party-collapse" id="watchPartyCardCollapseBtn" aria-label="Collapse watch together"><i class="fa-solid fa-minus"></i></button>
+                                <button class="watch-party-settings" id="watchPartySettingsBtn" aria-label="Settings"><i class="fa-solid fa-gear"></i></button>
                                 <button class="watch-party-close" id="watchPartyCloseBtn" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
                             </div>
                         </div>
@@ -11539,7 +12217,7 @@
                         <div id="watchPartyMessages"></div>
                         <form id="watchPartyChatForm">
                             <input id="watchPartyChatInput" maxlength="500" placeholder="Message the room..." />
-                            <button type="submit">Send</button>
+                            <button type="submit" aria-label="Send message"><i class="fa-solid fa-paper-plane"></i></button>
                         </form>
                     </section>
                 </div>
@@ -11562,6 +12240,11 @@
             });
             document.getElementById('watchPartyCardCollapseBtn')?.addEventListener('click', toggleWatchPartyCardCollapsed);
             document.getElementById('watchPartyChatCollapseBtn')?.addEventListener('click', toggleWatchPartyChatCollapsed);
+            document.getElementById('watchPartySettingsBtn')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                watchPartyUiStep = 'settings';
+                renderWatchPartyView();
+            });
             document.getElementById('watchPartyChatForm')?.addEventListener('submit', sendWatchPartyChat);
             panel.addEventListener('click', handleWatchPartyPanelClick);
             panel.addEventListener('change', handleWatchPartyPanelChange);
@@ -11587,6 +12270,69 @@
             if (!watchTogetherBtn) return;
             watchTogetherBtn.classList.toggle('watch-party-live', Boolean(watchPartyRoomCode));
             watchTogetherBtn.classList.toggle('watch-party-unread', Boolean(watchPartyHasUnread));
+            uiWatchPartyBtn?.classList.toggle('visible', Boolean(watchPartyRoomCode));
+            uiChatBtn?.classList.toggle('visible', Boolean(watchPartyRoomCode));
+            uiChatBtn?.classList.toggle('watch-party-unread', Boolean(watchPartyHasUnread));
+        }
+
+        function playWatchPartyChatTick() {
+            try {
+                const ctx = ensureAudioContext();
+                if (!ctx) return;
+                const now = ctx.currentTime;
+                const oscillator = ctx.createOscillator();
+                const gain = ctx.createGain();
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(1320, now);
+                oscillator.frequency.exponentialRampToValueAtTime(980, now + 0.045);
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.exponentialRampToValueAtTime(0.018, now + 0.008);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+                oscillator.connect(gain);
+                gain.connect(ctx.destination);
+                oscillator.start(now);
+                oscillator.stop(now + 0.095);
+            } catch (_) { }
+        }
+
+        function openWatchPartyChatOnly() {
+            ensureWatchPartySocket();
+            watchPartyHasUnread = false;
+            closeCustomMenus();
+            watchPartyCardCollapsed = true;
+            watchPartyChatCollapsed = false;
+            renderWatchPartyView();
+            updateWatchPartyButtonState();
+            document.body.classList.add('watch-party-open');
+        }
+
+        function toggleWatchPartyChatOnly() {
+            const chatOnlyOpen = document.body.classList.contains('watch-party-open') && watchPartyCardCollapsed && !watchPartyChatCollapsed;
+            if (chatOnlyOpen) {
+                watchPartyChatCollapsed = true;
+                document.body.classList.remove('watch-party-open');
+                renderWatchPartyView();
+                return;
+            }
+            openWatchPartyChatOnly();
+        }
+
+        function toggleWatchPartyMainQuick() {
+            const mainOnlyOpen = document.body.classList.contains('watch-party-open') && !watchPartyCardCollapsed && watchPartyChatCollapsed;
+            if (mainOnlyOpen) {
+                watchPartyCardCollapsed = true;
+                document.body.classList.remove('watch-party-open');
+                renderWatchPartyView();
+                return;
+            }
+            ensureWatchPartySocket();
+            watchPartyHasUnread = false;
+            closeCustomMenus();
+            watchPartyCardCollapsed = false;
+            watchPartyChatCollapsed = true;
+            renderWatchPartyView();
+            updateWatchPartyButtonState();
+            document.body.classList.add('watch-party-open');
         }
 
         function toggleWatchPartyCardCollapsed(e) {
@@ -11618,6 +12364,19 @@
                 event.preventDefault();
                 saveWatchPartyIdentity();
             }
+            if (target?.id === 'watchPartySettingsName') {
+                event.preventDefault();
+                const input = document.getElementById('watchPartySettingsName');
+                if (input) {
+                    const name = String(input.value || '').trim();
+                    if (name) {
+                        watchPartyName = name;
+                        try { localStorage.setItem('streamverse_watch_party_name', name); } catch (_) {}
+                        watchPartyUiStep = 'mode';
+                        renderWatchPartyView();
+                    }
+                }
+            }
             if (target?.id === 'watchPartyJoinCode') {
                 event.preventDefault();
                 joinWatchPartyRoom();
@@ -11643,17 +12402,64 @@
             if (action === 'join-room') joinWatchPartyRoom(actionEl.getAttribute('data-room-code') || '');
             if (action === 'copy-room-code') copyWatchPartyRoomCode();
             if (action === 'paste-room-code') pasteWatchPartyRoomCode();
+            if (action === 'back-to-mode') { watchPartyUiStep = 'mode'; renderWatchPartyView(); }
+            if (action === 'save-settings') {
+                const input = document.getElementById('watchPartySettingsName');
+                if (input) {
+                    const name = String(input.value || '').trim();
+                    if (name) {
+                        watchPartyName = name;
+                        try { localStorage.setItem('streamverse_watch_party_name', name); } catch (_) {}
+                        watchPartyUiStep = 'mode';
+                        renderWatchPartyView();
+                    }
+                }
+            }
             if (action === 'refresh-public') {
                 ensureWatchPartySocket();
                 watchPartySend('rooms:list');
             }
             if (action === 'leave-room') leaveWatchPartyRoom();
+            if (action === 'promote-host') {
+                const targetUserId = actionEl.getAttribute('data-target-user-id') || '';
+                if (targetUserId && watchPartyRole === 'host') {
+                    watchPartySend('host:promote', { targetUserId });
+                }
+            }
+            if (action === 'kick-member') {
+                const targetUserId = actionEl.getAttribute('data-target-user-id') || '';
+                if (targetUserId && watchPartyRole === 'host') {
+                    watchPartySend('host:kick', { targetUserId });
+                }
+            }
+            if (action === 'reconnect') {
+                watchPartyReconnectAttempts = 0;
+                watchPartyReconnect();
+            }
         }
 
         function saveWatchPartyIdentity() {
             watchPartyName = getWatchPartyName();
+            try { localStorage.setItem('streamverse_watch_party_name', watchPartyName); } catch (_) {}
             watchPartyUiStep = 'mode';
             renderWatchPartyView();
+        }
+
+        function getWatchPartySettingsMarkup() {
+            const currentName = escapeWatchPartyHtml(watchPartyName || getWatchPartyName());
+            return `
+                <div class="watch-party-settings-card">
+                    <div class="watch-party-settings-back">
+                        <button type="button" class="watch-party-settings-back-btn" data-watch-party-action="back-to-mode"><i class="fa-solid fa-arrow-left"></i> Back</button>
+                    </div>
+                    <div class="watch-party-label"><i class="fa-solid fa-gear"></i> Settings</div>
+                    <div class="watch-party-settings-field">
+                        <label class="watch-party-settings-label">Display Name</label>
+                        <input id="watchPartySettingsName" maxlength="32" placeholder="Display name" value="${currentName}" />
+                    </div>
+                    <button class="primary" data-watch-party-action="save-settings">Save</button>
+                </div>
+            `;
         }
 
         function getWatchPartyNameInputMarkup() {
@@ -11684,8 +12490,9 @@
                         <button type="button" class="primary" data-watch-party-action="join-room">Join</button>
                     </div>
                 ` : `
-                    <div class="watch-party-label">${currentName},<br>Public Server List:</div>
+                    <div class="watch-party-label">Public Server List:</div>
                     <div class="watch-party-public-list" id="watchPartyPublicRooms"></div>
+                    <button class="primary" data-watch-party-action="create-room">Create Public Room</button>
                     <button type="button" data-watch-party-action="refresh-public">Refresh</button>
                 `}
             `;
@@ -11693,6 +12500,7 @@
 
         function getWatchPartyRoomMarkup() {
             const hostLabel = escapeWatchPartyHtml(watchPartyHostName || (watchPartyRole === 'host' ? (watchPartyName || getWatchPartyName()) : 'Unknown'));
+            const isDisconnected = !watchPartySocket || watchPartySocket.readyState !== WebSocket.OPEN;
             return `
                 <div class="watch-party-label">${escapeWatchPartyHtml(watchPartyName || getWatchPartyName())},</div>
                 <div class="watch-party-room-badge">
@@ -11704,12 +12512,15 @@
                             </button>
                         </div>
                     </div>
-                    <div class="watch-party-room-line stack">
-                        <span class="watch-party-room-label">Host: ${hostLabel}</span>
+                    <div class="watch-party-room-line">
+                        <div class="watch-party-host-tag"><i class="fa-solid fa-crown"></i> ${hostLabel}</div>
                     </div>
                 </div>
                 <div class="watch-party-meta" id="watchPartyStatus"></div>
-                <button type="button" data-watch-party-action="leave-room">Leave Room</button>
+                ${isDisconnected ? `<button type="button" class="watch-party-reconnect-btn" data-watch-party-action="reconnect"><i class="fa-solid fa-plug"></i> Reconnect</button>` : ''}
+                <button type="button" class="watch-party-leave-btn" data-watch-party-action="leave-room"><i class="fa-solid fa-right-from-bracket"></i> Leave Room</button>
+                <div class="watch-party-member-count" id="watchPartyMemberCount">MEMBERS</div>
+                <div class="watch-party-members-list" id="watchPartyMembersList"></div>
             `;
         }
 
@@ -11786,31 +12597,15 @@
             }
             if (chips) {
                 chips.innerHTML = '';
-                if (watchPartyCardCollapsed) {
-                    const c = document.createElement('div');
-                    c.className = 'watch-party-floating-chip watch-party-floating-chip-card';
-                    c.innerHTML = '<i class="fa-solid fa-user-group"></i><span>Watch Together</span><button class="watch-party-chip-btn watch-party-chip-expand" aria-label="Expand"><i class="fa-solid fa-plus"></i></button><button class="watch-party-chip-btn watch-party-chip-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>';
-                    c.querySelector('.watch-party-chip-expand')?.addEventListener('click', (e) => { e.stopPropagation(); watchPartyCardCollapsed = false; document.body.classList.add('watch-party-open'); renderWatchPartyView(); });
-                    c.querySelector('.watch-party-chip-close')?.addEventListener('click', (e) => { e.stopPropagation(); document.body.classList.remove('watch-party-open'); renderWatchPartyView(); });
-                    c.addEventListener('click', (e) => { if (!e.target.closest('.watch-party-chip-btn')) { watchPartyCardCollapsed = false; document.body.classList.add('watch-party-open'); renderWatchPartyView(); } });
-                    chips.appendChild(c);
-                }
-                if (watchPartyChatCollapsed) {
-                    const c = document.createElement('div');
-                    c.className = 'watch-party-floating-chip watch-party-floating-chip-chat';
-                    c.innerHTML = '<i class="fa-solid fa-comment"></i><span>Live Chat</span><button class="watch-party-chip-btn watch-party-chip-expand" aria-label="Expand"><i class="fa-solid fa-plus"></i></button><button class="watch-party-chip-btn watch-party-chip-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>';
-                    c.querySelector('.watch-party-chip-expand')?.addEventListener('click', (e) => { e.stopPropagation(); watchPartyChatCollapsed = false; document.body.classList.add('watch-party-open'); renderWatchPartyView(); });
-                    c.querySelector('.watch-party-chip-close')?.addEventListener('click', (e) => { e.stopPropagation(); document.body.classList.remove('watch-party-open'); renderWatchPartyView(); });
-                    c.addEventListener('click', (e) => { if (!e.target.closest('.watch-party-chip-btn')) { watchPartyChatCollapsed = false; document.body.classList.add('watch-party-open'); renderWatchPartyView(); } });
-                    chips.appendChild(c);
-                }
-                chips.classList.toggle('has-chips', anyCollapsed);
-                chips.classList.toggle('chips-all', watchPartyCardCollapsed && watchPartyChatCollapsed);
+                chips.classList.remove('has-chips', 'chips-all');
             }
             if (cardCollapseBtn) cardCollapseBtn.innerHTML = `<i class="fa-solid ${watchPartyCardCollapsed ? 'fa-plus' : 'fa-minus'}"></i>`;
             if (chatCollapseBtn) chatCollapseBtn.innerHTML = `<i class="fa-solid ${watchPartyChatCollapsed ? 'fa-plus' : 'fa-minus'}"></i>`;
-            if (watchPartyRoomCode) {
+            if (watchPartyUiStep === 'settings') {
+                stage.innerHTML = getWatchPartySettingsMarkup();
+            } else if (watchPartyRoomCode) {
                 stage.innerHTML = getWatchPartyRoomMarkup();
+                renderWatchPartyMembers(watchPartyMembersData.count, watchPartyMembersData.members);
                 watchPartySetStatus(`Synced as ${escapeWatchPartyHtml(watchPartyRole || 'guest')}.`);
             } else if (watchPartyUiStep === 'mode') {
                 stage.innerHTML = getWatchPartyModeMarkup();
@@ -11828,10 +12623,10 @@
 
         function getWatchPartyName() {
             const input = document.getElementById('watchPartyName');
-            const stored = localStorage.getItem('streamverse_watch_party_name') || '';
+            const stored = (() => { try { return localStorage.getItem('streamverse_watch_party_name') || ''; } catch (_) { return ''; } })();
             if (input && !input.value && stored) input.value = stored;
             const name = String(input?.value || stored || '').trim() || `Viewer-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-            localStorage.setItem('streamverse_watch_party_name', name);
+            try { localStorage.setItem('streamverse_watch_party_name', name); } catch (_) {}
             return name;
         }
 
@@ -11876,6 +12671,8 @@
                 params: { ...route, t: formatWatchPartyTimeParam(currentTime) },
                 currentTime,
                 paused: Boolean(video?.paused),
+                title: currentMediaInfo?.title || document.title || 'Watch Party',
+                image: currentMediaInfo?.image || currentMediaInfo?.poster || currentMediaInfo?.poster_path || currentMediaInfo?.posterUrl || '',
             };
         }
 
@@ -11886,7 +12683,7 @@
             if (!force && signature === watchPartyLastRouteSignature) return;
             watchPartyLastRouteSignature = signature;
             const payload = getWatchPartyMediaChangePayload(route);
-            console.log('[watch-party] change_media ->', payload.params);
+            console.log('[watch-party] change_media ->', payload.params, 'wpRoom:', watchPartyRoomCode, 'role:', watchPartyRole);
             watchPartySend('change_media', payload);
             watchPartySend('host:state', {
                 action: 'route',
@@ -11919,6 +12716,21 @@
             try {
                 const nextUrl = new URL(location.href);
                 nextUrl.searchParams.set('t', formatWatchPartyTimeParam(time));
+                history.replaceState(null, '', nextUrl.toString());
+            } catch (_) { }
+        }
+
+        function syncWatchPartyUrlState() {
+            try {
+                const nextUrl = new URL(location.href);
+                if (watchPartyRoomCode) {
+                    nextUrl.searchParams.set('wpRoom', String(watchPartyRoomCode));
+                    if (watchPartyRole === 'guest') nextUrl.searchParams.set('wpGuest', '1');
+                    else nextUrl.searchParams.delete('wpGuest');
+                } else {
+                    nextUrl.searchParams.delete('wpRoom');
+                    nextUrl.searchParams.delete('wpGuest');
+                }
                 history.replaceState(null, '', nextUrl.toString());
             } catch (_) { }
         }
@@ -11977,6 +12789,7 @@
                 isPublic,
                 name: watchPartyName,
                 title: currentMediaInfo?.title || document.title || 'Watch Party',
+                image: currentMediaInfo?.image || currentMediaInfo?.poster || currentMediaInfo?.poster_path || currentMediaInfo?.posterUrl || '',
                 currentTime: Number(video?.currentTime || 0),
                 paused: Boolean(video?.paused),
                 route: getWatchPartyRouteState(),
@@ -11986,21 +12799,31 @@
         function joinWatchPartyRoom(codeOverride = '') {
             ensureWatchPartySocket();
             watchPartyName = getWatchPartyName();
-            const explicitCode = typeof codeOverride === 'string' ? codeOverride : '';
+            const explicitCode = String(codeOverride || '').trim().toUpperCase();
             const code = String(explicitCode || document.getElementById('watchPartyJoinCode')?.value || '').trim().toUpperCase();
             if (!code) return watchPartyToast('Enter a room code');
-            watchPartySend('room:join', { code, name: watchPartyName });
+            const previousUserId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
+            watchPartySend('room:join', { code, name: watchPartyName, previousUserId });
         }
 
         function leaveWatchPartyRoom() {
+            watchPartyIntentionallyLeft = true;
+            if (watchPartyReconnectTimeout) { clearTimeout(watchPartyReconnectTimeout); watchPartyReconnectTimeout = null; }
             watchPartySend('room:leave');
             watchPartyRoomCode = '';
             watchPartyRole = '';
+            syncWatchPartyUrlState();
             watchPartyUiStep = 'mode';
+            watchPartyHostName = '';
+            watchPartyReconnectAttempts = 0;
             document.body.classList.remove('watch-party-guest');
             document.body.classList.remove('watch-party-in-room');
             watchPartySetStatus('Left room');
             renderWatchPartyView();
+            try { sessionStorage.removeItem('wpHostPauseOnReload'); } catch (_) { }
+            try { sessionStorage.removeItem('wpRoomCode'); } catch (_) { }
+            try { sessionStorage.removeItem('wpRoomName'); } catch (_) { }
+            try { sessionStorage.removeItem('wpUserId'); } catch (_) { }
         }
 
         function sendWatchPartyChat(event) {
@@ -12030,44 +12853,97 @@
             list.forEach((room) => {
                 const row = document.createElement('div');
                 row.className = 'watch-party-public-room';
+                const title = String(room.title || '').trim() || `Room ${escapeWatchPartyHtml(room.code || '')}`;
+                const count = Number(room.count) || 1;
+                const image = String(room.image || '').trim();
+                const hostName = String(room.hostName || '').trim() || 'Host';
+                const posterHtml = image
+                    ? `<img class="watch-party-public-poster" src="${escapeWatchPartyHtml(image)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="watch-party-public-poster-fallback" style="display:none"><i class="fa-solid fa-film"></i></div>`
+                    : `<div class="watch-party-public-poster-fallback"><i class="fa-solid fa-film"></i></div>`;
                 row.innerHTML = `
-                    <div class="watch-party-public-room-code">${escapeWatchPartyHtml(room.code || 'ROOM')}</div>
-                    <button type="button" data-watch-party-action="join-room" data-room-code="${escapeWatchPartyHtml(room.code || '')}">Join</button>
+                    ${posterHtml}
+                    <div class="watch-party-public-body">
+                        <div class="watch-party-public-title" title="${escapeWatchPartyHtml(title)}">${escapeWatchPartyHtml(title)}</div>
+                        <div class="watch-party-public-meta"><i class="fa-solid fa-crown" style="color:gold;font-size:10px"></i> ${escapeWatchPartyHtml(hostName)} &middot; <span class="watch-party-public-code">${escapeWatchPartyHtml(room.code || '')}</span> &middot; ${count} ${count === 1 ? 'viewer' : 'viewers'}</div>
+                    </div>
+                    <button type="button" class="watch-party-public-join" data-watch-party-action="join-room" data-room-code="${escapeWatchPartyHtml(room.code || '')}">Join</button>
                 `;
                 root.appendChild(row);
             });
         }
 
         function renderWatchPartyMembers(count, members = []) {
+            watchPartyMembersData = { count: Number(count || 0), members: Array.isArray(members) ? members : [] };
             const node = document.getElementById('watchPartyMembers');
-            if (node) node.textContent = `${Number(count || 0)} watching`;
+            if (node) node.textContent = `${watchPartyMembersData.count} watching`;
+            const userId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
+            const selfMember = (Array.isArray(members) ? members : []).find((member) => String(member?.id || '') === userId);
+            const inferredRole = String(selfMember?.role || '').toLowerCase();
+            if (inferredRole === 'host' || inferredRole === 'guest') {
+                watchPartyRole = inferredRole;
+                document.body.classList.toggle('watch-party-guest', watchPartyRole === 'guest');
+            }
             const hostMember = (Array.isArray(members) ? members : []).find((member) => String(member?.role || '').toLowerCase() === 'host');
             watchPartyHostName = String(hostMember?.name || '').trim() || (watchPartyRole === 'host' ? (watchPartyName || getWatchPartyName()) : watchPartyHostName);
-            if (watchPartyRoomCode) renderWatchPartyView();
+            const list = document.getElementById('watchPartyMembersList');
+            if (!list) return;
+            const countEl = document.getElementById('watchPartyMemberCount');
+            if (countEl) countEl.textContent = `MEMBERS · ${Math.max(1, Number(count || 0))}`;
+            list.innerHTML = (Array.isArray(members) ? members : []).map((member) => {
+                const isHost = String(member?.role || '').toLowerCase() === 'host';
+                const isSelf = member?.id === userId;
+                const name = escapeWatchPartyHtml(String(member?.name || 'Unknown').slice(0, 24));
+                const displayName = name;
+                const crown = isHost ? '<i class="fa-solid fa-crown" style="color:gold;font-size:12px;width:16px;text-align:center;filter:drop-shadow(0 0 3px rgba(255,215,0,.5))"></i>' : '<span style="width:16px;display:inline-block"></span>';
+                const selfTag = isSelf ? ' <span style="font-size:10px;font-weight:600;background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;color:rgba(255,255,255,.46);margin-left:2px">you</span>' : '';
+                let actions = '';
+                if (watchPartyRole === 'host' && !isHost && member?.id) {
+                    actions = `<button type="button" class="watch-party-member-btn" data-watch-party-action="promote-host" data-target-user-id="${escapeWatchPartyHtml(member.id)}" title="Transfer host"><i class="fa-solid fa-crown"></i></button><button type="button" class="watch-party-member-btn danger" data-watch-party-action="kick-member" data-target-user-id="${escapeWatchPartyHtml(member.id)}" title="Kick"><i class="fa-solid fa-ban"></i></button>`;
+                }
+                return `<div class="watch-party-member-row${isHost ? ' is-host' : ''}">${crown}<span class="watch-party-member-name">${displayName}${selfTag}</span>${actions ? `<span class="watch-party-member-actions">${actions}</span>` : ''}</div>`;
+            }).join('');
         }
 
         function appendWatchPartyMessage(msg) {
             const root = document.getElementById('watchPartyMessages');
             if (!root) return;
             const item = document.createElement('div');
-            item.className = 'watch-party-message';
-            item.innerHTML = `<small>${escapeWatchPartyHtml(msg.name || 'Viewer')} · ${new Date(Number(msg.timestamp || Date.now())).toLocaleTimeString()}</small><div>${escapeWatchPartyHtml(msg.text || '')}</div>`;
+            const myId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
+            const isSelf = String(msg.userId || '') === myId;
+            item.className = `watch-party-message${isSelf ? ' is-self' : ''}`;
+            item.innerHTML = `<small>${escapeWatchPartyHtml(msg.name || 'Viewer')}</small><div>${escapeWatchPartyHtml(msg.text || '')}</div>`;
             root.appendChild(item);
             root.scrollTop = root.scrollHeight;
         }
 
         function handleWatchPartyMessage(msg) {
+            console.log('[wt-player] msg:', msg.type, msg.role || '', msg.code || '');
             if (msg.type === 'rooms:public') renderWatchPartyPublicRooms(msg.rooms || []);
             if (msg.type === 'room:created' || msg.type === 'room:joined') {
                 watchPartyRoomCode = msg.code;
                 watchPartyRole = msg.role;
+                watchPartyPauseOnNextLoad = watchPartyRole === 'host' && Boolean(msg.state?.paused === true);
+                watchPartyForcePaused = Boolean(msg.state?.paused === true);
+                refreshWatchPartyPauseGuard();
+                syncWatchPartyUrlState();
                 watchPartyUiStep = 'room';
                 watchPartyHasUnread = false;
                 document.body.classList.toggle('watch-party-guest', watchPartyRole === 'guest');
                 document.body.classList.add('watch-party-in-room');
                 watchPartySetStatus(`<div>Code: <span class="watch-party-code">${watchPartyRoomCode}</span></div><div>You are ${watchPartyRole}</div>`);
                 renderWatchPartyView();
-                if (watchPartyRole === 'host') watchPartyLastRouteSignature = watchPartyRouteSignature(getWatchPartyRouteState());
+                if (watchPartyRole === 'host' && !watchPartyPauseOnNextLoad) {
+                    watchPartyLastRouteSignature = watchPartyRouteSignature(getWatchPartyRouteState());
+                    setTimeout(() => {
+                        if (typeof watchPartyEmitHostRouteNow === 'function') {
+                            watchPartyEmitHostRouteNow(true);
+                        }
+                    }, 200);
+                }
+                // Persist room and user ID in sessionStorage first so renderWatchPartyMembers can read userId
+                try { sessionStorage.setItem('wpRoomCode', String(msg.code || '')); } catch (_) { }
+                try { sessionStorage.setItem('wpRoomName', String(watchPartyName || getWatchPartyName() || '')); } catch (_) { }
+                try { sessionStorage.setItem('wpUserId', String(msg.userId || '')); } catch (_) { }
                 renderWatchPartyMembers(msg.room?.count || msg.members?.length || 1, msg.members || []);
                 if (watchPartyRole === 'guest') {
                     closeCustomMenus();
@@ -12079,6 +12955,7 @@
             if (msg.type === 'room:left') {
                 watchPartyRoomCode = '';
                 watchPartyRole = '';
+                syncWatchPartyUrlState();
                 watchPartyUiStep = 'mode';
                 watchPartyHostName = '';
                 watchPartyHasUnread = false;
@@ -12086,13 +12963,77 @@
                 document.body.classList.remove('watch-party-in-room');
                 watchPartySetStatus('Not in a room');
                 renderWatchPartyView();
+                try { sessionStorage.removeItem('wpRoomCode'); } catch (_) { }
+                try { sessionStorage.removeItem('wpRoomName'); } catch (_) { }
+                try { sessionStorage.removeItem('wpUserId'); } catch (_) { }
             }
-            if (msg.type === 'room:members') renderWatchPartyMembers(msg.count, msg.members || []);
+            if (msg.type === 'room:members') {
+                const previousRole = watchPartyRole;
+                const previousHostId = String((watchPartyMembersData.members || []).find((member) => String(member?.role || '').toLowerCase() === 'host')?.id || '');
+                const previousHostName = String(watchPartyHostName || '');
+                renderWatchPartyMembers(msg.count, msg.members || []);
+                const nextHostId = String((watchPartyMembersData.members || []).find((member) => String(member?.role || '').toLowerCase() === 'host')?.id || '');
+                const nextHostName = String(watchPartyHostName || '');
+                if (watchPartyRole !== previousRole || nextHostId !== previousHostId || nextHostName !== previousHostName) {
+                    renderWatchPartyView();
+                }
+            }
+            if (msg.type === 'host:transferred') {
+                if (watchPartyReclaimTimer) { clearInterval(watchPartyReclaimTimer); watchPartyReclaimTimer = null; }
+                watchPartyMembersData = {
+                    count: watchPartyMembersData.count,
+                    members: (Array.isArray(watchPartyMembersData.members) ? watchPartyMembersData.members : []).map((member) => ({
+                        ...member,
+                        role: String(member?.id || '') === String(msg.newHostId || '') ? 'host' : 'guest'
+                    }))
+                };
+                const hostMember = watchPartyMembersData.members.find(m => m.id === msg.newHostId);
+                watchPartyHostName = msg.newHostName || hostMember?.name || '';
+                const myId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
+                if (msg.newHostId && msg.newHostId === myId) {
+                    watchPartyRole = 'host';
+                    watchPartyHostName = watchPartyName || getWatchPartyName();
+                    document.body.classList.remove('watch-party-guest');
+                    watchPartyToast('You are now the host!');
+                } else {
+                    watchPartyRole = 'guest';
+                    document.body.classList.add('watch-party-guest');
+                }
+                renderWatchPartyView();
+            }
+            if (msg.type === 'host:away') {
+                console.log('[wt-player] host:away, role:', watchPartyRole, 'roomCode:', watchPartyRoomCode);
+                if (watchPartyRole === 'host') { console.log('[wt-player] host:away, but i am host, ignoring'); renderWatchPartyView(); return; }
+                watchPartyToast('Host disconnected. Waiting for them to reconnect...');
+                renderWatchPartyView();
+                if (watchPartyReclaimTimer) { clearInterval(watchPartyReclaimTimer); watchPartyReclaimTimer = null; }
+            }
+            if (msg.type === 'host:reconnected') {
+                if (watchPartyReclaimTimer) { clearInterval(watchPartyReclaimTimer); watchPartyReclaimTimer = null; }
+                watchPartyRole = 'guest';
+                document.body.classList.add('watch-party-guest');
+                watchPartyToast(`${escapeWatchPartyHtml(msg.name || 'Host')} has reconnected`);
+                renderWatchPartyView();
+            }
+            if (msg.type === 'host:navigated-home') {
+                if (watchPartyRole === 'host') { renderWatchPartyView(); return; }
+                watchPartyToast('Host went back to the home page');
+                const url = new URL('/', location.href);
+                url.searchParams.set('wpRoom', watchPartyRoomCode);
+                const storedUserId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
+                if (storedUserId) url.searchParams.set('wpUser', storedUserId);
+                watchPartyIntentionallyLeft = true;
+                if (watchPartyReconnectTimeout) { clearTimeout(watchPartyReconnectTimeout); watchPartyReconnectTimeout = null; }
+                window.location.href = url.toString();
+            }
             if (msg.type === 'player:sync') applyWatchPartyRemoteState(msg);
             if (msg.type === 'media_changed') applyWatchPartyMediaChanged(msg);
             if (msg.type === 'control:sync') applyWatchPartyControlSync(msg);
             if (msg.type === 'chat:message') {
+                const myId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
+                const isSelf = String(msg.userId || '') === myId;
                 appendWatchPartyMessage(msg);
+                if (!isSelf) playWatchPartyChatTick();
                 if (!document.body.classList.contains('watch-party-open') || watchPartyChatCollapsed) {
                     watchPartyHasUnread = true;
                     updateWatchPartyButtonState();
@@ -12102,6 +13043,7 @@
                 watchPartyToast(msg.reason || 'Host ended the watch party');
                 watchPartyRoomCode = '';
                 watchPartyRole = '';
+                syncWatchPartyUrlState();
                 watchPartyUiStep = 'mode';
                 watchPartyHostName = '';
                 watchPartyHasUnread = false;
@@ -12109,12 +13051,56 @@
                 document.body.classList.remove('watch-party-in-room');
                 watchPartySetStatus('Room ended by host');
                 renderWatchPartyView();
+                try { sessionStorage.removeItem('wpRoomCode'); } catch (_) { }
+                try { sessionStorage.removeItem('wpRoomName'); } catch (_) { }
+                try { sessionStorage.removeItem('wpUserId'); } catch (_) { }
+            }
+            if (msg.type === 'room:kicked') {
+                watchPartyIntentionallyLeft = true;
+                if (watchPartyReconnectTimeout) { clearTimeout(watchPartyReconnectTimeout); watchPartyReconnectTimeout = null; }
+                watchPartyToast(msg.message || 'You have been removed from the room');
+                watchPartyRoomCode = '';
+                watchPartyRole = '';
+                syncWatchPartyUrlState();
+                watchPartyUiStep = 'mode';
+                watchPartyHostName = '';
+                watchPartyReconnectAttempts = 0;
+                watchPartyHasUnread = false;
+                document.body.classList.remove('watch-party-guest');
+                document.body.classList.remove('watch-party-in-room');
+                watchPartySetStatus('Kicked from room');
+                renderWatchPartyView();
+                try { sessionStorage.removeItem('wpRoomCode'); } catch (_) { }
+                try { sessionStorage.removeItem('wpRoomName'); } catch (_) { }
+                try { sessionStorage.removeItem('wpUserId'); } catch (_) { }
             }
         }
 
         let watchPartyLastEmitTime = 0;
+        function enforceWatchPartyPauseHold() {
+            if ((!watchPartyPauseOnNextLoad && !watchPartyForcePaused) || !video) return false;
+            if (watchPartyManualResumeArmed) {
+                watchPartyManualResumeArmed = false;
+                watchPartyPauseOnNextLoad = false;
+                watchPartyForcePaused = false;
+                try { sessionStorage.removeItem('wpHostPauseOnReload'); } catch (_) {}
+                refreshWatchPartyPauseGuard();
+                return false;
+            }
+            try { video.autoplay = false; } catch (_) { }
+            try { video.pause(); } catch (_) { }
+            setPlayIcon(false);
+            refreshWatchPartyPauseGuard();
+            return true;
+        }
         function watchPartyEmitHostState(action) {
             if (watchPartyRole !== 'host' || watchPartyApplyingRemote || !watchPartyRoomCode || !video) return;
+            if (action === 'play') {
+                watchPartyPauseOnNextLoad = false;
+                watchPartyForcePaused = false;
+                try { sessionStorage.removeItem('wpHostPauseOnReload'); } catch (_) {}
+                refreshWatchPartyPauseGuard();
+            }
             const now = Date.now();
             if (action === 'play' && now - watchPartyLastEmitTime < 100) return;
             watchPartyLastEmitTime = now;
@@ -12123,6 +13109,9 @@
 
         function watchPartyHandleSeeked() {
             if (watchPartySeekTimer) clearTimeout(watchPartySeekTimer);
+            // If video is paused, don't emit seek — the user's pause intent takes priority.
+            // Prevents a pending seek from firing seek AFTER pause and confusing the guest.
+            if (video?.paused) return;
             watchPartySeekTimer = setTimeout(() => watchPartyEmitHostState('seek'), 20);
         }
 
@@ -12151,12 +13140,6 @@
                 } else if (control === 'playbackRate' && video) {
                     video.playbackRate = Number(value?.rate || 1) || 1;
                     buildPlaybackMenu();
-                } else if (control === 'fit') {
-                    const nextIndex = Number(value?.fitIndex);
-                    if (Number.isInteger(nextIndex) && fitModes[nextIndex]) {
-                        fitIndex = nextIndex;
-                        applyFitMode();
-                    }
                 } else if (control === 'captions') {
                     const idx = Number(value?.trackIndex);
                     selectSubtitleTrack(Number.isInteger(idx) ? idx : -1);
@@ -12261,8 +13244,8 @@
 
         function enforceWatchPartyRemotePlayback(state = watchPartyLastRemoteState, options = {}) {
             if (watchPartyRole !== 'guest' || !state || !video) return;
-            const hostTime = getAdjustedWatchPartyTime(state || {});
-            const isLivePlayback = state.paused === false && state.action !== 'pause' && state.action !== 'seek' && state.action !== 'route';
+            const hostTime = options.fixedTime !== undefined ? options.fixedTime : getAdjustedWatchPartyTime(state || {});
+            const isLivePlayback = state.paused === false && state.action !== 'play' && state.action !== 'pause' && state.action !== 'seek' && state.action !== 'route';
             const targetTime = Math.max(0, hostTime);
             const shouldForceSeek = options.forceSeek === true || state.action === 'seek' || state.action === 'route';
             const currentTime = Number(video.currentTime || 0);
@@ -12271,12 +13254,8 @@
             const canSoftCorrect = video.readyState >= 3 && !video.seeking && !isSourceSwitching;
             watchPartyApplyingRemote = true;
             if (state.paused === true || state.action === 'pause') {
+                // Just pause — no seeking, avoids frame glitch
                 try { video.pause(); } catch (_) { }
-                if (shouldForceSeek || drift > WATCH_PARTY_DRIFT_TOLERANCE) {
-                    const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
-                    if (video.readyState >= 1) seekToHost();
-                    else video.addEventListener('loadedmetadata', seekToHost, { once: true });
-                }
             } else if (state.paused === false || state.action === 'play') {
                 if (shouldForceSeek) {
                     const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
@@ -12300,12 +13279,20 @@
         function applyWatchPartyRemoteState(state) {
             if (watchPartyRole !== 'guest') return;
             watchPartyLastRemoteState = state || null;
+            watchPartyForcePaused = Boolean(state?.paused === true || state?.action === 'pause');
+            refreshWatchPartyPauseGuard();
             const hostTime = getAdjustedWatchPartyTime(state || {});
             if (state?.route && applyWatchPartyRouteState(state.route, hostTime, state)) return;
             updateWatchPartyUrlTime(hostTime);
             enforceWatchPartyRemotePlayback(state, { forceSeek: state?.action === 'route' });
-            setTimeout(() => enforceWatchPartyRemotePlayback(state), 350);
-            setTimeout(() => enforceWatchPartyRemotePlayback(state), 1000);
+            // Retry timers only for explicit seek — heartbeat play messages would pile up with stale state
+            if (state.action === 'seek') {
+                if (watchPartyRetryTimer1) clearTimeout(watchPartyRetryTimer1);
+                if (watchPartyRetryTimer2) clearTimeout(watchPartyRetryTimer2);
+                const exactTime = hostTime;
+                watchPartyRetryTimer1 = setTimeout(() => enforceWatchPartyRemotePlayback(state, { fixedTime: exactTime }), 350);
+                watchPartyRetryTimer2 = setTimeout(() => enforceWatchPartyRemotePlayback(state, { fixedTime: exactTime }), 1000);
+            }
         }
 
         function interceptGuestPlayerControls(event) {
@@ -12313,7 +13300,9 @@
             const target = event.target;
             if (!target?.closest) return;
             if (target.closest('#watchPartyPanel, #watchTogetherBtn, #fullscreenBtn, #muteBtn, #volumeMenu')) return;
-            if (target.closest('#player-video, .player-wrap, .control-center, #playPauseBtn, #skipBackBtn, #skipFwdBtn, .seek-wrapper, #customServerBtn, #customEpisodeBtn, #custom-audio-btn, #audio-panel, #source-panel, #ep-panel, #captionsBtn, #captionsMenu, #qualityBtn, #qualityMenu, #playbackBtn, #playbackMenu, #preferencesBtn, #preferencesMenu, #fitBtn')) {
+            const chatOnlyOpen = document.body.classList.contains('watch-party-open') && watchPartyCardCollapsed && !watchPartyChatCollapsed;
+            if (chatOnlyOpen && target.closest('#playPauseBtn')) return;
+            if (target.closest('#player-video, .player-wrap, .control-center, #playPauseBtn, #skipBackBtn, #skipFwdBtn, .seek-wrapper, #customServerBtn, #customEpisodeBtn, #custom-audio-btn, #audio-panel, #source-panel, #ep-panel, #captionsBtn, #captionsMenu, #qualityBtn, #qualityMenu, #playbackBtn, #playbackMenu, #preferencesBtn, #preferencesMenu')) {
                 event.preventDefault();
                 event.stopPropagation();
                 watchPartyToast('Only the host can control playback');
@@ -12373,6 +13362,17 @@
                         hideTransitionOverlay();
                     }
                 }
+
+                // Stall adaptive quality recovery: if we dropped to lowest due to stall
+                // and playback is stable (buffered ahead), start recovery timer
+                if (stallAdaptiveLowest && hlsInst && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) {
+                    if (stallRecoveryTimer) clearTimeout(stallRecoveryTimer);
+                    stallRecoveryTimer = setTimeout(() => {
+                        stallRecoveryTimer = null;
+                        stallAdaptiveLowest = false;
+                        try { hlsInst.nextLevel = hlsInst.levels.length - 1; } catch (_) {}
+                    }, 10000);
+                }
             });
             video.addEventListener('seeked', () => {
                 // Immediately re-evaluate after any seek so the countdown
@@ -12395,6 +13395,7 @@
             });
             video.addEventListener('loadedmetadata', () => {
                 isSourceSwitching = false;
+                enforceWatchPartyPauseHold();
                 clearOverlaysOnPlaybackProgress(0.01);
                 syncTimeUI();
                 updateSkipSegmentButton();
@@ -12439,9 +13440,11 @@
                 });
             }
             video.addEventListener('play', () => {
+                if (enforceWatchPartyPauseHold()) return;
                 if (!_iosNativePlayerActive) silenceNativeTracks();
             });
             video.addEventListener('playing', () => {
+                if (enforceWatchPartyPauseHold()) return;
                 if (!_iosNativePlayerActive) silenceNativeTracks();
                 if (watchPartyRole === 'guest' && watchPartyLastRemoteState?.paused === true) {
                     enforceWatchPartyRemotePlayback(watchPartyLastRemoteState);
@@ -12490,7 +13493,8 @@
                 watchPartyEmitHostState('pause');
             });
             video.addEventListener('playing', () => {
-                setPlayIcon(true); // Chrome sometimes only fires 'playing' on autostart
+                if (enforceWatchPartyPauseHold()) return;
+                setPlayIcon(true);
                 isSourceSwitching = false;
                 isUserSeeking = false;
                 if (bufferingRecoveryTimer) clearTimeout(bufferingRecoveryTimer);
@@ -12503,6 +13507,15 @@
                 }
                 if (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100) {
                     updateAudioEnhancementChain();
+                }
+                // Stall adaptive recovery: reset timer on active playback
+                if (stallAdaptiveLowest) {
+                    if (stallRecoveryTimer) clearTimeout(stallRecoveryTimer);
+                    stallRecoveryTimer = setTimeout(() => {
+                        stallRecoveryTimer = null;
+                        stallAdaptiveLowest = false;
+                        try { if (hlsInst && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) hlsInst.nextLevel = hlsInst.levels.length - 1; } catch (_) {}
+                    }, 10000);
                 }
             });
             video.addEventListener('seeking', () => {
@@ -12542,6 +13555,12 @@
                         if (stalled || !hasProgress) {
                             showBufferingOverlay();
                             kickHlsLoadNearCurrentTime();
+                            // Drop to lowest quality on confirmed stall
+                            if (hlsInst && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
+                                stallAdaptiveLowest = true;
+                                hlsInst.nextLevel = 0;
+                                hlsInst.loadLevel = 0;
+                            }
                         }
                     }, 380);
                 }
@@ -12553,6 +13572,12 @@
                 if (!hlsInst) return;
                 showBufferingOverlay();
                 kickHlsLoadNearCurrentTime();
+                // Drop to lowest quality on stall
+                if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
+                    stallAdaptiveLowest = true;
+                    hlsInst.nextLevel = 0;
+                    hlsInst.loadLevel = 0;
+                }
             });
             video.addEventListener('canplay', () => {
                 clearOverlaysOnPlaybackProgress(0.01);
@@ -12732,6 +13757,7 @@
             epPanel.classList.remove('open');
             audioPanel.classList.remove('open');
             closeCustomMenus();
+            document.body.classList.remove('watch-party-open');
         }
         function closeMenuElement(menuEl) {
             if (!menuEl) return;
@@ -13181,7 +14207,16 @@
                 e.stopPropagation();
                 if (wakeControlsIfHidden()) return;
                 if (!video) return;
-                if (video.paused) video.play();
+                if (video.paused) {
+                    if (watchPartyRole === 'host' && watchPartyRoomCode && watchPartyPauseOnNextLoad) {
+                        watchPartyManualResumeArmed = true;
+                    }
+                    watchPartyPauseOnNextLoad = false;
+                    watchPartyForcePaused = false;
+                    try { sessionStorage.removeItem('wpHostPauseOnReload'); } catch (_) {}
+                    refreshWatchPartyPauseGuard();
+                    video.play();
+                }
                 else video.pause();
             });
 
@@ -13276,10 +14311,8 @@
             fitBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (wakeControlsIfHidden()) return;
-                if (watchPartyRole === 'guest') return watchPartyToast('Only the host can control screen fit');
                 fitIndex = (fitIndex + 1) % fitModes.length;
                 applyFitMode();
-                watchPartyEmitHostControl('fit', { fitIndex });
                 showControlSurface();
             });
 
@@ -14193,7 +15226,7 @@
                 const isControlsVisible = controlSurface.classList.contains('visible');
 
                 // 1. Identify other interactive elements
-                const isOnInteractive = e.target.closest('#watchPartyPanel, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
+                const isOnInteractive = e.target.closest('#watchPartyPanel, #watchPartyMessages, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
 
                 // 2. Hide logic: Let buttons and specific bubble-phase handlers handle hiding.
                 // We ONLY intercept here if we need to reveal the UI.
@@ -14246,7 +15279,7 @@
                 if (now - lastInteractionAt < 100) return; // Prevent double-toggle from reveal-tap
 
                 // Identify if clicked on an actual button/control
-                const isOnInteractive = e.target.closest('#watchPartyPanel, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn');
+                const isOnInteractive = e.target.closest('#watchPartyPanel, #watchPartyMessages, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn');
 
                 if (!isOnInteractive) {
                     e.preventDefault();
@@ -14262,7 +15295,7 @@
                 const isLockedAction = e.target.closest('#uiLockBtn, .ui-lock-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return; 
                 if (isUiLocked) return;
-                const isOnInteractive = e.target.closest('#watchPartyPanel, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
+                const isOnInteractive = e.target.closest('#watchPartyPanel, #watchPartyMessages, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
                 if (isOnInteractive) return;
 
                 const now = Date.now();
@@ -14593,6 +15626,9 @@
                 effectiveMediaType = resolveMediaTypeFromInfo(info, effectiveMediaType);
                 currentMediaInfo = info;
                 console.log('currentMediaInfo.title:', currentMediaInfo?.title, 'TMDB_ID:', TMDB_ID);
+                if (watchPartyRole === 'host' && watchPartyRoomCode && typeof watchPartyEmitHostRouteNow === 'function') {
+                    setTimeout(() => watchPartyEmitHostRouteNow(true), 100);
+                }
                 updatePauseMediaPoster();
                 flixhqAltServerAttempted = false;
                 currentAnimeCanonicalInfo = null;
@@ -17467,7 +18503,7 @@
 
             const currentArchiveFallback = archiveFallbackSources[String(TMDB_ID).trim()] || null;
             const failReasons = [];
-            const providerResults = {};
+            providerResults = {};
             const providersToRun = effectiveForcedProvider
                 ? [effectiveForcedProvider]
                 : activeProviders;
@@ -17977,7 +19013,7 @@
                         const isM3U8 = !isVegamoviesTokenizedPlaylist && (src.isM3U8 || src.isM3u8 || low.includes('.m3u8') || low.includes('m3u8-proxy') || low.includes('getm3u8'));
                         const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
                         const isDub = src.isDub === true || src.dub === true || /\bdub\b/i.test(String(src.quality || ''));
-                        const qualityLabel = src.quality || `Source ${i + 1}`;
+                        const qualityLabel = normalizeQualityLabel(src.quality) || `Source ${i + 1}`;
                         const flixhqServer = provider === 'flixhq' ? String(src.server || src.flixhqServer || '').trim() : '';
                         const timingLabel = provider === 'flixhq' && Number.isFinite(Number(src.extractionTimeMs)) ? ` ${Math.round(Number(src.extractionTimeMs))}ms` : '';
                         const providerPrefix = provider === 'flixhq' && flixhqServer ? `${providerLabel(provider)} ${flixhqServer}` : providerLabel(provider);
@@ -18029,10 +19065,10 @@
             };
 
             // For movie playback, prefer FlixHQ first. Only fall back to other providers if FlixHQ fails.
-            const shouldPreferFlixhqFirst =
+            const shouldPreferHdstreamFirst =
                 !effectiveForcedProvider &&
                 !currentIsLikelyAnime &&
-                orderedProviders.includes('flixhq');
+                orderedProviders.includes('hdstream4u');
 
             const preferredAnimeProvider = orderedProviders.find((p) => String(p || '').toLowerCase() === 'animesalt') || '';
             const shouldPreferAnimeProviderFirst =
@@ -18052,33 +19088,29 @@
                     const fallbackProviders = orderedProviders.filter((p) => p !== preferredAnimeProvider);
                     await Promise.all(fallbackProviders.map((p) => processProvider(p)));
                 }
-            } else if (shouldPreferFlixhqFirst) {
-                // Start FlixHQ but don't block indefinitely: if it takes too long,
+            } else if (shouldPreferHdstreamFirst) {
+                // Start hdstream4u but don't block indefinitely: if it takes too long,
                 // start fallback providers in parallel so the UI doesn't stall.
-                let flixDone = false;
-                const flixPromise = processProvider('flixhq')
-                    .catch((e) => console.warn('[flixhq] background error:', e?.message || e))
-                    .finally(() => { flixDone = true; });
-                const shortWaitMs = 2000; // wait briefly for FlixHQ to return fast cached result
+                let hdstreamDone = false;
+                const hdstreamPromise = processProvider('hdstream4u')
+                    .catch((e) => console.warn('[hdstream4u] background error:', e?.message || e))
+                    .finally(() => { hdstreamDone = true; });
+                const shortWaitMs = 2000;
                 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-                await Promise.race([flixPromise, sleep(shortWaitMs)]);
+                await Promise.race([hdstreamPromise, sleep(shortWaitMs)]);
 
                 if (allSources.length === 0) {
-                    const fallbackProviders = orderedProviders.filter((p) => p !== 'flixhq');
-                    // Run fallbacks in parallel and wait for them so we can show results quickly.
+                    const fallbackProviders = orderedProviders.filter((p) => p !== 'hdstream4u');
                     await Promise.all(fallbackProviders.map((p) => processProvider(p)));
                 } else if (MEDIA_TYPE !== 'movie') {
-                    const backgroundProviders = orderedProviders.filter((p) => p !== 'flixhq');
+                    const backgroundProviders = orderedProviders.filter((p) => p !== 'hdstream4u');
                     Promise.all(backgroundProviders.map((p) => processProvider(p))).catch((err) => {
                         console.warn('[movie background providers] failed:', err?.message || err);
                     });
                 }
 
-                // If fallbacks failed quickly, wait for FlixHQ before allowing a
-                // no-stream error. FlixHQ often resolves a little later and is
-                // the primary normal movie/TV provider.
-                if (allSources.length === 0 && !flixDone) {
-                    await flixPromise;
+                if (allSources.length === 0 && !hdstreamDone) {
+                    await hdstreamPromise;
                 }
             } else {
                 await Promise.all(orderedProviders.map(p => processProvider(p)));
@@ -18243,6 +19275,22 @@
             return false;
         }
 
+        function normalizeQualityLabel(raw) {
+            if (!raw || typeof raw !== 'string') return raw || '';
+            const m = raw.match(/(\d+)/);
+            if (!m) return raw;
+            const h = parseInt(m[1], 10);
+            let std = 480;
+            if (h <= 360) std = 360;
+            else if (h <= 480) std = 480;
+            else if (h <= 720) std = 720;
+            else if (h <= 1080) std = 1080;
+            else if (h <= 1440) std = 1440;
+            else std = 2160;
+            const tier = std >= 2160 ? 'UHD' : std >= 1440 ? 'QHD' : std >= 1080 ? 'FHD' : std >= 720 ? 'HD' : std >= 480 ? 'SD' : 'LD';
+            return `${std}p (${tier})`;
+        }
+
         async function buildSourcePanel() {
             sourcePanel.innerHTML = `<div class="panel-label">Select Server</div>`;
             
@@ -18263,8 +19311,8 @@
             };
             sourcePanel.appendChild(autoItem);
 
-            // If we have FlixHQ episode info, fetch available servers and add as selectable backups
-            if (window._lastFlixhqEpisodeId && window._flixhqMovieBase) {
+            // Only show FlixHQ servers in the panel if FlixHQ actually produced sources
+            if (window._lastFlixhqEpisodeId && window._flixhqMovieBase && (providerResults['flixhq']?.length > 0)) {
                 try {
                     const serversUrl = `${window._flixhqMovieBase}/servers?episodeId=${encodeURIComponent(window._lastFlixhqEpisodeId)}`;
                     const { res } = await fetchJsonWithApiFallback(serversUrl, { signal: AbortSignal.timeout(10000) });
@@ -18295,7 +19343,7 @@
                                         const low = String(src.url || '').toLowerCase();
                                         const isM3U8 = low.includes('.m3u8') || /m3u8-proxy/i.test(low) || Boolean(src.isM3U8);
                                         const isEmbed = src.isEmbed ?? (!isM3U8 && !low.includes('.mp4'));
-                                        const qualityLabel = src.quality || (isM3U8 ? 'HLS' : 'Embed');
+                                        const qualityLabel = normalizeQualityLabel(src.quality) || (isM3U8 ? 'HLS' : 'Embed');
                                         return {
                                             label: `FlixHQ - ${name} ${qualityLabel}`,
                                             url: src.url,
@@ -18422,7 +19470,33 @@
             syncUrlState();
         }
 
+        function installWatchPartyPausePlayGuard(targetVideo) {
+            if (!targetVideo || targetVideo.__wpPlayGuardInstalled) return;
+            const nativePlay = targetVideo.play.bind(targetVideo);
+            targetVideo.__wpPlayGuardInstalled = true;
+            targetVideo.play = function (...args) {
+                const shouldBlock = Boolean((watchPartyPauseOnNextLoad || watchPartyForcePaused) && !watchPartyManualResumeArmed);
+                if (shouldBlock) {
+                    try { targetVideo.pause(); } catch (_) { }
+                    try { targetVideo.autoplay = false; } catch (_) { }
+                    setPlayIcon(false);
+                    refreshWatchPartyPauseGuard();
+                    return Promise.resolve();
+                }
+                if (watchPartyManualResumeArmed) {
+                    watchPartyManualResumeArmed = false;
+                    watchPartyPauseOnNextLoad = false;
+                    watchPartyForcePaused = false;
+                    try { sessionStorage.removeItem('wpHostPauseOnReload'); } catch (_) {}
+                    refreshWatchPartyPauseGuard();
+                }
+                return nativePlay(...args);
+            };
+        }
+
         function resetPlayerSurface() {
+            stallAdaptiveLowest = false;
+            if (stallRecoveryTimer) { clearTimeout(stallRecoveryTimer); stallRecoveryTimer = null; }
             if (hlsInst) { try { hlsInst.stopLoad(); hlsInst.detachMedia(); hlsInst.destroy(); } catch (_) { } hlsInst = null; }
             if (shakaInst) { try { shakaInst.destroy(); } catch (_) { } shakaInst = null; }
             clearVideoMediaSource();
@@ -18444,13 +19518,14 @@
                 newVideo.className = 'plyr-video';
                 // On iOS, autoplaying often leads to persistent loaders or audio track issues.
                 // Disabling it ensures a clean user gesture when they tap play.
-                newVideo.autoplay = !IS_IOS;
+                newVideo.autoplay = shouldAutoplayCurrentLoad();
                 newVideo.muted = IS_IOS ? true : false;
                 // Force playsinline on all iOS devices to ensure track probing happens properly in the browser context.
                 newVideo.playsInline = true;
                 newVideo.setAttribute('playsinline', '');
                 newVideo.setAttribute('webkit-playsinline', 'true');
                 newVideo.preload = 'auto';
+                installWatchPartyPausePlayGuard(newVideo);
                 wrap.insertBefore(newVideo, wrap.firstChild);
             }
             video = document.getElementById('player-video');
@@ -18804,6 +19879,8 @@
             }
             
             // Reset state for new load
+            stallAdaptiveLowest = false;
+            if (stallRecoveryTimer) { clearTimeout(stallRecoveryTimer); stallRecoveryTimer = null; }
             activeSubtitleTrackIndex = -1;
             renderSubtitleOverlayFromTrack(null);
             
@@ -18876,7 +19953,7 @@
                 const newVideo = document.createElement('video');
                 newVideo.id = 'player-video';
                 newVideo.className = 'plyr-video';
-                newVideo.autoplay = !IS_IOS;
+                newVideo.autoplay = shouldAutoplayCurrentLoad();
                 newVideo.muted = IS_IOS ? true : false;
                 // Force playsinline on all iOS devices to ensure track probing happens properly in the browser context.
                 newVideo.playsInline = true;
@@ -18888,6 +19965,7 @@
                     newVideo.crossOrigin = 'anonymous';
                 }
                 newVideo.preload = 'auto';
+                installWatchPartyPausePlayGuard(newVideo);
                 wrap.insertBefore(newVideo, wrap.firstChild);
             }
             video = document.getElementById('player-video');
@@ -18942,7 +20020,7 @@
 
                 plyr = new Plyr(video, {
                     blankVideo: 'data:video/mp4;base64,AAAAHGZ0eXBtcDQyAAAAAG1wNDJpc29tYXZjMQAAADpmcmVlAAAAAG1kYXQ=',
-                    autoplay: !IS_IOS,
+                    autoplay: shouldAutoplayCurrentLoad(),
                     muted: video.muted,
                     clickToPlay: false,
                     keyboard: false,
@@ -18976,6 +20054,7 @@
 
                 // Load subtitles after player is ready
                 plyr.on('ready', async () => {
+                    enforceWatchPartyPauseHold();
                     // Hide loader on iOS or if not first load
                     if (!isFirstLoad || IS_IOS) hideLoader();
                 });
@@ -18989,10 +20068,12 @@
                 };
                 plyr.on('canplay', hideIfReady);
                 plyr.on('playing', () => {
+                    if (enforceWatchPartyPauseHold()) return;
                     isFirstLoad = false;
                     hideLoader();
                     try { hideTransitionOverlay(); } catch (_) { }
                 });
+                plyr.on('canplay', () => { enforceWatchPartyPauseHold(); });
                 plyr.on('play', () => {
                     setPlayIcon(true);
                     showControlSurface();
@@ -19580,7 +20661,7 @@
                     setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
                 }
 
-                if (!IS_IOS) video.play().catch(() => hideLoader());
+                if (shouldAutoplayCurrentLoad()) video.play().catch(() => hideLoader());
 
             } else if (isEmbed) {
                 console.log('Branch: Embed iframe');
@@ -19711,10 +20792,12 @@
                     }
                 };
                 video.addEventListener('playing', () => {
+                    if (enforceWatchPartyPauseHold()) return;
                     clearMp4ErrorUiIfRecovered();
                     clearMp4StallWatchdog();
                 });
                 video.addEventListener('canplay', () => {
+                    enforceWatchPartyPauseHold();
                     clearMp4ErrorUiIfRecovered();
                     clearMp4StallWatchdog();
                 });
@@ -19796,7 +20879,11 @@
                     }, 10000);
                 }
 
-                if (!IS_IOS) video.play().catch(() => hideLoader());
+                if (watchPartyPauseOnNextLoad) {
+                    enforceWatchPartyPauseHold();
+                } else if (shouldAutoplayCurrentLoad()) {
+                    video.play().catch(() => hideLoader());
+                }
 
             } else {
                 showError('Unsupported Browser', 'Your browser does not support HLS streaming.');

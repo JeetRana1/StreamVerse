@@ -5015,8 +5015,8 @@ async function triggerSearch(immediate = false) {
     const q = searchInput.value.trim();
     if (q.length < 2) {
         searchPage.style.display = 'none';
-        heroSection.style.display = 'block';
-        contentRows.style.display = 'block';
+        heroSection.style.display = '';
+        contentRows.style.display = '';
         return;
     }
 
@@ -5090,34 +5090,30 @@ function isMobileSearchViewport() {
     return window.matchMedia('(max-width: 768px)').matches;
 }
 
-function setMobileSearchExpanded(expanded) {
+function setSearchExpanded(expanded) {
     if (!searchContainer) return;
     const shouldExpand = !!expanded;
+    searchContainer.classList.toggle('search-expanded', shouldExpand);
     searchContainer.classList.toggle('mobile-search-expanded', shouldExpand);
+    searchBtn?.setAttribute('aria-expanded', shouldExpand ? 'true' : 'false');
     if (header) {
         header.classList.toggle('mobile-search-open', shouldExpand && isMobileSearchViewport());
     }
 }
 
-function syncMobileSearchUi() {
+function syncSearchUi() {
     if (!searchContainer || !searchInput) return;
-    if (!isMobileSearchViewport()) {
-        searchContainer.classList.remove('mobile-search-expanded');
-        header?.classList.remove('mobile-search-open');
-        return;
-    }
-    // Keep expanded while actively focused so virtual keyboard resize does not collapse it.
     const hasQuery = String(searchInput.value || '').trim().length > 0;
     const isActive = document.activeElement === searchInput || searchContainer.matches(':focus-within');
-    setMobileSearchExpanded(hasQuery || isActive);
+    setSearchExpanded(hasQuery || isActive);
 }
 
 if (searchBtn) {
     searchBtn.addEventListener('click', (e) => {
-        if (isMobileSearchViewport() && searchContainer && !searchContainer.classList.contains('mobile-search-expanded')) {
+        if (searchContainer && !searchContainer.classList.contains('search-expanded')) {
             e.preventDefault();
             e.stopPropagation();
-            setMobileSearchExpanded(true);
+            setSearchExpanded(true);
             searchInput?.focus();
             return;
         }
@@ -5133,31 +5129,46 @@ if (searchCloseBtn) {
             searchInput.value = '';
         }
         triggerSearch(true);
-        if (isMobileSearchViewport()) {
-            setMobileSearchExpanded(false);
-            searchInput?.blur();
-        }
+        setSearchExpanded(false);
+        searchInput?.blur();
     });
 }
 
 searchInput?.addEventListener('focus', () => {
-    if (isMobileSearchViewport()) setMobileSearchExpanded(true);
+    setSearchExpanded(true);
 });
 
 searchInput?.addEventListener('blur', () => {
     // Delay to allow click handlers inside the search bar to run first.
     setTimeout(() => {
-        if (!searchContainer || !searchInput || !isMobileSearchViewport()) return;
+        if (!searchContainer || !searchInput) return;
         const hasQuery = String(searchInput.value || '').trim().length > 0;
         if (!searchContainer.matches(':focus-within') && !hasQuery) {
-            setMobileSearchExpanded(false);
+            setSearchExpanded(false);
         }
     }, 120);
 });
 
-window.addEventListener('resize', syncMobileSearchUi);
-window.addEventListener('orientationchange', syncMobileSearchUi);
-syncMobileSearchUi();
+searchContainer?.addEventListener('click', (e) => {
+    if (!searchContainer.classList.contains('search-expanded')) {
+        e.preventDefault();
+        setSearchExpanded(true);
+        searchInput?.focus();
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !searchContainer?.classList.contains('search-expanded')) return;
+    const hasQuery = String(searchInput?.value || '').trim().length > 0;
+    if (!hasQuery) {
+        setSearchExpanded(false);
+    }
+    searchInput?.blur();
+});
+
+window.addEventListener('resize', syncSearchUi);
+window.addEventListener('orientationchange', syncSearchUi);
+syncSearchUi();
 
 function displaySearchResults(results, query) {
     heroSection.style.display = 'none';
@@ -5680,17 +5691,753 @@ async function openDetails(id, type, provider = '', seedItem = null) {
     }
 }
 
-function toggleDescription() {
-    const desc = document.getElementById('modal-desc-text');
-    const btn = document.getElementById('desc-toggle-btn');
-    if (!desc || !btn) return;
+// === Homepage Watch Together ===
+(function() {
+    if (document.getElementById('homeWatchPartyBtn')) {
+        initHomeWatchParty();
+    }
+})();
 
-    if (desc.classList.contains('truncated')) {
-        desc.classList.remove('truncated');
-        btn.innerHTML = 'Read Less <i class="fa-solid fa-chevron-up"></i>';
-    } else {
-        desc.classList.add('truncated');
-        btn.innerHTML = 'Read More <i class="fa-solid fa-chevron-down"></i>';
+function initHomeWatchParty() {
+    const btn = document.getElementById('homeWatchPartyBtn');
+    const panel = document.getElementById('homeWatchPartyPanel');
+    const closeBtn = document.getElementById('homeWatchPartyClose');
+    const backdrop = panel?.querySelector('.watch-party-home-backdrop');
+    const stage = document.getElementById('homeWatchPartyStage');
+    let ws = null;
+    let name = '';
+    let roomCode = '';
+    let role = '';
+    let visibility = 'public';
+    let step = 'name';
+    let publicRooms = [];
+    let members = [];
+    let userId = '';
+    let intentionallyLeft = false;
+    let reconnectAttempts = 0;
+    let homeWpCopied = false;
+    let homeWpCopyTimer = null;
+    let chatMessages = [];
+    let homeWpAudioCtx = null;
+    let homeWpChatCooldownUntil = 0;
+    const RECONNECT_DELAYS = [1000, 2000, 4000, 8000];
+    let reconnectTimer = null;
+
+    // Parse wpRoom/wpUser from URL for guest navigation from player.html
+    (function() {
+        try {
+            const params = new URLSearchParams(location.search);
+            const urlRoom = String(params.get('wpRoom') || '').trim();
+            const urlUser = String(params.get('wpUser') || params.get('wpUserId') || '').trim();
+            if (urlRoom) {
+                try { sessionStorage.setItem('wpRoomCode', urlRoom); } catch (_) {}
+                if (urlUser) try { sessionStorage.setItem('wpUserId', urlUser); } catch (_) {}
+            }
+        } catch (_) {}
+    })();
+
+    function closeWs() {
+        if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+    }
+
+    function wsUrl() {
+        const apiRoot = String((getCurrentApiSource() === 'local' ? LOCAL_API : PROD_API) || '').replace(/\/meta\/tmdb\/?$/i, '');
+        try {
+            const parsed = new URL(apiRoot || location.origin, location.href);
+            parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+            parsed.pathname = '/watch-party/ws';
+            parsed.search = '';
+            parsed.hash = '';
+            return parsed.toString();
+        } catch (_) {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            return `${protocol}//${location.host}/watch-party/ws`;
+        }
+    }
+
+    function ensureSocket() {
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return ws;
+        if (ws) { try { ws.close(); } catch (_) {} }
+        ws = new WebSocket(wsUrl());
+        ws.addEventListener('open', () => {
+            reconnectAttempts = 0;
+            if (roomCode) {
+                send({ type: 'room:join', code: roomCode, name: name || getName(), previousUserId: userId });
+            }
+        });
+        ws.addEventListener('close', () => {
+            if (!intentionallyLeft && roomCode && reconnectAttempts < RECONNECT_DELAYS.length) {
+                const delay = RECONNECT_DELAYS[reconnectAttempts];
+                reconnectAttempts++;
+                reconnectTimer = setTimeout(() => { ensureSocket(); }, delay);
+            }
+        });
+        ws.addEventListener('message', (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                handleMsg(msg);
+            } catch (_) {}
+        });
+        return ws;
+    }
+
+    function send(data) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(data));
+        }
+    }
+
+    function syncHostHomeState() {
+        if (roomCode && role === 'host') {
+            send({ type: 'host:navigating-home', code: roomCode });
+            send({ type: 'rooms:list' });
+        }
+    }
+
+    function syncHomeWatchPartyUrlState() {
+        try {
+            const nextUrl = new URL(location.href);
+            if (roomCode) {
+                nextUrl.searchParams.set('wpRoom', String(roomCode));
+                if (userId) nextUrl.searchParams.set('wpUser', String(userId));
+            } else {
+                nextUrl.searchParams.delete('wpRoom');
+                nextUrl.searchParams.delete('wpUser');
+                nextUrl.searchParams.delete('wpUserId');
+            }
+            history.replaceState(null, '', nextUrl.toString());
+        } catch (_) {}
+    }
+
+    function getName() {
+        try { return String(localStorage.getItem('streamverse_watch_party_name') || '').trim(); } catch (_) { return ''; }
+    }
+
+    function saveName(val) {
+        const n = String(val || '').trim();
+        if (n) {
+            name = n;
+            try { localStorage.setItem('streamverse_watch_party_name', n); } catch (_) {}
+        }
+    }
+
+    function toast(msg) {
+        let el = document.getElementById('homeWpToast');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'homeWpToast';
+            el.className = 'watch-party-home-toast';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.classList.add('show');
+        clearTimeout(el._t);
+        el._t = setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    function playHomeChatTick() {
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            if (!homeWpAudioCtx) homeWpAudioCtx = new Ctx();
+            if (homeWpAudioCtx.state === 'suspended') {
+                homeWpAudioCtx.resume().catch(() => {});
+            }
+            const now = homeWpAudioCtx.currentTime;
+            const oscillator = homeWpAudioCtx.createOscillator();
+            const gain = homeWpAudioCtx.createGain();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(1320, now);
+            oscillator.frequency.exponentialRampToValueAtTime(980, now + 0.045);
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.018, now + 0.008);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+            oscillator.connect(gain);
+            gain.connect(homeWpAudioCtx.destination);
+            oscillator.start(now);
+            oscillator.stop(now + 0.095);
+        } catch (_) {}
+    }
+
+    function handleMsg(msg) {
+        if (msg.type === 'room:created') {
+            roomCode = msg.code;
+            role = 'host';
+            userId = msg.userId || '';
+            step = 'room';
+            chatMessages = [];
+            syncHomeWatchPartyUrlState();
+            try { sessionStorage.setItem('wpRoomCode', String(msg.code || '')); } catch (_) {}
+            try { sessionStorage.setItem('wpUserId', String(msg.userId || '')); } catch (_) {}
+            render();
+            syncHostHomeState();
+        }
+        if (msg.type === 'room:joined') {
+            roomCode = msg.code;
+            role = msg.role || 'guest';
+            userId = msg.userId || '';
+            members = msg.members || [];
+            step = 'room';
+            chatMessages = [];
+            syncHomeWatchPartyUrlState();
+            try { sessionStorage.setItem('wpRoomCode', String(msg.code || '')); } catch (_) {}
+            try { sessionStorage.setItem('wpUserId', String(msg.userId || '')); } catch (_) {}
+            render();
+            if (role === 'host') syncHostHomeState();
+            // If host is already playing content (has route), navigate guest to player
+            if (msg.state && msg.state.route && msg.state.route.id && role === 'guest') {
+                navigateToPlayer(msg.state.route, msg.state.currentTime);
+            }
+        }
+        if (msg.type === 'rooms:public') {
+            publicRooms = Array.isArray(msg.rooms) ? msg.rooms : [];
+            render();
+        }
+        if (msg.type === 'room:update') {
+            members = Array.isArray(msg.members) ? msg.members : (members || []);
+            render();
+        }
+        if (msg.type === 'room:members') {
+            members = Array.isArray(msg.members) ? msg.members : (members || []);
+            const selfMember = members.find(m => String(m?.id || '') === String(userId || ''));
+            const inferredRole = String(selfMember?.role || '').toLowerCase();
+            if (inferredRole === 'host' || inferredRole === 'guest') {
+                role = inferredRole;
+            }
+            render();
+        }
+        if (msg.type === 'room:left') {
+            roomCode = '';
+            role = '';
+            userId = '';
+            members = [];
+            chatMessages = [];
+            step = 'mode';
+            intentionallyLeft = false;
+            syncHomeWatchPartyUrlState();
+            try { sessionStorage.removeItem('wpRoomCode'); } catch (_) {}
+            try { sessionStorage.removeItem('wpUserId'); } catch (_) {}
+            render();
+        }
+        if (msg.type === 'media_changed') {
+            const params = msg.params || {};
+            if (role === 'guest' && roomCode && params.id) {
+                navigateToPlayer(params, msg.currentTime);
+            }
+        }
+        if (msg.type === 'player:sync' && msg.action === 'route') {
+            const route = msg.route || {};
+            if (role === 'guest' && roomCode && route.id) {
+                navigateToPlayer(route, msg.currentTime);
+            }
+        }
+        if (msg.type === 'room:error') {
+            toast(msg.message || 'Error');
+            roomCode = '';
+            role = '';
+            userId = '';
+            members = [];
+            chatMessages = [];
+            step = 'mode';
+            syncHomeWatchPartyUrlState();
+            try { sessionStorage.removeItem('wpRoomCode'); } catch (_) {}
+            try { sessionStorage.removeItem('wpUserId'); } catch (_) {}
+            render();
+        }
+        if (msg.type === 'host:away') {
+            if (role === 'guest') {
+                const existing = stage?.querySelector('.watch-party-home-waiting');
+                if (!existing) {
+                    const waitingEl = document.createElement('div');
+                    waitingEl.className = 'watch-party-home-waiting';
+                    waitingEl.innerHTML = '<i class="fa-solid fa-clock"></i><strong>Host disconnected</strong><span>Attempting to transfer host...</span>';
+                    const badge = stage?.querySelector('.watch-party-home-room-badge');
+                    if (badge) badge.after(waitingEl);
+                }
+            }
+        }
+        if (msg.type === 'host:transferred') {
+            members = (Array.isArray(members) ? members : []).map((m) => ({
+                ...m,
+                role: String(m?.id || '') === String(msg.newHostId || '') ? 'host' : 'guest'
+            }));
+            const newHostMember = members.find(m => m.id === msg.newHostId);
+            const newHostName = msg.newHostName || newHostMember?.name || 'Unknown';
+            if (msg.newHostId && msg.newHostId === userId) {
+                role = 'host';
+                if (stage) {
+                    stage.querySelector('.watch-party-home-waiting')?.remove();
+                    const status = stage?.querySelector('.watch-party-home-status');
+                    if (status) status.textContent = 'You are now the host!';
+                }
+            } else {
+                if (stage) {
+                    stage.querySelector('.watch-party-home-waiting')?.remove();
+                    const status = stage?.querySelector('.watch-party-home-status');
+                    if (status) status.textContent = `New host: ${newHostName}`;
+                }
+            }
+            render();
+        }
+        if (msg.type === 'host:reconnected') {
+            if (role === 'guest') {
+                stage?.querySelector('.watch-party-home-waiting')?.remove();
+                const status = stage?.querySelector('.watch-party-home-status');
+                if (status) status.textContent = 'Host is back!';
+            }
+        }
+        if (msg.type === 'chat:message') {
+            const isSelf = String(msg.userId || '') === String(userId || '');
+            chatMessages.push({
+                id: msg.id || `${Date.now()}`,
+                userId: msg.userId || '',
+                name: msg.name || 'Viewer',
+                text: msg.text || '',
+                timestamp: Number(msg.timestamp || Date.now())
+            });
+            if (chatMessages.length > 80) chatMessages = chatMessages.slice(-80);
+            if (!isSelf) playHomeChatTick();
+            if (step === 'room') {
+                render();
+                const list = document.getElementById('homeWpChatMessages');
+                if (list) list.scrollTop = list.scrollHeight;
+            }
+        }
+    }
+
+    function navigateToPlayer(params, currentTime) {
+        const nextUrl = new URL('/player', location.href);
+        nextUrl.searchParams.set('wpRoom', roomCode);
+        nextUrl.searchParams.set('wpGuest', userId || '1');
+        for (const [k, v] of Object.entries(params || {})) {
+            if (v) nextUrl.searchParams.set(k, String(v));
+        }
+        if (currentTime > 0) nextUrl.searchParams.set('t', String(Math.floor(Number(currentTime))));
+        closePanel();
+        closeWs();
+        try { sessionStorage.removeItem('wpBackNav'); } catch (_) {}
+        try { sessionStorage.removeItem('wpCancel'); } catch (_) {}
+        localStorage.setItem('streamverse_watch_party_pending_media', roomCode + ':' + (params?.id || ''));
+        window.location.href = nextUrl.toString();
+    }
+
+    function render() {
+        if (!stage) return;
+        if (step === 'settings') {
+            stage.innerHTML = getHomeSettingsMarkup();
+        } else if (step === 'name') {
+            stage.innerHTML = getHomeNameMarkup();
+            const inp = document.getElementById('homeWpName');
+            if (inp) inp.value = name || getName();
+        } else if (step === 'mode') {
+            stage.innerHTML = getHomeModeMarkup();
+            renderHomePublicList();
+        } else if (step === 'room') {
+            stage.innerHTML = getHomeRoomMarkup();
+            if (role === 'guest') {
+                const existing = stage.querySelector('.watch-party-home-waiting');
+                if (!existing) {
+                    const waitingEl = document.createElement('div');
+                    waitingEl.className = 'watch-party-home-waiting';
+                    waitingEl.innerHTML = '<i class="fa-solid fa-clock"></i><strong>Host is looking for a movie...</strong><span>Waiting for the host to pick something to watch</span>';
+                    const badge = stage.querySelector('.watch-party-home-room-badge');
+                    if (badge) badge.after(waitingEl);
+                }
+            }
+        }
+    }
+
+    function getHomeNameMarkup() {
+        const stored = getName();
+        return `
+            <div class="watch-party-home-label">Username:</div>
+            <input id="homeWpName" maxlength="32" placeholder="Display name" value="${escHtml(stored)}" />
+            <button class="primary" data-wp-action="save-name">Create User</button>
+        `;
+    }
+
+    function getHomeSettingsMarkup() {
+        const currentName = escHtml(name || getName());
+        return `
+            <div class="watch-party-home-settings-card">
+                <div class="watch-party-home-settings-back">
+                    <button type="button" class="watch-party-home-settings-back-btn" data-wp-action="back-from-settings"><i class="fa-solid fa-arrow-left"></i> Back</button>
+                </div>
+                <div class="watch-party-home-label"><i class="fa-solid fa-gear"></i> Settings</div>
+                <div class="watch-party-home-settings-field">
+                    <label class="watch-party-home-settings-label">Display Name</label>
+                    <input id="homeWpSettingsName" maxlength="32" placeholder="Display name" value="${currentName}" />
+                </div>
+                <button class="primary" data-wp-action="save-settings-name">Save</button>
+            </div>
+        `;
+    }
+
+    function getHomeModeMarkup() {
+        const n = escHtml(name || getName());
+        return `
+            <div class="watch-party-home-label">${n} - Public or Private room?</div>
+            <div class="watch-party-home-segmented">
+                <button type="button" class="${visibility === 'public' ? 'active' : ''}" data-wp-action="set-public">Public</button>
+                <button type="button" class="${visibility === 'private' ? 'active' : ''}" data-wp-action="set-private">Private</button>
+            </div>
+            ${visibility === 'private' ? `
+                <button class="primary" data-wp-action="create-room">Create Room</button>
+                <div class="watch-party-home-helper">Or Join</div>
+                <div class="watch-party-home-join-row">
+                    <input id="homeWpCode" maxlength="6" placeholder="Room Code" autocomplete="off" autocapitalize="characters" />
+                    <button type="button" data-wp-action="paste-code" aria-label="Paste room code"><i class="fa-solid fa-paste"></i></button>
+                    <button class="primary" data-wp-action="join-room" style="background:rgba(255,74,93,.14);border-color:rgba(255,31,62,.72);color:#ff727e">Join</button>
+                </div>
+            ` : `
+                <div class="watch-party-home-label">Public Server List:</div>
+                <div class="watch-party-home-public-list" id="homeWpPublicList"></div>
+                <button class="primary" data-wp-action="create-room">Create Public Room</button>
+                <button type="button" data-wp-action="refresh-public" style="padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font-weight:600;font-size:13px;">Refresh</button>
+            `}
+        `;
+    }
+
+    function getHomeRoomMarkup() {
+        const selfMember = (Array.isArray(members) ? members : []).find((m) => String(m?.id || '') === String(userId || ''));
+        const effectiveRole = String(selfMember?.role || role || 'guest').toLowerCase() === 'host' ? 'host' : 'guest';
+        const chatHtml = chatMessages.length
+            ? chatMessages.map((msg) => {
+                const isSelf = String(msg.userId || '') === String(userId || '');
+                return `
+                    <div class="watch-party-home-chat-msg${isSelf ? ' is-self' : ''}">
+                        <div class="watch-party-home-chat-user">${escHtml(msg.name || 'Viewer')}</div>
+                        <div class="watch-party-home-chat-bubble">${escHtml(msg.text || '')}</div>
+                    </div>
+                `;
+            }).join('')
+            : '<div class="watch-party-home-chat-empty">No messages yet. Say hi.</div>';
+        return `
+            <div class="watch-party-home-room-badge">
+                <div class="watch-party-home-room-line">
+                    <span class="watch-party-home-room-code">${escHtml(roomCode)}</span>
+                    <button type="button" class="watch-party-home-copy-btn ${homeWpCopied ? 'copied' : ''}" data-wp-action="copy-code" aria-label="Copy room code"><i class="fa-solid ${homeWpCopied ? 'fa-check' : 'fa-copy'}"></i></button>
+                </div>
+                <div class="watch-party-home-room-role"><i class="fa-solid fa-${effectiveRole === 'host' ? 'crown' : 'user'}"></i> You are the ${effectiveRole === 'host' ? 'Host' : 'Guest'}</div>
+            </div>
+            <div class="watch-party-home-members" id="homeWpMembers">
+                ${members.map(m => `
+                    <span class="watch-party-home-member ${m.role === 'host' ? 'watch-party-home-member-host' : ''}">${m.role === 'host' ? '<i class="fa-solid fa-crown"></i>' : '<i class="fa-solid fa-user"></i>'} ${escHtml(m.name || 'Unknown')}</span>
+                `).join('')}
+            </div>
+            ${effectiveRole === 'guest' ? '' : '<div class="watch-party-home-status"><i class="fa-solid fa-info-circle"></i> Browse movies below and click Watch Now to start watching together</div>'}
+            <div class="watch-party-home-chatbox">
+                <div class="watch-party-home-chat-head"><i class="fa-solid fa-comment"></i> Room Chat</div>
+                <div class="watch-party-home-chat-messages" id="homeWpChatMessages">${chatHtml}</div>
+                <form class="watch-party-home-chat-form" id="homeWpChatForm">
+                    <input id="homeWpChatInput" maxlength="500" placeholder="Message the room..." autocomplete="off" />
+                    <button type="submit">Send</button>
+                </form>
+            </div>
+            <button class="watch-party-home-leave" data-wp-action="leave-room">Leave Room</button>
+        `;
+    }
+
+    function sendHomeChat(event) {
+        event?.preventDefault?.();
+        const input = document.getElementById('homeWpChatInput');
+        const text = String(input?.value || '').trim();
+        if (!text || !roomCode) return;
+        const now = Date.now();
+        const remainingMs = homeWpChatCooldownUntil - now;
+        if (remainingMs > 0) {
+            toast(`Wait ${Math.ceil(remainingMs / 1000)}s before sending again`);
+            return;
+        }
+        send({ type: 'chat:send', text });
+        homeWpChatCooldownUntil = now + 2000;
+        if (input) input.value = '';
+    }
+
+    function renderHomePublicList() {
+        const root = document.getElementById('homeWpPublicList');
+        if (!root) return;
+        root.innerHTML = '';
+        const list = publicRooms.slice(0, 8);
+        if (!list.length) {
+            root.innerHTML = '<div style="color:rgba(255,255,255,.35);font-size:13px;text-align:center;padding:16px;">No servers are on right now come back later!</div>';
+            return;
+        }
+        list.forEach(room => {
+            const row = document.createElement('div');
+            row.className = 'watch-party-home-public-room';
+            const title = String(room.title || '').trim() || `Room ${escHtml(room.code || '')}`;
+            const count = Number(room.count) || 1;
+            const image = String(room.image || '').trim();
+            const hostName = String(room.hostName || '').trim() || 'Host';
+            const posterHtml = image
+                ? `<img class="watch-party-home-public-poster" src="${escHtml(image)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="watch-party-home-public-poster-fallback" style="display:none"><i class="fa-solid fa-film"></i></div>`
+                : `<div class="watch-party-home-public-poster-fallback"><i class="fa-solid fa-film"></i></div>`;
+            row.innerHTML = `
+                ${posterHtml}
+                <div class="watch-party-home-public-body">
+                    <div class="watch-party-home-public-title" title="${escHtml(title)}">${escHtml(title)}</div>
+                    <div class="watch-party-home-public-meta"><i class="fa-solid fa-crown" style="color:gold;font-size:10px"></i> ${escHtml(hostName)} &middot; ${escHtml(room.code || '')} &middot; ${count} ${count === 1 ? 'viewer' : 'viewers'}</div>
+                </div>
+                <button type="button" class="watch-party-home-public-join" data-wp-action="join-room" data-room-code="${escHtml(room.code || '')}">Join</button>
+            `;
+            root.appendChild(row);
+        });
+    }
+
+    function clickHandler(e) {
+        const el = e.target?.closest?.('[data-wp-action]');
+        if (!el) return;
+        const action = String(el.getAttribute('data-wp-action') || '').trim();
+        if (!action) return;
+
+        if (action === 'save-name') {
+            const inp = document.getElementById('homeWpName');
+            if (inp) {
+                const val = String(inp.value || '').trim();
+                if (val) {
+                    saveName(val);
+                    step = 'mode';
+                    render();
+                }
+            }
+        }
+        if (action === 'set-public') { visibility = 'public'; render(); }
+        if (action === 'set-private') { visibility = 'private'; render(); }
+        if (action === 'create-room') {
+            ensureSocket();
+            send({
+                type: 'room:create',
+                isPublic: visibility === 'public',
+                name: name || getName(),
+                title: 'Watch Party',
+                image: '',
+                currentTime: 0,
+                paused: true,
+                route: null,
+            });
+        }
+        if (action === 'join-room') {
+            const code = el.getAttribute('data-room-code') || document.getElementById('homeWpCode')?.value || '';
+            const c = String(code || '').trim().toUpperCase();
+            if (!c) return toast('Enter a room code');
+            ensureSocket();
+            send({ type: 'room:join', code: c, name: name || getName(), previousUserId: userId });
+        }
+        if (action === 'paste-code') {
+            navigator.clipboard.readText().then(text => {
+                const inp = document.getElementById('homeWpCode');
+                if (inp) inp.value = String(text || '').trim().toUpperCase().slice(0, 6);
+            }).catch(() => toast('Could not paste'));
+        }
+        if (action === 'refresh-public') {
+            ensureSocket();
+            send({ type: 'rooms:list' });
+        }
+        if (action === 'leave-room') {
+            intentionallyLeft = true;
+            send({ type: 'room:leave' });
+            roomCode = '';
+            role = '';
+            userId = '';
+            members = [];
+            chatMessages = [];
+            step = 'mode';
+            syncHomeWatchPartyUrlState();
+            render();
+        }
+        if (action === 'copy-code') {
+            const code = String(roomCode || '').trim();
+            if (!code) return;
+            try {
+                if (navigator.clipboard?.writeText) navigator.clipboard.writeText(code);
+                else {
+                    const inp = document.createElement('input');
+                    inp.value = code;
+                    document.body.appendChild(inp);
+                    inp.select();
+                    document.execCommand('copy');
+                    inp.remove();
+                }
+                homeWpCopied = true;
+                render();
+                if (homeWpCopyTimer) clearTimeout(homeWpCopyTimer);
+                homeWpCopyTimer = setTimeout(() => { homeWpCopied = false; render(); }, 1800);
+            } catch (_) {
+                toast('Failed to copy');
+            }
+        }
+        if (action === 'open-settings') {
+            step = 'settings';
+            render();
+        }
+        if (action === 'back-from-settings') {
+            if (roomCode) step = 'room';
+            else step = 'mode';
+            render();
+        }
+        if (action === 'save-settings-name') {
+            const inp = document.getElementById('homeWpSettingsName');
+            if (inp) {
+                const val = String(inp.value || '').trim();
+                if (val) {
+                    saveName(val);
+                    if (roomCode) step = 'room';
+                    else step = 'mode';
+                    render();
+                }
+            }
+        }
+    }
+
+    function keydownHandler(e) {
+        if (e.key === 'Enter') {
+            if (e.target?.id === 'homeWpName') {
+                const inp = document.getElementById('homeWpName');
+                if (inp) {
+                    const val = String(inp.value || '').trim();
+                    if (val) {
+                        saveName(val);
+                        step = 'mode';
+                        render();
+                    }
+                }
+            }
+            if (e.target?.id === 'homeWpSettingsName') {
+                const inp = document.getElementById('homeWpSettingsName');
+                if (inp) {
+                    const val = String(inp.value || '').trim();
+                    if (val) {
+                        saveName(val);
+                        if (roomCode) step = 'room';
+                        else step = 'mode';
+                        render();
+                    }
+                }
+            }
+        }
+    }
+
+    function escHtml(s) {
+        if (typeof s !== 'string') return String(s || '');
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function openPanel() {
+        if (panel) panel.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        document.body.classList.add('watch-party-home-open');
+        if (roomCode) {
+            render();
+            return;
+        }
+        // Restore stale room from sessionStorage (e.g. after navigating back from player.html)
+        const storedCode = (() => { try { return String(sessionStorage.getItem('wpRoomCode') || '').trim(); } catch (_) { return ''; } })();
+        const storedUserId = (() => { try { return String(sessionStorage.getItem('wpUserId') || '').trim(); } catch (_) { return ''; } })();
+        if (storedCode && !roomCode) {
+            roomCode = storedCode;
+            userId = storedUserId;
+            name = getName();
+            step = 'room';
+            ensureSocket();
+            render();
+            return;
+        }
+        name = getName();
+        if (name) {
+            step = 'mode';
+            ensureSocket();
+            send({ type: 'rooms:list' });
+        } else {
+            step = 'name';
+        }
+        render();
+    }
+
+    function closePanel() {
+        if (panel) panel.style.display = 'none';
+        document.body.style.overflow = '';
+        document.body.classList.remove('watch-party-home-open');
+    }
+
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (panel?.style.display === 'flex') {
+            closePanel();
+        } else {
+            openPanel();
+        }
+    });
+
+    // Minimize = hide panel only, keep WS + room intact
+    const collapseBtn = document.getElementById('homeWatchPartyCollapse');
+    if (collapseBtn) collapseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closePanel();
+    });
+
+    const settingsBtn = document.getElementById('homeWatchPartySettings');
+    if (settingsBtn) settingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        step = 'settings';
+        render();
+    });
+
+    // Close = same as minimize — just hide panel, don't destroy room
+    if (closeBtn) closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closePanel();
+    });
+
+    if (backdrop) backdrop.addEventListener('click', closePanel);
+
+    // Cleanup WS on page unload
+    window.addEventListener('beforeunload', () => {
+        if (ws) { try { ws.close(); } catch (_) {} }
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+    });
+    if (panel) {
+        panel.addEventListener('click', clickHandler);
+        panel.addEventListener('keydown', keydownHandler);
+        panel.addEventListener('submit', (e) => {
+            if (e.target?.id === 'homeWpChatForm') sendHomeChat(e);
+        });
+    }
+
+    // Intercept Watch Now to append room code when host is in a room
+    const origWatchNow = window.watchNow;
+    window.watchNow = function(id, type, provider, animeLike) {
+        if (roomCode && role === 'host') {
+            intentionallyLeft = true;
+            closeWs();
+            try { sessionStorage.removeItem('wpBackNav'); } catch (_) {}
+            try { sessionStorage.removeItem('wpCancel'); } catch (_) {}
+            if (window._wpAutoOpenTimer) { clearTimeout(window._wpAutoOpenTimer); window._wpAutoOpenTimer = null; }
+            const apiSource = getCurrentApiSource();
+            const params = new URLSearchParams();
+            const canonicalId = normalizeTmdbId(id);
+            params.set('id', String(canonicalId || ''));
+            const safeType = (String(type || '').trim().toLowerCase() === 'tv') ? 'tv' : 'movie';
+            const resolvedProvider = getDefaultPlaybackProvider(safeType, provider, animeLike);
+            params.set('type', safeType);
+            params.set('apiSource', String(apiSource || ''));
+            if (resolvedProvider) params.set('provider', String(resolvedProvider));
+            params.set('wpRoom', roomCode);
+            closePanel();
+            window.location.href = `/player?${params.toString()}`;
+        } else {
+            origWatchNow.call(window, id, type, provider, animeLike);
+        }
+    };
+
+    // Auto-open panel if session has a room code (guest navigated from player or host returned)
+    const storedCode = (() => { try { return String(sessionStorage.getItem('wpRoomCode') || '').trim(); } catch (_) { return ''; } })();
+    if (storedCode) {
+        window._wpAutoOpenTimer = setTimeout(() => {
+            window._wpAutoOpenTimer = null;
+            openPanel();
+        }, 150);
     }
 }
 

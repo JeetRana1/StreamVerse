@@ -59,6 +59,10 @@
                     <i class="fa-solid fa-rotate-right"></i>
                     <span>Clear Cache</span>
                 </button>
+                <button type="button" class="watch-party-header-btn" id="homeWatchPartyBtn" title="Watch Together" aria-label="Watch Together">
+                    <i class="fa-solid fa-user-group"></i>
+                    <span>Watch Together</span>
+                </button>
                 <div class="search-bar" id="search-container">
                     <input type="text" id="search-input" placeholder="Search movies, TV shows...">
                     <button id="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
@@ -229,8 +233,28 @@
         </div>
     </footer>
 
+    <!-- Watch Together Panel -->
+    <div id="homeWatchPartyPanel" class="watch-party-home-panel" style="display:none;">
+        <div class="watch-party-home-backdrop"></div>
+        <div class="watch-party-home-card">
+            <div class="watch-party-home-head">
+                <div>
+                    <h3 class="watch-party-home-title"><i class="fa-solid fa-user-group"></i> Watch Together</h3>
+                    <div class="watch-party-home-subtitle">Sync playback with friends in real-time</div>
+                </div>
+                <div class="watch-party-home-head-actions">
+                    <button class="watch-party-home-settings" id="homeWatchPartySettings" aria-label="Settings"><i class="fa-solid fa-gear"></i></button>
+                    <button class="watch-party-home-collapse" id="homeWatchPartyCollapse" aria-label="Minimize"><i class="fa-solid fa-minus"></i></button>
+                    <button class="watch-party-home-close" id="homeWatchPartyClose" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+            <div class="watch-party-home-divider"></div>
+            <div class="watch-party-home-stage" id="homeWatchPartyStage"></div>
+        </div>
+    </div>
+
     <script src="/config.js"></script>
-    <script src="script.js?v=3.4"></script>
+    <script src="script.js?v=3.5"></script>
     
 </body>
 
