@@ -10972,12 +10972,25 @@
             renderWatchPartyPanel();
             const bindQuickTap = (el, handler) => {
                 if (!el) return;
-                el.addEventListener('click', handler);
-                el.addEventListener('touchstart', (e) => {
+                let lastQuickTapAt = 0;
+                const run = (e) => {
+                    const now = Date.now();
+                    if (now - lastQuickTapAt < 250) return;
+                    lastQuickTapAt = now;
                     e.preventDefault();
                     e.stopPropagation();
                     handler(e);
+                };
+                el.addEventListener('click', handler);
+                el.addEventListener('touchstart', (e) => {
+                    run(e);
                 }, { passive: false });
+                el.addEventListener('touchend', (e) => {
+                    run(e);
+                }, { passive: false });
+                el.addEventListener('pointerup', (e) => {
+                    run(e);
+                });
             };
             watchTogetherBtn.addEventListener('click', (e) => {
                 e.preventDefault();
