@@ -533,6 +533,7 @@
 
         /* Allow lock button and skip buttons to always be clickable */
         .control-surface:not(.visible) #uiLockBtn,
+        .control-surface:not(.visible) #uiWatchPartyBtn,
         .control-surface:not(.visible) #uiChatBtn,
         .control-surface:not(.visible) .ui-lock-btn,
         .control-surface:not(.visible) #skipBackBtn,
@@ -10822,7 +10823,7 @@
 
         const WATCH_PARTY_DRIFT_TOLERANCE = 0.2;
         const WATCH_PARTY_SOFT_DRIFT_TOLERANCE = 0.05;
-        const WATCH_PARTY_SYNC_HEARTBEAT_MS = 1000;
+        const WATCH_PARTY_SYNC_HEARTBEAT_MS = 1500;
         const WATCH_PARTY_GUEST_PLAYBACK_LATENCY = 0;
         let watchPartySocket = null;
         let watchPartyRoomCode = '';
@@ -11010,7 +11011,7 @@
             let watchPartyLastDriftCheck = 0;
             (function watchPartyGuestDriftLoop() {
                 const now = Date.now();
-                if (watchPartyRole === 'guest' && watchPartyLastRemoteState && video && !watchPartyApplyingRemote && now >= watchPartyGuestBufferingUntil && now - watchPartyLastDriftCheck > 350) {
+                if (watchPartyRole === 'guest' && watchPartyLastRemoteState && video && !watchPartyApplyingRemote && now >= watchPartyGuestBufferingUntil && now - watchPartyLastDriftCheck > 500) {
                     watchPartyLastDriftCheck = now;
                     enforceWatchPartyRemotePlayback(watchPartyLastRemoteState);
                 }
@@ -13333,7 +13334,7 @@
                 video.addEventListener(evt, () => {
                     console.warn(`[video] State event: ${evt}`);
                     if (watchPartyRole === 'guest') {
-                        watchPartyGuestBufferingUntil = Date.now() + 1500;
+                        watchPartyGuestBufferingUntil = Date.now() + 2500;
                     }
                 });
             });
