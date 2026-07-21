@@ -10824,7 +10824,7 @@
         const WATCH_PARTY_DRIFT_TOLERANCE = 0.2;
         const WATCH_PARTY_SOFT_DRIFT_TOLERANCE = 0.05;
         const WATCH_PARTY_SYNC_HEARTBEAT_MS = 1500;
-        const WATCH_PARTY_GUEST_PLAYBACK_LATENCY = 0;
+        const WATCH_PARTY_GUEST_PLAYBACK_LATENCY = 0.12;
         let watchPartySocket = null;
         let watchPartyRoomCode = '';
         let watchPartyRole = '';
@@ -11345,7 +11345,7 @@
                 @media (min-width: 1281px) {
                     body.watch-party-in-room #watchPartyPanel {
                         top: auto;
-                        bottom: 104px;
+                        bottom: 118px;
                     }
                     .watch-party-card-head {
                         padding-right: 8px;
@@ -11847,14 +11847,14 @@
                     background: linear-gradient(135deg, rgba(255,215,0,.15), rgba(255,215,0,.08));
                     border: 1px solid rgba(255,215,0,.25);
                     border-radius: 8px;
-                    padding: 5px 12px;
-                    font-size: 12px;
+                    padding: 4px 10px;
+                    font-size: 11px;
                     font-weight: 600;
                     color: rgba(255,215,0,.95);
                     box-shadow: 0 0 12px rgba(255,215,0,.08);
                 }
                 .watch-party-host-tag i {
-                    font-size: 13px;
+                    font-size: 12px;
                     filter: drop-shadow(0 0 3px rgba(255,215,0,.4));
                 }
                 .watch-party-room-actions {
@@ -12711,7 +12711,10 @@
             const paused = payload.paused === true;
             const stamp = Number(payload.updatedAt || payload.timestamp || 0);
             const elapsed = (!paused && stamp > 0) ? Math.min(1, Math.max(0, (Date.now() - stamp) / 1000)) : 0;
-            return Math.max(0, baseTime + elapsed);
+            const mobileGuestLatency = (watchPartyRole === 'guest' && window.matchMedia('(pointer: coarse), (max-width: 980px)').matches)
+                ? WATCH_PARTY_GUEST_PLAYBACK_LATENCY
+                : 0;
+            return Math.max(0, baseTime + elapsed - mobileGuestLatency);
         }
 
         function updateWatchPartyUrlTime(time) {
