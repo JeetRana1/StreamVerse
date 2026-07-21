@@ -11345,7 +11345,7 @@
                 @media (min-width: 1281px) {
                     body.watch-party-in-room #watchPartyPanel {
                         top: auto;
-                        bottom: 118px;
+                        bottom: 92px;
                     }
                     .watch-party-card-head {
                         padding-right: 8px;
@@ -11847,14 +11847,14 @@
                     background: linear-gradient(135deg, rgba(255,215,0,.15), rgba(255,215,0,.08));
                     border: 1px solid rgba(255,215,0,.25);
                     border-radius: 8px;
-                    padding: 4px 10px;
-                    font-size: 11px;
+                    padding: 3px 8px;
+                    font-size: 10px;
                     font-weight: 600;
                     color: rgba(255,215,0,.95);
                     box-shadow: 0 0 12px rgba(255,215,0,.08);
                 }
                 .watch-party-host-tag i {
-                    font-size: 12px;
+                    font-size: 11px;
                     filter: drop-shadow(0 0 3px rgba(255,215,0,.4));
                 }
                 .watch-party-room-actions {
@@ -15230,7 +15230,7 @@
                 const now = Date.now();
 
                 // 0. TOP PRIORITY: Lock-mode bypasses (always work)
-                const isLockedAction = e.target.closest('#uiLockBtn, .ui-lock-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
+                const isLockedAction = e.target.closest('#uiLockBtn, #uiWatchPartyBtn, #uiChatBtn, .ui-lock-btn, .ui-watchparty-btn, .ui-chat-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return;
 
                 const isControlsVisible = controlSurface.classList.contains('visible');
@@ -15302,7 +15302,7 @@
             // Handles: Double-tap Skip and Single-tap Hide. Play/pause stays on the play button only.
             function handleSurfaceInteraction(e) {
                 // UI Lock bypass
-                const isLockedAction = e.target.closest('#uiLockBtn, .ui-lock-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
+                const isLockedAction = e.target.closest('#uiLockBtn, #uiWatchPartyBtn, #uiChatBtn, .ui-lock-btn, .ui-watchparty-btn, .ui-chat-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return; 
                 if (isUiLocked) return;
                 const isOnInteractive = e.target.closest('#watchPartyPanel, #watchPartyMessages, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
