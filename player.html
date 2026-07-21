@@ -10970,6 +10970,15 @@
             watchPartyPanelReady = true;
             injectWatchPartyStyles();
             renderWatchPartyPanel();
+            const bindQuickTap = (el, handler) => {
+                if (!el) return;
+                el.addEventListener('click', handler);
+                el.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handler(e);
+                }, { passive: false });
+            };
             watchTogetherBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -10988,13 +10997,13 @@
                     document.body.classList.add('watch-party-open');
                 }
             });
-            uiChatBtn?.addEventListener('click', (e) => {
+            bindQuickTap(uiChatBtn, (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (!watchPartyRoomCode) return;
                 toggleWatchPartyChatOnly();
             });
-            uiWatchPartyBtn?.addEventListener('click', (e) => {
+            bindQuickTap(uiWatchPartyBtn, (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (!watchPartyRoomCode) return;
