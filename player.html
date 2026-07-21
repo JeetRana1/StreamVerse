@@ -330,6 +330,33 @@
             z-index: 100200 !important;
         }
 
+        /* Quick buttons must sit above the control-surface (z-index 100100) in iOS pseudo-fs */
+        html.ios-pseudo-fs-active .ui-lock-btn,
+        html.ios-pseudo-fs-active .ui-watchparty-btn,
+        html.ios-pseudo-fs-active .ui-chat-btn,
+        html.ios-pseudo-fs-active .skip-segment-btn,
+        html.ios-pseudo-fs-active .next-episode-btn {
+            z-index: 100150 !important;
+            pointer-events: auto !important;
+            touch-action: manipulation;
+        }
+
+        /* Standard fullscreen: ensure quick buttons always above control-surface */
+        html:fullscreen .ui-lock-btn,
+        html:fullscreen .ui-watchparty-btn,
+        html:fullscreen .ui-chat-btn,
+        html:fullscreen .skip-segment-btn,
+        html:fullscreen .next-episode-btn,
+        html:-webkit-full-screen .ui-lock-btn,
+        html:-webkit-full-screen .ui-watchparty-btn,
+        html:-webkit-full-screen .ui-chat-btn,
+        html:-webkit-full-screen .skip-segment-btn,
+        html:-webkit-full-screen .next-episode-btn {
+            z-index: 100150 !important;
+            pointer-events: auto !important;
+            touch-action: manipulation;
+        }
+
         /* Orientation hint pill shown briefly when entering landscape pseudo-fs */
         #ios-rotate-hint {
             position: fixed;
@@ -532,13 +559,16 @@
         }
 
         /* Allow lock button and skip buttons to always be clickable */
-        .control-surface:not(.visible) #uiLockBtn,
-        .control-surface:not(.visible) #uiWatchPartyBtn,
-        .control-surface:not(.visible) #uiChatBtn,
-        .control-surface:not(.visible) .ui-lock-btn,
         .control-surface:not(.visible) #skipBackBtn,
         .control-surface:not(.visible) #skipFwdBtn,
         .control-surface:not(.visible) #skipSegmentBtn {
+            pointer-events: auto !important;
+        }
+
+        /* Quick buttons are outside .control-surface — ensure they stay tappable in all modes */
+        body.ui-locked .ui-lock-btn,
+        body.ui-locked .ui-watchparty-btn,
+        body.ui-locked .ui-chat-btn {
             pointer-events: auto !important;
         }
 
@@ -1813,6 +1843,8 @@
             justify-content: center;
             cursor: pointer;
             z-index: 10020;
+            pointer-events: auto !important;
+            touch-action: manipulation;
             transition: var(--transition);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
@@ -1845,6 +1877,8 @@
             justify-content: center;
             cursor: pointer;
             z-index: 10020;
+            pointer-events: auto !important;
+            touch-action: manipulation;
             transition: var(--transition);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
@@ -1876,6 +1910,8 @@
             justify-content: center;
             cursor: pointer;
             z-index: 10020;
+            pointer-events: auto !important;
+            touch-action: manipulation;
             transition: var(--transition);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
@@ -10975,13 +11011,15 @@
                 let lastQuickTapAt = 0;
                 const run = (e) => {
                     const now = Date.now();
-                    if (now - lastQuickTapAt < 250) return;
+                    if (now - lastQuickTapAt < 300) return;
                     lastQuickTapAt = now;
                     e.preventDefault();
                     e.stopPropagation();
                     handler(e);
                 };
-                el.addEventListener('click', handler);
+                el.addEventListener('click', (e) => {
+                    run(e);
+                });
                 el.addEventListener('touchstart', (e) => {
                     run(e);
                 }, { passive: false });
@@ -11379,7 +11417,8 @@
                 body.watch-party-open .ui-watchparty-btn,
                 body.watch-party-open .ui-chat-btn,
                 body.watch-party-open .ui-lock-btn {
-                    z-index: 10020;
+                    z-index: 100150;
+                    pointer-events: auto !important;
                 }
                 .watch-party-card.collapsed .watch-party-stage,
                 .watch-party-card.collapsed .watch-party-divider,
