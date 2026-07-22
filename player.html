@@ -357,6 +357,38 @@
             touch-action: manipulation;
         }
 
+        /* Mobile fullscreen: keep top quick buttons out of the OS gesture zone
+           and give them a larger hit area so taps register reliably. */
+        html.ios-pseudo-fs-active .ui-lock-btn,
+        html:fullscreen .ui-lock-btn,
+        html:-webkit-full-screen .ui-lock-btn {
+            top: calc(var(--safe-top) + 14px) !important;
+            right: calc(var(--safe-right) + 16px) !important;
+            width: 56px !important;
+            height: 56px !important;
+            border-radius: 16px !important;
+        }
+
+        html.ios-pseudo-fs-active .ui-chat-btn,
+        html:fullscreen .ui-chat-btn,
+        html:-webkit-full-screen .ui-chat-btn {
+            top: calc(var(--safe-top) + 14px) !important;
+            right: calc(var(--safe-right) + 82px) !important;
+            width: 56px !important;
+            height: 56px !important;
+            border-radius: 16px !important;
+        }
+
+        html.ios-pseudo-fs-active .ui-watchparty-btn,
+        html:fullscreen .ui-watchparty-btn,
+        html:-webkit-full-screen .ui-watchparty-btn {
+            top: calc(var(--safe-top) + 14px) !important;
+            right: calc(var(--safe-right) + 148px) !important;
+            width: 56px !important;
+            height: 56px !important;
+            border-radius: 16px !important;
+        }
+
         /* Orientation hint pill shown briefly when entering landscape pseudo-fs */
         #ios-rotate-hint {
             position: fixed;
