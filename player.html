@@ -11036,26 +11036,22 @@
             renderWatchPartyPanel();
             const bindQuickTap = (el, handler) => {
                 if (!el) return;
-                let lastQuickTapAt = 0;
+                let pointerHandledAt = 0;
                 const run = (e) => {
-                    const now = Date.now();
-                    if (now - lastQuickTapAt < 300) return;
-                    lastQuickTapAt = now;
+                    pointerHandledAt = Date.now();
                     e.preventDefault();
                     e.stopPropagation();
+                    holdControlsVisible(1500);
                     handler(e);
                 };
+                el.addEventListener('pointerdown', run, { capture: true });
                 el.addEventListener('click', (e) => {
-                    run(e);
-                });
-                el.addEventListener('touchstart', (e) => {
-                    run(e);
-                }, { passive: false });
-                el.addEventListener('touchend', (e) => {
-                    run(e);
-                }, { passive: false });
-                el.addEventListener('pointerup', (e) => {
-                    run(e);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (Date.now() - pointerHandledAt > 600) {
+                        holdControlsVisible(1500);
+                        handler(e);
+                    }
                 });
             };
             watchTogetherBtn.addEventListener('click', (e) => {
@@ -14649,12 +14645,25 @@
                 }
             }
 
-            uiLockBtn.addEventListener('click', (e) => {
+            let uiLockPointerHandledAt = 0;
+            const handleUiLockPress = (e) => {
+                uiLockPointerHandledAt = Date.now();
+                e.preventDefault();
                 e.stopPropagation();
+                holdControlsVisible(1500);
                 isUiLocked = !isUiLocked;
                 updateLockUi();
                 if (!isUiLocked) showControlSurface();
                 updateSkipSegmentButton();
+            };
+
+            uiLockBtn.addEventListener('pointerdown', handleUiLockPress, { capture: true });
+            uiLockBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (Date.now() - uiLockPointerHandledAt > 600) {
+                    handleUiLockPress(e);
+                }
             });
 
             skipSegmentBtn.addEventListener('click', (e) => {
