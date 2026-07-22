@@ -335,6 +335,7 @@
         html.ios-pseudo-fs-active .ui-lock-btn,
         html.ios-pseudo-fs-active .ui-watchparty-btn,
         html.ios-pseudo-fs-active .ui-chat-btn,
+        html.ios-pseudo-fs-active .fs-back-btn,
         html.ios-pseudo-fs-active .skip-segment-btn,
         html.ios-pseudo-fs-active .next-episode-btn {
             z-index: 100150 !important;
@@ -343,9 +344,11 @@
         html:fullscreen .ui-lock-btn,
         html:fullscreen .ui-watchparty-btn,
         html:fullscreen .ui-chat-btn,
+        html:fullscreen .fs-back-btn,
         html:-webkit-full-screen .ui-lock-btn,
         html:-webkit-full-screen .ui-watchparty-btn,
-        html:-webkit-full-screen .ui-chat-btn {
+        html:-webkit-full-screen .ui-chat-btn,
+        html:-webkit-full-screen .fs-back-btn {
             z-index: 100150 !important;
         }
 
@@ -353,9 +356,15 @@
             html.ios-pseudo-fs-active .back-btn,
             html:fullscreen .back-btn,
             html:-webkit-full-screen .back-btn {
-                top: auto !important;
-                bottom: calc(var(--safe-bottom) + 360px) !important;
+                display: none !important;
+            }
+
+            html.ios-pseudo-fs-active .fs-back-btn,
+            html:fullscreen .fs-back-btn,
+            html:-webkit-full-screen .fs-back-btn {
+                display: inline-flex !important;
                 left: calc(var(--safe-left) + 20px) !important;
+                bottom: calc(var(--safe-bottom) + 360px) !important;
             }
 
             html.ios-pseudo-fs-active .ui-lock-btn,
@@ -1903,6 +1912,33 @@
 
         .ui-watchparty-btn.visible {
             display: inline-flex;
+        }
+
+        .fs-back-btn {
+            position: fixed;
+            left: 20px;
+            bottom: 160px;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            background: linear-gradient(135deg, rgba(12, 12, 14, 0.82), rgba(18, 18, 20, 0.56));
+            color: #fff;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 350;
+            transition: var(--transition);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
+        }
+
+        .fs-back-btn:hover {
+            background: linear-gradient(135deg, rgba(18, 18, 20, 0.92), rgba(24, 24, 28, 0.66));
+            border-color: rgba(229, 9, 20, 0.45);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5), 0 0 22px rgba(229, 9, 20, 0.20);
         }
 
         .ui-chat-btn {
@@ -3769,6 +3805,9 @@
     <button class="ui-watchparty-btn" id="uiWatchPartyBtn" aria-label="Open watch together">
         <i class="fa-solid fa-window-restore"></i>
     </button>
+    <button class="fs-back-btn" id="fsBackBtn" aria-label="Back to home">
+        <i class="fa-solid fa-arrow-left"></i>
+    </button>
     <button class="ui-lock-btn" id="uiLockBtn" aria-label="Lock controls">
         <i class="fa-solid fa-lock-open"></i>
     </button>
@@ -4281,6 +4320,7 @@
         const loader = document.getElementById('loader');
         const playerHeader = document.getElementById('player-header');
         const backBtn = document.getElementById('back-btn');
+        const fsBackBtn = document.getElementById('fsBackBtn');
         const errorBox = document.getElementById('error-box');
         const sourceBtn = document.getElementById('source-btn');
         const sourcePanel = document.getElementById('source-panel');
@@ -14262,7 +14302,7 @@
             epPanel?.addEventListener('pointerdown', markEpisodePanelUserScroll, { passive: true });
             epPanel?.addEventListener('scroll', markEpisodePanelUserScroll, { passive: true, capture: true });
 
-            backBtn.addEventListener('click', async (e) => {
+            const handlePlayerBackPress = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 try {
@@ -14275,7 +14315,10 @@
                     }
                 } catch (_) { }
                 setTimeout(goBackToHome, 40);
-            });
+            };
+
+            backBtn.addEventListener('click', handlePlayerBackPress);
+            fsBackBtn?.addEventListener('click', handlePlayerBackPress);
 
             playPauseBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
