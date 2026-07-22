@@ -330,63 +330,14 @@
             z-index: 100200 !important;
         }
 
-        /* Quick buttons must sit above the control-surface (z-index 100100) in iOS pseudo-fs */
+        /* In pseudo-fs the promoted control surface sits at z-index 100100.
+           Keep floating buttons above it, but otherwise preserve their old layout. */
         html.ios-pseudo-fs-active .ui-lock-btn,
         html.ios-pseudo-fs-active .ui-watchparty-btn,
         html.ios-pseudo-fs-active .ui-chat-btn,
         html.ios-pseudo-fs-active .skip-segment-btn,
         html.ios-pseudo-fs-active .next-episode-btn {
             z-index: 100150 !important;
-            pointer-events: auto !important;
-            touch-action: manipulation;
-        }
-
-        /* Standard fullscreen: ensure quick buttons always above control-surface */
-        html:fullscreen .ui-lock-btn,
-        html:fullscreen .ui-watchparty-btn,
-        html:fullscreen .ui-chat-btn,
-        html:fullscreen .skip-segment-btn,
-        html:fullscreen .next-episode-btn,
-        html:-webkit-full-screen .ui-lock-btn,
-        html:-webkit-full-screen .ui-watchparty-btn,
-        html:-webkit-full-screen .ui-chat-btn,
-        html:-webkit-full-screen .skip-segment-btn,
-        html:-webkit-full-screen .next-episode-btn {
-            z-index: 100150 !important;
-            pointer-events: auto !important;
-            touch-action: manipulation;
-        }
-
-        /* Mobile fullscreen: keep top quick buttons out of the OS gesture zone
-           and give them a larger hit area so taps register reliably. */
-        html.ios-pseudo-fs-active .ui-lock-btn,
-        html:fullscreen .ui-lock-btn,
-        html:-webkit-full-screen .ui-lock-btn {
-            top: calc(var(--safe-top) + 14px) !important;
-            right: calc(var(--safe-right) + 16px) !important;
-            width: 56px !important;
-            height: 56px !important;
-            border-radius: 16px !important;
-        }
-
-        html.ios-pseudo-fs-active .ui-chat-btn,
-        html:fullscreen .ui-chat-btn,
-        html:-webkit-full-screen .ui-chat-btn {
-            top: calc(var(--safe-top) + 14px) !important;
-            right: calc(var(--safe-right) + 82px) !important;
-            width: 56px !important;
-            height: 56px !important;
-            border-radius: 16px !important;
-        }
-
-        html.ios-pseudo-fs-active .ui-watchparty-btn,
-        html:fullscreen .ui-watchparty-btn,
-        html:-webkit-full-screen .ui-watchparty-btn {
-            top: calc(var(--safe-top) + 14px) !important;
-            right: calc(var(--safe-right) + 148px) !important;
-            width: 56px !important;
-            height: 56px !important;
-            border-radius: 16px !important;
         }
 
         /* Orientation hint pill shown briefly when entering landscape pseudo-fs */
@@ -1862,9 +1813,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            z-index: 10020;
-            pointer-events: auto !important;
-            touch-action: manipulation;
+            z-index: 350;
             transition: var(--transition);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
@@ -1896,9 +1845,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            z-index: 10020;
-            pointer-events: auto !important;
-            touch-action: manipulation;
+            z-index: 350;
             transition: var(--transition);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
@@ -1929,9 +1876,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            z-index: 10020;
-            pointer-events: auto !important;
-            touch-action: manipulation;
+            z-index: 350;
             transition: var(--transition);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
