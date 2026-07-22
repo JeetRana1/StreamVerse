@@ -350,6 +350,14 @@
         }
 
         @media (pointer: coarse) {
+            html.ios-pseudo-fs-active .back-btn,
+            html:fullscreen .back-btn,
+            html:-webkit-full-screen .back-btn {
+                top: auto !important;
+                bottom: calc(var(--safe-bottom) + 360px) !important;
+                left: calc(var(--safe-left) + 20px) !important;
+            }
+
             html.ios-pseudo-fs-active .ui-lock-btn,
             html:fullscreen .ui-lock-btn,
             html:-webkit-full-screen .ui-lock-btn {
