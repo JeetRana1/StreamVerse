@@ -7045,13 +7045,9 @@
 
 
         function goBackToHome() {
-            location.href = 'index.html';
+            const homeUrl = new URL('index.html', window.location.href);
+            window.location.href = homeUrl.toString();
         }
-
-        backBtn?.addEventListener('click', (e) => {
-            e.preventDefault();
-            goBackToHome();
-        });
 
         function getMediaInfoCacheKey(includeProvider = true) {
             const providerPart = includeProvider ? (FORCED_PROVIDER || 'auto') : 'shared';
@@ -14258,13 +14254,19 @@
             epPanel?.addEventListener('pointerdown', markEpisodePanelUserScroll, { passive: true });
             epPanel?.addEventListener('scroll', markEpisodePanelUserScroll, { passive: true, capture: true });
 
-            backBtn.addEventListener('click', (e) => {
+            backBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                if (document.fullscreenElement) {
-                    if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
-                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen().catch(() => { });
-                }
-                goBackToHome();
+                try {
+                    if (document.fullscreenElement || document.webkitFullscreenElement) {
+                        if (document.exitFullscreen) {
+                            await document.exitFullscreen().catch(() => { });
+                        } else if (document.webkitExitFullscreen) {
+                            document.webkitExitFullscreen();
+                        }
+                    }
+                } catch (_) { }
+                setTimeout(goBackToHome, 40);
             });
 
             playPauseBtn.addEventListener('click', (e) => {
