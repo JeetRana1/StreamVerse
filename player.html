@@ -340,6 +340,41 @@
             z-index: 100150 !important;
         }
 
+        html:fullscreen .ui-lock-btn,
+        html:fullscreen .ui-watchparty-btn,
+        html:fullscreen .ui-chat-btn,
+        html:-webkit-full-screen .ui-lock-btn,
+        html:-webkit-full-screen .ui-watchparty-btn,
+        html:-webkit-full-screen .ui-chat-btn {
+            z-index: 100150 !important;
+        }
+
+        @media (pointer: coarse) {
+            html.ios-pseudo-fs-active .ui-lock-btn,
+            html:fullscreen .ui-lock-btn,
+            html:-webkit-full-screen .ui-lock-btn {
+                top: auto !important;
+                bottom: calc(var(--safe-bottom) + 116px) !important;
+                right: calc(var(--safe-right) + 34px) !important;
+            }
+
+            html.ios-pseudo-fs-active .ui-chat-btn,
+            html:fullscreen .ui-chat-btn,
+            html:-webkit-full-screen .ui-chat-btn {
+                top: auto !important;
+                bottom: calc(var(--safe-bottom) + 116px) !important;
+                right: calc(var(--safe-right) + 86px) !important;
+            }
+
+            html.ios-pseudo-fs-active .ui-watchparty-btn,
+            html:fullscreen .ui-watchparty-btn,
+            html:-webkit-full-screen .ui-watchparty-btn {
+                top: auto !important;
+                bottom: calc(var(--safe-bottom) + 116px) !important;
+                right: calc(var(--safe-right) + 138px) !important;
+            }
+        }
+
         /* Orientation hint pill shown briefly when entering landscape pseudo-fs */
         #ios-rotate-hint {
             position: fixed;
