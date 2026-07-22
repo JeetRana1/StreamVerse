@@ -11036,22 +11036,11 @@
             renderWatchPartyPanel();
             const bindQuickTap = (el, handler) => {
                 if (!el) return;
-                let pointerHandledAt = 0;
-                const run = (e) => {
-                    pointerHandledAt = Date.now();
+                el.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     holdControlsVisible(1500);
                     handler(e);
-                };
-                el.addEventListener('pointerdown', run, { capture: true });
-                el.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (Date.now() - pointerHandledAt > 600) {
-                        holdControlsVisible(1500);
-                        handler(e);
-                    }
                 });
             };
             watchTogetherBtn.addEventListener('click', (e) => {
@@ -14645,9 +14634,7 @@
                 }
             }
 
-            let uiLockPointerHandledAt = 0;
-            const handleUiLockPress = (e) => {
-                uiLockPointerHandledAt = Date.now();
+            uiLockBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 holdControlsVisible(1500);
@@ -14655,15 +14642,6 @@
                 updateLockUi();
                 if (!isUiLocked) showControlSurface();
                 updateSkipSegmentButton();
-            };
-
-            uiLockBtn.addEventListener('pointerdown', handleUiLockPress, { capture: true });
-            uiLockBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (Date.now() - uiLockPointerHandledAt > 600) {
-                    handleUiLockPress(e);
-                }
             });
 
             skipSegmentBtn.addEventListener('click', (e) => {
@@ -15324,47 +15302,12 @@
 
             // Global blocker: Show controls on any screen interaction when hidden
             let lastInteractionAt = 0;
-            const quickBtns = [uiLockBtn, uiWatchPartyBtn, uiChatBtn].filter(Boolean);
-            const TOUCH_PAD = 10;
-            const hitTestQuickBtn = (clientX, clientY) => {
-                for (const btn of quickBtns) {
-                    const r = btn.getBoundingClientRect();
-                    if (clientX >= r.left - TOUCH_PAD && clientX <= r.right + TOUCH_PAD && clientY >= r.top - TOUCH_PAD && clientY <= r.bottom + TOUCH_PAD) return btn;
-                }
-                return null;
-            };
             const blockInteractionsWhenHidden = (e) => {
                 const now = Date.now();
 
                 // 0. TOP PRIORITY: Lock-mode bypasses (always work)
                 const isLockedAction = e.target.closest('#uiLockBtn, #uiWatchPartyBtn, #uiChatBtn, .ui-lock-btn, .ui-watchparty-btn, .ui-chat-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return;
-
-                // 0b. Mobile fullscreen fallback: pointer-events:none on parent can make
-                //     e.target wrong, so test by coordinates and invoke handler directly.
-                //     Only fire on initial touch/pointer to avoid double-invocation.
-                if (e.type === 'touchstart' || e.type === 'mousedown' || e.type === 'pointerdown') {
-                    const cx = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-                    const cy = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
-                    if (cx || cy) {
-                        const hitBtn = hitTestQuickBtn(cx, cy);
-                        if (hitBtn) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            holdControlsVisible(1500);
-                            if (hitBtn === uiChatBtn && watchPartyRoomCode) {
-                                toggleWatchPartyChatOnly();
-                            } else if (hitBtn === uiWatchPartyBtn && watchPartyRoomCode) {
-                                toggleWatchPartyMainQuick();
-                            } else if (hitBtn === uiLockBtn) {
-                                isUiLocked = !isUiLocked;
-                                updateLockUi();
-                                if (!isUiLocked) showControlSurface();
-                            }
-                            return false;
-                        }
-                    }
-                }
 
                 const isControlsVisible = controlSurface.classList.contains('visible');
 
