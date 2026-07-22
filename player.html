@@ -2105,8 +2105,14 @@
         }
 
         body.ui-locked .control-surface {
-            opacity: 0 !important;
+            visibility: hidden !important;
             pointer-events: none !important;
+        }
+        body.ui-locked .control-surface #uiLockBtn,
+        body.ui-locked .control-surface .ui-lock-btn {
+            visibility: visible !important;
+            pointer-events: auto !important;
+            z-index: 100150 !important;
         }
 
         /* Keep skip/next buttons visible in lock mode per UX request */
@@ -15288,12 +15294,35 @@
 
             // Global blocker: Show controls on any screen interaction when hidden
             let lastInteractionAt = 0;
+            const quickBtns = [uiLockBtn, uiWatchPartyBtn, uiChatBtn].filter(Boolean);
+            const hitTestQuickBtn = (clientX, clientY) => {
+                for (const btn of quickBtns) {
+                    const r = btn.getBoundingClientRect();
+                    if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return btn;
+                }
+                return null;
+            };
             const blockInteractionsWhenHidden = (e) => {
                 const now = Date.now();
 
                 // 0. TOP PRIORITY: Lock-mode bypasses (always work)
                 const isLockedAction = e.target.closest('#uiLockBtn, #uiWatchPartyBtn, #uiChatBtn, .ui-lock-btn, .ui-watchparty-btn, .ui-chat-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return;
+
+                // 0b. Mobile fullscreen fallback: pointer-events:none on parent can make
+                //     e.target wrong, so test by coordinates too.
+                const cx = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+                const cy = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+                if (cx || cy) {
+                    const hitBtn = hitTestQuickBtn(cx, cy);
+                    if (hitBtn) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        holdControlsVisible(1500);
+                        hitBtn.click();
+                        return false;
+                    }
+                }
 
                 const isControlsVisible = controlSurface.classList.contains('visible');
 
