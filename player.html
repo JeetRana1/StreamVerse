@@ -337,7 +337,7 @@
         html.ios-pseudo-fs-active .ui-chat-btn,
         html.ios-pseudo-fs-active .skip-segment-btn,
         html.ios-pseudo-fs-active .next-episode-btn {
-            z-index: 200500 !important;
+            z-index: 100150 !important;
         }
 
         html:fullscreen .ui-lock-btn,
@@ -346,40 +346,32 @@
         html:-webkit-full-screen .ui-lock-btn,
         html:-webkit-full-screen .ui-watchparty-btn,
         html:-webkit-full-screen .ui-chat-btn {
-            z-index: 200500 !important;
+            z-index: 100150 !important;
         }
 
         @media (pointer: coarse) {
-            html.ios-pseudo-fs-active .player-header,
-            html:fullscreen .player-header,
-            html:-webkit-full-screen .player-header {
-                opacity: 0 !important;
-                transform: translateY(-100%) !important;
-                pointer-events: none !important;
-            }
-
             html.ios-pseudo-fs-active .ui-lock-btn,
             html:fullscreen .ui-lock-btn,
             html:-webkit-full-screen .ui-lock-btn {
-                top: calc(var(--safe-top) + 18px) !important;
-                bottom: auto !important;
-                right: calc(var(--safe-right) + 28px) !important;
+                top: auto !important;
+                bottom: calc(var(--safe-bottom) + 390px) !important;
+                right: calc(var(--safe-right) + 34px) !important;
             }
 
             html.ios-pseudo-fs-active .ui-chat-btn,
             html:fullscreen .ui-chat-btn,
             html:-webkit-full-screen .ui-chat-btn {
-                top: calc(var(--safe-top) + 18px) !important;
-                bottom: auto !important;
-                right: calc(var(--safe-right) + 80px) !important;
+                top: auto !important;
+                bottom: calc(var(--safe-bottom) + 390px) !important;
+                right: calc(var(--safe-right) + 86px) !important;
             }
 
             html.ios-pseudo-fs-active .ui-watchparty-btn,
             html:fullscreen .ui-watchparty-btn,
             html:-webkit-full-screen .ui-watchparty-btn {
-                top: calc(var(--safe-top) + 18px) !important;
-                bottom: auto !important;
-                right: calc(var(--safe-right) + 132px) !important;
+                top: auto !important;
+                bottom: calc(var(--safe-bottom) + 390px) !important;
+                right: calc(var(--safe-right) + 138px) !important;
             }
         }
 
