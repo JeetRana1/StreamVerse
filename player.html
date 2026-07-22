@@ -558,18 +558,7 @@
             pointer-events: none !important;
         }
 
-        /* Allow quick + skip buttons to always be clickable even when control-surface is hidden */
-        .control-surface:not(.visible) #uiLockBtn,
-        .control-surface:not(.visible) #uiWatchPartyBtn,
-        .control-surface:not(.visible) #uiChatBtn,
-        .control-surface:not(.visible) .ui-lock-btn,
-        .control-surface:not(.visible) .ui-watchparty-btn,
-        .control-surface:not(.visible) .ui-chat-btn,
-        .control-surface:not(.visible) #skipBackBtn,
-        .control-surface:not(.visible) #skipFwdBtn,
-        .control-surface:not(.visible) #skipSegmentBtn {
-            pointer-events: auto !important;
-        }
+        /* Quick buttons are OUTSIDE control-surface — they are always independently tappable */
 
         .control-surface:not(.visible) button,
         .control-surface:not(.visible) input[type="range"],
@@ -2108,8 +2097,9 @@
             visibility: hidden !important;
             pointer-events: none !important;
         }
-        body.ui-locked .control-surface #uiLockBtn,
-        body.ui-locked .control-surface .ui-lock-btn {
+        /* Lock button always visible even when UI is locked (now outside control-surface) */
+        body.ui-locked #uiLockBtn,
+        body.ui-locked .ui-lock-btn {
             visibility: visible !important;
             pointer-events: auto !important;
             z-index: 100150 !important;
@@ -3736,16 +3726,6 @@
             </div>
         </div>
 
-        <!-- Quick buttons INSIDE control-surface so they work in mobile fullscreen -->
-        <button class="ui-watchparty-btn" id="uiWatchPartyBtn" aria-label="Open watch together">
-            <i class="fa-solid fa-window-restore"></i>
-        </button>
-        <button class="ui-lock-btn" id="uiLockBtn" aria-label="Lock controls">
-            <i class="fa-solid fa-lock-open"></i>
-        </button>
-        <button class="ui-chat-btn" id="uiChatBtn" aria-label="Open live chat">
-            <i class="fa-solid fa-comment"></i>
-        </button>
     </div>
 
     <!-- GESTURE OVERLAYS -->
@@ -3766,6 +3746,15 @@
     <div class="control-menu" id="playbackMenu"></div>
     <div class="control-menu" id="preferencesMenu"></div>
     <div class="control-menu" id="volumeMenu"></div>
+    <button class="ui-watchparty-btn" id="uiWatchPartyBtn" aria-label="Open watch together">
+        <i class="fa-solid fa-window-restore"></i>
+    </button>
+    <button class="ui-lock-btn" id="uiLockBtn" aria-label="Lock controls">
+        <i class="fa-solid fa-lock-open"></i>
+    </button>
+    <button class="ui-chat-btn" id="uiChatBtn" aria-label="Open live chat">
+        <i class="fa-solid fa-comment"></i>
+    </button>
     <button class="skip-segment-btn" id="skipSegmentBtn" aria-label="Skip segment"></button>
     <button class="next-episode-btn" id="nextEpisodeBtn" aria-label="Next episode">
         <i class="fa-solid fa-forward-step"></i>
