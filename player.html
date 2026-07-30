@@ -1090,8 +1090,11 @@
             z-index: 1200;
             border: 1px solid var(--glass-border);
             backdrop-filter: blur(20px);
-            max-height: 250px;
+            max-height: min(250px, calc(100vh - 120px));
             overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
             /* JS will handle left and bottom */
         }
 
@@ -2160,6 +2163,28 @@
             pointer-events: auto !important;
             z-index: 100150 !important;
         }
+        body.ui-locked .mobile-aux-right {
+            position: fixed !important;
+            inset: 0 !important;
+            display: block !important;
+            visibility: visible !important;
+            pointer-events: none !important;
+            padding: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+        body.ui-locked .mobile-aux-right .ui-lock-btn {
+            position: fixed !important;
+            left: 22px !important;
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 22px) !important;
+            width: 52px !important;
+            height: 52px !important;
+            border-radius: 999px !important;
+            pointer-events: auto !important;
+        }
+        .lock-fab { display: none; position: fixed; left: 22px; bottom: calc(env(safe-area-inset-bottom, 0px) + 22px); z-index: 300000; }
+        body.ui-locked .lock-fab { display: inline-flex !important; width: 52px; height: 52px; border-radius: 999px; pointer-events: auto; }
 
         /* Keep skip/next buttons visible in lock mode per UX request */
 
@@ -2822,11 +2847,11 @@
         }
 
         .seek-ripple.left {
-            left: 20%;
+            left: 14%;
         }
 
         .seek-ripple.right {
-            left: 80%;
+            left: 86%;
         }
 
         .seek-ripple.animate {
@@ -3421,8 +3446,28 @@
                 text-overflow: ellipsis;
                 font-size: 1.08rem;
                 color: rgba(255, 255, 255, 0.92);
-                font-weight: 700;
-            }
+            font-weight: 700;
+        }
+
+        #player-toast {
+            position: fixed;
+            left: 50%;
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 110px);
+            transform: translateX(-50%) translateY(8px);
+            padding: 10px 16px;
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 999px;
+            background: rgba(15,15,18,.9);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .18s ease, transform .18s ease;
+            z-index: 300000;
+        }
+
+        #player-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
             .ep-item-copy {
                 min-width: 0;
@@ -3604,6 +3649,148 @@
                 transform: rotate(360deg);
             }
         }
+        /* Reference shell styling mapped onto production controls. */
+        .player-header.top-meta { padding: calc(env(safe-area-inset-top, 0px) + 18px) 18px 18px; background: linear-gradient(180deg, rgba(0,0,0,.72), transparent); pointer-events: none; transition: opacity .22s ease, transform .22s ease; }
+        .player-header.top-meta #back-btn { display: none !important; }
+        .player-header.top-meta.hidden { opacity: 0; transform: translateY(-18px); }
+        .player-header.top-meta .header-info h2 { font-family: 'Outfit', sans-serif; font-size: clamp(24px, 4vw, 34px); line-height: 1; letter-spacing: -.03em; }
+        .player-header.top-meta .header-info { transform: translate(12px, 4px); }
+        .player-header.top-meta .header-poster { width: 54px; height: 74px; flex: 0 0 54px; object-fit: cover; border: 2px solid rgba(255,255,255,.72); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.55); display: none; }
+        .player-header.top-meta.has-poster .header-poster { display: block; }
+        .player-header.top-meta.has-poster .header-info { transform: translate(0, 4px); }
+        .player-header.top-meta .header-info p { margin-top: 6px; color: rgba(255,255,255,.72); }
+        .control-surface.surface { padding: 0 14px calc(env(safe-area-inset-bottom, 0px) + 14px); }
+        .control-surface.surface::before { content: ''; display: block; }
+        .control-center.center-play { position: fixed; inset: 50% auto auto 50%; width: auto; margin: 0; flex: none; transform: translate(-50%, -50%); justify-content: center; gap: 0; z-index: 80; }
+        .center-play .ctrl-btn.skip-btn { width: 58px; height: 58px; margin: 0 240px; border-radius: 50%; background: rgba(18,18,22,.72); box-shadow: 0 12px 30px rgba(0,0,0,.32); }
+        .center-play .skip-btn { background-repeat: no-repeat; background-position: center; background-size: 27px 27px; }
+        .center-play #skipBackBtn, .center-play #skipFwdBtn { background-image: none !important; }
+        .center-play #skipBackBtn::before, .center-play #skipFwdBtn::before { content: ''; display: block; width: 32px; height: 32px; background-repeat: no-repeat; background-position: center; background-size: contain; }
+        .center-play #skipBackBtn::before { background-image: url('https://img.icons8.com/?size=100&id=WJo9hGknYSYg&format=png&color=ffffff'); }
+        .center-play #skipFwdBtn::before { background-image: url('https://img.icons8.com/?size=100&id=REiqJRR02AHK&format=png&color=ffffff'); }
+        .center-play .skip-btn svg { display: none !important; }
+        .center-play .play-btn.hero-play { width: 92px; height: 92px; font-size: 34px; background: radial-gradient(circle at 50% 40%, rgba(36,36,44,.92), rgba(16,16,20,.88)); box-shadow: 0 24px 70px rgba(0,0,0,.45), 0 0 0 1px rgba(229,9,20,.18); }
+        .control-bottom.bottom-shell { display: grid; gap: 14px; width: min(100%, 980px); margin: 0 auto; grid-template-columns: 1fr; grid-template-areas: "seek" "time" "actions"; padding: 0; }
+        .bottom-shell .pause-media-card { display: none; }
+        .bottom-shell .seek-shell { grid-area: seek; padding: 14px 18px; width: calc(100% - 48px); margin: 0 auto; }
+        .bottom-shell .seek-shell { transform: translateY(17px); }
+        .bottom-shell .time-readout { grid-area: time; justify-self: stretch; background: transparent; border: 0; padding: 0 16px; }
+        .bottom-shell .time-readout { position: relative; left: 32px; width: 96px; min-width: 96px; padding: 0; font-size: 12px; transform: translateY(-3px); }
+        .bottom-shell .control-actions.action-row { grid-area: actions; display: flex; align-items: center; justify-content: flex-start; gap: 10px; flex-wrap: wrap; width: 100%; }
+        .mobile-aux-right { display: flex; align-items: center; gap: 10px; margin-right: auto; padding: 4px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,.08); background: linear-gradient(180deg, rgba(18,18,22,.58), rgba(14,14,18,.44)); box-shadow: 0 12px 28px rgba(0,0,0,.22); backdrop-filter: blur(14px); pointer-events: none; }
+        .mobile-aux-right > button { pointer-events: auto; }
+        body:not(.watch-party-in-room) .mobile-aux-right .ui-chat-btn { display: none !important; }
+        .mobile-aux-right .fs-back-btn { display: inline-flex; position: static; }
+        .action-row .mobile-aux-right .ui-watchparty-btn, .action-row .mobile-aux-right .ui-chat-btn, .action-row .mobile-aux-right .ui-lock-btn { position: static; display: inline-flex; }
+        .action-row .ctrl-icon, .action-row .fs-back-btn, .action-row .ui-watchparty-btn, .action-row .ui-chat-btn, .action-row .ui-lock-btn { width: 52px; height: 52px; border-radius: 999px; border: 1px solid rgba(255,255,255,.10); background: linear-gradient(180deg, rgba(18,18,22,.58), rgba(14,14,18,.44)); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; }
+        .action-row .ctrl-icon:hover, .action-row .fs-back-btn:hover, .action-row .ui-watchparty-btn:hover, .action-row .ui-chat-btn:hover, .action-row .ui-lock-btn:hover, .center-play .skip-btn:hover, .center-play .play-btn:hover { border-color: rgba(229,9,20,.95); box-shadow: 0 0 0 1px rgba(229,9,20,.72), 0 0 18px rgba(229,9,20,.55); }
+        .control-menu { border-radius: 18px; border: 1px solid rgba(255,255,255,.10); background: linear-gradient(180deg, rgba(18,18,22,.92), rgba(14,14,18,.86)); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+        #preferencesMenu { max-height: min(60vh, 420px); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.28) transparent; }
+        #preferencesMenu::-webkit-scrollbar { width: 8px; }
+        #preferencesMenu::-webkit-scrollbar-track { background: transparent; border-radius: 999px; }
+        #preferencesMenu::-webkit-scrollbar-thumb { background: rgba(255,255,255,.28); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+        #preferencesMenu::-webkit-scrollbar-thumb:hover { background: rgba(229,9,20,.72); background-clip: padding-box; }
+        #captionsMenu { max-height: min(52vh, 320px); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.28) transparent; }
+        #captionsMenu::-webkit-scrollbar { width: 8px; }
+        #captionsMenu::-webkit-scrollbar-track { background: transparent; border-radius: 999px; }
+        #captionsMenu::-webkit-scrollbar-thumb { background: rgba(255,255,255,.28); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+        #captionsMenu::-webkit-scrollbar-thumb:hover { background: rgba(229,9,20,.72); background-clip: padding-box; }
+        .ep-season-tabs { position: sticky; top: 0; z-index: 3; flex: 0 0 44px; min-height: 44px; height: 44px; display: flex; align-items: center; gap: 6px; padding: 6px 8px; box-sizing: border-box; border-radius: 12px; background: rgba(18,18,22,.96); overflow-x: auto; }
+        .ep-season-tabs button { min-height: 28px; padding: 6px 11px; border: 1px solid rgba(255,255,255,.10); border-radius: 999px; background: rgba(255,255,255,.05); color: rgba(255,255,255,.72); white-space: nowrap; font-size: 11px; font-weight: 700; }
+        .ep-season-tabs button.active { border-color: rgba(229,9,20,.55); background: rgba(229,9,20,.16); color: #fff; }
+        #ep-panel .ep-season-tabs { display: flex !important; flex: 0 0 44px !important; min-height: 44px !important; }
+        #ep-panel .ep-item[hidden], #ep-panel .ep-season[hidden] { display: none !important; }
+        #watchPartyPanel { right: clamp(32px, 3vw, 48px) !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 50px) !important; width: min(360px, calc(100vw - 32px)) !important; max-height: min(58vh, 520px) !important; border-radius: 22px !important; }
+        #watchPartyPanel .watch-party-shell, #watchPartyPanel .watch-party-card, #watchPartyPanel .watch-party-chat { border-radius: 22px !important; }
+        #watchPartyPanel { overflow: hidden !important; overflow-x: hidden !important; }
+        #watchPartyPanel .watch-party-shell { max-height: none !important; height: auto !important; overflow: visible !important; }
+        #watchPartyPanel .watch-party-card { min-height: min(410px, calc(100vh - 82px)) !important; }
+        #watchPartyPanel .watch-party-public-list { max-height: min(34vh, 180px) !important; overflow-y: auto !important; overflow-x: hidden !important; }
+        #watchPartyPanel .watch-party-members-list { max-height: min(24vh, 140px) !important; overflow-y: auto !important; overflow-x: hidden !important; }
+        .seek-wrapper .seek-bar { width: calc(100% + 36px); margin-left: -18px; height: 22px; background: radial-gradient(circle at center, rgba(18,18,22,.22), transparent 70%); }
+        .seek-wrapper { position: relative; }
+        .seek-wrapper .seek-track-fill { position: absolute; left: 0; top: 50%; width: min(100%, calc(var(--seek-percent, 0%) + 9px)); height: 5px; transform: translateY(-50%); border-radius: 999px; background: linear-gradient(90deg, rgba(229,9,20,.96), rgba(255,59,71,.92)); box-shadow: 0 0 10px rgba(229,9,20,.22); pointer-events: none; z-index: 1; }
+        .seek-wrapper .seek-bar { z-index: 2; }
+        @media (pointer: coarse) { .action-row { gap: 8px; justify-content: flex-start; } .action-row .mobile-aux-right { margin-right: auto; } .bottom-shell .seek-shell { transform: translateY(34px); padding: 14px 11px; width: calc(100% - 28px); } .bottom-shell .time-readout { left: 17px; width: 83px; min-width: 83px; transform: translateY(8px); } .mobile-aux-right { gap: 6px; } .action-row .ctrl-icon, .action-row .fs-back-btn, .action-row .ui-watchparty-btn, .action-row .ui-chat-btn, .action-row .ui-lock-btn { width: 46px; height: 46px; font-size: 16px; } }
+        @media (pointer: coarse) and (orientation: portrait) { .mobile-aux-right .ui-watchparty-btn, .mobile-aux-right .ui-chat-btn, .mobile-aux-right .ui-lock-btn { display: none !important; } .center-play .ctrl-btn.skip-btn { margin: 0 clamp(44px, 15vw, 110px); } .action-row #customServerBtn, .action-row #customEpisodeBtn, .action-row #custom-audio-btn, .action-row #captionsBtn, .action-row #qualityBtn, .action-row #playbackBtn, .action-row #preferencesBtn, .action-row #watchTogetherBtn, .action-row #fitBtn { display: none !important; } }
+        @media (pointer: coarse) and (orientation: landscape) { #chatPanel, #watchPartyPanel { right: 40px !important; left: auto !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 50px) !important; } }
+        @media (max-width: 600px) { #watchPartyPanel { right: 16px !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px) !important; width: calc(100vw - 32px) !important; } }
+        @media (pointer: coarse) and (max-height: 600px) { #watchPartyPanel { top: auto !important; bottom: 70px !important; max-height: calc(100vh - 82px) !important; overflow: hidden !important; overflow-x: hidden !important; box-sizing: border-box !important; } #watchPartyPanel .watch-party-card { max-height: calc(100vh - 82px) !important; overflow: hidden !important; } #watchPartyPanel .watch-party-stage { max-height: calc(100vh - 170px) !important; overflow-y: auto !important; overflow-x: hidden !important; } #watchPartyPanel .watch-party-public-list { max-height: none !important; overflow: visible !important; } }
+
+         /* Production control IDs mapped to the fixed menu/panel geometry used by testplayer. */
+         .control-menu {
+             position: fixed;
+             display: none;
+             flex-direction: column;
+             gap: 6px;
+             min-width: 180px;
+             max-width: min(88vw, 260px);
+             width: auto;
+             padding: 8px;
+             border-radius: 18px;
+             border: 1px solid rgba(255,255,255,.10);
+             background: linear-gradient(180deg, rgba(18,18,22,.92), rgba(14,14,18,.86));
+             backdrop-filter: blur(18px);
+             -webkit-backdrop-filter: blur(18px);
+             box-shadow: 0 22px 50px rgba(0,0,0,.42);
+             z-index: 250000;
+             overflow: visible;
+         }
+
+         .control-menu.active { display: flex; }
+         #qualityMenu { width: 150px; }
+         .control-menu .menu-label {
+             padding: 8px 10px 4px;
+             font-size: 11px;
+             letter-spacing: .12em;
+             text-transform: uppercase;
+             color: rgba(255,255,255,.52);
+             font-weight: 700;
+         }
+         .control-menu .menu-item {
+             width: 100%;
+             min-height: 40px;
+             border-radius: 12px;
+             border: 1px solid rgba(255,255,255,.08);
+             background: rgba(255,255,255,.04);
+             color: #fff;
+             padding: 10px 12px;
+             display: flex;
+             align-items: center;
+             justify-content: space-between;
+             gap: 12px;
+             font-size: 14px;
+             font-weight: 600;
+         }
+         .control-menu .menu-item.active {
+             border-color: rgba(229,9,20,.45);
+             box-shadow: inset 0 0 0 1px rgba(229,9,20,.18);
+             background: rgba(229,9,20,.10);
+         }
+
+         #source-panel,
+         #ep-panel,
+         #audio-panel {
+             z-index: 250000;
+             border-radius: 22px;
+             border: 1px solid rgba(255,255,255,.10);
+             background: linear-gradient(180deg, rgba(18,18,22,.92), rgba(14,14,18,.86));
+             box-shadow: 0 22px 50px rgba(0,0,0,.42);
+             backdrop-filter: blur(18px);
+             -webkit-backdrop-filter: blur(18px);
+         }
+
+         #source-panel { width: min(268px, calc(100vw - 32px)); }
+         #audio-panel { width: min(268px, calc(100vw - 32px)); }
+         #ep-panel { width: min(600px, calc(100vw - 20px)); max-height: min(65vh, 520px); }
+
+         @media (pointer: coarse) {
+             .control-menu { min-width: 180px; max-width: min(88vw, 260px); }
+             .control-menu.episode-menu,
+             #ep-panel { width: min(360px, calc(100vw - 28px)); max-width: min(360px, calc(100vw - 28px)); max-height: 65vh; }
+             #source-panel,
+             #audio-panel { width: min(268px, calc(100vw - 28px)); max-width: min(268px, calc(100vw - 28px)); }
+         }
     </style>
 </head>
 
@@ -3621,8 +3808,9 @@
     </div>
 
     <!-- HEADER -->
-    <div class="player-header" id="player-header">
+    <div class="player-header top-meta" id="player-header">
         <button class="back-btn" id="back-btn"><i class="fa-solid fa-arrow-left"></i></button>
+        <img class="header-poster" id="header-poster" alt="">
         <div class="header-info">
             <h2 id="media-title">Loading...</h2>
             <p id="media-meta"></p>
@@ -3678,10 +3866,11 @@
         <i id="mute-status-icon" class="fa-solid fa-volume-high"></i>
         <span id="mute-status-text">Unmuted</span>
     </div>
+    <div id="player-toast" role="status" aria-live="polite"></div>
 
-    <div class="control-surface" id="controlSurface">
-        <div class="control-center">
-            <button class="ctrl-btn" id="skipBackBtn" aria-label="Skip back 10 seconds">
+    <div class="control-surface surface" id="controlSurface">
+        <div class="control-center center-play">
+            <button class="ctrl-btn skip-btn" id="skipBackBtn" aria-label="Skip back 10 seconds">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     style="width:44px; height:44px;">
                     <path d="M9.54004 15.92V10.5801L8.04004 12.2501" stroke="currentColor" stroke-width="1.5"
@@ -3696,10 +3885,10 @@
                         stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
             </button>
-            <button class="ctrl-btn play-btn" id="playPauseBtn" aria-label="Play or pause">
+            <button class="ctrl-btn play-btn hero-play" id="playPauseBtn" aria-label="Play or pause">
                 <i class="fa-solid fa-play"></i>
             </button>
-            <button class="ctrl-btn" id="skipFwdBtn" aria-label="Skip forward 10 seconds">
+            <button class="ctrl-btn skip-btn" id="skipFwdBtn" aria-label="Skip forward 10 seconds">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     style="width:44px; height:44px;">
                     <path
@@ -3714,7 +3903,7 @@
                 </svg>
             </button>
         </div>
-        <div class="control-bottom">
+        <div class="control-bottom bottom-shell">
             <div id="pauseMediaCard" class="pause-media-card" aria-hidden="true">
                 <img id="pauseMediaPoster" class="pause-media-poster" alt="" aria-hidden="true" hidden />
                 <div class="pause-media-meta">
@@ -3727,8 +3916,9 @@
                 <span class="time-divider">/</span>
                 <span id="durationTime">0:00</span>
             </div>
-            <div class="seek-wrapper">
+              <div class="seek-wrapper seek-shell">
                 <div class="seek-track-base"></div>
+                <div class="seek-track-fill" id="seekTrackFill"></div>
                 <div id="skipMarkerContainer"></div>
                 <input id="seekBar" class="seek-bar" type="range" min="0" max="100" step="0.1" value="0" />
             </div>
@@ -3742,7 +3932,13 @@
                 <div class="seek-preview-time" id="previewTime">0:00</div>
             </div>
 
-            <div class="control-actions">
+            <div class="control-actions action-row">
+                <div class="mobile-aux-right">
+                    <button class="fs-back-btn" id="fsBackBtn" aria-label="Back to home"><i class="fa-solid fa-arrow-left"></i></button>
+                    <button class="ui-watchparty-btn" id="uiWatchPartyBtn" aria-label="Open watch together"><i class="fa-solid fa-window-restore"></i></button>
+                    <button class="ui-chat-btn" id="uiChatBtn" aria-label="Open live chat"><i class="fa-solid fa-comment"></i></button>
+                    <button class="ui-lock-btn" id="uiLockBtn" aria-label="Lock controls"><i class="fa-solid fa-lock-open"></i></button>
+                </div>
                 <button class="ctrl-icon" id="customServerBtn" aria-label="Servers">
                     <i class="fa-solid fa-layer-group"></i>
                 </button>
@@ -3802,18 +3998,6 @@
     <div class="control-menu" id="playbackMenu"></div>
     <div class="control-menu" id="preferencesMenu"></div>
     <div class="control-menu" id="volumeMenu"></div>
-    <button class="ui-watchparty-btn" id="uiWatchPartyBtn" aria-label="Open watch together">
-        <i class="fa-solid fa-window-restore"></i>
-    </button>
-    <button class="fs-back-btn" id="fsBackBtn" aria-label="Back to home">
-        <i class="fa-solid fa-arrow-left"></i>
-    </button>
-    <button class="ui-lock-btn" id="uiLockBtn" aria-label="Lock controls">
-        <i class="fa-solid fa-lock-open"></i>
-    </button>
-    <button class="ui-chat-btn" id="uiChatBtn" aria-label="Open live chat">
-        <i class="fa-solid fa-comment"></i>
-    </button>
     <button class="skip-segment-btn" id="skipSegmentBtn" aria-label="Skip segment"></button>
     <button class="next-episode-btn" id="nextEpisodeBtn" aria-label="Next episode">
         <i class="fa-solid fa-forward-step"></i>
@@ -3840,6 +4024,9 @@
         <button class="retry-btn" onclick="location.reload()"><i class="fa-solid fa-rotate-right"></i> Try
             Again</button>
     </div>
+    <button class="lock-fab ctrl-icon" id="lockFabBtn" aria-label="Unlock controls" onclick="document.getElementById('uiLockBtn')?.click()">
+        <i class="fa-solid fa-lock"></i>
+    </button>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.8/hls.min.js"></script>
     <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
@@ -5036,7 +5223,7 @@
             const { preserveTime = true } = options;
             const u = new URL(location.href);
             if (MEDIA_TYPE === 'tv') {
-                const hint = activeEpisodeSelectionHint && currentIsLikelyAnime ? activeEpisodeSelectionHint : null;
+                const hint = activeEpisodeSelectionHint || null;
                 const seasonRef = tvSeasons?.[Number(curSeason || 0)];
                 const hintSeasonNo = Number(hint?.seasonNo || 0);
                 const seasonNoRaw = Number(seasonRef?.seasonNo);
@@ -5063,12 +5250,12 @@
                 const episodeId = String(hint?.episodeId || epRef?.id || epRef?.episodeId || '').trim();
                 if (episodeId && !(seasonNo > 0 && /s0e\d+/i.test(episodeId))) u.searchParams.set('episodeId', episodeId);
                 else u.searchParams.delete('episodeId');
-                const absoluteEpisodeNo = Number(
+                const absoluteEpisodeNo = currentIsLikelyAnime ? Number(
                     hint?.absoluteEpisodeNo ||
                     epRef?.absoluteEpisodeNo ||
                     epRef?.absoluteEpisode ||
                     0
-                );
+                ) : 0;
                 if (Number.isFinite(absoluteEpisodeNo) && absoluteEpisodeNo > 0) u.searchParams.set('absoluteEpisode', String(absoluteEpisodeNo));
                 else u.searchParams.delete('absoluteEpisode');
             }
@@ -8725,6 +8912,7 @@
                 const subtitleHost = (() => { try { return new URL(rawSrc, location.href).hostname; } catch (_) { return ''; } })();
                 if (
                     IS_IOS ||
+                    subtitleProvider === 'hdstream4u' ||
                     subtitleProvider === 'flixhq' ||
                     subtitleProvider === 'animesalt' ||
                     /(^|\.)qqqcdn\.cloud$/i.test(subtitleHost) ||
@@ -9747,6 +9935,7 @@
             video.volume = val / 100;
             video.muted = val === 0;
             updateMuteIcon();
+            showToast(`Volume: ${Math.round(val)}%`);
         }
 
         function buildVolumeMenu() {
@@ -9793,6 +9982,7 @@
                 video.muted = val === 0;
                 slider.style.setProperty('--vol-percent', `${val}%`);
                 updateMuteIcon();
+                showToast(`Volume: ${val}%`);
                 // If sliding down, maybe reset boost?
                 if (val < 100 && volumeBoost > 100) {
                     setVolumeBoost(100);
@@ -9866,6 +10056,7 @@
                     }
                 }
                 setVolumeBoost(val);
+                showToast(`Extra Volume: ${val}%`);
             };
 
             sliderCont.appendChild(bSlider);
@@ -9876,6 +10067,16 @@
             setTimeout(() => setVolumeBoost(volumeBoost), 0);
         }
 
+        function updateSeekTrackFill(percent) {
+            const fill = document.getElementById('seekTrackFill');
+            if (!fill || !seekBar) return;
+            const track = fill.parentElement?.getBoundingClientRect();
+            const input = seekBar.getBoundingClientRect();
+            if (!track?.width || !input.width) return;
+            const thumbCenter = input.left + (Math.max(0, Math.min(100, percent)) / 100) * input.width;
+            fill.style.width = `${Math.max(0, thumbCenter - track.left)}px`;
+        }
+
         function syncTimeUI() {
             if (!video) return;
             durationTimeEl.textContent = formatTime(video.duration);
@@ -9883,6 +10084,7 @@
                 const previewTimeSec = (pendingSeekPercent / 100) * video.duration;
                 currentTimeEl.textContent = formatTime(previewTimeSec);
                 seekBar.style.setProperty('--seek-percent', `${pendingSeekPercent}%`);
+                updateSeekTrackFill(pendingSeekPercent);
                 return;
             }
 
@@ -9892,6 +10094,7 @@
                 const p = (video.currentTime / video.duration) * 100;
                 seekBar.value = String(p);
                 seekBar.style.setProperty('--seek-percent', p + '%');
+                updateSeekTrackFill(p);
 
                 // Also update markers in case video duration unexpectedly changed
                 updateSkipMarkers();
@@ -9931,7 +10134,7 @@
             const episodeNo = Number.isFinite(episodeNoRaw) && episodeNoRaw > 0
                 ? episodeNoRaw
                 : (Number(curEpisode || 0) + 1);
-            const hint = activeEpisodeSelectionHint && currentIsLikelyAnime ? activeEpisodeSelectionHint : null;
+            const hint = activeEpisodeSelectionHint ? activeEpisodeSelectionHint : null;
             const continueSeasonNo = Number(hint?.seasonNo || 0) > 0 ? Number(hint.seasonNo) : seasonNo;
             const continueEpisodeNo = Number(hint?.episodeNo || 0) > 0 ? Number(hint.episodeNo) : episodeNo;
             const continueAbsoluteEpisodeNo = Number(hint?.absoluteEpisodeNo || 0);
@@ -10009,7 +10212,7 @@
             const t = Math.floor(video.currentTime);
             const u = new URL(location.href);
             if (MEDIA_TYPE === 'tv') {
-                const hint = activeEpisodeSelectionHint && currentIsLikelyAnime ? activeEpisodeSelectionHint : null;
+                const hint = activeEpisodeSelectionHint || null;
                 const seasonRef = tvSeasons?.[Number(curSeason || 0)] || null;
                 const episodeRef = seasonRef?.episodes?.[Number(curEpisode || 0)] || null;
                 const seasonNoRaw = Number(seasonRef?.seasonNo);
@@ -10038,7 +10241,7 @@
                 if (episodeId && !(seasonNo > 0 && /s0e\d+/i.test(episodeId))) u.searchParams.set('episodeId', episodeId);
                 else u.searchParams.delete('episodeId');
 
-                const absoluteEpisodeNo = Number(hint?.absoluteEpisodeNo || 0);
+                const absoluteEpisodeNo = currentIsLikelyAnime ? Number(hint?.absoluteEpisodeNo || 0) : 0;
                 if (Number.isFinite(absoluteEpisodeNo) && absoluteEpisodeNo > 0) u.searchParams.set('absoluteEpisode', String(absoluteEpisodeNo));
                 else u.searchParams.delete('absoluteEpisode');
             }
@@ -11868,39 +12071,21 @@
                     align-self: center;
                     padding: 9px 20px;
                     border-radius: 10px;
-                    background: linear-gradient(135deg, rgba(229,9,20,.2), rgba(255,77,77,.15));
-                    backdrop-filter: blur(20px);
-                    -webkit-backdrop-filter: blur(20px);
-                    border: 1px solid rgba(229,9,20,.5);
-                    color: #ff6b6b !important;
-                    box-shadow: 0 8px 20px rgba(229,9,20,.2), inset 0 1px 0 rgba(255,255,255,.1);
+                    background: rgba(255,74,93,.14);
+                    border: 1px solid rgba(255,31,62,.72);
+                    color: #ff727e !important;
+                    box-shadow: 0 0 18px rgba(255,31,62,.12), inset 0 1px 0 rgba(255,255,255,.06);
                     font-size: 12px;
                     font-weight: 800;
                     cursor: pointer;
-                    transition: all .15s;
-                    position: relative;
-                    overflow: hidden;
-                }
-                .watch-party-public-join::before {
-                    content: '';
-                    position: absolute;
-                    top: 0;
-                    left: -100%;
-                    width: 100%;
-                    height: 100%;
-                    background: linear-gradient(90deg, transparent, rgba(255,255,255,.2), transparent);
-                    transition: left .5s;
-                }
-                .watch-party-public-join:hover::before {
-                    left: 100%;
+                    transition: none;
                 }
                 .watch-party-public-join:hover {
-                    background: linear-gradient(135deg, rgba(229,9,20,.3), rgba(255,77,77,.25));
-                    border-color: rgba(229,9,20,.7);
-                    color: #fff !important;
-                    transform: translateY(-2px);
-                    filter: brightness(1.1);
-                    box-shadow: 0 10px 24px rgba(229,9,20,.35), inset 0 1px 0 rgba(255,255,255,.2);
+                    background: rgba(255,74,93,.14);
+                    border-color: rgba(255,31,62,.72);
+                    color: #ff727e !important;
+                    transform: none;
+                    box-shadow: 0 0 18px rgba(255,31,62,.12), inset 0 1px 0 rgba(255,255,255,.06);
                 }
                 .watch-party-room-badge {
                     display:grid;
@@ -13796,7 +13981,13 @@
             left = Math.max(12, Math.min(left, screenWidth - menuWidth - 12));
 
             menu.style.left = `${left}px`;
-            menu.style.bottom = `${window.innerHeight - rect.top + 12}px`;
+            if (isControlMenu) {
+                menu.style.top = `${Math.max(12, rect.top - menu.offsetHeight - 12)}px`;
+                menu.style.bottom = 'auto';
+                menu.style.maxHeight = `${Math.max(120, rect.top - 24)}px`;
+            } else {
+                menu.style.bottom = `${window.innerHeight - rect.top + 12}px`;
+            }
 
             menu.style.display = ''; // Reset display
             menu.style.visibility = '';
@@ -13892,6 +14083,8 @@
         }
 
         function initMobileSheetDragToClose() {
+            return;
+            /*
             const sheets = [sourcePanel, epPanel, audioPanel, qualityMenu, captionsMenu, playbackMenu, preferencesMenu, volumeMenu].filter(Boolean);
             const state = new WeakMap();
             const isSheetOpen = (el) => el.classList.contains('active') || el.classList.contains('open');
@@ -13972,7 +14165,7 @@
                 sheet.addEventListener('touchmove', onMove, { passive: false });
                 sheet.addEventListener('touchend', onEnd, { passive: true });
                 sheet.addEventListener('touchcancel', onEnd, { passive: true });
-            });
+            });*/
         }
         document.addEventListener('click', e => {
             if (!sourcePanel.contains(e.target) && e.target !== sourceBtn && e.target !== customServerBtn && !customServerBtn?.contains(e.target)) sourcePanel.classList.remove('open');
@@ -14277,6 +14470,16 @@
         }
 
         function initCustomControls() {
+            if (!controlSurface.dataset.labelToastsBound) {
+                controlSurface.dataset.labelToastsBound = '1';
+                controlSurface.querySelectorAll('button[aria-label]').forEach((button) => {
+                    button.addEventListener('click', () => {
+                        const label = button.getAttribute('aria-label');
+                        const toastLabel = button.id === 'muteBtn' ? 'Volume' : label;
+                        if (toastLabel && !/back to home|play or pause|skip/i.test(toastLabel)) showToast(toastLabel);
+                    });
+                });
+            }
             applyFitMode();
             updateLockUi();
             setPlayIcon(false);
@@ -14375,8 +14578,9 @@
                 closeAllPopups();
                 if (wasOpen) return;
                 buildCaptionsMenu();
-                positionMenuAbove(captionsMenu, captionsBtn);
                 captionsMenu.classList.add('active');
+                positionMenuAbove(captionsMenu, captionsBtn);
+                requestAnimationFrame(() => positionMenuAbove(captionsMenu, captionsBtn));
             });
 
             customServerBtn.addEventListener('click', (e) => {
@@ -14399,8 +14603,9 @@
                 closeAllPopups();
                 if (wasOpen) return;
                 buildQualityMenuItems();
-                positionMenuAbove(qualityMenu, qualityBtn);
                 qualityMenu.classList.add('active');
+                positionMenuAbove(qualityMenu, qualityBtn);
+                requestAnimationFrame(() => positionMenuAbove(qualityMenu, qualityBtn));
             });
 
             playbackBtn.addEventListener('click', (e) => {
@@ -14410,8 +14615,9 @@
                 closeAllPopups();
                 if (wasOpen) return;
                 buildPlaybackMenu();
-                positionMenuAbove(playbackMenu, playbackBtn);
                 playbackMenu.classList.add('active');
+                positionMenuAbove(playbackMenu, playbackBtn);
+                requestAnimationFrame(() => positionMenuAbove(playbackMenu, playbackBtn));
             });
 
             preferencesBtn.addEventListener('click', (e) => {
@@ -15339,7 +15545,7 @@
                 const now = Date.now();
 
                 // 0. TOP PRIORITY: Lock-mode bypasses (always work)
-                const isLockedAction = e.target.closest('#uiLockBtn, #uiWatchPartyBtn, #uiChatBtn, .ui-lock-btn, .ui-watchparty-btn, .ui-chat-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
+                const isLockedAction = e.target.closest('#uiLockBtn, #lockFabBtn, #uiWatchPartyBtn, #uiChatBtn, .ui-lock-btn, .ui-watchparty-btn, .ui-chat-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return;
 
                 const isControlsVisible = controlSurface.classList.contains('visible');
@@ -15411,7 +15617,7 @@
             // Handles: Double-tap Skip and Single-tap Hide. Play/pause stays on the play button only.
             function handleSurfaceInteraction(e) {
                 // UI Lock bypass
-                const isLockedAction = e.target.closest('#uiLockBtn, #uiWatchPartyBtn, #uiChatBtn, .ui-lock-btn, .ui-watchparty-btn, .ui-chat-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
+                const isLockedAction = e.target.closest('#uiLockBtn, #lockFabBtn, #uiWatchPartyBtn, #uiChatBtn, .ui-lock-btn, .ui-watchparty-btn, .ui-chat-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return; 
                 if (isUiLocked) return;
                 const isOnInteractive = e.target.closest('#watchPartyPanel, #watchPartyMessages, button, input, textarea, select, label, .seek-wrapper, .control-menu, .panel, .ep-item, .src-item, .audio-item, .menu-item, .ctrl-btn, .ctrl-icon, .back-btn, .a2hs-close');
@@ -15777,6 +15983,16 @@
                 document.title = `Watching: ${title} | StreamVerse`;
                 document.getElementById('media-title').textContent = title;
                 currentCoverUrl = resolveMediaPosterUrl(info, currentCoverUrl || '');
+                const headerPoster = document.getElementById('header-poster');
+                if (headerPoster && currentCoverUrl) {
+                    headerPoster.src = currentCoverUrl;
+                    headerPoster.alt = `${title} poster`;
+                    headerPoster.onerror = () => {
+                        headerPoster.removeAttribute('src');
+                        playerHeader?.classList.remove('has-poster');
+                    };
+                    playerHeader?.classList.add('has-poster');
+                }
                 if (currentCoverUrl) {
                     loader.style.backgroundImage = `url('${currentCoverUrl}')`;
                 }
@@ -15890,6 +16106,9 @@
                             const episodeNo = toEpisodeNumber(ep, epIndex);
                             return {
                                 id: String(ep?.id || '').trim() || null,
+                                url: String(ep?.url || '').trim() || null,
+                                category: String(ep?.category || '').trim() || null,
+                                seasonName: String(ep?.seasonName || '').trim() || null,
                                 episode: episodeNo,
                                 number: episodeNo,
                                 episodeNum: episodeNo,
@@ -15909,12 +16128,14 @@
                         hasSxeEpisodeIds ||
                         distinctSeasonValues.length > 1 ||
                         (distinctSeasonValues.length === 1 && Number(distinctSeasonValues[0]) > 1);
+                    const hasBonusEpisodes = rawEpisodes.some((ep) => String(ep?.category || '').toLowerCase() === 'bonus' || String(ep?.seasonName || '').toLowerCase() === 'bonus' || /bonus/i.test(String(ep?.title || ep?.name || ep?.episodeName || ep?.episode_name || '')));
 
                     rawEpisodes.forEach((ep, index) => {
                         if (!ep || typeof ep !== 'object') return;
-                        const seasonNo = hasMeaningfulSeasonMetadata
+                        const isBonus = String(ep?.category || '').toLowerCase() === 'bonus' || String(ep?.seasonName || '').toLowerCase() === 'bonus' || /bonus/i.test(String(ep?.title || ep?.name || ep?.episodeName || ep?.episode_name || ''));
+                        const seasonNo = isBonus ? 0 : (hasMeaningfulSeasonMetadata
                             ? toSeasonNumber(ep, Number(fallbackSeasonNo || 1))
-                            : Number(fallbackSeasonNo || 1);
+                            : Number(fallbackSeasonNo || 1));
                         const seasonPartNo = Number(ep?.part || ep?.partNo || ep?.seasonPart || 0) || 0;
                         const key = makeSeasonKey(seasonNo, seasonPartNo);
                         const episodeNo = toEpisodeNumber(ep, index);
@@ -15925,7 +16146,7 @@
                                 seasonPartNo,
                                 sourceOrder: index,
                                 dedupeKey: key,
-                                name: seasonPartNo > 0 ? `Part ${seasonPartNo}` : `Season ${seasonNo}`,
+                                name: isBonus ? 'Bonus' : (seasonPartNo > 0 ? `Part ${seasonPartNo}` : `Season ${seasonNo}`),
                                 providerAnimeId: providerAnimeId || null,
                                 episodes: [],
                                 provider,
@@ -15951,7 +16172,7 @@
                     // provider episode list into Specials/Movies/related entries from TMDB.
                     // If caller already resolved a concrete season (common for AnimeKai arc entries),
                     // keep episodes in that season instead of spreading through the TMDB skeleton.
-                    if (currentIsLikelyAnime && rawEpisodes.length > 0 && !hasMeaningfulSeasonMetadata && hasExplicitTargetSeason) {
+                    if (!hasBonusEpisodes && currentIsLikelyAnime && rawEpisodes.length > 0 && !hasMeaningfulSeasonMetadata && hasExplicitTargetSeason) {
                         return [buildSeasonBucket(
                             explicitFallbackSeasonNo,
                             0,
@@ -15960,7 +16181,7 @@
                             rawEpisodes,
                         )];
                     }
-                    if (currentIsLikelyAnime && rawEpisodes.length > 0 && !hasMeaningfulSeasonMetadata && seasonSkeleton.length > 1) {
+                    if (!hasBonusEpisodes && currentIsLikelyAnime && rawEpisodes.length > 0 && !hasMeaningfulSeasonMetadata && seasonSkeleton.length > 1) {
                         const totalSkeletonEpisodes = seasonSkeleton.reduce(
                             (sum, season) => sum + (Array.isArray(season?.episodes) ? season.episodes.length : 0),
                             0,
@@ -16869,7 +17090,7 @@
         }
 
         function getWatchedKeysForCurrentEpisode() {
-            const hint = activeEpisodeSelectionHint && currentIsLikelyAnime ? activeEpisodeSelectionHint : null;
+            const hint = activeEpisodeSelectionHint || null;
             if (hint) return getWatchedKeysForEpisodeIdentity(hint);
 
             const season = tvSeasons?.[Number(curSeason || 0)] || null;
@@ -17223,7 +17444,7 @@
             if (MEDIA_TYPE !== 'tv') return;
             const metaEl = document.getElementById('media-meta');
             if (!metaEl) return;
-            const hint = activeEpisodeSelectionHint && currentIsLikelyAnime ? activeEpisodeSelectionHint : null;
+            const hint = activeEpisodeSelectionHint || null;
             if (hint?.seasonTitle || hint?.episodeNo || hint?.title) {
                 const seasonTitle = String(hint?.seasonTitle || (hint?.seasonNo ? `Season ${hint.seasonNo}` : '')).trim();
                 const epNo = Number(hint?.episodeNo || 0);
@@ -17701,10 +17922,22 @@
                 return;
             }
             requestEpisodeMenuMetadataHydration(menuSeasons);
+            const seasonTabs = document.createElement('div');
+            seasonTabs.className = 'ep-season-tabs';
+            menuSeasons.forEach((season, index) => {
+                const tab = document.createElement('button');
+                tab.type = 'button';
+                tab.textContent = buildSeasonDisplayNameForMenu(season, index, currentIsLikelyAnime);
+                tab.dataset.seasonIndex = String(index);
+                if (index === 0) tab.classList.add('active');
+                seasonTabs.appendChild(tab);
+            });
+            scrollRoot.appendChild(seasonTabs);
             let menuOrder = 0;
             menuSeasons.forEach((s, si) => {
                 const lbl = document.createElement('div');
                 lbl.className = 'ep-season';
+                lbl.dataset.seasonIndex = String(si);
                 lbl.textContent = buildSeasonDisplayNameForMenu(s, si, currentIsLikelyAnime);
                 scrollRoot.appendChild(lbl);
 
@@ -17714,7 +17947,8 @@
                     const mapped = resolveGlobalEpisodeIndices(s, ep, si, ei, false);
                     const scopedProvider = String(getActiveEpisodeMenuProvider() || '').trim().toLowerCase();
                     const providerEpisodeId = String(ep?.id || '').trim().toLowerCase();
-                    const menuEpisodeNo = Number(ep?.episode || ep?.number || ep?.episodeNum || (ei + 1));
+                    const isBonusSeason = String(s?.name || '').toLowerCase() === 'bonus';
+                    const menuEpisodeNo = isBonusSeason ? (ei + 1) : Number(ep?.episode || ep?.number || ep?.episodeNum || (ei + 1));
                     const mappedKey = currentIsLikelyAnime && scopedProvider
                         ? `${scopedProvider}:${String(s?.providerAnimeId || s?.seasonNo || si).trim().toLowerCase()}:${providerEpisodeId || menuEpisodeNo}:${normalizeTitleForMatch(String(ep?.title || ''))}`
                         : `${mapped.seasonIndex}:${mapped.episodeIndex}`;
@@ -17723,6 +17957,7 @@
 
                     const item = document.createElement('div');
                     item.className = 'ep-item';
+                    item.dataset.seasonIndex = String(si);
                     const epNo = menuEpisodeNo;
                     const absoluteEpisodeNo = getAbsoluteAnimeEpisodeNo(menuSeasons, si, epNo);
                     const tmdbEpisode = getTmdbEpisodeMetadata(Number(s?.seasonNo || si + 1), epNo, {
@@ -17867,14 +18102,19 @@
                     });
                     item.onclick = () => {
                         const menuProvider = String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase();
-                        const target = resolveGlobalEpisodeIndices(s, ep, si, ei, true);
+                        const target = currentIsLikelyAnime
+                                ? resolveGlobalEpisodeIndices(s, ep, si, ei, true)
+                                : { seasonIndex: si, episodeIndex: ei };
+                        const isBonusEpisode = /bonus/i.test(String(epTitle || ep?.title || ep?.name || ep?.episodeName || ep?.episode_name || ''));
                         const hintEpisodeNoRaw = Number(ep?.episode || ep?.number || ep?.episodeNum || displayEpNo);
                         const hintSeasonNoRaw = Number(s?.seasonNo || 0);
                         const hintSeasonPartRaw = Number(s?.seasonPartNo || s?.part || s?.partNo || 0);
                         const hintAbsoluteEpisodeNoRaw = getAbsoluteAnimeEpisodeNo(menuSeasons, si, hintEpisodeNoRaw);
                         pendingEpisodeSelectionHint = {
                             provider: menuProvider || null,
-                            episodeId: String(ep?.id || '').trim() || null,
+                            episodeId: String(isBonusEpisode
+                                ? (ep?.url || ep?.providerUrl || ep?.providerEpisodeId || ep?.watchUrl || ep?.embedUrl || ep?.link || ep?.href || ep?.id || '')
+                                : (ep?.id || '')).trim() || null,
                             title: epTitle || null,
                             seasonTitle: buildSeasonDisplayNameForMenu(s, si, currentIsLikelyAnime),
                             seasonNo: Number.isFinite(hintSeasonNoRaw) && hintSeasonNoRaw > 0 ? hintSeasonNoRaw : null,
@@ -17884,18 +18124,46 @@
                             providerAnimeId: String(s?.providerAnimeId || '').trim() || null,
                         };
                         activeEpisodeSelectionHint = { ...pendingEpisodeSelectionHint };
+                        applySeasonFilter(si);
+                        const selectedUrl = new URL(window.location.href);
+                        const selectedEpisodeNo = epNo;
+                        selectedUrl.searchParams.set('season', String(s?.seasonNo || si + 1));
+                        selectedUrl.searchParams.set('episode', String(selectedEpisodeNo));
+                        selectedUrl.searchParams.set('seasonTitle', isBonusEpisode ? 'Bonus' : String(s?.name || `Season ${s?.seasonNo || si + 1}`));
+                        selectedUrl.searchParams.set('episodeId', String(isBonusEpisode
+                            ? (ep?.url || ep?.providerUrl || ep?.providerEpisodeId || ep?.watchUrl || ep?.embedUrl || ep?.link || ep?.href || ep?.id || '')
+                            : (ep?.id || '')));
+                        selectedUrl.searchParams.delete('absoluteEpisode');
                         epPanel.classList.remove('open');
-                        playTvEp(target.seasonIndex, target.episodeIndex, 0);
+                        window.location.href = selectedUrl.toString();
+                        return;
                     };
                     scrollRoot.appendChild(item);
                 });
             });
+            const applySeasonFilter = (seasonIndex) => {
+                scrollRoot.querySelectorAll('.ep-season, .ep-item').forEach((node) => {
+                    const visible = Number(node.dataset.seasonIndex) === seasonIndex;
+                    node.hidden = !visible;
+                    node.style.display = visible ? '' : 'none';
+                });
+                scrollRoot.querySelectorAll('.ep-season-tabs button').forEach((button) => button.classList.toggle('active', button.dataset.seasonIndex === String(seasonIndex)));
+            };
+            seasonTabs.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => applySeasonFilter(Number(button.dataset.seasonIndex))));
+            let rememberedSeason = Math.max(0, menuSeasons.findIndex((season) =>
+                Number(season?.seasonNo || 0) === Number(tvSeasons?.[curSeason]?.seasonNo || curSeason + 1),
+            ));
+            if (rememberedSeason < 0) rememberedSeason = Math.max(0, Math.min(menuSeasons.length - 1, Number(curSeason || 0)));
+            seasonTabs.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => {
+                try { sessionStorage.setItem('streamverse:selected-season-index', button.dataset.seasonIndex); } catch (_) {}
+            }));
+            applySeasonFilter(rememberedSeason);
         }
 
         function updateEpUI(si, ei, options = {}) {
             const matches = [];
             let activeMenuOrder = Infinity;
-            const hint = activeEpisodeSelectionHint && currentIsLikelyAnime ? activeEpisodeSelectionHint : null;
+                const hint = activeEpisodeSelectionHint || null;
             const hintProvider = String(hint?.provider || '').trim().toLowerCase();
             const hintEpisodeId = String(hint?.episodeId || '').trim().toLowerCase();
             const hintSeasonNo = Number(hint?.seasonNo || 0);
@@ -17994,7 +18262,7 @@
         }
 
         function getNextProviderEpisodeRef() {
-            const hint = activeEpisodeSelectionHint && currentIsLikelyAnime ? activeEpisodeSelectionHint : null;
+                const hint = activeEpisodeSelectionHint || null;
             if (!hint) return null;
             const menuSeasons = getEpisodeMenuSeasons();
             if (!Array.isArray(menuSeasons) || !menuSeasons.length) return null;
@@ -18450,8 +18718,13 @@
         //  FETCH SOURCES - per-provider: get that provider's own episodeId, then watch
         // -----------------------------------------------------------------------
         let fetchSourcesRunning = false;
+        let fetchSourcesQueued = false;
         async function fetchSources(forcedProviderOverride = null) {
-            if (fetchSourcesRunning) { console.log('[fetchSources] ALREADY RUNNING, returning'); return; }
+            if (fetchSourcesRunning) {
+                fetchSourcesQueued = true;
+                console.log('[fetchSources] queued latest episode request');
+                return;
+            }
             fetchSourcesRunning = true;
             if (forcedProviderOverride !== null) FORCED_PROVIDER = forcedProviderOverride;
             
@@ -18551,15 +18824,15 @@
                 }
             }
             const hintedProvider = String(selectionHint?.provider || '').trim().toLowerCase();
-            if (currentIsLikelyAnime && selectionHint) {
+            if (selectionHint && currentIsLikelyAnime) {
                 const hintSeasonNo = Number(selectionHint?.seasonNo || 0);
                 const hintEpisodeNo = Number(selectionHint?.episodeNo || 0);
                 if (Number.isFinite(hintSeasonNo) && hintSeasonNo > 0) selectedSeasonNo = hintSeasonNo;
                 if (Number.isFinite(hintEpisodeNo) && hintEpisodeNo > 0) selectedEpisodeNo = hintEpisodeNo;
             }
-
-            let selectedEpisodeId = String(selectionHint?.episodeId || bootEpisodeId || selectedEpisode?.id || '').trim();
-            const hintedAbsoluteEpisodeNo = Number(selectionHint?.absoluteEpisodeNo || 0);
+            const isBonusSelection = /bonus/i.test(String(selectionHint?.seasonTitle || URL_SEASON_TITLE || ''));
+            let selectedEpisodeId = String(selectionHint?.episodeId || bootEpisodeId || (isBonusSelection ? URL_EPISODE_ID : '') || selectedEpisode?.id || '').trim();
+            const hintedAbsoluteEpisodeNo = currentIsLikelyAnime ? Number(selectionHint?.absoluteEpisodeNo || 0) : 0;
             const selectedAbsoluteEpisodeNo = Number.isFinite(hintedAbsoluteEpisodeNo) && hintedAbsoluteEpisodeNo > 0
                 ? hintedAbsoluteEpisodeNo
                 : Number(
@@ -18955,6 +19228,10 @@
                         }
                     }
 
+                    if (!provEpisodeId && provider === 'hdstream4u' && (selectionHint?.episodeId || (isBonusSelection && URL_EPISODE_ID))) {
+                        provEpisodeId = String(selectionHint?.episodeId || URL_EPISODE_ID).trim();
+                    }
+
                     const canResolveOnWatch = (provider === 'flixhq' && effectiveMediaType === 'tv') || provider === 'vegamovies' || provider === 'hdstream4u';
                     if (!provEpisodeId && !canResolveOnWatch) throw new Error('No episode ID found');
 
@@ -19245,6 +19522,10 @@
                 showError('No Streams Found', `None of the providers could find a stream for this title.\n\nDetails:\n- ${failReasons.slice(0, 5).join('\n- ')}`);
             }
             fetchSourcesRunning = false;
+            if (fetchSourcesQueued) {
+                fetchSourcesQueued = false;
+                setTimeout(() => fetchSources(null), 0);
+            }
         }
         // ----------------------------------------------------------------------------------------------------
         //  SOURCE PANEL
@@ -19378,6 +19659,13 @@
 
         function showToast(message) {
             try {
+                const toast = document.getElementById('player-toast');
+                if (toast) {
+                    toast.textContent = String(message || '');
+                    toast.classList.add('show');
+                    clearTimeout(showToast.timer);
+                    showToast.timer = setTimeout(() => toast.classList.remove('show'), 1200);
+                }
                 console.warn('[toast]', message);
             } catch (_) { }
         }

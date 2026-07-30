@@ -304,6 +304,43 @@ const server = http.createServer((req, res) => {
     const extname = String(path.extname(filePath)).toLowerCase();
     const contentType = MIME_TYPES[extname] || 'application/octet-stream';
 
+    if (extname === '.mp4') {
+        fs.stat(filePath, (error, stats) => {
+            if (error || !stats.isFile()) {
+                res.writeHead(404);
+                res.end('Video not found');
+                return;
+            }
+            const range = req.headers.range;
+            if (range) {
+                const match = /bytes=(\d*)-(\d*)/.exec(range);
+                const start = match?.[1] ? Number(match[1]) : 0;
+                const end = match?.[2] ? Number(match[2]) : stats.size - 1;
+                if (start >= stats.size || end < start) {
+                    res.writeHead(416, { 'Content-Range': `bytes */${stats.size}` });
+                    res.end();
+                    return;
+                }
+                const safeEnd = Math.min(end, stats.size - 1);
+                res.writeHead(206, {
+                    'Content-Type': contentType,
+                    'Content-Length': safeEnd - start + 1,
+                    'Content-Range': `bytes ${start}-${safeEnd}/${stats.size}`,
+                    'Accept-Ranges': 'bytes',
+                });
+                fs.createReadStream(filePath, { start, end: safeEnd }).pipe(res);
+                return;
+            }
+            res.writeHead(200, {
+                'Content-Type': contentType,
+                'Content-Length': stats.size,
+                'Accept-Ranges': 'bytes',
+            });
+            fs.createReadStream(filePath).pipe(res);
+        });
+        return;
+    }
+
     fs.readFile(filePath, (error, content) => {
         if (error) {
             if (error.code === 'ENOENT') {

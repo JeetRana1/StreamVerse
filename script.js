@@ -3952,7 +3952,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
                 setProviderDropdownOpen(false);
                 return;
             }
-            selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo || seasons[0]?.seasonNo || 1);
+        selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo || seasons[0]?.seasonNo || 1);
             rebuildSeasonMenu();
             renderSeason(selectedSeasonNo);
             setProviderDropdownOpen(false);
@@ -5495,6 +5495,41 @@ async function watchNow(id, type, provider = '', animeLike = false) {
     }
 
     if (resolvedProvider) params.set('provider', String(resolvedProvider));
+    if (safeType === 'tv') {
+        try {
+            const response = await fetch(`${BASE_URL}/info/${encodeURIComponent(canonicalId)}?type=tv`);
+            const details = response.ok ? await response.json() : null;
+            const seasons = Array.isArray(details?.seasons) ? details.seasons : [];
+            const season = seasons.find((row) => Number(row?.season ?? row?.season_number ?? row?.seasonNo) === 1) || seasons[0];
+            const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
+            if (season) {
+                params.set('season', String(season.season ?? season.season_number ?? seasons.length));
+                params.set('episode', '1');
+                params.set('seasonTitle', String(season.name || `Season ${season.season}`));
+                const episodeNumber = (episode) => Number(
+                    episode?.episode ??
+                    episode?.number ??
+                    episode?.episodeNumber ??
+                    episode?.episodeNo ??
+                    String(episode?.id || '').match(/(?:s\d+e|episode[-_ ]?)(\d+)/i)?.[1] ??
+                    0
+                );
+                const firstEpisode = episodes.find((episode) => episodeNumber(episode) === 1) || episodes[0];
+                const episodeId = firstEpisode?.id || firstEpisode?.episodeId;
+                if (episodeId) params.set('episodeId', String(episodeId));
+
+                // HDStream4u publishes India's Got Latent starting at provider Season 2.
+                if (canonicalId === '262838' && (!resolvedProvider || resolvedProvider === 'hdstream4u')) {
+                    params.set('season', '2');
+                    params.set('episode', '1');
+                    params.set('seasonTitle', 'Season 2');
+                    params.set('episodeId', '262838-s2e1');
+                }
+            }
+        } catch (_) {
+            // The player can still resolve the default episode if metadata is unavailable.
+        }
+    }
     window.location.href = `/player?${params.toString()}`;
 }
 
