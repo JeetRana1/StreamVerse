@@ -130,6 +130,25 @@
             box-shadow: 0 0 15px var(--primary-glow);
         }
 
+        .loader-home-btn {
+            margin-top: 1.5rem;
+            padding: .7rem 1.15rem;
+            border: 1px solid rgba(255, 255, 255, .16);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .07);
+            color: #fff;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background .2s ease, border-color .2s ease, transform .2s ease;
+        }
+
+        .loader-home-btn:hover {
+            background: rgba(229, 9, 20, .2);
+            border-color: rgba(229, 9, 20, .7);
+            transform: translateY(-2px);
+        }
+
         @keyframes pulse-glow {
 
             0%,
@@ -2697,6 +2716,15 @@
             line-height: 1.6;
         }
 
+        #error-box .retry-btn i {
+            display: inline;
+            font-size: 1rem;
+            margin: 0;
+            color: inherit;
+        }
+
+        #error-next-episode-btn { display: none; }
+
         .retry-btn {
             margin-top: 1.5rem;
             background: var(--primary);
@@ -3804,6 +3832,9 @@
             <div id="loader-sub">Connecting to API</div>
             <div class="spinner"></div>
             <div id="provider-progress"></div>
+            <button class="loader-home-btn" id="loader-home-btn" type="button">
+                <i class="fa-solid fa-house"></i> Back to Home
+            </button>
         </div>
     </div>
 
@@ -3848,7 +3879,7 @@
                 <strong>Get the full experience</strong>
                 <span>Tap <span class="a2hs-share-icon">Ã¢Â¬â€ </span> then <em>"Add to Home Screen"</em> to watch without browser bars</span>
             </div>
-            <button class="a2hs-close" id="a2hs-close-btn" aria-label="Dismiss">Ã¢Å“â€¢</button>
+            <button class="a2hs-close" id="a2hs-close-btn" aria-label="Dismiss">x</button>
         </div>
         <div class="a2hs-arrow"></div>
     </div>
@@ -4023,6 +4054,9 @@
         <p id="err-msg">No providers could find a stream for this title.</p>
         <button class="retry-btn" onclick="location.reload()"><i class="fa-solid fa-rotate-right"></i> Try
             Again</button>
+        <button class="retry-btn" id="error-next-episode-btn" type="button">
+            <i class="fa-solid fa-forward-step"></i> Next Episode
+        </button>
     </div>
     <button class="lock-fab ctrl-icon" id="lockFabBtn" aria-label="Unlock controls" onclick="document.getElementById('uiLockBtn')?.click()">
         <i class="fa-solid fa-lock"></i>
@@ -4061,7 +4095,7 @@
         const LOCAL_MEDIA_PROXY_BASE = String(
             RUNTIME_CONFIG.LOCAL_MEDIA_PROXY_BASE ||
             RUNTIME_CONFIG.LOCAL_PROXY_BASE ||
-            'http://127.0.0.1:3000'
+            ''
         ).replace(/\/$/, '');
         const STREAM_API_BASE = String(
             RUNTIME_CONFIG.STREAM_API_BASE ||
@@ -4156,7 +4190,10 @@
             if (!url) return '';
             try {
                 const u = new URL(url);
-                if (u.hostname === 'image.tmdb.org') return url;
+                if (u.hostname === 'image.tmdb.org') {
+                    const mediaProxyOrigin = getMediaProxyOrigin();
+                    return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(url)}`;
+                }
                 if (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || url.includes('/proxy')) return url;
                 // Use the active API origin for media proxying so prod matches local behavior
                 const mediaProxyOrigin = getMediaProxyOrigin();
@@ -4393,13 +4430,14 @@
         const REMOVED_PROVIDER_MAP = {
             satoru: 'animesalt',
             justanime: 'animesalt',
-            animekai: 'animesalt'
+            animekai: 'animesalt',
+            flixhq: 'hdstream4u'
         };
         
         // NOTE: MOVIE_PROVIDERS is legacy - replaced with intelligent anime detection
-        // For non-anime content: HDStream4u first, then FlixHQ fallback
+        // For non-anime content: HDStream4u is the primary provider.
         // For anime content: ANIME_PROVIDERS only (most reliable)
-        const MOVIE_PROVIDERS = ['hdstream4u', 'flixhq', 'animesalt'];
+        const MOVIE_PROVIDERS = ['hdstream4u', 'animesalt'];
 
         const params = new URLSearchParams(location.search);
         const TMDB_ID = params.get('id');
@@ -4484,8 +4522,15 @@
         let pendingEpisodeStartTime = null;
 
         function shouldUseContinueWatchingPositionOnBoot() {
+            const hasExplicitTvEpisode = MEDIA_TYPE === 'tv' && (
+                URL_SEASON > 0 || URL_EPISODE > 0 || Boolean(URL_EPISODE_ID)
+            );
+            const requestedEpisodeMatchesContinue = !hasExplicitTvEpisode || (
+                URL_SEASON === RESUME_SEASON_FALLBACK && URL_EPISODE === RESUME_EPISODE_FALLBACK
+            );
             return (
                 !URL_DISABLE_RESUME &&
+                requestedEpisodeMatchesContinue &&
                 (!Number.isFinite(URL_TIME) || URL_TIME <= 0) &&
                 Number.isFinite(RESUME_TIME_FALLBACK) &&
                 RESUME_TIME_FALLBACK > 5 &&
@@ -4504,11 +4549,13 @@
         // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         let suppressClicksUntil = 0;
         let video = document.getElementById('player-video');
-        const loader = document.getElementById('loader');
+         const loader = document.getElementById('loader');
+         const loaderHomeBtn = document.getElementById('loader-home-btn');
         const playerHeader = document.getElementById('player-header');
         const backBtn = document.getElementById('back-btn');
         const fsBackBtn = document.getElementById('fsBackBtn');
-        const errorBox = document.getElementById('error-box');
+         const errorBox = document.getElementById('error-box');
+         const errorNextEpisodeBtn = document.getElementById('error-next-episode-btn');
         const sourceBtn = document.getElementById('source-btn');
         const sourcePanel = document.getElementById('source-panel');
         const epBtn = document.getElementById('ep-btn');
@@ -4818,6 +4865,10 @@
             hideLoader();
             document.getElementById('err-title').textContent = title;
             document.getElementById('err-msg').textContent = msg;
+            if (errorNextEpisodeBtn) {
+                const hasNextEpisode = MEDIA_TYPE === 'tv' && typeof getNextEpisodeRef === 'function' && Boolean(getNextEpisodeRef());
+                errorNextEpisodeBtn.style.display = hasNextEpisode ? 'inline-flex' : 'none';
+            }
             errorBox.style.display = 'block';
         }
         function hideError() { errorBox.style.display = 'none'; }
@@ -5026,7 +5077,7 @@
             const currentSourceUrl = String(allSources?.[currentIdx]?.url || currentSrc || '').trim().toLowerCase();
             if (sourceProviderName === 'archive.org' || currentSourceUrl.includes('archive.org')) {
                 if (!RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY) return false;
-                if (!currentSrc) return false;
+                if (!currentSrc) return true;
                 try {
                     return new URL(currentSrc, location.href).origin === location.origin;
                 } catch (_) {
@@ -5681,7 +5732,18 @@
                 }
             }
 
-            // 3. Fallback: Japanese (common for anime)
+            const findEnglishTrackIdx = () => tracks.findIndex(t => {
+                const l = String(t?.lang || t?.language || '').toLowerCase();
+                const n = String(t?.name || t?.label || '').toLowerCase();
+                return l === 'en' || l === 'eng' || n === 'en' || n.startsWith('en-') || n.includes('english');
+            });
+
+            // 3. Fallback: English (hdstream4u multi-audio streams often ship with a non-English default track)
+            if (targetIdx === -1 && (activeSourceProvider === 'hdstream4u' || String(currentStreamProvider || '').toLowerCase() === 'hdstream4u')) {
+                targetIdx = findEnglishTrackIdx();
+            }
+
+            // 4. Fallback: Japanese (common for anime)
             if (targetIdx === -1) {
                 targetIdx = tracks.findIndex(t => {
                     const l = String(t?.lang || t?.language || '').toLowerCase();
@@ -5690,7 +5752,7 @@
                 });
             }
 
-            // 4. Fallback: Default or first track
+            // 5. Fallback: Default or first track
             if (targetIdx === -1) {
                 const def = tracks.findIndex(t => isNative ? t.enabled : t.default);
                 targetIdx = def !== -1 ? def : 0;
@@ -6149,15 +6211,18 @@
 
                 // Ã¢â€â‚¬Ã¢â€â‚¬ Fatal media / other errors Ã¢â€â‚¬Ã¢â€â‚¬
                 if (d.fatal) {
-                    if (isManifestParsing && typeof onErrorFallback === 'function') {
+                    const isManifestRequestFailure = isManifestParsing || /manifestloaderror/i.test(detailText);
+                    if (isManifestRequestFailure && typeof onErrorFallback === 'function') {
                         console.warn('[hls] Fatal manifest parsing error, requesting source fallback.');
-                        onErrorFallback('fatal_manifest_parse');
+                        onErrorFallback('fatal_manifest_unavailable');
                         return;
                     }
                     if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
                         const code = d.response ? d.response.code : 0;
                         if (code === 404 || code === 403 || code >= 500) {
-                            if (typeof onErrorFallback === 'function') onErrorFallback('fatal_network_error');
+                            if (typeof onErrorFallback === 'function') {
+                                onErrorFallback(isManifestRequestFailure ? 'fatal_manifest_unavailable' : 'fatal_network_error');
+                            }
                             return;
                         }
                         console.warn('[hls] Fatal network error, retrying startLoad...');
@@ -7280,6 +7345,17 @@
 
 
         function goBackToHome() {
+            try {
+                const rawReturnState = sessionStorage.getItem('streamverse_playback_return');
+                if (rawReturnState) {
+                    const returnState = JSON.parse(rawReturnState);
+                    const returnUrl = new URL(String(returnState?.url || ''), window.location.href);
+                    if (returnUrl.origin === window.location.origin) {
+                        window.location.href = returnUrl.toString();
+                        return;
+                    }
+                }
+            } catch (_) { }
             const homeUrl = new URL('index.html', window.location.href);
             window.location.href = homeUrl.toString();
         }
@@ -7413,8 +7489,6 @@
                 .replace(/[\u0300-\u036f]/g, '')
                 .replace(/[Ã¢â‚¬â„¢Ã¢â‚¬Ëœ`Ã‚Â´]/g, "'")
                 .replace(/[Ã¢â‚¬Å“Ã¢â‚¬Â]/g, '"')
-                .replace(/[Ãƒâ€”Ã¢Å“â€¢]/g, 'x')
-                .replace(/[Ã¢â‚¬ÂÃ¢â‚¬â€˜Ã¢â‚¬â€™Ã¢â‚¬â€œÃ¢â‚¬â€Ã¢â‚¬â€¢]/g, '-')
                 .replace(/[_-]+/g, ' ')
                 .replace(/[:;,.!?()[\]{}"'Ã¢â‚¬â„¢]/g, ' ') // Strip common punctuation for search
                 .replace(/\s+/g, ' ')
@@ -8025,6 +8099,9 @@
             ].map((c) => String(c || '').toLowerCase());
             const titleLower = title.toLowerCase();
 
+            // Strong, well-known anime title signals always win — checked before
+            // genre-based vetoes so sports anime (e.g. "Blue Lock", tagged
+            // "Sports") and similar are never misclassified as live TV.
             const strongTitleSignals = [
                 'anime', 'manga', 'jujutsu', 'kaisen', 'naruto', 'one piece', 'bleach', 'attack on titan',
                 'demon slayer', 'kimetsu', 'my hero academia', 'boku no hero', 'chainsaw man', 'tokyo ghoul',
@@ -8053,14 +8130,32 @@
                 originCountries.includes('jp') ||
                 originCountries.includes('japan') ||
                 (genreNames.includes('animation') && !genreNames.includes('family') && !genreNames.includes('children'));
-            const metadataLooksAnime =
-                hasExplicitAnimeMetadata ||
-                (hasSoftAnimeMetadata && MEDIA_TYPE === 'movie' && titleLooksAnime);
 
-            if (titleLooksAnime || metadataLooksAnime) return true;
+            if (titleLooksAnime || hasExplicitAnimeMetadata) return true;
+
+            // Specific reality/talent shows (and well-known western animation
+            // like "Invincible") should never be treated as anime.
+            const hasStrongNonAnimeTitle = /\b(?:got\s+(?:talent|latent)|big\s+brother|masterchef|love\s+island|survivor|invincible)\b/i.test(titleLower);
+            if (hasStrongNonAnimeTitle) return false;
+
+            // Prevent reality, talk, variety, and documentary programs from
+            // entering the anime-only provider path when AniList returns a
+            // loose title match or stale metadata.
+            const nonAnimeGenreSignals = [
+                'reality', 'talk show', 'game show', 'variety', 'documentary',
+                'news', 'lifestyle', 'soap', 'competition', 'sports',
+            ];
+            const hasStrongNonAnimeMetadata = genreNames.some((genre) =>
+                nonAnimeGenreSignals.some((signal) => genre.includes(signal)),
+            );
+            if (hasStrongNonAnimeMetadata) return false;
 
             if (MEDIA_TYPE !== 'tv' && MEDIA_TYPE !== 'movie') return false;
 
+            // Fall back to AniList: if the title matches an AniList entry, it is
+            // anime. AniList only catalogues anime/manga, so a strong title match
+            // is authoritative on its own; the release year is only used to
+            // disambiguate weak/partial matches.
             try {
                 const searchTitles = Array.from(new Set([
                     title,
@@ -8080,41 +8175,56 @@
                 if (!Array.isArray(results) || !results.length) return false;
 
                 const preferredYear = getPreferredMediaYear();
-                const picked = results.find((row) => {
-                        const rowTitles = getAnimeResultTitleTexts(row)
-                            .map((value) => normalizeAnimeSearchQuery(value).toLowerCase())
-                            .filter(Boolean);
-                        if (!rowTitles.length) return false;
-                        const rowYear = Number(String(row?.releaseDate || row?.startDate || row?.year || '').slice(0, 4));
-                        const yearMatches = hasSoftAnimeMetadata
-                            ? (!preferredYear || !Number.isFinite(rowYear) || Math.abs(rowYear - preferredYear) <= 1)
-                            : (!preferredYear || (Number.isFinite(rowYear) && Math.abs(rowYear - preferredYear) <= 1));
-                        const titleMatches = rowTitles.some((rowTitle) => {
-                            const compactRowTitle = rowTitle.replace(/[^a-z0-9]+/g, '');
-                            if (!compactRowTitle || compactRowTitle.length < 4) return false;
-                            return (
-                            compactRowTitle === compactTitle ||
-                            (hasSoftAnimeMetadata && compactTitle.length >= 8 && compactRowTitle.length >= 8 &&
-                                (compactRowTitle.includes(compactTitle) || compactTitle.includes(compactRowTitle))) ||
-                            (titleAliases[compactTitle] || []).some((alias) =>
-                                compactRowTitle === alias.replace(/[^a-z0-9]+/g, '')
-                            )
-                            );
-                        });
-                        return titleMatches && yearMatches;
-                    });
-                if (!picked?.id) return false;
-
-                return getAnimeResultTitleTexts(picked).some((pickedTitleRaw) => {
-                    const pickedTitle = normalizeAnimeSearchQuery(pickedTitleRaw).toLowerCase();
-                    const compactPickedTitle = pickedTitle.replace(/[^a-z0-9]+/g, '');
-                    return compactPickedTitle === compactTitle ||
-                        (hasSoftAnimeMetadata && compactTitle.length >= 8 && compactPickedTitle.length >= 8 &&
-                            (compactPickedTitle.includes(compactTitle) || compactTitle.includes(compactPickedTitle))) ||
-                        (titleAliases[compactTitle] || []).some((alias) =>
-                            compactPickedTitle === alias.replace(/[^a-z0-9]+/g, '')
-                        );
+                const scored = [];
+                results.forEach((row, index) => {
+                    const rowTitles = getAnimeResultTitleTexts(row)
+                        .map((value) => normalizeAnimeSearchQuery(value).toLowerCase())
+                        .filter(Boolean);
+                    if (!rowTitles.length) return;
+                    let bestQuality = null;
+                    for (const rowTitle of rowTitles) {
+                        const quality = getTitleMatchQuality(rowTitle, title);
+                        if (!quality) continue;
+                        if (!bestQuality ||
+                            quality.exact ||
+                            (!bestQuality.exact && quality.strong) ||
+                            (!bestQuality.exact && !bestQuality.strong && quality.tokenRatio > bestQuality.tokenRatio)) {
+                            bestQuality = quality;
+                        }
+                    }
+                    if (!bestQuality || (!bestQuality.exact && !bestQuality.strong && bestQuality.tokenRatio < 0.5)) return;
+                    const rowYear = getProviderResultYear(row);
+                    scored.push({ row, index, bestQuality, rowYear });
                 });
+
+                scored.sort((a, b) => {
+                    if (a.bestQuality.exact !== b.bestQuality.exact) return a.bestQuality.exact ? -1 : 1;
+                    if (a.bestQuality.tokenRatio !== b.bestQuality.tokenRatio) return b.bestQuality.tokenRatio - a.bestQuality.tokenRatio;
+                    return a.index - b.index;
+                });
+
+                const best = scored[0];
+                if (!best) return false;
+
+                // Exact title match on AniList means it is anime — year is irrelevant.
+                if (best.bestQuality.exact) return true;
+
+                // A genuinely close release year only helps when both sides
+                // actually have one; unknown years (e.g. AnimeSalt fallback rows)
+                // must not loosen a partial title match into "anime".
+                const yearClose = Number.isFinite(best.rowYear) &&
+                    Number.isFinite(preferredYear) &&
+                    Math.abs(best.rowYear - preferredYear) <= 3;
+
+                // Strong (contains / high token overlap) match: trust Japanese/JP/animation
+                // metadata, or a genuinely nearby release year.
+                if (best.bestQuality.strong && (hasSoftAnimeMetadata || yearClose)) return true;
+
+                // Lenient partial match is only trusted with both soft-anime metadata
+                // and a genuinely nearby year, to avoid misclassifying live-action shows.
+                if (hasSoftAnimeMetadata && yearClose && best.bestQuality.tokenRatio >= 0.5) return true;
+
+                return false;
             } catch {
                 return false;
             }
@@ -8829,10 +8939,15 @@
             all.forEach((item, idx) => {
                 const kind = String(item?.kind || item?.type || '').toLowerCase();
                 if (kind && !['captions', 'caption', 'subtitles', 'subtitle', 'sub'].includes(kind)) return;
-                const src = item?.url || item?.file || item?.src || item?.link;
-                if (!src || typeof src !== 'string') return;
+                const rawSrc = item?.url || item?.file || item?.src || item?.link;
+                if (!rawSrc || typeof rawSrc !== 'string') return;
+                const src = rawSrc.replace(/#.*$/, '');
+                if (/\/thumbnail(?:s)?\.vtt(?:\?|$)/i.test(src)) return;
 
-                const rawLang = String(item?.lang || item?.language || item?.label || item?.name || item?.title || `Track ${idx + 1}`).trim();
+                let rawLang = String(item?.lang || item?.language || item?.label || item?.name || item?.title || '').trim();
+                if (!rawLang || /^(unknown|und|auto|unidentified|null|undefined|thumbnails?)$/i.test(rawLang.toLowerCase())) {
+                    rawLang = 'English';
+                }
                 const langLower = rawLang.toLowerCase();
                 let srclang = 'en';
                 if (langLower === 'ja' || langLower === 'jpn' || langLower.includes('japanese')) srclang = 'ja';
@@ -8950,7 +9065,7 @@
                     if (/^WEBVTT$/i.test(trimmed)) return line;
                     if (/^(NOTE|STYLE|REGION)(\s|$)/i.test(trimmed)) return line;
                     if (/^\d+$/.test(trimmed)) return line;
-                    if (/-->/.test(line)) return line;
+                    if (String(line || '').includes('-->')) return line;
                     return stripSubtitleMarkup(line);
                 })
                 .join('\n');
@@ -9230,7 +9345,7 @@
                 const tracks = Array.from(videoEl.textTracks || []);
                 let bestIdx = -1;
 
-                if (preferredLabel && tracks.length) {
+                if (preferredLabel && tracks.length && !/^(unknown|off|)$/i.test(String(preferredLabel).trim())) {
                     bestIdx = tracks.findIndex(t => t.label === preferredLabel);
                 }
 
@@ -9616,7 +9731,7 @@
         function getDefaultEnglishSubtitleIndex() {
             if (!video || !video.textTracks) return -1;
             const tracks = Array.from(video.textTracks);
-            const idx = tracks.findIndex((track) => {
+            const isEnglishLike = (track) => {
                 const label = String(track.label || '').toLowerCase();
                 const language = String(track.language || '').toLowerCase();
                 return (
@@ -9626,8 +9741,14 @@
                     label === 'en' ||
                     label.includes('english')
                 );
+            };
+            const englishIdx = tracks.findIndex(isEnglishLike);
+            if (englishIdx >= 0) return englishIdx;
+            const unknownIdx = tracks.findIndex((track) => {
+                const label = String(track.label || '').toLowerCase();
+                return label.includes('unknown') || label.includes('auto');
             });
-            return idx >= 0 ? idx : (tracks.length > 0 ? 0 : -1);
+            return unknownIdx >= 0 ? unknownIdx : (tracks.length > 0 ? 0 : -1);
         }
 
         function appendSubtitleSettingsMenu() {
@@ -10104,7 +10225,7 @@
 
         let _saveProgressLastAt = 0;
         function saveProgress(force = false) {
-            if (!video || !currentMediaInfo) return;
+            if (!video || !currentMediaInfo || !initialSeekDone) return;
             const now = Date.now();
             // Throttle: only write to localStorage every 5 seconds
             if (!force && now - _saveProgressLastAt < 5000) return;
@@ -13701,6 +13822,7 @@
                     playerWrap.style.visibility = 'visible';
                 }
                 if (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100) {
+                    ensureAudioContext();
                     updateAudioEnhancementChain();
                 }
                 
@@ -13799,6 +13921,7 @@
                     playerWrap.style.visibility = 'visible';
                 }
                 if (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100) {
+                    ensureAudioContext();
                     updateAudioEnhancementChain();
                 }
                 // Stall adaptive recovery: reset timer on active playback
@@ -14522,6 +14645,11 @@
 
             backBtn.addEventListener('click', handlePlayerBackPress);
             fsBackBtn?.addEventListener('click', handlePlayerBackPress);
+            loaderHomeBtn?.addEventListener('click', () => goBackToHome());
+            errorNextEpisodeBtn?.addEventListener('click', () => {
+                errorBox.style.display = 'none';
+                goToNextEpisode();
+            });
 
             playPauseBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -14535,6 +14663,8 @@
                     watchPartyForcePaused = false;
                     try { sessionStorage.removeItem('wpHostPauseOnReload'); } catch (_) {}
                     refreshWatchPartyPauseGuard();
+                    const ctx = ensureAudioContext();
+                    if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => { });
                     video.play();
                 }
                 else video.pause();
@@ -16028,14 +16158,14 @@
                     activeProviders = [...ANIME_PROVIDERS];
                     console.log('Ã°Å¸Å½Å’ Anime detected! Using anime-only providers:', activeProviders);
                 } else if (MEDIA_TYPE === 'movie') {
-                    activeProviders = ['hdstream4u', 'flixhq'];
+                    activeProviders = ['hdstream4u'];
                     console.log('Non-anime movie providers:', activeProviders);
                 } else if (isTv) {
-                    activeProviders = ['hdstream4u', 'flixhq'];
+                    activeProviders = ['hdstream4u'];
                     console.log('Non-anime TV providers:', activeProviders);
                 } else {
                     // Fallback for unknown types
-                    activeProviders = ['hdstream4u', 'flixhq', ...ANIME_PROVIDERS];
+                    activeProviders = ['hdstream4u', ...ANIME_PROVIDERS];
                 }
                 console.log('activeProviders:', activeProviders, 'FORCED_PROVIDER:', FORCED_PROVIDER, 'isAnime:', currentIsLikelyAnime);
                 buildChips();
@@ -16066,6 +16196,7 @@
             tvSeasons = buildTvSeasonsFromInfo(info);
             providerSeasonCatalog = new Map();
             activeMenuProvider = '';
+
             const preferredYear = getPreferredMediaYear();
             const animeSeriesTitle = normalizeAnimeSearchQuery(
                 info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || '',
@@ -17246,7 +17377,7 @@
 
         let _episodeProgressLastAt = 0;
         function saveCurrentEpisodeProgress(force = false) {
-            if (MEDIA_TYPE !== 'tv' || !video) return;
+            if (MEDIA_TYPE !== 'tv' || !video || !initialSeekDone) return;
             const now = Date.now();
             if (!force && now - _episodeProgressLastAt < 5000) return;
             _episodeProgressLastAt = now;
@@ -17980,9 +18111,9 @@
                         ['animesalt', 'satoru'].includes(scopedProvider) &&
                         providerTitle &&
                         !isGenericEpisodeTitle(providerTitle, epNo);
-                    const epTitle = shouldPreferProviderEpisodeMeta
-                        ? providerTitle
-                        : (
+                     const epTitle = shouldPreferProviderEpisodeMeta
+                         ? providerTitle
+                         : (
                             tmdbTitle && !isGenericEpisodeTitle(tmdbTitle, absoluteEpisodeNo) && (hasTmdbRichMeta || !providerTitle || isGenericEpisodeTitle(providerTitle, epNo))
                                 ? tmdbTitle
                                 : (providerTitle && !isGenericEpisodeTitle(providerTitle, epNo) ? providerTitle : `Episode ${epNo}`)
@@ -18130,11 +18261,20 @@
                         selectedUrl.searchParams.set('season', String(s?.seasonNo || si + 1));
                         selectedUrl.searchParams.set('episode', String(selectedEpisodeNo));
                         selectedUrl.searchParams.set('seasonTitle', isBonusEpisode ? 'Bonus' : String(s?.name || `Season ${s?.seasonNo || si + 1}`));
-                        selectedUrl.searchParams.set('episodeId', String(isBonusEpisode
-                            ? (ep?.url || ep?.providerUrl || ep?.providerEpisodeId || ep?.watchUrl || ep?.embedUrl || ep?.link || ep?.href || ep?.id || '')
-                            : (ep?.id || '')));
-                        selectedUrl.searchParams.delete('absoluteEpisode');
-                        epPanel.classList.remove('open');
+                         selectedUrl.searchParams.set('episodeId', String(isBonusEpisode
+                             ? (ep?.url || ep?.providerUrl || ep?.providerEpisodeId || ep?.watchUrl || ep?.embedUrl || ep?.link || ep?.href || ep?.id || '')
+                             : (ep?.id || '')));
+                         selectedUrl.searchParams.delete('absoluteEpisode');
+                         const selectedEpisodeResumeTime = getResumeTimeFromEpisodeProgress(progressInfo);
+                         if (selectedEpisodeResumeTime > 0) {
+                             // Resume this episode's own progress, never the current episode's time.
+                             selectedUrl.searchParams.set('t', String(selectedEpisodeResumeTime));
+                             selectedUrl.searchParams.delete('resume');
+                         } else {
+                             selectedUrl.searchParams.delete('t');
+                             selectedUrl.searchParams.set('resume', '0');
+                         }
+                         epPanel.classList.remove('open');
                         window.location.href = selectedUrl.toString();
                         return;
                     };
@@ -18872,10 +19012,23 @@
             activeProviders.forEach(p => chipState(p, ''));
 
             const archiveFallbackSources = {
+                '1166133': {
+                    source: {
+                        label: 'Bramayugam (2024) (Archive MKV)',
+                        url: 'https://archive.org/download/bramayugam.-2024.1080p.-ds-4-k.-web-dl.-hindi.-5.1-malayalam.-5.1.-esub.x-264-hdhub-4u.-tv/Bramayugam.2024.1080p.DS4K.WEB-DL.Hindi.5.1-Malayalam.5.1.ESub.x264-HDHub4u.Tv.mkv',
+                        isM3U8: false,
+                        isMP4: true,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [],
+                },
                 '26247': {
                     source: {
-                        label: 'Bombay (Archive.org)',
-                        url: 'https://ia801700.us.archive.org/11/items/bombay-1995_202511/Bombay-1995.mp4',
+                        label: 'Bombay (Archive)',
+                        url: 'https://ia800101.us.archive.org/16/items/bombay-1995_202511/Bombay-1995.mp4',
                         isM3U8: false,
                         isEmbed: false,
                         referer: null,
@@ -18891,15 +19044,289 @@
                         },
                     ],
                 },
+                '21210': {
+                    source: {
+                        label: 'Dil Se.. (1998) (Archive)',
+                        url: 'https://ia801607.us.archive.org/32/items/dil-se..-1998/Dil%20Se..%20%281998%29.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/dil-se..-1998/Dil%20Se..%281998%29.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '1069945': {
+                    source: {
+                        label: 'Manjummel Boys (2024) (Archive)',
+                        url: 'https://ia803104.us.archive.org/2/items/manjummel-boys-2024/Manjummel%20Boys%20%282024%29.ia.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/manjummel-boys-2024/Manjummel-Boys-%282024%29-en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '54357': {
+                    source: {
+                        label: 'Sadma (1983) (Archive)',
+                        url: 'https://ia600807.us.archive.org/3/items/sadma-1983-full-movie-1080p/Sadma-1983-Full-Movie-1080p.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/sadma-1983-full-movie-1080p/xpZTxBvPLiM.en.srt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '653221': {
+                    source: {
+                        label: 'Hridayam (2022) (Archive)',
+                        url: 'https://ia801003.us.archive.org/33/items/hridayam-2022-hindi-1080p/Hridayam%20%282022%29%20Hindi%201080p.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/hridayam-2022-hindi-1080p/Hridayam-%282022%29-en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '587030': {
+                    source: {
+                        label: 'Kaithi (2019) (Archive)',
+                        url: 'https://ia601009.us.archive.org/23/items/kaithi-2019-1080p-hindi/Kaithi%2B2019%2B1080p%2BHindi.ia.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/kaithi-2019-1080p-hindi/Kaithi-2019-en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '1068452': {
+                    source: {
+                        label: 'Hi Nanna (2023) (Archive)',
+                        url: 'https://ia800801.us.archive.org/34/items/hi-papa-hi-nanna-2023-hindi-1080p/Hi%20Papa-%28Hi%20Nanna%29-%282023%29-%7BHindi-1080p%29.ia.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/hi-papa-hi-nanna-2023-hindi-1080p/Hi-Nanna-%282023%29-en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '626392': {
+                    source: {
+                        label: 'Master (2021) (Archive)',
+                        url: 'https://ia803206.us.archive.org/14/items/master-2021-1080p-hindi/Master-2021-1080p-Hindi.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/master-2021-1080p-hindi/MASTER-%282021%29-en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '19025': {
+                    source: {
+                        label: 'Bhool Bhulaiyaa (2007) (Archive)',
+                        url: 'https://ia800500.us.archive.org/23/items/bhool-bhulaiyaa-2007/Bhool-Bhulaiyaa-%282007%29.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/bhool-bhulaiyaa-2007/Bhool-Bhulaiyaa-%282007%29.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '19404': {
+                    source: {
+                        label: 'Dilwale Dulhania Le Jayenge (1995) (Archive)',
+                        url: 'https://ia601808.us.archive.org/5/items/dilwale-dulhania-le-jayenge-1995_202511/Dilwale%20Dulhania%20Le%20Jayenge%20%281995%29.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/dilwale-dulhania-le-jayenge-1995_202511/Dilwale%20Dulhania%20Le%20Jayenge%20%281995%29.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '26022': {
+                    source: {
+                        label: 'My Name Is Khan (2010) (Archive)',
+                        url: 'https://ia600606.us.archive.org/14/items/my-name-is-khan-2010_202512/My-Name-Is-Khan-%282010%29.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/my-name-is-khan-2010_202512/My-Name-Is-Khan-%282010%29.en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '799177': {
+                    source: {
+                        label: 'Bhediya (2022) (Archive)',
+                        url: 'https://ia601807.us.archive.org/32/items/bhediya.-2022/Bhediya.%282022%29.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/bhediya.-2022/Bhediya.%282022%29-en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '205022': {
+                    source: {
+                        label: 'Chennai Express (2013) (Archive)',
+                        url: 'https://ia600406.us.archive.org/5/items/chennai.-express.-2013/Chennai.Express.%282013%29.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/chennai.-express.-2013/Chennai.Express.%282013%29-en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '1741345': {
+                    source: {
+                        label: 'Chennai Express (2013) (Archive.org)',
+                        url: 'https://ia600406.us.archive.org/5/items/chennai.-express.-2013/Chennai.Express.%282013%29.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/chennai.-express.-2013/Chennai.Express.%282013%29-en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '14752': {
+                    source: {
+                        label: 'Dil Chahta Hai (2001) (Archive)',
+                        url: 'https://dn710301.ca.archive.org/0/items/dil.-chahta.-hai.-2001-en/Dil.Chahta.Hai.%282001%29.mp4',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/dil.-chahta.-hai.-2001-en/Dil.Chahta.Hai.%282001%29-en.vtt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
             };
 
+            Object.values(archiveFallbackSources).forEach((fallback) => {
+                if (fallback?.source?.label) fallback.source.label = fallback.source.label.replace('Archive.org', 'Archive');
+                (fallback?.subtitles || []).forEach((subtitle) => {
+                    if (subtitle.label) subtitle.label = subtitle.label.replace('Archive.org', 'Archive');
+                });
+            });
             const currentArchiveFallback = archiveFallbackSources[String(TMDB_ID).trim()] || null;
             const failReasons = [];
             providerResults = {};
             const providersToRun = effectiveForcedProvider
                 ? [effectiveForcedProvider]
                 : activeProviders;
-            const orderedProviders = providersToRun;
+            const orderedProviders = currentArchiveFallback && !effectiveForcedProvider && !currentIsLikelyAnime
+                ? [...providersToRun, 'archive.org']
+                : providersToRun;
             providersToRun.forEach(p => providerResults[p] = []);
 
             let isFirstLoaded = false;
@@ -18907,7 +19334,10 @@
                 startT = Math.max(0, Number(pendingEpisodeStartTime || 0));
             } else {
                 startT = Number.isFinite(URL_TIME) && URL_TIME > 0 ? URL_TIME : 0;
-                if (!startT && !URL_DISABLE_RESUME && Number.isFinite(RESUME_TIME_FALLBACK) && RESUME_TIME_FALLBACK > 5) {
+                // Only restore the last-watched position when this boot is actually
+                // resuming that same episode (or no explicit episode was requested);
+                // otherwise a different episode would wrongly start at the old time.
+                if (!startT && shouldUseContinueWatchingPositionOnBoot()) {
                     startT = RESUME_TIME_FALLBACK;
                 }
             }
@@ -19002,20 +19432,20 @@
 
             const addArchiveFallbackForCurrentMovie = () => {
                 if (!currentArchiveFallback) return false;
-                providerResults['flixhq'] = [currentArchiveFallback.source];
-                writeCachedProviderSources('flixhq', providerResults['flixhq']);
+                providerResults['archive.org'] = [currentArchiveFallback.source];
+                writeCachedProviderSources('archive.org', providerResults['archive.org']);
                 if (currentArchiveFallback.subtitles?.length) {
                     setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, currentArchiveFallback.subtitles));
                 }
-                chipState('flixhq', 'success');
+                chipState('archive.org', 'success');
                 updateSourceList();
                 return true;
             };
 
             if (currentArchiveFallback && !effectiveForcedProvider && !currentIsLikelyAnime) {
                 console.log('[archive fallback] immediate source for movie ID', TMDB_ID);
-                providerResults['flixhq'] = [currentArchiveFallback.source];
-                chipState('flixhq', 'success');
+                providerResults['archive.org'] = [currentArchiveFallback.source];
+                chipState('archive.org', 'success');
                 if (currentArchiveFallback.subtitles?.length) {
                     setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, currentArchiveFallback.subtitles));
                 }
@@ -19046,6 +19476,7 @@
                 chipState(provider, 'trying');
                 try {
                     let info, provEpisodeId;
+                    let useDirectProviderWatch = false;
                     let animesaltAlternateEpisodeIds = [];
                     let satoruResolvedExactly = false;
                     const isAnimeProvider =
@@ -19226,6 +19657,105 @@
                                 }
                             }
                         }
+                        if (
+                            !provEpisodeId &&
+                            provider === 'hdstream4u' &&
+                            effectiveMediaType === 'tv' &&
+                            String(TMDB_ID || '') === '262838' &&
+                            Number(selectedSeasonNo) === 2 &&
+                            [4, 5].includes(Number(selectedEpisodeNo))
+                        ) {
+                            try {
+                                const providerInfoBase = API_BASE.replace('/meta/tmdb', '/movies/hdstream4u');
+                                const title = String(currentMediaInfo?.title || currentMediaInfo?.name || "India's Got Latent").trim();
+                                const searchRes = await fetch(
+                                    `${providerInfoBase}/search?query=${encodeURIComponent(title)}&page=1`,
+                                    { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) },
+                                ).catch(() => null);
+                                let hdInfo = null;
+                                if (searchRes?.ok) {
+                                    const searchPayload = await searchRes.json();
+                                    const results = Array.isArray(searchPayload?.results) ? searchPayload.results : [];
+                                    const match = results.find((entry) => String(entry?.type || '').toLowerCase() === 'tv') || results[0];
+                                    if (match?.url || match?.id) {
+                                        const infoRes = await fetch(
+                                            `${providerInfoBase}/info?id=${encodeURIComponent(String(match.url || match.id))}&type=tv`,
+                                            { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) },
+                                        ).catch(() => null);
+                                        if (infoRes?.ok) {
+                                            try { hdInfo = await infoRes.json(); } catch (_) { }
+                                        }
+                                    }
+                                }
+                                const episodes = Array.isArray(hdInfo?.episodes) ? hdInfo.episodes : [];
+                                const isBonusRow = (episode) => /\bbonus\b/i.test(String(episode?.category || episode?.seasonName || episode?.title || episode?.name || ''));
+                                const target = Number(selectedEpisodeNo) === 4
+                                    ? episodes.find((episode) => isBonusRow(episode))
+                                    : episodes.find((episode) =>
+                                        !isBonusRow(episode) &&
+                                        Number(episode?.episodeNumber || episode?.number || episode?.episode || 0) === 4,
+                                    );
+                                if (target) {
+                                    provEpisodeId = String(target?.episodeId || target?.id || target?.url || '').trim();
+                                    info = hdInfo;
+                                    useDirectProviderWatch = Boolean(provEpisodeId);
+                                }
+                            } catch (error) {
+                                console.warn('[hdstream4u] India latent episode mapping failed:', error);
+                            }
+                        }
+                        if (!provEpisodeId && provider === 'hdstream4u' && effectiveMediaType === 'movie') {
+                            try {
+                                const providerInfoBase = API_BASE.replace('/meta/tmdb', '/movies/hdstream4u');
+                                const title = String(currentMediaInfo?.title || currentMediaInfo?.name || '').trim();
+                                const searchPromise = title
+                                    ? fetch(
+                                        `${providerInfoBase}/search?query=${encodeURIComponent(title)}&page=1`,
+                                        { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) },
+                                    ).catch(() => null)
+                                    : Promise.resolve(null);
+                                let hdInfoRes = await fetch(
+                                    `${providerInfoBase}/info?id=${encodeURIComponent(TMDB_ID)}&type=movie`,
+                                    { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) },
+                                );
+                                let hdInfoPayload = null;
+                                if (hdInfoRes.ok) {
+                                    try { hdInfoPayload = await hdInfoRes.clone().json(); } catch (_) { }
+                                }
+                                if (!Array.isArray(hdInfoPayload?.servers) || !hdInfoPayload.servers.length) {
+                                    if (title) {
+                                        const searchRes = await searchPromise;
+                                        if (searchRes?.ok) {
+                                            const searchPayload = await searchRes.json();
+                                            const results = Array.isArray(searchPayload?.results) ? searchPayload.results : [];
+                                            const match = results.find((entry) => String(entry?.type || '').toLowerCase() === 'movie') || results[0];
+                                            if (match?.url || match?.id) {
+                                                hdInfoRes = await fetch(
+                                                    `${providerInfoBase}/info?id=${encodeURIComponent(String(match.url || match.id))}&type=movie`,
+                                                    { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) },
+                                                );
+                                                if (hdInfoRes.ok) {
+                                                    try { hdInfoPayload = await hdInfoRes.clone().json(); } catch (_) { }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if (hdInfoRes.ok) {
+                                    const hdInfo = hdInfoPayload || await hdInfoRes.json();
+                                    const servers = Array.isArray(hdInfo?.servers) ? hdInfo.servers : [];
+                                    const directServer = servers.find((server) => /(?:hdstream4u|morencius)\.com\/file\//i.test(String(server?.url || '')));
+                                    const watchOnline = servers.find((server) => /hubstream\.(?:art|pw|cc|ink|foo|boo)\/#/i.test(String(server?.url || '')));
+                                    provEpisodeId = String(
+                                        directServer?.fileCode ||
+                                        directServer?.url ||
+                                        watchOnline?.url ||
+                                        '',
+                                    ).trim();
+                                    if (hdInfo && !info) info = hdInfo;
+                                }
+                            } catch (_) { }
+                        }
                     }
 
                     if (!provEpisodeId && provider === 'hdstream4u' && (selectionHint?.episodeId || (isBonusSelection && URL_EPISODE_ID))) {
@@ -19289,7 +19819,8 @@
                             watchCandidates.push(withFlixhqExtractionTimeout(`${movieBase}/watch?episodeId=${encodeURIComponent(provEpisodeId)}&server=auto${DIRECT_ONLY ? '&directOnly=true' : ''}`));
                         }
 
-                        if ((provider !== 'flixhq' || (provider === 'flixhq' && effectiveMediaType === 'tv')) && !isVegamoviesProvider) {
+                        const hasDirectHdstreamMovieId = provider === 'hdstream4u' && effectiveMediaType === 'movie' && Boolean(provEpisodeId);
+                        if ((provider !== 'flixhq' || (provider === 'flixhq' && effectiveMediaType === 'tv')) && !isVegamoviesProvider && !hasDirectHdstreamMovieId && !useDirectProviderWatch) {
                         console.log('[hdstream4u] building TMDB watch URL: type=' + effectiveMediaType + ' season=' + (selectedSeasonNo || 1) + ' episode=' + (selectedEpisodeNo || 1) + ' curEpisode=' + curEpisode);
                             const tmdbWatchParams = new URLSearchParams();
                             tmdbWatchParams.set('id', String(TMDB_ID || ''));
@@ -19304,7 +19835,7 @@
                             watchCandidates.push(`${API_BASE}/watch?${tmdbWatchParams.toString()}`);
                         }
                         if (provEpisodeId && !isVegamoviesProvider) {
-                            const mediaIdRaw = String(info?.id || provEpisodeId || '').trim();
+                            const mediaIdRaw = String(info?.id || TMDB_ID || provEpisodeId || '').trim();
                             const episodeIdRaw = String(provEpisodeId || '').trim();
                             const mediaId = isNetMirrorProvider ? normalizeNetMirrorId(mediaIdRaw) : mediaIdRaw;
                             const episodeId = isNetMirrorProvider ? normalizeNetMirrorId(episodeIdRaw) : episodeIdRaw;
@@ -19519,7 +20050,12 @@
             }
 
             if (allSources.length === 0 && !currentStreamUrl && !(video && video.currentSrc)) {
-                showError('No Streams Found', `None of the providers could find a stream for this title.\n\nDetails:\n- ${failReasons.slice(0, 5).join('\n- ')}`);
+                showError(
+                    MEDIA_TYPE === 'tv' ? 'Episode Unavailable' : 'No Streams Found',
+                    MEDIA_TYPE === 'tv'
+                        ? 'Sorry, this episode is not available right now.'
+                        : `None of the providers could find a stream for this title.\n\nDetails:\n- ${failReasons.slice(0, 5).join('\n- ')}`,
+                );
             }
             fetchSourcesRunning = false;
             if (fetchSourcesQueued) {
@@ -19532,7 +20068,6 @@
         // ----------------------------------------------------------------------------------------------------
         function providerLabel(p) {
             const map = {
-                flixhq: 'FlixHQ',
                 satoru: 'Satoru',
                 justanime: 'JustAnime',
                 animesalt: 'AnimeSalt',
@@ -19958,6 +20493,7 @@
         function getMediaProxyPath(mediaProxyOrigin) {
             try {
                 const proxyHost = new URL(String(mediaProxyOrigin || ''), location.href).host;
+                if (RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY && proxyHost === location.host) return '/utils/proxy';
                 const apiHost = new URL(String(activeApiBase || API_BASE || ''), location.href).host;
                 if (proxyHost && apiHost && proxyHost === apiHost) return '/utils/proxy';
             } catch (_) { }
@@ -20073,6 +20609,8 @@
             const proxyOnlyProvider =
                 sourceProvider === 'justanime' ||
                 sourceProvider === 'animesalt' ||
+                // HubStream does not provide browser CORS; keep retries on the media proxy.
+                sourceProvider === 'hdstream4u' ||
                 isFlixhqProtectedCdn;
             const originalStreamUrl = String(url || '').trim();
             if (isM3U8 && originalStreamUrl) {
@@ -20087,7 +20625,7 @@
                 if (!sourceContextActive) return true;
                 if (currentIdx !== srcIdx) return true;
                 const activeUrl = String(allSources?.[srcIdx]?.url || '');
-                return !!activeUrl && activeUrl !== String(url || '');
+                return !!activeUrl && activeUrl !== originalStreamUrl;
             };
             const deactivateSourceContext = () => {
                 sourceContextActive = false;
@@ -20492,12 +21030,39 @@
             };
 
             const showProviderExhaustedError = (reason = 'unknown') => {
+                deactivateSourceContext();
+                sameSourceRecoveryLock = false;
+                try {
+                    if (hlsInst) {
+                        hlsInst.stopLoad();
+                        hlsInst.detachMedia();
+                        hlsInst.destroy();
+                        hlsInst = null;
+                    }
+                } catch (_) { }
+                try {
+                    if (window.previewHlsInst) {
+                        window.previewHlsInst.stopLoad();
+                        window.previewHlsInst.destroy();
+                        window.previewHlsInst = null;
+                    }
+                    const previewVideo = document.getElementById('previewVideo');
+                    if (previewVideo) {
+                        previewVideo.pause();
+                        previewVideo.removeAttribute('src');
+                        previewVideo.load();
+                    }
+                } catch (_) { }
                 const providerName = String(sourceProvider || currentStreamProvider || '').toLowerCase();
                 if (providerName === 'vegamovies') {
                     showError(
                         'Vegamovies Unavailable',
                         'Vegamovies only returned invalid direct stream manifests for this title. Try another provider or the site embed if one becomes available.'
                     );
+                    return;
+                }
+                if (MEDIA_TYPE === 'tv') {
+                    showError('Episode Unavailable', 'Sorry, this episode is not available right now.');
                     return;
                 }
                 showError(
@@ -20512,16 +21077,22 @@
                 sameSourceRecoveryLock = true;
                 const currentTime = (video && video.currentTime > 0) ? video.currentTime : startTime;
                 sameSourceRecoverCount += 1;
-                console.warn(`[hls] Recovering same source (attempt ${sameSourceRecoverCount}) reason=${reason}`);
+                const lowerReason = String(reason || '').toLowerCase();
+                const isConfirmedManifestUnavailable = lowerReason === 'fatal_manifest_unavailable';
+                console.warn(
+                    `[hls] ${isConfirmedManifestUnavailable ? 'Source unavailable' : 'Recovering same source'} ` +
+                    `(attempt ${sameSourceRecoverCount}) reason=${reason}`,
+                );
 
                 // Capture last visible frame immediately to prevent black screen flash during rebuild
                 try { captureVideoFrameToOverlay(); } catch (_) { }
 
-                const lowerReason = String(reason || '').toLowerCase();
                 const isVegamoviesManifestFailure =
                     sourceProvider === 'vegamovies' &&
                     (lowerReason.includes('manifest') || lowerReason.includes('network') || lowerReason.includes('startup_timeout'));
-                const maxAttempts = isVegamoviesManifestFailure ? 2 : (reason === 'fatal_network_error' ? 1 : 8);
+                const maxAttempts = isConfirmedManifestUnavailable
+                    ? 0
+                    : (isVegamoviesManifestFailure ? 2 : (reason === 'fatal_network_error' ? 1 : 8));
 
                 if (hlsInst && isM3U8 && sameSourceRecoverCount <= maxAttempts) {
                     try {
@@ -20708,7 +21279,7 @@
                 video && video.addEventListener('playing', markHlsProgress);
                 const hlsStartupWatchdog = setTimeout(() => {
                     if (hlsStartupHasProgress) return;
-                    if (currentIdx !== srcIdx) return;
+                    if (isStaleSourceContext()) return;
                     console.warn('[hls] startup timeout: source did not begin playback, attempting failover');
                     const switched = failoverToNextSource('hls_startup_timeout');
                     if (!switched) {
@@ -21229,7 +21800,7 @@
                     if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
                         tryArchiveBackendProxyFallback() || tryDirectMp4Fallback();
                     }
-                }, 4500);
+                }, isArchiveDirect && RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY ? 30000 : 4500);
                 video.addEventListener('loadedmetadata', () => clearTimeout(metadataFallbackTimer), { once: true });
 
                 if (isArchiveDirect) {

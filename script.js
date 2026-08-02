@@ -173,6 +173,49 @@ function handleWatchlistToggle(id, type, provider) {
     }
     saveWatchlist(list);
 }
+
+let shareCopyTimer;
+async function copyMovieShareUrl() {
+    const btn = document.getElementById('modal-share-btn');
+    const url = window.location.href;
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(url);
+        } else {
+            const input = document.createElement('textarea');
+            input.value = url;
+            input.style.position = 'fixed';
+            input.style.opacity = '0';
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            input.remove();
+        }
+        if (!btn) return;
+        clearTimeout(shareCopyTimer);
+        btn.classList.add('is-copied');
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> Copied';
+        btn.setAttribute('aria-label', 'Copied');
+        shareCopyTimer = setTimeout(() => {
+            btn.classList.remove('is-copied');
+            btn.innerHTML = '<i class="fa-solid fa-share-nodes"></i>';
+            btn.setAttribute('aria-label', 'Share');
+        }, 2200);
+    } catch (_) {
+        if (typeof toast === 'function') toast('Unable to copy link');
+    }
+}
+
+function toggleDescription() {
+    const descEl = document.getElementById('modal-desc-text');
+    const toggleBtn = document.getElementById('desc-toggle-btn');
+    if (!descEl || !toggleBtn) return;
+
+    const expanded = !descEl.classList.toggle('truncated');
+    toggleBtn.innerHTML = expanded
+        ? 'Read Less <i class="fa-solid fa-chevron-up"></i>'
+        : 'Read More <i class="fa-solid fa-chevron-down"></i>';
+}
 const IMG_BASE = 'https://image.tmdb.org/t/p/';
 const API_TIMEOUT_MS = 7000;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -433,6 +476,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     applyContinueGridLayout();
     loadContinueWatching();
 
+    const sharedMovieId = new URLSearchParams(window.location.search).get('movie');
+    const sharedMovieType = new URLSearchParams(window.location.search).get('type') === 'tv' ? 'tv' : 'movie';
+    if (sharedMovieId) {
+        setTimeout(() => openDetails(sharedMovieId, sharedMovieType), 0);
+    }
+
     const promises = [
         fetchTrending(),
         fetchSection('movie', popularMoviesGrid, 'movie'),
@@ -441,13 +490,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     ];
 
     const results = await Promise.allSettled(promises);
-    const allMediaResult = await fetchAllMediaSection().catch((err) => {
+    // Keep the first homepage render responsive; this larger secondary section
+    // can load once the browser has finished the initial work.
+    const loadAllMedia = () => fetchAllMediaSection().catch((err) => {
         console.error('All Movies / TV init failed:', err?.message || err);
         return false;
     });
+    if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(loadAllMedia, { timeout: 1500 });
+    } else {
+        window.setTimeout(loadAllMedia, 250);
+    }
     const allFailed = results.every(result => result.status === 'rejected' || result.value === false);
 
-    if (allFailed && allMediaResult === false) {
+    if (allFailed) {
         showErrorPage();
     }
 });
@@ -1127,7 +1183,7 @@ function createContinueWatchingCard(item) {
         <div class="movie-card-info">
             <h3 class="movie-card-title">${item.title}${tvLabel}</h3>
             <div class="continue-meta">
-                <span>${formatTime(item.currentTime)} watched â€¢ ${formatTime(timeLeft)} left</span>
+                <span>${formatTime(item.currentTime)} watched ${formatTime(timeLeft)} left</span>
                 <span>Last watched: ${lastWatchedDate}</span>
             </div>
             <div class="continue-progress-label">${Math.round(watchedPercent)}% watched</div>
@@ -1226,6 +1282,9 @@ function getDetailsUrl(id, type, provider = '') {
 
 async function fetchDetails(id, type, provider = '') {
     const key = getDetailKey(id, type, provider);
+    const cached = readDetailCache(id, type, provider);
+    if (cached) return cached;
+
     const inFlight = detailsInFlight.get(key);
     if (inFlight) return inFlight;
 
@@ -1436,7 +1495,7 @@ function updateGenreFilterButtonState() {
     genreFilterBtn.classList.toggle('active', Array.isArray(activeGenreFilterIds) && activeGenreFilterIds.length > 0);
     genreFilterBtn.setAttribute('aria-expanded', String(genreFilterPanelOpen));
     genreFilterBtn.title = (Array.isArray(activeGenreFilterIds) && activeGenreFilterIds.length > 0)
-        ? `Genre: ${label} â€¢ ${getActiveGenreScopeLabel()} â€¢ ${getActiveGenreMatchLabel()} â€¢ ${getActiveGenreSortLabel()}`
+        ? `Genre: ${label} | ${getActiveGenreScopeLabel()} | ${getActiveGenreMatchLabel()} | ${getActiveGenreSortLabel()}`
         : 'Filter by genre';
 
     const labelNode = genreFilterBtn.querySelector('span');
@@ -2031,6 +2090,9 @@ function renderGenreResults(items, genreId) {
 function toggleBaseRowsForGenreMode(enabled) {
     if (!contentRows) return;
 
+    const searchIsActive = String(searchInput?.value || '').trim().length >= 2 &&
+        searchPage?.style.display === 'block';
+
     contentRows.classList.toggle('genre-mode-active', !!enabled);
 
     if (heroSection) {
@@ -2040,10 +2102,10 @@ function toggleBaseRowsForGenreMode(enabled) {
             }
             heroSection.style.display = 'none';
         } else if (heroSection.dataset.genreModePrevDisplay !== undefined) {
-            heroSection.style.display = heroSection.dataset.genreModePrevDisplay;
+            heroSection.style.display = searchIsActive ? 'none' : heroSection.dataset.genreModePrevDisplay;
             delete heroSection.dataset.genreModePrevDisplay;
         } else {
-            heroSection.style.display = '';
+            heroSection.style.display = searchIsActive ? 'none' : '';
         }
     }
 
@@ -2728,6 +2790,9 @@ function normalizeSearchIdentityText(value) {
 
 function getSearchResultIdentityKey(item) {
     const type = inferMediaType(item, 'movie');
+    const id = String(item?.id || item?.tmdb_id || item?.tmdbId || '').trim();
+    if (id) return `id:${id}`;
+
     const title = normalizeSearchIdentityText(
         item?.title || item?.name || item?.originalTitle || item?.original_title || item?.originalName || item?.original_name || item?.romaji || item?.english || ''
     );
@@ -2877,13 +2942,26 @@ function getSearchRelevanceScore(item, query) {
     return score;
 }
 
+function getSearchTitleMatchTier(item, query) {
+    const queryNorm = normalizeSearchIdentityText(query);
+    const titleNorm = normalizeSearchIdentityText(getTitle(item));
+    if (!queryNorm || !titleNorm) return 0;
+    if (titleNorm === queryNorm) return 4;
+    if (titleNorm.startsWith(queryNorm)) return 3;
+    if (titleNorm.includes(queryNorm)) return 2;
+
+    const tokens = buildSearchTokens(queryNorm);
+    return tokens.length && tokens.every((token) => titleNorm.includes(token)) ? 1 : 0;
+}
+
 function sortSearchResultsByQuery(items, query) {
     const ranked = [...(items || [])];
     ranked.sort((a, b) => {
+        const byTitleTier = getSearchTitleMatchTier(b, query) - getSearchTitleMatchTier(a, query);
+        if (byTitleTier !== 0) return byTitleTier;
+
         const byScore = getSearchRelevanceScore(b, query) - getSearchRelevanceScore(a, query);
         if (byScore !== 0) return byScore;
-        const byYear = Number(getYear(b) || 0) - Number(getYear(a) || 0);
-        if (byYear !== 0) return byYear;
         return Number(getRating(b) || 0) - Number(getRating(a) || 0);
     });
     return ranked;
@@ -4225,6 +4303,9 @@ function renderDetailsModal(movie, id, type, provider = '') {
                             onclick="handleWatchlistToggle('${id}', '${type}', '${resolvedProvider}')">
                         <i class="fa-solid fa-${isAdded ? 'check' : 'plus'}"></i> ${isAdded ? 'In Your List' : 'Add to List'}
                     </button>
+                    <button id="modal-share-btn" class="btn btn-list btn-share" type="button" aria-label="Share" title="Share" onclick="copyMovieShareUrl()">
+                        <i class="fa-solid fa-share-nodes"></i>
+                    </button>
                 </div>
 
                 <div class="modal-description-section">
@@ -4620,41 +4701,34 @@ async function hydrateGridCard(item, card) {
         const itemProvider = item.provider || '';
         const seedYear = toYearNum(getYear(item));
 
-        // 1. Fetch details from original provider
-        const details = await fetchDetails(item.id, itemType, itemProvider);
+        // Fetch provider details and the TMDB fallback together when the card
+        // has no usable poster, instead of making the fallback wait in line.
+        const detailsPromise = fetchDetails(item.id, itemType, itemProvider);
+        const tmdbPromise = isBad(getPoster(item))
+            ? fetchJsonWithFallback(`/${encodeURIComponent(getTitle(item))}`, 5000).catch(() => null)
+            : Promise.resolve(null);
+        const [details, tmdbResults] = await Promise.all([detailsPromise, tmdbPromise]);
         const detailsYear = details ? toYearNum(getYear(details)) : 0;
         const detailsIdentityMatches = !!details && isLikelySameTitle(item, details) && (!seedYear || !detailsYear || Math.abs(seedYear - detailsYear) <= 2);
         let poster = details ? getPoster(details) : '';
 
-        // 2. If image is still bad, attempt TMDB lookup by title
-        if (isBad(poster)) {
-            const cleanTitle = getTitle(item);
-            try {
-                // Hits /meta/tmdb/Title - Consumet uses path as query if no command matches
-                const tmdbResults = await fetchJsonWithFallback(`/${encodeURIComponent(cleanTitle)}`, 5000);
-                if (tmdbResults?.results?.length) {
-                    const bestMatch = tmdbResults.results
-                        .map((candidate) => {
-                            const sameTitle = isLikelySameTitle(item, candidate);
-                            const candidateYear = toYearNum(getYear(candidate));
-                            const yearDelta = (seedYear && candidateYear) ? Math.abs(seedYear - candidateYear) : 0;
-                            const yearScore = (!seedYear || !candidateYear)
-                                ? 10
-                                : Math.max(0, 40 - (yearDelta * 12));
-                            const score = (sameTitle ? 140 : 0) + yearScore + Number(getRating(candidate) || 0);
-                            return { candidate, score, sameTitle };
-                        })
-                        .sort((a, b) => b.score - a.score)[0];
+        if (isBad(poster) && tmdbResults?.results?.length) {
+            const bestMatch = tmdbResults.results
+                .map((candidate) => {
+                    const sameTitle = isLikelySameTitle(item, candidate);
+                    const candidateYear = toYearNum(getYear(candidate));
+                    const yearDelta = (seedYear && candidateYear) ? Math.abs(seedYear - candidateYear) : 0;
+                    const yearScore = (!seedYear || !candidateYear)
+                        ? 10
+                        : Math.max(0, 40 - (yearDelta * 12));
+                    const score = (sameTitle ? 140 : 0) + yearScore + Number(getRating(candidate) || 0);
+                    return { candidate, score, sameTitle };
+                })
+                .sort((a, b) => b.score - a.score)[0];
 
-                    if (bestMatch?.sameTitle && bestMatch.score >= 120) {
-                        const tmdbPoster = getPoster(bestMatch.candidate);
-                        if (!isBad(tmdbPoster)) {
-                            poster = tmdbPoster;
-                        }
-                    }
-                }
-            } catch (tmdbErr) {
-                // Ignore TMDB lookup errors
+            if (bestMatch?.sameTitle && bestMatch.score >= 120) {
+                const tmdbPoster = getPoster(bestMatch.candidate);
+                if (!isBad(tmdbPoster)) poster = tmdbPoster;
             }
         }
 
@@ -4908,7 +4982,7 @@ function displayGrid(items, container, forcedType = null, options = {}) {
                     hydrationObserver.unobserve(card);
                 }
             });
-        }, { rootMargin: '200px' });
+        }, { rootMargin: '80px' });
     }
 
     renderItems.forEach(item => {
@@ -5013,12 +5087,18 @@ async function triggerSearch(immediate = false) {
 
     clearTimeout(searchTimeout);
     const q = searchInput.value.trim();
+    const searchUrl = new URL(window.location.href);
     if (q.length < 2) {
+        searchUrl.searchParams.delete('search');
+        history.replaceState(null, '', searchUrl.toString());
         searchPage.style.display = 'none';
         heroSection.style.display = '';
         contentRows.style.display = '';
         return;
     }
+
+    searchUrl.searchParams.set('search', q);
+    history.replaceState(null, '', searchUrl.toString());
 
     const version = ++searchVersion;
 
@@ -5170,6 +5250,16 @@ window.addEventListener('resize', syncSearchUi);
 window.addEventListener('orientationchange', syncSearchUi);
 syncSearchUi();
 
+const initialSearchQuery = new URLSearchParams(window.location.search).get('search')?.trim() || '';
+if (initialSearchQuery.length >= 2 && searchInput) {
+    searchInput.value = initialSearchQuery;
+    setSearchExpanded(true);
+    heroSection.style.display = 'none';
+    contentRows.style.display = 'none';
+    searchPage.style.display = 'block';
+    setTimeout(() => triggerSearch(true), 0);
+}
+
 function displaySearchResults(results, query) {
     heroSection.style.display = 'none';
     contentRows.style.display = 'none';
@@ -5187,9 +5277,52 @@ function displaySearchResults(results, query) {
     displayGrid(dedupedResults, searchPageGrid, null, { includeUnrated: true });
 }
 
+async function restorePlaybackReturnState() {
+    let state = null;
+    try {
+        const raw = sessionStorage.getItem('streamverse_playback_return');
+        if (!raw) return;
+        sessionStorage.removeItem('streamverse_playback_return');
+        state = JSON.parse(raw);
+    } catch (_) {
+        return;
+    }
+
+    const scrollY = Math.max(0, Number(state?.scrollY || 0));
+    const query = String(state?.searchQuery || '').trim();
+    if (query.length >= 2 && searchInput) {
+        searchInput.value = query;
+        setSearchExpanded(true);
+        await triggerSearch(true);
+    }
+
+    const restoreScroll = () => window.scrollTo(0, scrollY);
+    requestAnimationFrame(() => {
+        restoreScroll();
+        setTimeout(restoreScroll, 150);
+        setTimeout(restoreScroll, 600);
+    });
+}
+
+window.addEventListener('pageshow', () => {
+    restorePlaybackReturnState().catch(() => { });
+});
+
 // ------------------ DETAILS MODAL HANDLERS --------------------------------
 function closeDetailsModal() {
     movieModal.classList.remove('active');
+
+    if (window.detailsReturnUrl) {
+        history.replaceState(null, '', window.detailsReturnUrl);
+        delete window.detailsReturnUrl;
+    } else {
+        const modalUrl = new URL(window.location.href);
+        if (modalUrl.searchParams.has('movie')) {
+            modalUrl.searchParams.delete('movie');
+            modalUrl.searchParams.delete('type');
+            history.replaceState(null, '', modalUrl.toString());
+        }
+    }
     
     // Get the stored scroll position
     const storedScrollY = window.storedScrollPosition || 0;
@@ -5438,6 +5571,17 @@ async function watchNow(id, type, provider = '', animeLike = false) {
     params.set('type', safeType);
     params.set('apiSource', String(apiSource || ''));
 
+    const savePlaybackReturnState = () => {
+        try {
+            const savedScrollY = Number(window.storedScrollPosition);
+            sessionStorage.setItem('streamverse_playback_return', JSON.stringify({
+                url: window.location.href,
+                searchQuery: String(searchInput?.value || '').trim(),
+                scrollY: Math.max(0, Math.round(Number.isFinite(savedScrollY) ? savedScrollY : (window.scrollY || 0))),
+            }));
+        } catch (_) { }
+    };
+
     const continueEntry = (() => {
         try {
             const raw = localStorage.getItem('sv_continue_watching');
@@ -5484,6 +5628,7 @@ async function watchNow(id, type, provider = '', animeLike = false) {
                 if (episodeNo > 0) params.set('episode', String(episodeNo));
             }
             if (continueEntry.audio) params.set('audio', String(continueEntry.audio));
+            savePlaybackReturnState();
             window.location.href = `/player?${params.toString()}`;
             return;
         }
@@ -5530,6 +5675,7 @@ async function watchNow(id, type, provider = '', animeLike = false) {
             // The player can still resolve the default episode if metadata is unavailable.
         }
     }
+    savePlaybackReturnState();
     window.location.href = `/player?${params.toString()}`;
 }
 
@@ -5645,6 +5791,15 @@ function updateSwitcherState() {
 // Fast modal override: render immediately from seed/cache, then hydrate full details.
 async function openDetails(id, type, provider = '', seedItem = null) {
     const canonicalId = provider ? String(id || '') : getCanonicalTmdbId(seedItem, id);
+
+    const modalUrl = new URL(window.location.href);
+    const alreadyDeepLinked = modalUrl.searchParams.get('movie') === String(canonicalId);
+    if (!alreadyDeepLinked) {
+        window.detailsReturnUrl = window.location.href;
+        modalUrl.searchParams.set('movie', String(canonicalId));
+        modalUrl.searchParams.set('type', String(type || 'movie').toLowerCase() === 'tv' ? 'tv' : 'movie');
+        history.pushState({ streamverseModal: true }, '', modalUrl.toString());
+    }
 
     // Store scroll position before opening modal
     window.storedScrollPosition = window.scrollY;
