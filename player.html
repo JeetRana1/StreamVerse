@@ -2718,12 +2718,20 @@
 
         #error-box .retry-btn i {
             display: inline;
+            position: static;
+            width: auto;
+            height: auto;
+            background: none;
+            border: 0;
+            box-shadow: none;
             font-size: 1rem;
-            margin: 0;
+            margin: 0 .4rem 0 0;
             color: inherit;
         }
 
         #error-next-episode-btn { display: none; }
+
+        #error-box .retry-btn + .retry-btn { margin-left: .8rem; }
 
         .retry-btn {
             margin-top: 1.5rem;
@@ -2740,6 +2748,10 @@
 
         .retry-btn:hover {
             opacity: .85;
+        }
+
+        @media (max-width: 480px) {
+            #error-box .retry-btn + .retry-btn { margin-left: 0; margin-top: .7rem; }
         }
 
         ::-webkit-scrollbar {
@@ -3723,10 +3735,14 @@
         #captionsMenu::-webkit-scrollbar-track { background: transparent; border-radius: 999px; }
         #captionsMenu::-webkit-scrollbar-thumb { background: rgba(255,255,255,.28); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
         #captionsMenu::-webkit-scrollbar-thumb:hover { background: rgba(229,9,20,.72); background-clip: padding-box; }
-        .ep-season-tabs { position: sticky; top: 0; z-index: 3; flex: 0 0 44px; min-height: 44px; height: 44px; display: flex; align-items: center; gap: 6px; padding: 6px 8px; box-sizing: border-box; border-radius: 12px; background: rgba(18,18,22,.96); overflow-x: auto; }
-        .ep-season-tabs button { min-height: 28px; padding: 6px 11px; border: 1px solid rgba(255,255,255,.10); border-radius: 999px; background: rgba(255,255,255,.05); color: rgba(255,255,255,.72); white-space: nowrap; font-size: 11px; font-weight: 700; }
+        .ep-season-tabs-wrap { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 4px; border-radius: 12px; background: rgba(18,18,22,.96); }
+        .ep-season-tabs { flex: 1 1 auto; min-width: 0; height: 44px; display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 6px 4px; box-sizing: border-box; overflow-x: auto !important; overflow-y: hidden !important; scrollbar-width: none; }
+        .ep-season-tabs::-webkit-scrollbar { display: none; width: 0; height: 0; }
+        .ep-season-tab-arrow { flex: 0 0 26px; width: 26px; height: 28px; padding: 0; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; background: rgba(255,255,255,.06); color: rgba(255,255,255,.82); cursor: pointer; }
+        .ep-season-tab-arrow:disabled { opacity: .28; cursor: default; }
+        .ep-season-tabs button { flex: 0 0 auto; height: 28px; min-height: 28px; max-height: 28px; padding: 6px 11px; border: 1px solid rgba(255,255,255,.10); border-radius: 999px; background: rgba(255,255,255,.05); color: rgba(255,255,255,.72); white-space: nowrap; font-size: 11px; font-weight: 700; line-height: 14px; }
         .ep-season-tabs button.active { border-color: rgba(229,9,20,.55); background: rgba(229,9,20,.16); color: #fff; }
-        #ep-panel .ep-season-tabs { display: flex !important; flex: 0 0 44px !important; min-height: 44px !important; }
+            #ep-panel .ep-season-tabs-wrap { display: flex !important; height: 44px !important; }
         #ep-panel .ep-item[hidden], #ep-panel .ep-season[hidden] { display: none !important; }
         #watchPartyPanel { right: clamp(32px, 3vw, 48px) !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 50px) !important; width: min(360px, calc(100vw - 32px)) !important; max-height: min(58vh, 520px) !important; border-radius: 22px !important; }
         #watchPartyPanel .watch-party-shell, #watchPartyPanel .watch-party-card, #watchPartyPanel .watch-party-chat { border-radius: 22px !important; }
@@ -4050,6 +4066,7 @@
     <!-- ERROR -->
     <div id="error-box">
         <i class="fa-solid fa-triangle-exclamation"></i>
+        <span style="position:relative;display:block;margin-bottom:.65rem;color:#ff7882;font-size:.68rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;">Playback issue</span>
         <h3 id="err-title">Stream Unavailable</h3>
         <p id="err-msg">No providers could find a stream for this title.</p>
         <button class="retry-btn" onclick="location.reload()"><i class="fa-solid fa-rotate-right"></i> Try
@@ -4425,12 +4442,11 @@
 
         // Provider pools - automatically selected based on anime detection
         // ANIME_PROVIDERS: Specialized anime providers (used exclusively for anime content)
-        const ANIME_PROVIDERS = ['animesalt'];
+        const ANIME_PROVIDERS = ['animesalt', 'animekai'];
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['animesalt'];
         const REMOVED_PROVIDER_MAP = {
             satoru: 'animesalt',
             justanime: 'animesalt',
-            animekai: 'animesalt',
             flixhq: 'hdstream4u'
         };
         
@@ -5813,6 +5829,7 @@
             };
 
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                if (hls !== hlsInst) return;
                 console.log('MANIFEST_PARSED - audio tracks:', hls.audioTracks?.length || 0);
                 const parsedProvider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
                 hlsFragErrorBurst = 0;
@@ -5942,6 +5959,15 @@
             });
 
             hls.on(Hls.Events.ERROR, function (_, d) {
+                // A source switch can finish an old network request after its
+                // HLS instance has been destroyed. Never let that stale error
+                // trigger recovery on the newly selected source.
+                if (hls !== hlsInst) return;
+                if (d?.url && currentStreamUrl) {
+                    try {
+                        if (new URL(d.url).host !== new URL(currentStreamUrl).host) return;
+                    } catch (_) { }
+                }
                 console.log('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
                 const detailText = String(d?.details || '').toLowerCase();
                 const isFragParsing = detailText.includes('fragparsingerror') || d?.details === Hls.ErrorDetails.FRAG_PARSING_ERROR;
@@ -6517,7 +6543,7 @@
             let ei = 0;
             let matchedExplicitSeasonRef = false;
 
-            if (!useResumePosition && currentParams.get('seasonKey') && !ignoreSpecialHintForNumberedSeason) {
+            if (!useResumePosition && currentParams.get('seasonKey') && !ignoreSpecialHintForNumberedSeason && !(currentIsLikelyAnime && activeProviders.includes('animekai'))) {
                 const sKey = String(currentParams.get('seasonKey')).trim().toLowerCase();
                 const bySeasonKey = safeSeasons.findIndex((s) =>
                     String(s?.providerAnimeId || '').trim().toLowerCase() === sKey
@@ -6562,6 +6588,9 @@
                 }
             }
             
+            if (currentIsLikelyAnime && activeProviders.includes('animekai') && currentSeason > 0) {
+                si = Math.max(0, currentSeason - 1);
+            }
             const eps = safeSeasons[si]?.episodes || [];
             if (Number.isFinite(currentEpisode) && currentEpisode > 0) {
                 const byEpisodeNo = eps.findIndex((ep) => {
@@ -7897,7 +7926,13 @@
 
         function buildAnimeWatchUrl(provider, episodeId, options = {}) {
             const base = getAnimeProviderBase(provider);
-            const url = new URL(`${base}/watch/${encodeURIComponent(episodeId)}`);
+            const rawEpisodeId = String(episodeId || '');
+            const nineAnimeEpisode = rawEpisodeId.match(/\/ep-(\d+)/i)?.[1] || '';
+            const encodedEpisodeId = provider === 'nineanime'
+                ? rawEpisodeId.split('/').map((part) => encodeURIComponent(part)).join('/')
+                : encodeURIComponent(episodeId);
+            const url = new URL(`${base}/watch/${encodedEpisodeId}`);
+            if (provider === 'nineanime' && nineAnimeEpisode) url.searchParams.set('ep', nineAnimeEpisode);
             if (provider === 'animesalt') url.searchParams.set('category', 'both');
             if (provider === 'satoru') url.searchParams.set('_t', String(Date.now())); // Cache-busting for satoru
             if (provider === 'animekai' && options?.dub) url.searchParams.set('dub', 'true');
@@ -8137,6 +8172,27 @@
             // like "Invincible") should never be treated as anime.
             const hasStrongNonAnimeTitle = /\b(?:got\s+(?:talent|latent)|big\s+brother|masterchef|love\s+island|survivor|invincible)\b/i.test(titleLower);
             if (hasStrongNonAnimeTitle) return false;
+
+            // AnimeSalt is also an authoritative anime catalog. Use it when
+            // AniList/MAL metadata does not identify a title, including newer
+            // anime and animated titles that have sparse TMDB metadata.
+            try {
+                const animeSaltUrl = `${API_BASE.replace('/meta/tmdb', '/anime/animesalt')}/${encodeURIComponent(title)}?type=${encodeURIComponent(MEDIA_TYPE)}`;
+                const { res: animeSaltRes } = await fetchJsonWithApiFallback(animeSaltUrl, {
+                    signal: AbortSignal.timeout(5000),
+                });
+                if (animeSaltRes.ok) {
+                    const animeSaltRows = getAnimeSearchResults(await animeSaltRes.json());
+                    const hasStrongAnimeSaltMatch = animeSaltRows.some((row) =>
+                        getAnimeResultTitleTexts(row).some((candidateTitle) =>
+                            getTitleMatchQuality(candidateTitle, title).strong,
+                        ),
+                    );
+                    if (hasStrongAnimeSaltMatch) return true;
+                }
+            } catch (_) {
+                // Continue with the broader metadata fallback below.
+            }
 
             // Prevent reality, talk, variety, and documentary programs from
             // entering the anime-only provider path when AniList returns a
@@ -10544,7 +10600,11 @@
             const targetSeasonNo = Number.isFinite(Number(selectedSeason?.seasonNo)) 
                 ? Number(selectedSeason?.seasonNo) 
                 : (Number(curSeason || 0) + 1);
-            const episodeNum = Number(curEpisode || 0) + 1;
+            const selectedEpisode = selectedSeason?.episodes?.[Number(curEpisode || 0)] || null;
+            const nativeEpisodeNum = Number(selectedEpisode?.episode || selectedEpisode?.number || selectedEpisode?.episodeNum || 0);
+            const episodeNum = Number.isFinite(nativeEpisodeNum) && nativeEpisodeNum > 0
+                ? nativeEpisodeNum
+                : Number(curEpisode || 0) + 1;
             if (!title || !Number.isFinite(episodeNum) || episodeNum <= 0) return false;
 
             const cacheKey = `${title.toLowerCase()}::${seasonLabel.toLowerCase()}::${episodeNum}`;
@@ -10558,6 +10618,9 @@
                     };
                     video.addEventListener('loadedmetadata', retryAniSkipAfterMetadata, { once: true });
                     video.addEventListener('durationchange', retryAniSkipAfterMetadata, { once: true });
+                    video.addEventListener('canplay', retryAniSkipAfterMetadata, { once: true });
+                    setTimeout(retryAniSkipAfterMetadata, 1500);
+                    setTimeout(retryAniSkipAfterMetadata, 5000);
                 }
                 return false;
             }
@@ -14156,6 +14219,11 @@
                 ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animesalt' && !s?.isEmbed)
                 : [];
             const hasAnimesaltAudioSources = animesaltAudioSources.length > 1;
+            const animekaiAudioSourcesAll = Array.isArray(allSources)
+                ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animekai' && !s?.isEmbed)
+                : [];
+            const animekaiAudioSources = animekaiAudioSourcesAll;
+            const hasAnimekaiAudioSources = animekaiAudioSources.length > 0;
             const hasHlsTracks = hlsTracks.length > 1;
 
             // Only show "no tracks" message if we're sure there are none
@@ -14315,6 +14383,10 @@
                 ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animesalt' && !s?.isEmbed)
                 : [];
             const hasAnimesaltAudioSources = animesaltAudioSources.length > 1;
+            const animekaiAudioSources = Array.isArray(allSources)
+                ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animekai' && !s?.isEmbed)
+                : [];
+            const hasAnimekaiAudioSources = animekaiAudioSources.length > 0;
             const useProviderPrefixedAudioLabels = [hasAnimesaltAudioSources, hasSatoruSources].filter(Boolean).length > 1;
 
             // iOS Safari uses native HLS (no HLS.js), so hlsInst is null.
@@ -14323,7 +14395,7 @@
                 ? Array.from(video.audioTracks)
                 : [];
 
-            const hasAnyTracks = hlsTracks.length > 0 || hasSatoruSources || hasAnimesaltAudioSources || iosNativeTracks.length > 0;
+            const hasAnyTracks = hlsTracks.length > 0 || hasSatoruSources || hasAnimesaltAudioSources || hasAnimekaiAudioSources || iosNativeTracks.length > 0;
 
             audioBtn.style.display = 'flex';
 
@@ -14422,7 +14494,7 @@
             }
 
             const renderProviderAudioSources = (providerName, providerSources) => {
-                if (!Array.isArray(providerSources) || providerSources.length <= 1) return;
+                if (!Array.isArray(providerSources) || !providerSources.length) return;
                 providerSources.forEach((src) => {
                     const isCurrent = String(allSources?.[currentIdx]?.url || '') === String(src.url || '');
                     const cleanLabel = String(src.audioLabel || src.audio || src.lang || src.language || src.quality || src.label || '')
@@ -14434,7 +14506,9 @@
                         .trim() || (src.isDub ? 'Dubbed' : (src.isSub ? 'Subbed' : 'Default'));
                     const displayLabel = useProviderPrefixedAudioLabels
                         ? `${providerLabel(providerName)} - ${cleanLabel}`
-                        : cleanLabel;
+                        : (providerName === 'animekai'
+                            ? (src.isDub || /dub/i.test(String(src.quality || cleanLabel)) ? 'Dub' : 'Sub')
+                            : cleanLabel);
                     addItem(displayLabel, isCurrent, () => {
                         if (isCurrent) return;
                         const idx = allSources.findIndex((row) => String(row?.url || '') === String(src.url || ''));
@@ -14457,6 +14531,7 @@
             };
 
             renderProviderAudioSources('animesalt', animesaltAudioSources);
+            renderProviderAudioSources('animekai', animekaiAudioSources);
             // Virtual source-backed tracks (used for multi-language variants)
             const showVirtualSatoruTracks = hasSatoruSources;
             if (showVirtualSatoruTracks) {
@@ -15978,7 +16053,7 @@
             }, 60000);
 
             try {
-                const isAnimeOnlyProvider = String(FORCED_PROVIDER || '').toLowerCase() === 'animesalt';
+                const isAnimeOnlyProvider = ['animesalt', 'animekai', 'nineanime'].includes(String(FORCED_PROVIDER || '').toLowerCase());
                 const providerNeedsMetaInfo = false;
                 const buildInfoUrls = (type) => (FORCED_PROVIDER && !isAnimeOnlyProvider && !providerNeedsMetaInfo)
                     ? [
@@ -16298,6 +16373,27 @@
                     const explicitFallbackSeasonNo = Number(fallbackSeasonNo || 0);
                     const hasExplicitTargetSeason = Number.isFinite(explicitFallbackSeasonNo) && explicitFallbackSeasonNo > 1;
 
+                    // AnimeKai exposes long-running shows as one native episode list.
+                    // Do not split it against TMDB's arc/season skeleton or episode 61
+                    // becomes Season 1 Episode 61 instead of AnimeKai Episode 61.
+                    if (provider === 'animekai' && rawEpisodes.length > 0 && !hasMeaningfulSeasonMetadata) {
+                        const sectionSize = 50;
+                        const sections = [];
+                        for (let start = 0; start < rawEpisodes.length; start += sectionSize) {
+                            const sectionEpisodes = rawEpisodes.slice(start, start + sectionSize);
+                            const first = toEpisodeNumber(sectionEpisodes[0], start);
+                            const last = toEpisodeNumber(sectionEpisodes[sectionEpisodes.length - 1], start + sectionEpisodes.length - 1);
+                            sections.push(buildSeasonBucket(
+                                sections.length + 1,
+                                0,
+                                start,
+                                `${first}-${last}`,
+                                sectionEpisodes,
+                            ));
+                        }
+                        return sections;
+                    }
+
                     // Animetsu /eps/{animeId} is already scoped to the exact Animetsu entry.
                     // Do not split it across the TMDB skeleton, because that can turn a normal
                     // provider episode list into Specials/Movies/related entries from TMDB.
@@ -16364,10 +16460,14 @@
                             return Number(a.sourceOrder || 0) - Number(b.sourceOrder || 0);
                         });
                 };
-                const mergeSeasonLists = (baseList, extraList) => {
-                    const merged = [...(Array.isArray(baseList) ? baseList : [])];
-                    for (const season of (Array.isArray(extraList) ? extraList : [])) {
-                        const key = makeSeasonKey(season?.seasonNo, season?.seasonPartNo);
+                    const mergeSeasonLists = (baseList, extraList) => {
+                        const merged = [...(Array.isArray(baseList) ? baseList : [])];
+                        for (const season of (Array.isArray(extraList) ? extraList : [])) {
+                            if (season?.provider === 'animekai' && merged.some((row) => row?.provider === 'animekai')) {
+                                merged.push({ ...season, episodes: [...(season?.episodes || [])] });
+                                continue;
+                            }
+                            const key = makeSeasonKey(season?.seasonNo, season?.seasonPartNo);
                         const existing = merged.find((row) => makeSeasonKey(row?.seasonNo, row?.seasonPartNo) === key);
                         if (!existing) {
                             merged.push({ ...season, episodes: [...(season?.episodes || [])] });
@@ -16391,7 +16491,7 @@
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v18';
+                    const seasonCacheVersion = 'v30';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -16420,6 +16520,27 @@
                     }
 
                     const timeoutMs = 5000;
+
+                    if (providerName === 'animekai') {
+                        try {
+                            const catalogRes = await fetchJsonWithApiFallback(
+                                `${API_BASE.replace('/meta/tmdb', '/anime/animekai/catalog')}/${encodeURIComponent(String(currentMediaInfo?.title || currentMediaInfo?.name || animeSeriesTitle))}`,
+                                { signal: AbortSignal.timeout(Math.max(timeoutMs, 12000)) },
+                            );
+                            if (catalogRes.res.ok) {
+                                const catalog = await catalogRes.res.json();
+                                if (Array.isArray(catalog?.seasons) && catalog.seasons.length) {
+                                    const normalized = catalog.seasons.map((season, index) => ({
+                                        ...season,
+                                        seasonNo: index + 1,
+                                        episodes: season.episodes || [],
+                                    }));
+                                    localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: normalized }));
+                                    return normalized;
+                                }
+                            }
+                        } catch {}
+                    }
 
                     if (providerName === 'satoru') {
                         const { res: seriesRes } = await fetchJsonWithApiFallback(
@@ -16536,7 +16657,7 @@
 
                             if (providerName === 'animekai') {
                                 searchPool
-                                    .filter((row) => isAllowedAmbiguousAnimeProviderMatch(row, animeSeriesTitle, preferredYear))
+                                    .filter((row) => !String(row?.type || row?.format || '').toLowerCase().includes('movie') && !String(row?.type || row?.format || '').toLowerCase().includes('special'))
                                     .slice(0, 8)
                                     .forEach((row) => {
                                         const rowId = String(row?.id || '').trim();
@@ -16551,6 +16672,13 @@
                                 break;
                             }
                         }
+                    }
+                    if (providerName === 'animekai' && URL_SEASON_KEY) {
+                        bestResult = { id: URL_SEASON_KEY, title: animeSeriesTitle };
+                    }
+                    if (providerName === 'animekai' && !bestResult?.id) {
+                        const fallbackSlug = animeSeriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                        if (fallbackSlug) bestResult = { id: fallbackSlug, title: animeSeriesTitle, type: 'TV' };
                     }
                     if (!bestResult?.id) return [];
 
@@ -16615,6 +16743,13 @@
                         });
 
                         if (merged.length) {
+                            if (providerName === 'animekai' && merged.length > 1) {
+                                merged = merged.map((season, index) => ({
+                                    ...season,
+                                    seasonNo: index + 1,
+                                    name: String(season?.name || season?.providerTitle || `Part ${index + 1}`).replace(/\s+/g, ' ').trim(),
+                                }));
+                            }
                             localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: merged }));
                             return merged;
                         }
@@ -16676,7 +16811,7 @@
                         : ANIME_PROVIDERS
                 ))
                     .map((p) => String(p || '').toLowerCase())
-                    .filter((p) => ANIME_PROVIDERS.includes(p));
+                    .filter((p) => ANIME_PROVIDERS.includes(p) && p !== 'nineanime');
 
                 // Run provider hydration in parallel
                 const hydrationPromises = hydrateProviders.map(async (provider) => {
@@ -16703,20 +16838,22 @@
                 const preferredMenuProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
                 if (preferredMenuProvider && providerSeasonCatalog.has(preferredMenuProvider)) {
                     activeMenuProvider = preferredMenuProvider;
+                } else if (providerSeasonCatalog.has('animekai')) {
+                    activeMenuProvider = 'animekai';
                 } else if (providerSeasonCatalog.has('animesalt')) {
                     activeMenuProvider = 'animesalt';
                 } else {
                     activeMenuProvider = Array.from(providerSeasonCatalog.keys())[0] || '';
                 }
 
-                const animeSaltCatalog = providerSeasonCatalog.get('animesalt');
+                const menuCatalogProvider = preferredMenuProvider || activeMenuProvider;
+                const menuCatalog = providerSeasonCatalog.get(menuCatalogProvider);
                 if (
-                    !preferredMenuProvider &&
-                    Array.isArray(animeSaltCatalog) &&
-                    countMenuSeasonEpisodes(animeSaltCatalog) > 1
+                    Array.isArray(menuCatalog) &&
+                    countMenuSeasonEpisodes(menuCatalog) > 1
                 ) {
-                    tvSeasons = cloneAndSortMenuSeasons(mergeMenuSeasonsBySeasonNo(animeSaltCatalog));
-                    console.log('[initTv] pinned anime episode catalog to AnimeSalt:', tvSeasons.map((season) => ({
+                    tvSeasons = cloneAndSortMenuSeasons(mergeMenuSeasonsBySeasonNo(menuCatalog));
+                    console.log('[initTv] pinned anime episode catalog to', menuCatalogProvider, tvSeasons.map((season) => ({
                         seasonNo: season.seasonNo,
                         episodes: Array.isArray(season.episodes) ? season.episodes.length : 0,
                     })));
@@ -18063,7 +18200,29 @@
                 if (index === 0) tab.classList.add('active');
                 seasonTabs.appendChild(tab);
             });
-            scrollRoot.appendChild(seasonTabs);
+            const seasonTabsWrap = document.createElement('div');
+            seasonTabsWrap.className = 'ep-season-tabs-wrap';
+            const scrollTabs = (direction) => seasonTabs.scrollBy({ left: direction * Math.max(180, seasonTabs.clientWidth * 0.7), behavior: 'smooth' });
+            const leftArrow = document.createElement('button');
+            leftArrow.type = 'button';
+            leftArrow.className = 'ep-season-tab-arrow';
+            leftArrow.textContent = '<';
+            leftArrow.setAttribute('aria-label', 'Previous season or episode range');
+            leftArrow.onclick = () => scrollTabs(-1);
+            const rightArrow = document.createElement('button');
+            rightArrow.type = 'button';
+            rightArrow.className = 'ep-season-tab-arrow';
+            rightArrow.textContent = '>';
+            rightArrow.setAttribute('aria-label', 'Next season or episode range');
+            rightArrow.onclick = () => scrollTabs(1);
+            const updateTabArrows = () => {
+                leftArrow.disabled = seasonTabs.scrollLeft <= 1;
+                rightArrow.disabled = seasonTabs.scrollLeft + seasonTabs.clientWidth >= seasonTabs.scrollWidth - 1;
+            };
+            seasonTabs.addEventListener('scroll', updateTabArrows, { passive: true });
+            seasonTabsWrap.append(leftArrow, seasonTabs, rightArrow);
+            scrollRoot.appendChild(seasonTabsWrap);
+            requestAnimationFrame(updateTabArrows);
             let menuOrder = 0;
             menuSeasons.forEach((s, si) => {
                 const lbl = document.createElement('div');
@@ -18233,7 +18392,7 @@
                     });
                     item.onclick = () => {
                         const menuProvider = String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase();
-                        const target = currentIsLikelyAnime
+                        const target = currentIsLikelyAnime && menuProvider !== 'animekai'
                                 ? resolveGlobalEpisodeIndices(s, ep, si, ei, true)
                                 : { seasonIndex: si, episodeIndex: ei };
                         const isBonusEpisode = /bonus/i.test(String(epTitle || ep?.title || ep?.name || ep?.episodeName || ep?.episode_name || ''));
@@ -18335,7 +18494,10 @@
                         (!hintAbsoluteEpisodeNo || Number(el.dataset.absoluteEpisodeNo || 0) === hintAbsoluteEpisodeNo)
                     )
                 );
-                const isMatch = providerMatch || (!hint && (mappedMatch || numberMatch));
+                const hasUsableProviderHint = hint && hintProvider === 'animekai'
+                    ? (/\$ep=\d+/i.test(hintEpisodeId) || /-\d+x\d+$/i.test(hintEpisodeId))
+                    : Boolean(hint);
+                const isMatch = providerMatch || mappedMatch || (!hasUsableProviderHint && numberMatch);
                 el.classList.toggle('active', isMatch);
                 if (isMatch) {
                     matches.push(el);
@@ -18894,8 +19056,8 @@
             const bootSeasonNo = useResumePosition ? RESUME_SEASON_FALLBACK : URL_SEASON;
             const bootEpisodeNo = useResumePosition ? RESUME_EPISODE_FALLBACK : URL_EPISODE;
             const bootAbsoluteEpisodeNo = useResumePosition ? continueAbsoluteEpisodeNo : URL_ABSOLUTE_EPISODE;
-            const urlEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(bootEpisodeId) || /^episode[-/]/i.test(bootEpisodeId);
-            const continueEpisodeIdLooksProviderScoped = /-\d+x\d+$/i.test(continueEpisodeId) || /^episode[-/]/i.test(continueEpisodeId);
+            const urlEpisodeIdLooksProviderScoped = /\$ep=\d+/i.test(bootEpisodeId) || /\/ep-\d+/i.test(bootEpisodeId) || /-\d+x\d+$/i.test(bootEpisodeId) || /^episode[-/]/i.test(bootEpisodeId);
+            const continueEpisodeIdLooksProviderScoped = /\$ep=\d+/i.test(continueEpisodeId) || /\/ep-\d+/i.test(continueEpisodeId) || /-\d+x\d+$/i.test(continueEpisodeId) || /^episode[-/]/i.test(continueEpisodeId);
             const shouldCreateProviderSelectionHint =
                 currentIsLikelyAnime ||
                 String(FORCED_PROVIDER || '').trim().toLowerCase() === 'flixhq' ||
@@ -18903,10 +19065,15 @@
             if (!pendingEpisodeSelectionHint && shouldCreateProviderSelectionHint && (bootEpisodeId || bootAbsoluteEpisodeNo > 0 || bootSeasonKey || continueEpisodeId || continueAbsoluteEpisodeNo > 0 || continueSeasonKey)) {
                 const urlSeasonTitleLooksSpecial = /^(specials?|ovas?|extras?|recaps?)$/i.test(bootSeasonTitle);
                 const safeUrlSeasonTitle = urlSeasonTitleLooksSpecial && bootSeasonNo > 0 ? '' : bootSeasonTitle;
+                const bootProviderHint = /\/ep-\d+/i.test(bootEpisodeId || continueEpisodeId)
+                    ? 'nineanime'
+                    : (/\$ep=\d+/i.test(bootEpisodeId || continueEpisodeId)
+                        ? 'animekai'
+                        : (/^episode[-/]/i.test(bootEpisodeId || continueEpisodeId)
+                            ? 'flixhq'
+                            : ((bootSeasonKey || continueSeasonKey) ? 'animesalt' : null)));
                 pendingEpisodeSelectionHint = {
-                    provider: /^episode[-/]/i.test(bootEpisodeId || continueEpisodeId)
-                        ? 'flixhq'
-                        : ((bootSeasonKey || continueSeasonKey) ? 'animesalt' : null),
+                    provider: bootProviderHint,
                     episodeId: (urlEpisodeIdLooksProviderScoped ? bootEpisodeId : '') || (continueEpisodeIdLooksProviderScoped ? continueEpisodeId : '') || null,
                     seasonTitle: safeUrlSeasonTitle || String(CONTINUE_ENTRY?.seasonTitle || '').trim() || null,
                     seasonNo: bootSeasonNo > 0 ? bootSeasonNo : (Number(CONTINUE_ENTRY?.seasonNo || 0) > 0 ? Number(CONTINUE_ENTRY.seasonNo) : null),
@@ -18972,6 +19139,28 @@
             }
             const isBonusSelection = /bonus/i.test(String(selectionHint?.seasonTitle || URL_SEASON_TITLE || ''));
             let selectedEpisodeId = String(selectionHint?.episodeId || bootEpisodeId || (isBonusSelection ? URL_EPISODE_ID : '') || selectedEpisode?.id || '').trim();
+            if (activeProviders.includes('animekai') && /\$ep=/i.test(String(selectedEpisode?.id || ''))) {
+                selectedEpisodeId = String(selectedEpisode.id).trim();
+            }
+            if (activeProviders.includes('animekai') && /\$ep=/i.test(URL_EPISODE_ID)) {
+                selectedEpisodeId = URL_EPISODE_ID;
+            }
+            if (activeProviders.includes('nineanime') && /\/ep-\d+/i.test(URL_EPISODE_ID)) {
+                selectedEpisodeId = URL_EPISODE_ID;
+            }
+            if (activeProviders.includes('nineanime')) {
+                const nineAnimeEpisodeId = String(selectedEpisodeId || URL_EPISODE_ID || '').trim();
+                const nineAnimeSlug = nineAnimeEpisodeId.match(/^(.+?)\/ep-\d+$/i)?.[1];
+                if (nineAnimeSlug && Number(selectedEpisodeNo) > 0) {
+                    selectedEpisodeId = `${nineAnimeSlug}/ep-${selectedEpisodeNo}`;
+                }
+            }
+            if (activeProviders.includes('animekai') && !(/\$ep=\d+/i.test(selectedEpisodeId) || /-\d+x\d+$/i.test(selectedEpisodeId))) {
+                const animeKaiSlug = URL_SEASON_KEY || String(
+                    providerSeasonCatalog?.get?.('animekai')?.find?.((season) => Number(season?.seasonNo || 0) === Number(selectedSeasonNo))?.providerAnimeId || '',
+                ).trim();
+                if (animeKaiSlug) selectedEpisodeId = `${animeKaiSlug}-${selectedSeasonNo}x${selectedEpisodeNo}`;
+            }
             const hintedAbsoluteEpisodeNo = currentIsLikelyAnime ? Number(selectionHint?.absoluteEpisodeNo || 0) : 0;
             const selectedAbsoluteEpisodeNo = Number.isFinite(hintedAbsoluteEpisodeNo) && hintedAbsoluteEpisodeNo > 0
                 ? hintedAbsoluteEpisodeNo
@@ -19480,17 +19669,19 @@
                     let animesaltAlternateEpisodeIds = [];
                     let satoruResolvedExactly = false;
                     const isAnimeProvider =
-                        provider === 'animesalt';
+                        ['animesalt', 'animekai', 'nineanime'].includes(String(provider || '').toLowerCase());
                     const isNetMirrorProvider = ['flixhq', 'viewvault', 'netmirror'].some(v => String(provider || '').toLowerCase().includes(v));
 
                     if (isAnimeProvider) {
                         const canonicalAnimeInfo = currentAnimeCanonicalInfo || await getCanonicalAnimeInfo();
                         const canonicalAnimeId = String(canonicalAnimeInfo?.id || currentMediaInfo?.anilistId || '').trim();
-                        const rawTitle = canonicalAnimeInfo?.title ||
+                        const rawTitle = provider === 'animesalt'
+                            ? (currentMediaInfo?.title || currentMediaInfo?.name || canonicalAnimeInfo?.title || canonicalAnimeInfo?.name || TMDB_ID)
+                            : (canonicalAnimeInfo?.title ||
                                 canonicalAnimeInfo?.name ||
                                 currentMediaInfo?.title ||
                                 currentMediaInfo?.name ||
-                                TMDB_ID;
+                                TMDB_ID);
                         // If TMDB failed and we have a generic fallback title, try to use TMDB_ID for searching
                         const searchTitle = (rawTitle === 'Unknown Title' || rawTitle === 'Unknown') ? TMDB_ID : rawTitle;
                         const mediaTitle = normalizeAnimeSearchQuery(getAnimeTitleText(searchTitle));
@@ -19502,6 +19693,28 @@
                         if (!provEpisodeId) {
                             // Generic Anime Resolution
                             const resContext = getProviderAnimeResolutionContext(provider, mediaTitle, selectedSeasonNo, selectedEpisodeNo, seasonLabel, MEDIA_TYPE === 'movie', selectedAbsoluteEpisodeNo);
+                            if (provider === 'nineanime' && !selectedEpisodeId.includes('/')) {
+                                const normalizedNineTitle = normalizeTitleForMatch(mediaTitle);
+                                const knownSlug = normalizedNineTitle === 'pokemon' && Number(selectedSeasonNo) === 1
+                                    ? 'pokemon-dukwk'
+                                    : String(normalizedNineTitle || mediaTitle)
+                                        .toLowerCase()
+                                        .replace(/[^a-z0-9]+/g, '-')
+                                        .replace(/^-+|-+$/g, '');
+                                if (knownSlug && Number(selectedEpisodeNo) > 0) {
+                                    provEpisodeId = `${knownSlug}/ep-${selectedEpisodeNo}`;
+                                }
+                            }
+                            if (provider === 'animekai') {
+                                if (selectedEpisodeId && (/\$ep=\d+/i.test(selectedEpisodeId) || /-\d+x\d+$/i.test(selectedEpisodeId))) {
+                                    provEpisodeId = selectedEpisodeId;
+                                } else if (URL_SEASON_KEY && Number(selectedSeasonNo) > 0 && Number(selectedEpisodeNo) > 0) {
+                                    provEpisodeId = `${URL_SEASON_KEY}-${selectedSeasonNo}x${selectedEpisodeNo}`;
+                                }
+                            }
+                            if (provider === 'nineanime' && selectedEpisodeId && /\//.test(selectedEpisodeId)) {
+                                provEpisodeId = selectedEpisodeId;
+                            }
                             if (provider === 'satoru') {
                                 const resolved = await resolveExactSatoruEpisode(
                                     resContext.mediaTitle,
@@ -19557,8 +19770,12 @@
                             
                             if (!provEpisodeId) {
                                 // Search fallback with canonical AniList id preference.
-                                const searchTerms = getAnimeSearchTerms(resContext.mediaTitle, getPreferredMediaYear(), resContext.seasonNo, resContext.seasonLabel, MEDIA_TYPE === 'movie');
-                                let bestAnime = null;
+                                 const searchTerms = provider === 'animekai'
+                                     ? [resContext.mediaTitle, normalizeAnimeSearchQuery(currentMediaInfo?.title || currentMediaInfo?.name || '')]
+                                         .filter(Boolean)
+                                     : getAnimeSearchTerms(resContext.mediaTitle, getPreferredMediaYear(), resContext.seasonNo, resContext.seasonLabel, MEDIA_TYPE === 'movie');
+                                 let bestAnime = null;
+                                 let lastSearchPool = [];
                                 for (const term of searchTerms) {
                                     const typeHint = MEDIA_TYPE === 'tv' && provider === 'animesalt' ? '?type=tv' : '';
                                     const { res: searchRes } = await fetchJsonWithApiFallback(`${API_BASE.replace('/meta/tmdb', '/anime/' + provider)}/${encodeURIComponent(term)}${typeHint}`, { signal: AbortSignal.timeout(REQ_TIMEOUT.animeSearch) });
@@ -19575,8 +19792,13 @@
                                             return true;
                                         })
                                         : results;
-                                    const searchPool = filteredResults.length ? filteredResults : results;
-                                    bestAnime =
+                                     const searchPool = filteredResults.length ? filteredResults : results;
+                                     lastSearchPool = searchPool;
+                                     if (provider === 'animekai' && searchPool.length) {
+                                         bestAnime = searchPool.find((row) => String(row?.type || '').toLowerCase() === 'tv') || searchPool[0];
+                                         break;
+                                     }
+                                     bestAnime =
                                         pickAnimeResultByAniListId(searchPool, canonicalAnimeId) ||
                                         findExactProviderSeasonMatch(provider, searchPool, resContext.seasonLabel) ||
                                         pickAnimeResultByTitle(searchPool, resContext.mediaTitle, getPreferredMediaYear(), resContext.seasonNo, resContext.seasonLabel, MEDIA_TYPE === 'movie');
@@ -19588,7 +19810,15 @@
                                     }
                                     if (bestAnime?.id) break;
                                 }
-                                if (!bestAnime) throw new Error('title not found');
+                                 if (!bestAnime && provider === 'animekai' && lastSearchPool.length) {
+                                      bestAnime = lastSearchPool.find((row) => String(row?.type || '').toLowerCase() === 'tv') || lastSearchPool[0];
+                                  }
+                                  if (!bestAnime && provider === 'animekai') {
+                                      const fallbackSlug = normalizeAnimeSearchQuery(resContext.mediaTitle)
+                                          .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                                      if (fallbackSlug) bestAnime = { id: fallbackSlug, title: resContext.mediaTitle, type: 'TV' };
+                                  }
+                                  if (!bestAnime) throw new Error('title not found');
                                 const { res: infoRes } = await fetchJsonWithApiFallback(buildAnimeInfoUrl(provider, bestAnime.id), { signal: AbortSignal.timeout(ANIME_INFO_TIMEOUT_MS) });
                                 if (infoRes.ok) { let d = await infoRes.json(); info = d.data || d; }
                             }
@@ -19762,7 +19992,27 @@
                         provEpisodeId = String(selectionHint?.episodeId || URL_EPISODE_ID).trim();
                     }
 
-                    const canResolveOnWatch = (provider === 'flixhq' && effectiveMediaType === 'tv') || provider === 'vegamovies' || provider === 'hdstream4u';
+                    // AnimeKai movies use the title slug directly; TMDB movie metadata
+                    // can expose an object-shaped id that is not a provider episode id.
+                    if (provider === 'animekai' && effectiveMediaType === 'movie') provEpisodeId = '';
+                    if (!provEpisodeId && provider === 'animekai' && effectiveMediaType === 'movie') {
+                        const movieTitle = getAnimeTitleText(
+                            currentAnimeCanonicalInfo?.title ||
+                            currentAnimeCanonicalInfo?.name ||
+                            currentMediaInfo?.title ||
+                            currentMediaInfo?.name ||
+                            TMDB_ID ||
+                            '',
+                        );
+                        const movieSlug = String(movieTitle || '')
+                            .toLowerCase()
+                            .normalize('NFKD')
+                            .replace(/[\u0300-\u036f]/g, '')
+                            .replace(/[^a-z0-9]+/g, '-')
+                            .replace(/^-+|-+$/g, '');
+                        if (movieSlug) provEpisodeId = movieSlug;
+                    }
+                    const canResolveOnWatch = (provider === 'flixhq' && effectiveMediaType === 'tv') || provider === 'vegamovies' || provider === 'hdstream4u' || (provider === 'animekai' && effectiveMediaType === 'movie');
                     if (!provEpisodeId && !canResolveOnWatch) throw new Error('No episode ID found');
 
                     // Watch (try TMDB provider watch first so backend can resolve missing TV episode IDs)
@@ -19875,13 +20125,18 @@
 
                     if (!data?.sources?.length) throw new Error('No sources');
 
-                    // AnimeKai: fetch dub variant in background and merge as extra options.
-                    // This keeps initial playback fast while exposing dub sources once ready.
+                    // AnimeKai: fetch the opposite audio variant in the background and merge it
+                    // as an extra option. The initial request follows the URL preference, so
+                    // always requesting Dub here would make a refreshed Dub URL lose Sub.
                     let animekaiDubData = null;
                     if (provider === 'animekai' && provEpisodeId) {
+                        const requestedAnimeAudioMode = String(
+                            URL_AUDIO || preferredAudioToken || preferredSourceLabelMatch || readSavedAnimeAudioMode() || '',
+                        ).trim().toLowerCase();
+                        const primaryIsDub = /(^|\b)(dub|dubbed|english)(\b|$)/i.test(requestedAnimeAudioMode);
                         try {
                             const { res: dubWatchRes } = await fetchJsonWithApiFallback(
-                                buildAnimeWatchUrl(provider, provEpisodeId, { dub: true }),
+                                buildAnimeWatchUrl(provider, provEpisodeId, { dub: !primaryIsDub }),
                                 { signal: AbortSignal.timeout(Math.min(18000, getProviderTimeout(provider, 'watch', ANIME_WATCH_TIMEOUT_MS))) },
                             );
                             if (dubWatchRes.ok) {
@@ -19997,7 +20252,7 @@
                 !currentIsLikelyAnime &&
                 orderedProviders.includes('hdstream4u');
 
-            const preferredAnimeProvider = orderedProviders.find((p) => String(p || '').toLowerCase() === 'animesalt') || '';
+            const preferredAnimeProvider = orderedProviders.find((p) => ['animesalt', 'animekai'].includes(String(p || '').toLowerCase())) || '';
             const shouldPreferAnimeProviderFirst =
                 !effectiveForcedProvider &&
                 currentIsLikelyAnime &&
@@ -20238,7 +20493,8 @@
             
             // Add Reset to Auto option
             const autoItem = document.createElement('div');
-            autoItem.className = `src-item ${!FORCED_PROVIDER ? 'active' : ''}`;
+            const hasSelectableServer = allSources.some((src) => String(src?.provider || '').toLowerCase() !== 'animekai');
+            autoItem.className = `src-item ${(!FORCED_PROVIDER || !hasSelectableServer) ? 'active' : ''}`;
             autoItem.dataset.auto = '1';
             autoItem.innerHTML = `<span class="src-dot"></span><b>Auto (Recommended)</b>`;
             autoItem.onclick = () => {
@@ -20326,6 +20582,7 @@
             }
 
             allSources.forEach((src, i) => {
+                if (String(src?.provider || '').toLowerCase() === 'animekai') return;
                 const item = document.createElement('div');
                 // Use currentIdx to preserve active highlight when list rebuilds after new provider arrives
                 item.className = `src-item`;
@@ -20348,6 +20605,9 @@
                 const el = sourcePanel.querySelector(`.src-item[data-src-index=\"${idx}\"]`);
                 if (el) el.classList.add('active');
                 const src = allSources?.[idx];
+                if (String(src?.provider || '').toLowerCase() === 'animekai') {
+                    sourcePanel.querySelector('.src-item[data-auto]')?.classList.add('active');
+                }
                 const serverName = String(src?.flixhqServer || '').toLowerCase();
                 if (serverName) {
                     const serverEl = sourcePanel.querySelector(`.src-item[data-server-id=\"${serverName}\"]`);
@@ -20689,13 +20949,18 @@
                 if (nextIdx < 0 && Array.isArray(allSources) && shouldPreferNonHlsFallback) {
                     nextIdx = allSources.findIndex((s, i) => {
                         if (i === srcIdx) return false;
+                        if (sourceProvider === 'animekai' && String(s?.audioLabel || '') !== String(allSources?.[srcIdx]?.audioLabel || '')) return false;
                         const srcUrl = String(s?.url || '').toLowerCase();
                         return !!(s?.isEmbed || !s?.isM3U8 || srcUrl.includes('.mp4'));
                     });
                 }
                 if (nextIdx < 0) {
                     nextIdx = Array.isArray(allSources)
-                        ? allSources.findIndex((_, i) => i > srcIdx)
+                        ? allSources.findIndex((candidate, i) => {
+                            if (i <= srcIdx) return false;
+                            if (sourceProvider === 'animekai' && String(candidate?.audioLabel || '') !== String(allSources?.[srcIdx]?.audioLabel || '')) return false;
+                            return true;
+                        })
                         : -1;
                 }
                 if (nextIdx < 0) return false;
