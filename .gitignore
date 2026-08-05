@@ -11,3 +11,12 @@ test*.js
 temp*.js
 *.txt
 FIX_TRENDING_POSTERS.md
+
+# Local development servers, logs, and test artifacts
+serve.js
+serve.mjs
+*.log
+api.err
+test*.html
+test*.js
+*_test.js
