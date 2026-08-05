@@ -8176,22 +8176,27 @@
             // AnimeSalt is also an authoritative anime catalog. Use it when
             // AniList/MAL metadata does not identify a title, including newer
             // anime and animated titles that have sparse TMDB metadata.
-            try {
-                const animeSaltUrl = `${API_BASE.replace('/meta/tmdb', '/anime/animesalt')}/${encodeURIComponent(title)}?type=${encodeURIComponent(MEDIA_TYPE)}`;
-                const { res: animeSaltRes } = await fetchJsonWithApiFallback(animeSaltUrl, {
-                    signal: AbortSignal.timeout(5000),
-                });
-                if (animeSaltRes.ok) {
-                    const animeSaltRows = getAnimeSearchResults(await animeSaltRes.json());
-                    const hasStrongAnimeSaltMatch = animeSaltRows.some((row) =>
-                        getAnimeResultTitleTexts(row).some((candidateTitle) =>
-                            getTitleMatchQuality(candidateTitle, title).strong,
-                        ),
-                    );
-                    if (hasStrongAnimeSaltMatch) return true;
+            // Do not use a title-only AnimeSalt match for ordinary movies or
+            // TV. Common titles can collide with AnimeSalt entries (for
+            // example, a live-action horror movie named "Obsession").
+            if (genreNames.includes('animation')) {
+                try {
+                    const animeSaltUrl = `${API_BASE.replace('/meta/tmdb', '/anime/animesalt')}/${encodeURIComponent(title)}?type=${encodeURIComponent(MEDIA_TYPE)}`;
+                    const { res: animeSaltRes } = await fetchJsonWithApiFallback(animeSaltUrl, {
+                        signal: AbortSignal.timeout(5000),
+                    });
+                    if (animeSaltRes.ok) {
+                        const animeSaltRows = getAnimeSearchResults(await animeSaltRes.json());
+                        const hasStrongAnimeSaltMatch = animeSaltRows.some((row) =>
+                            getAnimeResultTitleTexts(row).some((candidateTitle) =>
+                                getTitleMatchQuality(candidateTitle, title).strong,
+                            ),
+                        );
+                        if (hasStrongAnimeSaltMatch) return true;
+                    }
+                } catch (_) {
+                    // Continue with the broader metadata fallback below.
                 }
-            } catch (_) {
-                // Continue with the broader metadata fallback below.
             }
 
             // Prevent reality, talk, variety, and documentary programs from
@@ -16228,19 +16233,12 @@
                 }
                 if (FORCED_PROVIDER) {
                     activeProviders = [FORCED_PROVIDER];
-                } else if (currentIsLikelyAnime) {
-                    // Anime detected: use only anime providers for best results
-                    activeProviders = [...ANIME_PROVIDERS];
-                    console.log('Ã°Å¸Å½Å’ Anime detected! Using anime-only providers:', activeProviders);
-                } else if (MEDIA_TYPE === 'movie') {
-                    activeProviders = ['hdstream4u'];
-                    console.log('Non-anime movie providers:', activeProviders);
-                } else if (isTv) {
-                    activeProviders = ['hdstream4u'];
-                    console.log('Non-anime TV providers:', activeProviders);
                 } else {
-                    // Fallback for unknown types
+                    // Query every provider in parallel. Anime detection is
+                    // useful for episode mapping, but must not hide HDStream4U
+                    // for titles with ambiguous or incomplete metadata.
                     activeProviders = ['hdstream4u', ...ANIME_PROVIDERS];
+                    console.log('All providers enabled:', activeProviders, 'isAnime:', currentIsLikelyAnime);
                 }
                 console.log('activeProviders:', activeProviders, 'FORCED_PROVIDER:', FORCED_PROVIDER, 'isAnime:', currentIsLikelyAnime);
                 buildChips();
@@ -20258,7 +20256,9 @@
                 currentIsLikelyAnime &&
                 !!preferredAnimeProvider;
 
-            if (shouldPreferAnimeProviderFirst) {
+            if (!effectiveForcedProvider) {
+                await Promise.all(orderedProviders.map((p) => processProvider(p)));
+            } else if (shouldPreferAnimeProviderFirst) {
                 await processProvider(preferredAnimeProvider);
 
                 if (allSources.length > 0) {
