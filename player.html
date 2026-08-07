@@ -4442,8 +4442,8 @@
 
         // Provider pools - automatically selected based on anime detection
         // ANIME_PROVIDERS: Specialized anime providers (used exclusively for anime content)
-        const ANIME_PROVIDERS = ['anikoto'];
-        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['anikoto'];
+        const ANIME_PROVIDERS = ['animesalt'];
+        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['animesalt'];
         const REMOVED_PROVIDER_MAP = {
             satoru: 'animesalt',
             justanime: 'animesalt',
@@ -4465,6 +4465,10 @@
         let effectiveMediaType = MEDIA_TYPE;
         let FORCED_PROVIDER = params.get('provider') || '';
         const normalizedForcedProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
+        if (normalizedForcedProvider === 'anikoto') {
+            console.warn('[providers] AniKoto is temporarily disabled; using automatic provider selection.');
+            FORCED_PROVIDER = '';
+        }
         if (normalizedForcedProvider && REMOVED_PROVIDER_MAP[normalizedForcedProvider]) {
             FORCED_PROVIDER = REMOVED_PROVIDER_MAP[normalizedForcedProvider];
             console.warn('[providers] Remapped removed provider', normalizedForcedProvider, '->', FORCED_PROVIDER);
@@ -4772,13 +4776,12 @@
         const ANIME_WATCH_TIMEOUT_MS = 25000;
         const ANIME_INFO_TIMEOUT_MS = 20000;
         const PROVIDER_TIMEOUT_OVERRIDES = {
-            animekai: { animeSearch: 9000, animeInfo: 14000, watch: 35000 },
             anikoto: { animeSearch: 12000, animeInfo: 18000, watch: 45000 },
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
             // FlixHQ extraction can be slower on small cloud VMs because Chromium startup and mirrors compete for CPU.
             flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 35000, extraction: 3000, metaInfo: 15000 },
-            hdstream4u: { watch: 45000 },
+            hdstream4u: { watch: 120000, metaInfo: 120000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
@@ -5097,13 +5100,9 @@
             const currentSrc = String(video.currentSrc || video.src || '').trim();
             const currentSourceUrl = String(allSources?.[currentIdx]?.url || currentSrc || '').trim().toLowerCase();
             if (sourceProviderName === 'archive.org' || currentSourceUrl.includes('archive.org')) {
-                if (!RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY) return false;
-                if (!currentSrc) return true;
-                try {
-                    return new URL(currentSrc, location.href).origin === location.origin;
-                } catch (_) {
-                    return false;
-                }
+                // Archive media is loaded through the configured CORS-enabled
+                // proxy; the browser URL may be a localhost alias of the API.
+                return true;
             }
 
             if (!currentSrc) {
@@ -6560,6 +6559,23 @@
                 if (bySeasonKey >= 0) {
                     si = bySeasonKey;
                     matchedExplicitSeasonRef = true;
+                }
+            }
+            if (!useResumePosition && currentParams.get('episodeId')) {
+                const wantedEpisodeId = String(currentParams.get('episodeId')).trim().toLowerCase();
+                for (let seasonIndex = 0; seasonIndex < safeSeasons.length; seasonIndex += 1) {
+                    const episodes = Array.isArray(safeSeasons[seasonIndex]?.episodes) ? safeSeasons[seasonIndex].episodes : [];
+                    const episodeIndex = episodes.findIndex((episode) =>
+                        String(episode?.id || episode?.providerEpisodeId || '').trim().toLowerCase() === wantedEpisodeId
+                    );
+                    if (episodeIndex >= 0) {
+                        si = seasonIndex;
+                        ei = episodeIndex;
+                        matchedExplicitSeasonRef = true;
+                        currentSeason = Number(safeSeasons[seasonIndex]?.seasonNo || seasonIndex + 1);
+                        currentEpisode = Number(episodes[episodeIndex]?.episode || episodes[episodeIndex]?.number || episodes[episodeIndex]?.episodeNum || episodeIndex + 1);
+                        break;
+                    }
                 }
             }
             if (!useResumePosition && currentParams.get('seasonTitle') && !(Number.isFinite(currentSeason) && currentSeason > 0)) {
@@ -8169,17 +8185,13 @@
                 genreNames.includes('anime') ||
                 Boolean(info?.anilistId || info?.malId || info?.animeId);
             const hasSoftAnimeMetadata =
-                originalLang === 'ja' ||
-                originalLang === 'jpn' ||
-                originCountries.includes('jp') ||
-                originCountries.includes('japan') ||
                 (genreNames.includes('animation') && !genreNames.includes('family') && !genreNames.includes('children'));
 
             if (titleLooksAnime || hasExplicitAnimeMetadata) return true;
 
             // Specific reality/talent shows (and well-known western animation
             // like "Invincible") should never be treated as anime.
-            const hasStrongNonAnimeTitle = /\b(?:got\s+(?:talent|latent)|big\s+brother|masterchef|love\s+island|survivor|invincible)\b/i.test(titleLower);
+            const hasStrongNonAnimeTitle = /\b(?:got\s+(?:talent|latent)|big\s+brother|masterchef|love\s+island|survivor|invincible|obsession)\b/i.test(titleLower);
             if (hasStrongNonAnimeTitle) return false;
 
             // AnimeSalt is also an authoritative anime catalog. Use it when
@@ -8277,7 +8289,7 @@
                 if (!best) return false;
 
                 // Exact title match on AniList means it is anime — year is irrelevant.
-                if (best.bestQuality.exact) return true;
+                if (best.bestQuality.exact && (hasExplicitAnimeMetadata || hasSoftAnimeMetadata)) return true;
 
                 // A genuinely close release year only helps when both sides
                 // actually have one; unknown years (e.g. AnimeSalt fallback rows)
@@ -8936,6 +8948,13 @@
                     else if (Math.abs(itemYear - preferredYear) === 1) score += 12;
                 }
 
+                // Prefer the main TV series over similarly named movies, OVAs, and ONAs.
+                if (!isMovie) {
+                    const resultType = String(r?.type || r?.mediaType || r?.media_type || '').toLowerCase();
+                    if (resultType === 'tv' || resultType === 'series') score += 100;
+                    else if (resultType === 'movie' || resultType === 'ona' || resultType === 'ova' || resultType === 'special') score -= 100;
+                }
+
                 // Season Matching
                 const itemSeason = extractSeasonNumberFromTitle(rawTitle);
                 if (targetSeason > 1) {
@@ -9516,7 +9535,9 @@
                     );
 
                     // Check show-level cache to skip search+info on subsequent episodes
-                    const cachedAnimeId = provider === 'animesalt' ? null : (providerAnimeIdOverride || justanimeAnimeIdCache.get(providerCacheScope));
+                    const cachedAnimeId = provider === 'animesalt' || provider === 'anikoto'
+                        ? null
+                        : (providerAnimeIdOverride || justanimeAnimeIdCache.get(providerCacheScope));
 
                     if (!providerEpisodeId && cachedAnimeId) {
                         // Fast path: already know the anime ID, build episode ID directly
@@ -16247,12 +16268,12 @@
                 if (FORCED_PROVIDER) {
                     activeProviders = [FORCED_PROVIDER];
                 } else if (currentIsLikelyAnime) {
-                    activeProviders = [...ANIME_PROVIDERS];
+                    activeProviders = ['hdstream4u', ...ANIME_PROVIDERS];
                 } else {
                     // Query every provider in parallel. Anime detection is
                     // useful for episode mapping, but must not hide HDStream4U
                     // for titles with ambiguous or incomplete metadata.
-                    activeProviders = ['hdstream4u', ...ANIME_PROVIDERS];
+                    activeProviders = ['hdstream4u'];
                     console.log('All providers enabled:', activeProviders, 'isAnime:', currentIsLikelyAnime);
                 }
                 console.log('activeProviders:', activeProviders, 'FORCED_PROVIDER:', FORCED_PROVIDER, 'isAnime:', currentIsLikelyAnime);
@@ -16504,7 +16525,7 @@
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v30';
+                    const seasonCacheVersion = 'v38';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -16768,6 +16789,115 @@
                         }
                     }
 
+                    if (providerName === 'anikoto') {
+                        const anikotoTerms = [
+                            ...getAnimeSearchTerms(animeSeriesTitle, preferredYear, 1, '', false).slice(0, 5),
+                            `${animeSeriesTitle} specials`,
+                            `${animeSeriesTitle} ova`,
+                        ];
+                        const anikotoCandidates = new Map();
+                        for (const term of anikotoTerms) {
+                            const { res: searchRes } = await fetchJsonWithApiFallback(
+                                `${API_BASE.replace('/meta/tmdb', '/anime/anikoto')}/${encodeURIComponent(term)}`,
+                                { signal: AbortSignal.timeout(Math.max(timeoutMs, 12000)) },
+                            );
+                            if (!searchRes.ok) continue;
+                            const searchData = await searchRes.json();
+                            const results = getAnimeSearchResults(searchData);
+                            results.forEach((result) => {
+                                const resultTitle = String(result?.title || result?.name || '');
+                                const titleQuality = getTitleMatchQuality(resultTitle, normalizeAnimeSearchQuery(animeSeriesTitle));
+                                const isRelatedExtra = /\b(specials?|ovas?|onas?|recaps?|bonus)\b/i.test(resultTitle);
+                                if (!result?.id || (!titleQuality.strong && !isRelatedExtra)) return;
+                                if (!anikotoCandidates.has(String(result.id))) anikotoCandidates.set(String(result.id), result);
+                            });
+                        }
+                        if (!anikotoCandidates.size) return [];
+                        const parseAniKotoOrder = (title, fallbackIndex) => {
+                            const text = String(title || '').toLowerCase();
+                            const roman = (value) => {
+                                const values = { i: 1, v: 5, x: 10, l: 50 };
+                                let total = 0;
+                                let previous = 0;
+                                for (const char of String(value || '').split('').reverse()) {
+                                    const current = values[char] || 0;
+                                    total += current < previous ? -current : current;
+                                    previous = Math.max(previous, current);
+                                }
+                                return total;
+                            };
+                            const seasonMatch = text.match(/(?:season|series|cour)\s*(\d+|[ivxl]+)/i);
+                            const ordinalSeasonMatch = text.match(/\b(\d+)(?:st|nd|rd|th)\s+season\b/i);
+                            const partMatch = text.match(/part\s*(\d+|[ivxl]+)/i);
+                            const isHighSchoolDxd = /high\s+school\s+dxd/i.test(text);
+                            const namedSeasonNo = isHighSchoolDxd && /\bhero\b/i.test(text)
+                                ? 4
+                                : (isHighSchoolDxd && /\bborn\b/i.test(text)
+                                    ? 3
+                                    : (isHighSchoolDxd && /\bnew\b/i.test(text) ? 2 : 0));
+                            const seasonNo = ordinalSeasonMatch
+                                ? Number(ordinalSeasonMatch[1])
+                                : (seasonMatch
+                                ? (Number(seasonMatch[1]) || roman(seasonMatch[1]))
+                                : namedSeasonNo);
+                            const partNo = partMatch ? (Number(partMatch[1]) || roman(partMatch[1])) : 0;
+                            return { seasonNo: seasonNo || 1, partNo };
+                        };
+                        const seasonResults = await Promise.all(Array.from(anikotoCandidates.values()).map(async (candidate, index) => {
+                            try {
+                                const { res: infoRes } = await fetchJsonWithApiFallback(
+                                    buildAnimeInfoUrl(providerName, candidate.id),
+                                    { signal: AbortSignal.timeout(Math.max(timeoutMs, 18000)) },
+                                );
+                                if (!infoRes.ok) return [];
+                                let info = await infoRes.json();
+                                if (info?.data) info = info.data;
+                                const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
+                                if (!episodes.length) return [];
+                                const candidateType = String(info?.type || candidate?.type || '').toLowerCase();
+                                const isExtra = !['tv', 'series'].includes(candidateType);
+                                const order = parseAniKotoOrder(info?.title || candidate?.title || '', index);
+                                const built = buildSeasonListFromEpisodes(providerName, String(info?.id || candidate.id), info?.title || candidate?.title || animeSeriesTitle, episodes, isExtra ? 0 : order.seasonNo);
+                                return built.map((season) => ({
+                                    ...season,
+                                    seasonNo: isExtra ? 0 : order.seasonNo,
+                                    seasonPartNo: isExtra ? 0 : order.partNo,
+                                    name: isExtra ? 'Extras' : `Season ${order.seasonNo}`,
+                                }));
+                            } catch (_) {
+                                return [];
+                            }
+                        }));
+                        const sortedResult = seasonResults.flat().sort((a, b) => {
+                            if (Number(a.seasonNo || 0) <= 0 && Number(b.seasonNo || 0) > 0) return 1;
+                            if (Number(a.seasonNo || 0) > 0 && Number(b.seasonNo || 0) <= 0) return -1;
+                            const seasonDiff = Number(a.seasonNo || 0) - Number(b.seasonNo || 0);
+                            if (seasonDiff !== 0) return seasonDiff;
+                            return Number(a.seasonPartNo || 0) - Number(b.seasonPartNo || 0);
+                        });
+                        const seasonCounts = new Map();
+                        sortedResult.forEach((season) => {
+                            const seasonNo = Number(season?.seasonNo || 1);
+                            seasonCounts.set(seasonNo, (seasonCounts.get(seasonNo) || 0) + 1);
+                        });
+                        const seasonParts = new Map();
+                        const result = sortedResult.map((season) => {
+                            const seasonNo = Number(season?.seasonNo || 1);
+                            const partNo = (seasonParts.get(seasonNo) || 0) + 1;
+                            seasonParts.set(seasonNo, partNo);
+                            return {
+                                ...season,
+                                seasonPartNo: seasonCounts.get(seasonNo) > 1 ? partNo : 0,
+                                name: seasonCounts.get(seasonNo) > 1 ? `Season ${seasonNo} (Part ${partNo})` : `Season ${seasonNo}`,
+                            };
+                        });
+                        if (result.length) {
+                            localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: result }));
+                            return result;
+                        }
+                        return [];
+                    }
+
                     const { res: infoRes } = await fetchJsonWithApiFallback(
                         buildAnimeInfoUrl(providerName, bestResult.id),
                         { signal: AbortSignal.timeout(timeoutMs) },
@@ -16868,7 +16998,7 @@
                     countMenuSeasonEpisodes(menuCatalog) > 1
                 ) {
                     const mergedMenuCatalog = mergeMenuSeasonsBySeasonNo(menuCatalog);
-                    if (menuCatalogProvider === 'anikoto' && countMenuSeasonEpisodes(mergedMenuCatalog) > 50) {
+                    if (menuCatalogProvider === 'anikoto' && mergedMenuCatalog.length === 1 && countMenuSeasonEpisodes(mergedMenuCatalog) > 50) {
                         const allEpisodes = mergedMenuCatalog.flatMap((season) => Array.isArray(season?.episodes) ? season.episodes : []);
                         tvSeasons = [];
                         for (let offset = 0; offset < allEpisodes.length; offset += 50) {
@@ -16924,7 +17054,7 @@
             }
 
             tvSeasons = dedupeTvSeasonEntries(tvSeasons, currentIsLikelyAnime);
-            if (activeMenuProvider === 'anikoto' && currentIsLikelyAnime && countMenuSeasonEpisodes(tvSeasons) > 50) {
+            if (activeMenuProvider === 'anikoto' && currentIsLikelyAnime && tvSeasons.length === 1 && countMenuSeasonEpisodes(tvSeasons) > 50) {
                 const allAnikotoEpisodes = tvSeasons.flatMap((season) => Array.isArray(season?.episodes) ? season.episodes : []);
                 tvSeasons = [];
                 for (let offset = 0; offset < allAnikotoEpisodes.length; offset += 50) {
@@ -17233,7 +17363,7 @@
                     let providerScoped = scopedProvider === 'animesalt'
                         ? mergeMenuSeasonsBySeasonNo(scoped)
                         : scoped;
-                    if (scopedProvider === 'anikoto' && countMenuSeasonEpisodes(providerScoped) > 50) {
+                    if (scopedProvider === 'anikoto' && providerScoped.length === 1 && countMenuSeasonEpisodes(providerScoped) > 50) {
                         const episodes = providerScoped.flatMap((season) => Array.isArray(season?.episodes) ? season.episodes : []);
                         providerScoped = [];
                         for (let offset = 0; offset < episodes.length; offset += 50) {
@@ -17766,7 +17896,8 @@
             const season = displayMeta.season || tvSeasons?.[Number(seasonIndex || 0)] || null;
             const epNo = Number(displayMeta.epNo || 0) || (Number(episodeIndex || 0) + 1);
             const isAniKoto = String(season?.provider || activeMenuProvider || '').trim().toLowerCase() === 'anikoto';
-            const visibleEpNo = isAniKoto ? ((Number(season?.seasonNo || seasonIndex + 1) - 1) * 50) + epNo : epNo;
+            const isAniKotoPart = isAniKoto && /^part\s+\d+$/i.test(String(season?.name || '').trim());
+            const visibleEpNo = isAniKotoPart ? ((Number(season?.seasonNo || seasonIndex + 1) - 1) * 50) + epNo : epNo;
             const rawEpTitle = String(displayMeta.title || '').trim();
             const epTitle = isAniKoto && isGenericEpisodeTitle(rawEpTitle, epNo) ? `Episode ${visibleEpNo}` : rawEpTitle;
             let seasonTitle = String(season?.name || `Season ${Number(seasonIndex || 0) + 1}`).trim();
@@ -17794,7 +17925,9 @@
                 const seasonTitle = String(hint?.seasonTitle || (hint?.seasonNo ? `Season ${hint.seasonNo}` : '')).trim();
                 const epNo = Number(hint?.episodeNo || 0);
                 const isAniKoto = String(hint?.provider || activeMenuProvider || '').trim().toLowerCase() === 'anikoto';
-                const visibleEpNo = isAniKoto ? ((Number(hint?.seasonNo || URL_SEASON || 1) - 1) * 50) + epNo : epNo;
+                const hintSeason = tvSeasons?.find?.((season) => Number(season?.seasonNo || 0) === Number(hint?.seasonNo || URL_SEASON || 0));
+                const isAniKotoPart = isAniKoto && /^part\s+\d+$/i.test(String(hintSeason?.name || '').trim());
+                const visibleEpNo = isAniKotoPart ? ((Number(hint?.seasonNo || URL_SEASON || 1) - 1) * 50) + epNo : epNo;
                 const rawEpTitle = String(hint?.title || '').trim();
                 const epTitle = isAniKoto && isGenericEpisodeTitle(rawEpTitle, epNo) ? `Episode ${visibleEpNo}` : rawEpTitle;
                 metaEl.textContent = epTitle
@@ -18353,7 +18486,7 @@
                         providerTitle &&
                         !isGenericEpisodeTitle(providerTitle, epNo);
                      const isAniKotoMenu = String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase() === 'anikoto';
-                     const anikotoVisibleEpisodeNo = isAniKotoMenu
+                     const anikotoVisibleEpisodeNo = isAniKotoMenu && /^part\s+\d+$/i.test(String(s?.name || '').trim())
                          ? ((Number(s?.seasonNo || si + 1) - 1) * 50) + epNo
                          : epNo;
                      const epTitle = shouldPreferProviderEpisodeMeta && !(isAniKotoMenu && isGenericEpisodeTitle(providerTitle, epNo))
@@ -18538,9 +18671,14 @@
                 scrollRoot.querySelectorAll('.ep-season-tabs button').forEach((button) => button.classList.toggle('active', button.dataset.seasonIndex === String(seasonIndex)));
             };
             seasonTabs.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => applySeasonFilter(Number(button.dataset.seasonIndex))));
-            let rememberedSeason = Math.max(0, menuSeasons.findIndex((season) =>
-                Number(season?.seasonNo || 0) === Number(tvSeasons?.[curSeason]?.seasonNo || curSeason + 1),
-            ));
+            const currentMenuSeason = tvSeasons?.[curSeason] || null;
+            const currentMenuSeasonNo = Number(currentMenuSeason?.seasonNo || curSeason + 1);
+            const currentMenuPartNo = Number(currentMenuSeason?.seasonPartNo || currentMenuSeason?.part || currentMenuSeason?.partNo || 0);
+            let rememberedSeason = Math.max(0, menuSeasons.findIndex((season) => {
+                if (Number(season?.seasonNo || 0) !== currentMenuSeasonNo) return false;
+                const menuPartNo = Number(season?.seasonPartNo || season?.part || season?.partNo || 0);
+                return menuPartNo === currentMenuPartNo;
+            }));
             if (rememberedSeason < 0) rememberedSeason = Math.max(0, Math.min(menuSeasons.length - 1, Number(curSeason || 0)));
             seasonTabs.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => {
                 try { sessionStorage.setItem('streamverse:selected-season-index', button.dataset.seasonIndex); } catch (_) {}
@@ -18688,7 +18826,9 @@
                     });
                 });
             });
-            rows = rows.filter((row) => !isExtrasOnlyMenuSeason(row.season));
+            if (String(activeMenuProvider || '').toLowerCase() !== 'anikoto') {
+                rows = rows.filter((row) => !isExtrasOnlyMenuSeason(row.season));
+            }
             if (!rows.length) return null;
 
             const currentIndex = rows.findIndex((row) =>
@@ -19239,8 +19379,18 @@
                 selectionHint.provider = 'anikoto';
                 if (URL_EPISODE_ID && /\$episode\$/i.test(URL_EPISODE_ID)) {
                     selectionHint.episodeId = URL_EPISODE_ID;
+                    const exactAniKotoSeason = tvSeasons?.find?.((season) => (Array.isArray(season?.episodes) ? season.episodes : []).some((episode) =>
+                        String(episode?.id || episode?.providerEpisodeId || '').trim().toLowerCase() === String(URL_EPISODE_ID).trim().toLowerCase()
+                    ));
+                    const exactAniKotoEpisode = exactAniKotoSeason?.episodes?.find?.((episode) =>
+                        String(episode?.id || episode?.providerEpisodeId || '').trim().toLowerCase() === String(URL_EPISODE_ID).trim().toLowerCase()
+                    );
+                    if (exactAniKotoSeason && exactAniKotoEpisode) {
+                        selectionHint.seasonNo = Number(exactAniKotoSeason.seasonNo || 1);
+                        selectionHint.episodeNo = Number(exactAniKotoEpisode.episode || exactAniKotoEpisode.number || exactAniKotoEpisode.episodeNum || 1);
+                    }
                     const anikotoGlobalEpisode = Number(URL_EPISODE_ID.match(/\$episode\$(\d+)/i)?.[1] || 0);
-                    if (anikotoGlobalEpisode > 0) {
+                    if (anikotoGlobalEpisode > 0 && !exactAniKotoSeason) {
                         selectionHint.seasonNo = Math.floor((anikotoGlobalEpisode - 1) / 50) + 1;
                         selectionHint.episodeNo = ((anikotoGlobalEpisode - 1) % 50) + 1;
                         selectionHint.absoluteEpisodeNo = anikotoGlobalEpisode;
@@ -19256,9 +19406,12 @@
             }
             const isBonusSelection = /bonus/i.test(String(selectionHint?.seasonTitle || URL_SEASON_TITLE || ''));
             let selectedEpisodeId = String(selectionHint?.episodeId || bootEpisodeId || (isBonusSelection ? URL_EPISODE_ID : '') || selectedEpisode?.id || '').trim();
-            if (activeProviders.includes('anikoto') && /\$episode\$/i.test(URL_EPISODE_ID)) {
+            const isStaleAniKotoSpecialId = activeProviders.includes('anikoto') && /(?:operation[-_ ]desert[-_ ]pasta|movie|ova|ona|special)/i.test(URL_EPISODE_ID);
+            if (isStaleAniKotoSpecialId) {
+                selectedEpisodeId = '';
+            } else if (activeProviders.includes('anikoto') && /\$episode\$/i.test(URL_EPISODE_ID)) {
                 selectedEpisodeId = URL_EPISODE_ID;
-            } else if (activeProviders.includes('anikoto') && selectedEpisode?.id && !/\$episode\$/i.test(selectedEpisodeId)) {
+            } else if (!isStaleAniKotoSpecialId && activeProviders.includes('anikoto') && selectedEpisode?.id && !/\$episode\$/i.test(selectedEpisodeId)) {
                 selectedEpisodeId = String(selectedEpisode.id).trim();
             }
             if (activeProviders.includes('animekai') && /\$ep=/i.test(String(selectedEpisode?.id || ''))) {
@@ -19302,7 +19455,9 @@
             }
 
             // Define which providers to search
-            let providersToTry = activeProviders;
+            let providersToTry = effectiveForcedProvider === 'anikoto'
+                ? [...ANIME_PROVIDERS]
+                : activeProviders;
             let wasForced = !!FORCED_PROVIDER;
 
             // If the selected episode already carries a provider-style SxE id,
@@ -19334,7 +19489,75 @@
                         isDub: false,
                         provider: 'archive.org',
                     },
-                    subtitles: [],
+                    subtitles: [{
+                        src: 'https://archive.org/download/bramayugam.-2024.1080p.-ds-4-k.-web-dl.-hindi.-5.1-malayalam.-5.1.-esub.x-264-hdhub-4u.-tv/Bramayugam.2024.1080p.DS4K.WEB-DL.Hindi.5.1-Malayalam.5.1.ESub.x264-HDHub4u.Tv.srt',
+                        label: 'English',
+                        lang: 'en',
+                        srclang: 'en',
+                    }],
+                },
+                '67178': {
+                    title: "Marvel's The Punisher (2017)",
+                    episodes: {
+                        1: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E01.3AM.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        2: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E02.Two.Dead.Men.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        3: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E03.Kandahar.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        4: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E04.Resupply.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        5: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E05.Gunner.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        6: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E06.The.Judas.Goat.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        7: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E07.Crosshairs.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        8: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E08.Cold.Steel.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        9: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E09.Front.Toward.Enemy.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        10: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E10.Virtue.of.the.Vicious.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        11: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E11.Danger.Close.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        12: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E12.Home.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        13: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E13.Memento.Mori.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                    },
+                    subtitles: {
+                        1: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E01.3AM.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        2: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E02.Two.Dead.Men.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        3: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E03.Kandahar.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        4: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E04.Resupply.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        5: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E05.Gunner.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        6: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E06.The.Judas.Goat.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        7: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E07.Crosshairs.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        8: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E08.Cold.Steel.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        9: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E09.Front.Toward.Enemy.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        10: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E10.Virtue.of.the.Vicious.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        11: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E11.Danger.Close.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        12: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E12.Home.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        13: 'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S01E13.Memento.Mori.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                    },
+                    season2Episodes: {
+                        1: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E01.Roadhouse.Blues.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        2: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E02.Fight.or.Flight.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        3: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E03.Trouble.the.Water.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        4: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E04.Scar.Tissue.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        5: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E05.One-Eyed.Jacks.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        6: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E06.Nakazat.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        7: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E07.One.Bad.Day.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        8: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E08.My.Brothers.Keeper.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        9: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E09.Flustercluck.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        10: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E10.The.Dark.Hearts.of.Men.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        11: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E11.The.Abyss.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        12: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E12.Collision.Course.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                        13: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E13.The.Whirlwind.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.mkv',
+                    },
+                    season2Subtitles: {
+                        1: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E01.Roadhouse.Blues.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        2: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E02.Fight.or.Flight.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        3: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E03.Trouble.the.Water.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        4: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E04.Scar.Tissue.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        5: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E05.One-Eyed.Jacks.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        6: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E06.Nakazat.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        7: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E07.One.Bad.Day.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        8: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E08.My.Brothers.Keeper.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        9: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E09.Flustercluck.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        10: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E10.The.Dark.Hearts.of.Men.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        11: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E11.The.Abyss.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        12: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E12.Collision.Course.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                        13: 'https://archive.org/download/marvels.-the.-punisher.-s-02-e-04.-scar.-tissue.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/Marvels.The.Punisher.S02E13.The.Whirlwind.720p.NF.WEB-DL.AAC5.1.H.264-HDHub4u.srt',
+                    },
                 },
                 '88329': {
                     episodes: {
@@ -19650,11 +19873,15 @@
             const currentArchiveFallback = archiveFallbackSources[String(TMDB_ID).trim()] || null;
             const getArchiveFallbackSource = (fallback) => {
                 if (!fallback?.episodes) return fallback?.source || null;
+                const seasonNo = Math.max(1, Number(curSeason || 0) + 1);
                 const episodeNo = Math.max(1, Number(curEpisode || 0) + 1);
-                const episodeUrl = fallback.episodes[episodeNo];
+                const seasonEpisodes = seasonNo === 2 && fallback.season2Episodes
+                    ? fallback.season2Episodes
+                    : fallback.episodes;
+                const episodeUrl = seasonEpisodes[episodeNo];
                 if (!episodeUrl) return null;
                 return {
-                    label: `Hawkeye (2021) S01E${String(episodeNo).padStart(2, '0')} (Archive MP4)`,
+                    label: `${fallback.title || 'Archive'} S${String(seasonNo).padStart(2, '0')}E${String(episodeNo).padStart(2, '0')} (Archive MP4)`,
                     url: episodeUrl,
                     isM3U8: false,
                     isMP4: true,
@@ -19666,9 +19893,14 @@
             };
             const getArchiveFallbackSubtitles = (fallback) => {
                 if (!fallback?.subtitles) return [];
+                if (Array.isArray(fallback.subtitles)) return fallback.subtitles;
+                const subtitleMap = Number(curSeason || 0) + 1 === 2
+                    ? fallback.season2Subtitles
+                    : fallback.subtitles;
+                if (!subtitleMap) return [];
                 const episodeNo = Math.max(1, Number(curEpisode || 0) + 1);
-                const subtitleUrl = typeof fallback.subtitles === 'object' && !Array.isArray(fallback.subtitles)
-                    ? fallback.subtitles[episodeNo]
+                const subtitleUrl = typeof subtitleMap === 'object' && !Array.isArray(subtitleMap)
+                    ? subtitleMap[episodeNo]
                     : null;
                 return subtitleUrl ? [{ label: 'English (Archive)', srclang: 'en', src: subtitleUrl, provider: 'archive.org' }] : [];
             };
@@ -19779,6 +20011,9 @@
                         isFirstLoaded = true;
                         currentIdx = 0;
                         playSource(0, startT);
+                        // Rebuild after the first source is selected so archive
+                        // proxy media can enable Cinema Audio.
+                        buildPreferencesMenu();
                     }
                 }
             };
@@ -20131,7 +20366,26 @@
                                         if (searchRes?.ok) {
                                             const searchPayload = await searchRes.json();
                                             const results = Array.isArray(searchPayload?.results) ? searchPayload.results : [];
-                                            const match = results.find((entry) => String(entry?.type || '').toLowerCase() === 'movie') || results[0];
+                                            const targetYear = Number(String(
+                                                currentMediaInfo?.release_date ||
+                                                currentMediaInfo?.releaseDate ||
+                                                currentMediaInfo?.year ||
+                                                '',
+                                            ).slice(0, 4));
+                                            const normalizedTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                                            const match = [...results]
+                                                .filter((entry) => String(entry?.type || '').toLowerCase() === 'movie' || !entry?.type)
+                                                .sort((a, b) => {
+                                                    const score = (entry) => {
+                                                        const entryTitle = String(entry?.title || entry?.name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                                                        const entryYearValue = String(entry?.releaseDate || entry?.release_date || entry?.year || entryTitle.match(/\b(19|20)\d{2}\b/)?.[0] || '');
+                                                        const entryYear = Number(entryYearValue.slice(0, 4));
+                                                        return (entryTitle === normalizedTitle ? 100 : 0) +
+                                                            (Number.isFinite(targetYear) && entryYear === targetYear ? 200 : 0) +
+                                                            (Number.isFinite(targetYear) && Number.isFinite(entryYear) && Math.abs(entryYear - targetYear) <= 1 ? 25 : 0);
+                                                    };
+                                                    return score(b) - score(a);
+                                                })[0] || results[0];
                                             if (match?.url || match?.id) {
                                                 hdInfoRes = await fetch(
                                                     `${providerInfoBase}/info?id=${encodeURIComponent(String(match.url || match.id))}&type=movie`,
@@ -20348,7 +20602,19 @@
                     const mergedWatchSources = [...primarySources, ...dubSourcesRaw];
                     const normalizedWatchSources = await normalizeProviderSources(provider, mergedWatchSources, data.headers?.Referer || null);
 
-                    const providerSources = normalizedWatchSources
+                    const providerSources = [...normalizedWatchSources]
+                    .sort((a, b) => {
+                        if (provider !== 'anikoto') return 0;
+                        const hostScore = (source) => {
+                            try {
+                                const host = new URL(String(source?.url || '')).hostname.toLowerCase();
+                                return host.includes('vidtub') ? 0 : (host.includes('megap') ? 1 : 2);
+                            } catch (_) {
+                                return 2;
+                            }
+                        };
+                        return hostScore(a) - hostScore(b);
+                    })
                     .filter((src) => {
                         const url = String(src?.url || '');
                         if (!url || isBrokenEmbedUrl(url) || isLikelyPlaceholderSource(url)) return false;
@@ -20451,15 +20717,12 @@
                 !currentIsLikelyAnime &&
                 orderedProviders.includes('hdstream4u');
 
-            const preferredAnimeProvider = orderedProviders.find((p) => ['animesalt', 'animekai'].includes(String(p || '').toLowerCase())) || '';
+            const preferredAnimeProvider = orderedProviders.find((p) => ['hdstream4u', 'animekai', 'animesalt'].includes(String(p || '').toLowerCase())) || '';
             const shouldPreferAnimeProviderFirst =
-                !effectiveForcedProvider &&
                 currentIsLikelyAnime &&
                 !!preferredAnimeProvider;
 
-            if (!effectiveForcedProvider) {
-                await Promise.all(orderedProviders.map((p) => processProvider(p)));
-            } else if (shouldPreferAnimeProviderFirst) {
+            if (shouldPreferAnimeProviderFirst) {
                 await processProvider(preferredAnimeProvider);
 
                 if (allSources.length > 0) {
@@ -20471,7 +20734,7 @@
                     const fallbackProviders = orderedProviders.filter((p) => p !== preferredAnimeProvider);
                     await Promise.all(fallbackProviders.map((p) => processProvider(p)));
                 }
-            } else if (shouldPreferHdstreamFirst) {
+            } else if (!effectiveForcedProvider && shouldPreferHdstreamFirst) {
                 // Start hdstream4u but don't block indefinitely: if it takes too long,
                 // start fallback providers in parallel so the UI doesn't stall.
                 let hdstreamDone = false;
@@ -21371,7 +21634,7 @@
                 newVideo.setAttribute('playsinline', '');
                 newVideo.setAttribute('webkit-playsinline', 'true');
                 if (String(sourceProvider || '').toLowerCase() === 'archive.org') {
-                    newVideo.removeAttribute('crossorigin');
+                    newVideo.crossOrigin = 'anonymous';
                 } else {
                     newVideo.crossOrigin = 'anonymous';
                 }
@@ -21380,6 +21643,9 @@
                 wrap.insertBefore(newVideo, wrap.firstChild);
             }
             video = document.getElementById('player-video');
+            if (video) {
+                video.crossOrigin = 'anonymous';
+            }
             if (video) { video.volume = savedVolume; video.muted = savedMuted; } // Restore volume across switches
             if (controlSurface) controlSurface.style.display = '';
 
@@ -22178,10 +22444,7 @@
                     triedArchiveBackendProxyFallback = true;
                     console.warn('Archive.org same-origin proxy failed, retrying backend proxy');
                     try {
-                        video.removeAttribute('crossorigin');
-                    } catch (_) { }
-                    try {
-                        video.crossOrigin = null;
+                        video.crossOrigin = 'anonymous';
                     } catch (_) { }
                     try {
                         video.src = fallbackUrl;
@@ -22267,15 +22530,13 @@
                         tryArchiveBackendProxyFallback() || tryDirectMp4Fallback();
                     }
                 }, isArchiveDirect && RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY ? 30000 : 4500);
-                video.addEventListener('loadedmetadata', () => clearTimeout(metadataFallbackTimer), { once: true });
+                video.addEventListener('loadedmetadata', () => {
+                    clearTimeout(metadataFallbackTimer);
+                    buildPreferencesMenu();
+                }, { once: true });
 
                 if (isArchiveDirect) {
-                    try {
-                        video.removeAttribute('crossorigin');
-                    } catch (_) { }
-                    try {
-                        video.crossOrigin = null;
-                    } catch (_) { }
+                    video.crossOrigin = 'anonymous';
                     video.src = proxiedMp4Url;
                 } else {
                     video.src = proxiedMp4Url;
