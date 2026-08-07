@@ -19880,9 +19880,15 @@
                     : fallback.episodes;
                 const episodeUrl = seasonEpisodes[episodeNo];
                 if (!episodeUrl) return null;
+                const normalizedEpisodeUrl = seasonNo === 1 && /Punisher/i.test(String(fallback.title || ''))
+                    ? episodeUrl.replace(
+                        'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/',
+                        'https://archive.org/download/MThePunisher/',
+                    )
+                    : episodeUrl;
                 return {
                     label: `${fallback.title || 'Archive'} S${String(seasonNo).padStart(2, '0')}E${String(episodeNo).padStart(2, '0')} (Archive MP4)`,
-                    url: episodeUrl,
+                    url: normalizedEpisodeUrl,
                     isM3U8: false,
                     isMP4: true,
                     isEmbed: false,
@@ -19902,7 +19908,13 @@
                 const subtitleUrl = typeof subtitleMap === 'object' && !Array.isArray(subtitleMap)
                     ? subtitleMap[episodeNo]
                     : null;
-                return subtitleUrl ? [{ label: 'English (Archive)', srclang: 'en', src: subtitleUrl, provider: 'archive.org' }] : [];
+                const normalizedSubtitleUrl = subtitleUrl && Number(curSeason || 0) + 1 === 1 && /Punisher/i.test(String(fallback.title || ''))
+                    ? subtitleUrl.replace(
+                        'https://archive.org/download/marvels.-the.-punisher.-s-01-e-05.-gunner.-720p.-nf.-web-dl.-aac-5.1.-h.-264-hdhub-4u/',
+                        'https://archive.org/download/MThePunisher/',
+                    )
+                    : subtitleUrl;
+                return normalizedSubtitleUrl ? [{ label: 'English (Archive)', srclang: 'en', src: normalizedSubtitleUrl, provider: 'archive.org' }] : [];
             };
             const failReasons = [];
             providerResults = {};
