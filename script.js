@@ -4416,7 +4416,7 @@ function renderDetailsModal(movie, id, type, provider = '') {
                 }
 
                 return `
-                    <div class="movie-card" onclick="openDetails('${movieId}', '${movieType}', '${movieProvider}')">
+                        <div class="movie-card" onclick="openDetails('${movieId}', '${movieType}', '${movieProvider}', null, true)">
                         <img src="${poster}" alt="${title}" onerror="this.src='https://placehold.co/200x300/1a1a2e/e50914?text=No+Poster'">
                         <span class="quality-badge">HD</span>
                         <div class="similar-rating-ring" style="--rating-progress:${ratingProgress}">
@@ -5789,7 +5789,7 @@ function updateSwitcherState() {
 }
 
 // Fast modal override: render immediately from seed/cache, then hydrate full details.
-async function openDetails(id, type, provider = '', seedItem = null) {
+async function openDetails(id, type, provider = '', seedItem = null, focusSimilar = false) {
     const canonicalId = provider ? String(id || '') : getCanonicalTmdbId(seedItem, id);
 
     const modalUrl = new URL(window.location.href);
@@ -5806,13 +5806,36 @@ async function openDetails(id, type, provider = '', seedItem = null) {
     
     movieModal.classList.add('active');
     document.body.classList.add('modal-open');
+    if (focusSimilar) {
+        const modalScrollBody = document.getElementById('modal-body');
+        if (modalScrollBody) modalScrollBody.scrollTop = 0;
+    }
     const requestId = ++activeModalRequestId;
+    const centerSimilarFinds = () => {
+        if (!focusSimilar) return;
+        let attempts = 0;
+        const centerWhenReady = () => {
+            const content = movieModal.querySelector('.modal-content');
+            const body = document.getElementById('modal-body');
+            const similar = document.getElementById('similar-movies-grid')?.closest('.modal-similar-section');
+            if ((!content || !body || !similar) && attempts++ < 120) {
+                requestAnimationFrame(centerWhenReady);
+                return;
+            }
+            if (!content || !body || !similar) return;
+            // A similar-card navigation should reopen the new title at the top
+            // of its details, rather than inheriting the old modal's scroll.
+            body.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+        requestAnimationFrame(centerWhenReady);
+    };
 
     const cached = readDetailCache(canonicalId, type, provider);
     const initial = cached || (seedItem && typeof seedItem === 'object' ? { ...seedItem, id: getCanonicalTmdbId(seedItem, canonicalId) } : null);
 
     if (initial) {
         renderDetailsModal(initial, canonicalId, type, provider);
+        centerSimilarFinds();
     } else {
         modalBody.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:center;min-height:400px;">
@@ -5844,6 +5867,7 @@ async function openDetails(id, type, provider = '', seedItem = null) {
         }
 
         renderDetailsModal(movie, canonicalId, type, provider);
+        centerSimilarFinds();
 
         // --- BACKGROUND ENRICHMENT ---
         // Improve images/info in the background if they look bad.
