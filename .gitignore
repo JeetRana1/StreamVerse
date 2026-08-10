@@ -17,6 +17,12 @@ serve.js
 serve.mjs
 *.log
 api.err
+debug-*.js
+debug-*.mjs
+dump-*.js
+dump-*.mjs
+*.dump
+*.trace
 test*.html
 test*.js
 *_test.js
