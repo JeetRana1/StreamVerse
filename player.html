@@ -2520,6 +2520,11 @@
             position: relative;
         }
 
+        .ep-item.bonus-episode {
+            height: 102px !important;
+            min-height: 102px !important;
+        }
+
         .ep-item:hover {
             background: rgba(229, 9, 20, 0.12);
             color: #fff;
@@ -4689,6 +4694,7 @@
         let activeMenuProvider = '';
         let pendingEpisodeSelectionHint = null;
         let activeEpisodeSelectionHint = null;
+        let inAppEpisodeNavigation = false; // true after auto-next / next-episode button advances without a page reload
         let epPanelUserScrollUntil = 0;
         let epPanelAllowNextAutoScroll = false;
         let curSeason = 0;
@@ -4783,7 +4789,7 @@
             justanime: { subtitleFallback: 8000 },
             // FlixHQ extraction can be slower on small cloud VMs because Chromium startup and mirrors compete for CPU.
             flixhq: { animeSearch: 8000, animeInfo: 10000, watch: 35000, extraction: 3000, metaInfo: 15000 },
-            hdstream4u: { watch: 120000, metaInfo: 120000 },
+            hdstream4u: { watch: 120000, metaInfo: 12000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
@@ -6583,7 +6589,12 @@
             let currentSeason = useResumePosition ? RESUME_SEASON_FALLBACK : urlSeason;
             let currentEpisode = useResumePosition ? RESUME_EPISODE_FALLBACK : urlEpisode;
             let anikotoPartIndex = -1;
-            if (!useResumePosition && activeMenuProvider === 'anikoto' && currentIsLikelyAnime && currentEpisode > 50) {
+            // Only apply the Part N chunk arithmetic when the catalog was actually
+            // split into 50-episode parts. Long single-season anikoto catalogs keep
+            // absolute episode numbering, so mapping ep51 -> part 2 would land on a
+            // different season entirely.
+            const anikotoCatalogIsPartSplit = safeSeasons.some((season) => /^part\s+\d+$/i.test(String(season?.name || '').trim()));
+            if (!useResumePosition && activeMenuProvider === 'anikoto' && currentIsLikelyAnime && currentEpisode > 50 && anikotoCatalogIsPartSplit) {
                 anikotoPartIndex = Math.floor((currentEpisode - 1) / 50);
                 currentEpisode = ((currentEpisode - 1) % 50) + 1;
                 currentSeason = anikotoPartIndex + 1;
@@ -6595,6 +6606,7 @@
             const rawSeasonTitle = useResumePosition ? '' : String(currentParams.get('seasonTitle') || '').trim();
             const seasonZeroExplicit = !useResumePosition && currentParams.has('season') && Number(currentParams.get('season') || 0) === 0;
             const specialTitleHint = /^(specials?|ovas?|extras?|recaps?)$/i.test(rawSeasonTitle);
+            const urlRequestsExtrasSeason = seasonZeroExplicit || /^(specials?|ovas?|extras?|recaps?|bonus)$/i.test(rawSeasonTitle);
             const ignoreSpecialHintForNumberedSeason = specialTitleHint && currentSeason > 0;
             const hasSavedEpisodePosition =
                 Number.isFinite(RESUME_SEASON_FALLBACK) && RESUME_SEASON_FALLBACK > 0;
@@ -6612,8 +6624,43 @@
             if (!useResumePosition && currentParams.has('seasonIndex')) {
                 const savedSeasonIndex = Number(currentParams.get('seasonIndex'));
                 if (anikotoPartIndex < 0 && Number.isInteger(savedSeasonIndex) && savedSeasonIndex >= 0 && savedSeasonIndex < safeSeasons.length) {
-                    si = savedSeasonIndex;
-                    matchedExplicitSeasonRef = true;
+                    // seasonIndex is written as the episode-menu tab index, which only
+                    // equals the catalog index when the menu mirrors tvSeasons order.
+                    // Bonus/Specials rows (e.g. hdstream4u) get sorted to the last tab,
+                    // so the index no longer points at the real season. Verify it
+                    // against the explicit episodeId: if another season actually holds
+                    // that episode, trust the episodeId instead of the stale index.
+                    const seasonIndexEpisodeId = String(currentParams.get('episodeId') || '').trim().toLowerCase();
+                    let trustSavedSeasonIndex = true;
+                    if (seasonIndexEpisodeId) {
+                        const seasonIndexSeason = safeSeasons[savedSeasonIndex];
+                        const seasonIndexHasEpisode = (Array.isArray(seasonIndexSeason?.episodes) ? seasonIndexSeason.episodes : []).some((episode) =>
+                            String(episode?.id || episode?.providerEpisodeId || '').trim().toLowerCase() === seasonIndexEpisodeId,
+                        );
+                        const episodeLivesElsewhere = safeSeasons.some((season, seasonIdx) => {
+                            if (seasonIdx === savedSeasonIndex) return false;
+                            return (Array.isArray(season?.episodes) ? season.episodes : []).some((episode) =>
+                                String(episode?.id || episode?.providerEpisodeId || '').trim().toLowerCase() === seasonIndexEpisodeId,
+                            );
+                        });
+                        if (!seasonIndexHasEpisode && episodeLivesElsewhere) trustSavedSeasonIndex = false;
+                    }
+                    // When the URL explicitly targets a season-0 / Specials / Bonus row
+                    // (season=0 or a seasonTitle hint), the saved index must point at an
+                    // extras season. The menu sorts such rows to the last tab while the
+                    // catalog keeps them at their original index, so a numbered-season
+                    // index here is stale - especially before the provider bonus merge
+                    // has injected those episodes into the catalog.
+                    if (urlRequestsExtrasSeason && trustSavedSeasonIndex) {
+                        const indexedSeasonNo = Number(safeSeasons[savedSeasonIndex]?.seasonNo || 0);
+                        const indexedSeasonName = String(safeSeasons[savedSeasonIndex]?.name || '').trim();
+                        const indexedSeasonIsExtras = indexedSeasonNo <= 0 || /^(specials?|ovas?|extras?|recaps?|bonus)$/i.test(indexedSeasonName);
+                        if (!indexedSeasonIsExtras) trustSavedSeasonIndex = false;
+                    }
+                    if (trustSavedSeasonIndex) {
+                        si = savedSeasonIndex;
+                        matchedExplicitSeasonRef = true;
+                    }
                 }
             }
 
@@ -6638,7 +6685,7 @@
                     matchedExplicitSeasonRef = true;
                 }
             }
-            if (!useResumePosition && currentParams.get('episodeId') && !currentParams.has('seasonIndex')) {
+            if (!useResumePosition && currentParams.get('episodeId') && !matchedExplicitSeasonRef) {
                 const wantedEpisodeId = String(currentParams.get('episodeId')).trim().toLowerCase();
                 for (let seasonIndex = 0; seasonIndex < safeSeasons.length; seasonIndex += 1) {
                     const episodes = Array.isArray(safeSeasons[seasonIndex]?.episodes) ? safeSeasons[seasonIndex].episodes : [];
@@ -6668,6 +6715,16 @@
                     si = bySeasonTitle;
                     matchedExplicitSeasonRef = true;
                 }
+                }
+            }
+            if (!useResumePosition && urlRequestsExtrasSeason && !matchedExplicitSeasonRef) {
+                const extrasIdx = safeSeasons.findIndex((s) => {
+                    const no = Number(s?.seasonNo || 0);
+                    return no <= 0 || /^(specials?|ovas?|extras?|recaps?|bonus)$/i.test(String(s?.name || '').trim());
+                });
+                if (extrasIdx >= 0) {
+                    si = extrasIdx;
+                    matchedExplicitSeasonRef = true;
                 }
             }
             if (Number.isFinite(currentSeason) && currentSeason > 0 && !matchedExplicitSeasonRef) {
@@ -6787,7 +6844,7 @@
                         sName = sName.replace(/season/i, 'Part');
                     }
                     return {
-                        seasonNo: mapSNo(s?.season || s?.seasonNumber || s?.season_number || s?.number, idx + 1),
+                        seasonNo: mapSNo(s?.season ?? s?.seasonNumber ?? s?.season_number ?? s?.number, idx + 1),
                         name: sName,
                         episodes: Array.isArray(s?.episodes) ? [...s.episodes] : []
                     };
@@ -10603,16 +10660,23 @@
                 const episodeRef = seasonRef?.episodes?.[Number(curEpisode || 0)] || null;
                 const seasonNoRaw = Number(seasonRef?.seasonNo);
                 const episodeNoRaw = Number(episodeRef?.episode || episodeRef?.number || episodeRef?.episodeNum);
-                const seasonNo = Number(hint?.seasonNo || 0) > 0
-                    ? Number(hint.seasonNo)
-                    : (Number.isFinite(seasonNoRaw) && seasonNoRaw > 0 ? seasonNoRaw : Number(curSeason || 0) + 1);
+                // Bonus/Specials episodes live in season-zero seasons. Keep the URL's
+                // season=0 (and "Bonus" title) for them instead of synthesizing a +1
+                // numbered season that would boot into the wrong season on reload.
+                const hintSeasonNo = Number(hint?.seasonNo || 0);
+                const isBonusSelection = /bonus/i.test(String(hint?.seasonTitle || URL_SEASON_TITLE || seasonRef?.name || ''));
+                const seasonNo = isBonusSelection
+                    ? 0
+                    : (Number.isFinite(hintSeasonNo) && hintSeasonNo > 0
+                        ? hintSeasonNo
+                        : (Number.isFinite(seasonNoRaw) && seasonNoRaw > 0 ? seasonNoRaw : Number(curSeason || 0) + 1));
                 const episodeNo = Number(hint?.episodeNo || 0) > 0
                     ? Number(hint.episodeNo)
                     : (Number.isFinite(episodeNoRaw) && episodeNoRaw > 0 ? episodeNoRaw : Number(curEpisode || 0) + 1);
                 u.searchParams.set('season', String(seasonNo));
                 u.searchParams.set('episode', String(episodeNo));
 
-                let seasonTitle = String(hint?.seasonTitle || seasonRef?.name || '').trim();
+                let seasonTitle = isBonusSelection ? 'Bonus' : String(hint?.seasonTitle || seasonRef?.name || '').trim();
                 if (seasonNo > 0 && /^(specials?|ovas?|extras?|recaps?)$/i.test(seasonTitle)) {
                     seasonTitle = `Season ${seasonNo}`;
                 }
@@ -17219,7 +17283,7 @@
                     if (providerName === 'animesalt' && Array.isArray(providerInfo?.seasons) && providerInfo.seasons.length) {
                         const result = providerInfo.seasons
                             .map((season, index) => {
-                                const seasonNo = Number(season?.seasonNo || season?.season || season?.seasonNumber || index + 1) || (index + 1);
+                                const seasonNo = Number(season?.seasonNo ?? season?.season ?? season?.seasonNumber ?? index + 1) || (index + 1);
                                 const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
                                 if (!episodes.length) return null;
                                 return {
@@ -17505,6 +17569,19 @@
                             }
                         }
                         if (!Array.isArray(hdCache) || !hdCache.length) return;
+                        const uniqueHdBonus = [];
+                        const seenHdBonus = new Set();
+                        hdCache.forEach((bonusEpisode) => {
+                            const title = String(bonusEpisode?.title || bonusEpisode?.name || bonusEpisode?.episodeName || '').trim();
+                            const identity = title
+                                ? normalizeTitleForMatch(title)
+                                : String(bonusEpisode?.episodeId || bonusEpisode?.url || bonusEpisode?.id || '').trim().toLowerCase();
+                            if (!identity || seenHdBonus.has(identity)) return;
+                            seenHdBonus.add(identity);
+                            uniqueHdBonus.push(bonusEpisode);
+                        });
+                        hdCache = uniqueHdBonus;
+                        if (!hdCache.length) return;
                         // For HDStream4u the Specials tab should reflect hdstream's own
                         // Bonus catalog. TMDB's season 0 often duplicates numbered-season
                         // content that hdstream can't resolve, so it is replaced here
@@ -18957,6 +19034,9 @@
 
                      const item = document.createElement('div');
                      item.className = 'ep-item';
+                     if (isBonusSeason || /bonus/i.test(String(ep?.title || ep?.name || ep?.episodeName || ep?.episode_name || ''))) {
+                         item.classList.add('bonus-episode');
+                     }
                      item.dataset.seasonIndex = String(si);
                      const epNo = menuEpisodeNo;
                      item.dataset.episodeNumber = String(epNo);
@@ -19102,7 +19182,9 @@
                     item.dataset.absoluteEpisodeNo = String(absoluteEpisodeNo || epNo);
                     item.dataset.providerAnimeId = String(s?.providerAnimeId || '').trim().toLowerCase();
                     if (URL_EPISODE > 0
-                        && Number(item.dataset.seasonNo) === (URL_SEASON > 0 ? URL_SEASON : Number(s?.seasonNo || si + 1))
+                        && (URL_SEASON > 0
+                            ? Number(item.dataset.seasonNo) === URL_SEASON
+                            : Number(item.dataset.seasonNo) <= 0)
                         && Number(item.dataset.episodeNo) === URL_EPISODE) {
                         item.classList.add('active');
                     }
@@ -19301,27 +19383,74 @@
             const activeEpisodeNo = Number.isFinite(activeEpisodeNoRaw) && activeEpisodeNoRaw > 0
                 ? activeEpisodeNoRaw
                 : Number(ei || 0) + 1;
-            epPanel.querySelectorAll('.ep-item').forEach(el => {
-                const mappedMatch = +el.dataset.menuSeasonIndex === si && +el.dataset.menuEpisodeIndex === ei;
+            // Bonus/Specials episodes live in season-zero seasons whose rows store
+            // data-seasonNo="0". activeSeasonNo above is a synthesized +1 fallback,
+            // so matching numbered rows against it would never hit the bonus row
+            // and could instead highlight a different numbered season's episode.
+            const activeSeasonIsExtras = activeSeason ? isExtrasOnlyMenuSeason(activeSeason) : false;
+            const hintSeasonIsExtras = hintSeasonNo <= 0 || /bonus|specials?|ovas?|onas?|extras?|recaps?/i.test(String(hint?.seasonTitle || ''));
+            const bootParams = new URLSearchParams(window.location.search);
+            const bootSeasonExplicitZero = bootParams.has('season') && Number(bootParams.get('season') || 0) === 0;
+            const bootExtrasTargeted = bootSeasonExplicitZero || /bonus|specials?|ovas?|onas?|extras?|recaps?/i.test(URL_SEASON_TITLE || '');
+            const seasonIdentityMatchesRow = (el) => activeSeasonIsExtras
+                ? Number(el.dataset.seasonNo || 0) <= 0
+                : (activeSeasonNo > 0 && Number(el.dataset.seasonNo || 0) === activeSeasonNo);
+            const hasCurrentMatch = Array.from(epPanel.querySelectorAll('.ep-item')).some((el) => {
+                const mappedMatch = (+el.dataset.menuSeasonIndex === si && +el.dataset.menuEpisodeIndex === ei) &&
+                    !(activeSeasonIsExtras && Number(el.dataset.seasonNo || 0) > 0);
                 const numberMatch =
-                    activeSeasonNo > 0 &&
                     activeEpisodeNo > 0 &&
-                    Number(el.dataset.seasonNo || 0) === activeSeasonNo &&
-                    Number(el.dataset.episodeNo || 0) === activeEpisodeNo;
-                const bootNumberMatch =
-                    URL_EPISODE > 0 &&
-                    Number(el.dataset.episodeNo || 0) === URL_EPISODE &&
-                    (URL_SEASON <= 0 || Number(el.dataset.seasonNo || 0) === URL_SEASON);
+                    Number(el.dataset.episodeNo || 0) === activeEpisodeNo &&
+                    seasonIdentityMatchesRow(el);
                 const providerMatch = hint && (
                     (hintEpisodeId && String(el.dataset.episodeId || '').toLowerCase() === hintEpisodeId) ||
                     (
                         (!hintProvider || String(el.dataset.provider || '').toLowerCase() === hintProvider) &&
-                        Number(el.dataset.seasonNo || 0) === hintSeasonNo &&
+                        (hintSeasonIsExtras
+                            ? Number(el.dataset.seasonNo || 0) <= 0
+                            : Number(el.dataset.seasonNo || 0) === hintSeasonNo) &&
                         Number(el.dataset.episodeNo || 0) === hintEpisodeNo &&
                         (!hintAbsoluteEpisodeNo || Number(el.dataset.absoluteEpisodeNo || 0) === hintAbsoluteEpisodeNo)
                     )
                 );
-                const bootProviderMatch = !hint && bootEpisodeId && String(el.dataset.episodeId || '').toLowerCase() === bootEpisodeId;
+                const hasUsableProviderHint = hint && hintProvider === 'animekai'
+                    ? (/\$ep=\d+/i.test(hintEpisodeId) || /-\d+x\d+$/i.test(hintEpisodeId))
+                    : Boolean(hint);
+                return mappedMatch || providerMatch || (!hasUsableProviderHint && numberMatch);
+            });
+
+            // Boot URL matches are only a fallback: URL_SEASON/URL_EPISODE are
+            // frozen consts, so after in-app navigation (auto-next / next button)
+            // they still point at the originally loaded episode. Never let them
+            // re-highlight that old row when a current-episode match exists.
+            epPanel.querySelectorAll('.ep-item').forEach(el => {
+                const mappedMatch = (+el.dataset.menuSeasonIndex === si && +el.dataset.menuEpisodeIndex === ei) &&
+                    !(activeSeasonIsExtras && Number(el.dataset.seasonNo || 0) > 0);
+                const numberMatch =
+                    activeEpisodeNo > 0 &&
+                    Number(el.dataset.episodeNo || 0) === activeEpisodeNo &&
+                    seasonIdentityMatchesRow(el);
+                const bootNumberMatch =
+                    !hasCurrentMatch &&
+                    URL_EPISODE > 0 &&
+                    Number(el.dataset.episodeNo || 0) === URL_EPISODE &&
+                    (
+                        URL_SEASON > 0
+                            ? Number(el.dataset.seasonNo || 0) === URL_SEASON
+                            : (bootExtrasTargeted ? Number(el.dataset.seasonNo || 0) <= 0 : true)
+                    );
+                const providerMatch = hint && (
+                    (hintEpisodeId && String(el.dataset.episodeId || '').toLowerCase() === hintEpisodeId) ||
+                    (
+                        (!hintProvider || String(el.dataset.provider || '').toLowerCase() === hintProvider) &&
+                        (hintSeasonIsExtras
+                            ? Number(el.dataset.seasonNo || 0) <= 0
+                            : Number(el.dataset.seasonNo || 0) === hintSeasonNo) &&
+                        Number(el.dataset.episodeNo || 0) === hintEpisodeNo &&
+                        (!hintAbsoluteEpisodeNo || Number(el.dataset.absoluteEpisodeNo || 0) === hintAbsoluteEpisodeNo)
+                    )
+                );
+                const bootProviderMatch = !hasCurrentMatch && !hint && bootEpisodeId && String(el.dataset.episodeId || '').toLowerCase() === bootEpisodeId;
                 const hasUsableProviderHint = hint && hintProvider === 'animekai'
                     ? (/\$ep=\d+/i.test(hintEpisodeId) || /-\d+x\d+$/i.test(hintEpisodeId))
                     : Boolean(hint);
@@ -19807,8 +19936,15 @@
             if (next.selectionHint) {
                 pendingEpisodeSelectionHint = { ...next.selectionHint };
                 activeEpisodeSelectionHint = { ...next.selectionHint };
+            } else {
+                // No provider-specific next hint: drop the previous episode's
+                // hint so updateEpUI matches the next episode by number instead
+                // of re-highlighting the row we are leaving.
+                pendingEpisodeSelectionHint = null;
+                activeEpisodeSelectionHint = null;
             }
             setLoader('Loading next episode...', 'Please wait');
+            inAppEpisodeNavigation = true;
             await playTvEp(next.seasonIndex, next.episodeIndex, 0);
         }
 
@@ -19886,13 +20022,17 @@
             const bootSeasonNo = useResumePosition ? RESUME_SEASON_FALLBACK : URL_SEASON;
             const bootEpisodeNo = useResumePosition ? RESUME_EPISODE_FALLBACK : URL_EPISODE;
             const bootAbsoluteEpisodeNo = useResumePosition ? continueAbsoluteEpisodeNo : URL_ABSOLUTE_EPISODE;
-            const urlEpisodeIdLooksProviderScoped = /\$ep=\d+/i.test(bootEpisodeId) || /\/ep-\d+/i.test(bootEpisodeId) || /-\d+x\d+$/i.test(bootEpisodeId) || /^episode[-/]/i.test(bootEpisodeId);
+            const urlEpisodeIdLooksProviderScoped = /\$ep=\d+/i.test(bootEpisodeId) || /\/ep-\d+/i.test(bootEpisodeId) || /-\d+x\d+$/i.test(bootEpisodeId) || /^episode[-/]/i.test(bootEpisodeId) || /\$episode\$/i.test(bootEpisodeId);
             const continueEpisodeIdLooksProviderScoped = /\$ep=\d+/i.test(continueEpisodeId) || /\/ep-\d+/i.test(continueEpisodeId) || /-\d+x\d+$/i.test(continueEpisodeId) || /^episode[-/]/i.test(continueEpisodeId);
             const shouldCreateProviderSelectionHint =
                 currentIsLikelyAnime ||
                 String(FORCED_PROVIDER || '').trim().toLowerCase() === 'flixhq' ||
                 /^episode[-/]/i.test(bootEpisodeId || continueEpisodeId);
-            if (!pendingEpisodeSelectionHint && shouldCreateProviderSelectionHint && (bootEpisodeId || bootAbsoluteEpisodeNo > 0 || bootSeasonKey || continueEpisodeId || continueAbsoluteEpisodeNo > 0 || continueSeasonKey)) {
+            // Only synthesize a hint from the boot URL on the initial page load.
+            // After in-app navigation (auto-next / next button) those URL consts
+            // still describe the originally loaded episode, so the current episode
+            // in tvSeasons is the only trustworthy source of identity.
+            if (!inAppEpisodeNavigation && !pendingEpisodeSelectionHint && shouldCreateProviderSelectionHint && (bootEpisodeId || bootAbsoluteEpisodeNo > 0 || bootSeasonKey || continueEpisodeId || continueAbsoluteEpisodeNo > 0 || continueSeasonKey)) {
                 const urlSeasonTitleLooksSpecial = /^(specials?|ovas?|extras?|recaps?)$/i.test(bootSeasonTitle);
                 const safeUrlSeasonTitle = urlSeasonTitleLooksSpecial && bootSeasonNo > 0 ? '' : bootSeasonTitle;
                 const bootProviderHint = /\/ep-\d+/i.test(bootEpisodeId || continueEpisodeId)
@@ -19974,7 +20114,7 @@
                     activeEpisodeSelectionHint = { ...selectionHint };
                 }
             }
-            if (selectionHint && currentIsLikelyAnime && effectiveForcedProvider === 'anikoto') {
+            if (!inAppEpisodeNavigation && selectionHint && currentIsLikelyAnime && effectiveForcedProvider === 'anikoto') {
                 selectionHint.provider = 'anikoto';
                 if (URL_EPISODE_ID && /\$episode\$/i.test(URL_EPISODE_ID)) {
                     selectionHint.episodeId = URL_EPISODE_ID;
@@ -20004,33 +20144,47 @@
                 if (Number.isFinite(hintEpisodeNo) && hintEpisodeNo > 0) selectedEpisodeNo = hintEpisodeNo;
             }
             const isBonusSelection = /bonus/i.test(String(selectionHint?.seasonTitle || URL_SEASON_TITLE || ''));
-            let selectedEpisodeId = String(selectionHint?.episodeId || bootEpisodeId || (isBonusSelection ? URL_EPISODE_ID : '') || selectedEpisode?.id || '').trim();
+            // After in-app navigation the boot URL consts are stale; the current
+            // episode in tvSeasons is the source of truth for the provider id.
+            let selectedEpisodeId = String(
+                selectionHint?.episodeId ||
+                (inAppEpisodeNavigation ? (selectedEpisode?.id || bootEpisodeId) : bootEpisodeId) ||
+                (isBonusSelection ? URL_EPISODE_ID : '') ||
+                selectedEpisode?.id ||
+                ''
+            ).trim();
             const isStaleAniKotoSpecialId = activeProviders.includes('anikoto') && /(?:operation[-_ ]desert[-_ ]pasta|movie|ova|ona|special)/i.test(URL_EPISODE_ID);
-            if (isStaleAniKotoSpecialId) {
+            if (inAppEpisodeNavigation) {
+                if (!selectionHint?.episodeId && selectedEpisode?.id) {
+                    selectedEpisodeId = String(selectedEpisode.id).trim();
+                }
+            } else if (isStaleAniKotoSpecialId) {
                 selectedEpisodeId = '';
             } else if (activeProviders.includes('anikoto') && /\$episode\$/i.test(URL_EPISODE_ID)) {
                 selectedEpisodeId = URL_EPISODE_ID;
             } else if (!isStaleAniKotoSpecialId && activeProviders.includes('anikoto') && selectedEpisode?.id && !/\$episode\$/i.test(selectedEpisodeId)) {
                 selectedEpisodeId = String(selectedEpisode.id).trim();
             }
-            if (activeProviders.includes('animekai') && /\$ep=/i.test(String(selectedEpisode?.id || ''))) {
+            if (inAppEpisodeNavigation && !selectionHint?.episodeId && activeProviders.includes('animekai') && selectedEpisode?.id && /\$ep=/i.test(String(selectedEpisode?.id || ''))) {
+                selectedEpisodeId = String(selectedEpisode.id).trim();
+            } else if (!inAppEpisodeNavigation && activeProviders.includes('animekai') && /\$ep=/i.test(String(selectedEpisode?.id || ''))) {
                 selectedEpisodeId = String(selectedEpisode.id).trim();
             }
-            if (activeProviders.includes('animekai') && /\$ep=/i.test(URL_EPISODE_ID)) {
+            if (!inAppEpisodeNavigation && activeProviders.includes('animekai') && /\$ep=/i.test(URL_EPISODE_ID)) {
                 selectedEpisodeId = URL_EPISODE_ID;
             }
-            if (activeProviders.includes('nineanime') && /\/ep-\d+/i.test(URL_EPISODE_ID)) {
+            if (!inAppEpisodeNavigation && activeProviders.includes('nineanime') && /\/ep-\d+/i.test(URL_EPISODE_ID)) {
                 selectedEpisodeId = URL_EPISODE_ID;
             }
             if (activeProviders.includes('nineanime')) {
-                const nineAnimeEpisodeId = String(selectedEpisodeId || URL_EPISODE_ID || '').trim();
+                const nineAnimeEpisodeId = String(selectedEpisodeId || (!inAppEpisodeNavigation ? URL_EPISODE_ID : '') || '').trim();
                 const nineAnimeSlug = nineAnimeEpisodeId.match(/^(.+?)\/ep-\d+$/i)?.[1];
                 if (nineAnimeSlug && Number(selectedEpisodeNo) > 0) {
                     selectedEpisodeId = `${nineAnimeSlug}/ep-${selectedEpisodeNo}`;
                 }
             }
             if (activeProviders.includes('animekai') && !(/\$ep=\d+/i.test(selectedEpisodeId) || /-\d+x\d+$/i.test(selectedEpisodeId))) {
-                const animeKaiSlug = URL_SEASON_KEY || String(
+                const animeKaiSlug = (!inAppEpisodeNavigation ? URL_SEASON_KEY : '') || String(
                     providerSeasonCatalog?.get?.('animekai')?.find?.((season) => Number(season?.seasonNo || 0) === Number(selectedSeasonNo))?.providerAnimeId || '',
                 ).trim();
                 if (animeKaiSlug) selectedEpisodeId = `${animeKaiSlug}-${selectedSeasonNo}x${selectedEpisodeNo}`;
@@ -20919,53 +21073,6 @@
                                 } else {
                                     provEpisodeId = info.episodeId || info.id;
                                 }
-                            }
-                        }
-                        if (
-                            !provEpisodeId &&
-                            provider === 'hdstream4u' &&
-                            effectiveMediaType === 'tv' &&
-                            String(TMDB_ID || '') === '262838' &&
-                            Number(selectedSeasonNo) === 2 &&
-                            [4, 5].includes(Number(selectedEpisodeNo))
-                        ) {
-                            try {
-                                const providerInfoBase = API_BASE.replace('/meta/tmdb', '/movies/hdstream4u');
-                                const title = String(currentMediaInfo?.title || currentMediaInfo?.name || "India's Got Latent").trim();
-                                const searchRes = await fetch(
-                                    `${providerInfoBase}/search?query=${encodeURIComponent(title)}&page=1`,
-                                    { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) },
-                                ).catch(() => null);
-                                let hdInfo = null;
-                                if (searchRes?.ok) {
-                                    const searchPayload = await searchRes.json();
-                                    const results = Array.isArray(searchPayload?.results) ? searchPayload.results : [];
-                                    const match = results.find((entry) => String(entry?.type || '').toLowerCase() === 'tv') || results[0];
-                                    if (match?.url || match?.id) {
-                                        const infoRes = await fetch(
-                                            `${providerInfoBase}/info?id=${encodeURIComponent(String(match.url || match.id))}&type=tv`,
-                                            { signal: AbortSignal.timeout(getProviderTimeout(provider, 'metaInfo', REQ_TIMEOUT.metaInfo)) },
-                                        ).catch(() => null);
-                                        if (infoRes?.ok) {
-                                            try { hdInfo = await infoRes.json(); } catch (_) { }
-                                        }
-                                    }
-                                }
-                                const episodes = Array.isArray(hdInfo?.episodes) ? hdInfo.episodes : [];
-                                const isBonusRow = (episode) => /\bbonus\b/i.test(String(episode?.category || episode?.seasonName || episode?.title || episode?.name || ''));
-                                const target = Number(selectedEpisodeNo) === 4
-                                    ? episodes.find((episode) => isBonusRow(episode))
-                                    : episodes.find((episode) =>
-                                        !isBonusRow(episode) &&
-                                        Number(episode?.episodeNumber || episode?.number || episode?.episode || 0) === 4,
-                                    );
-                                if (target) {
-                                    provEpisodeId = String(target?.episodeId || target?.id || target?.url || '').trim();
-                                    info = hdInfo;
-                                    useDirectProviderWatch = Boolean(provEpisodeId);
-                                }
-                            } catch (error) {
-                                console.warn('[hdstream4u] India latent episode mapping failed:', error);
                             }
                         }
                         if (!provEpisodeId && provider === 'hdstream4u' && effectiveMediaType === 'movie') {

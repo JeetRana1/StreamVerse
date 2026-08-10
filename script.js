@@ -3618,6 +3618,55 @@ function normalizeModalTvSeasons(movie, options = {}) {
     return [];
 }
 
+async function fetchModalHdstreamBonusSeason(movie, id) {
+    const title = String(movie?.title || movie?.name || '').trim();
+    const tmdbId = normalizeTmdbId(id);
+    if (!title || !tmdbId) return null;
+    const providerBase = String(BASE_URL || '').replace('/meta/tmdb', '/movies/hdstream4u');
+    try {
+        const searchResponse = await fetch(`${providerBase}/search?query=${encodeURIComponent(title)}&page=1`);
+        if (!searchResponse.ok) return null;
+        const searchPayload = await searchResponse.json().catch(() => ({}));
+        const results = Array.isArray(searchPayload?.results) ? searchPayload.results : [];
+        const match = results.find((entry) => String(entry?.type || '').toLowerCase() === 'tv') || results[0];
+        if (!match?.url && !match?.id) return null;
+        const infoResponse = await fetch(`${providerBase}/info?id=${encodeURIComponent(String(match.url || match.id))}&type=tv`);
+        if (!infoResponse.ok) return null;
+        const payload = await infoResponse.json().catch(() => ({}));
+        const episodes = Array.isArray(payload?.episodes) ? payload.episodes : [];
+        const seen = new Set();
+        const bonusEpisodes = episodes.filter((episode) => {
+            const isBonus = String(episode?.category || '').toLowerCase() === 'bonus' ||
+                Number(episode?.seasonNumber || 0) === 0 ||
+                String(episode?.seasonName || '').toLowerCase() === 'bonus' ||
+                /bonus/i.test(String(episode?.title || episode?.name || episode?.episodeName || ''));
+            if (!isBonus) return false;
+            const titleKey = normalizeTitleForMatch(String(episode?.title || episode?.name || episode?.episodeName || ''));
+            const idKey = String(episode?.episodeId || episode?.url || episode?.id || '').trim().toLowerCase();
+            const key = titleKey || idKey;
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+        if (!bonusEpisodes.length) return null;
+        return {
+            seasonNo: 0,
+            seasonTitle: 'Bonus',
+            seasonKey: String(match.url || match.id || '').trim(),
+            seasonImage: getModalEpisodeImage(movie),
+            episodes: bonusEpisodes.map((episode, index) => ({
+                ...episode,
+                episodeNo: index + 1,
+                title: String(episode?.title || episode?.name || `Bonus EP ${index + 1}`).trim(),
+                name: String(episode?.title || episode?.name || `Bonus EP ${index + 1}`).trim(),
+                image: getModalEpisodeImage(episode, getModalEpisodeImage(movie)),
+            })),
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
 function isModalAnimeLike(movie = {}) {
     const text = [
         movie.type,
@@ -3994,6 +4043,14 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
             });
         }
     };
+
+    rebuildSeasonMenu();
+    fetchModalHdstreamBonusSeason(movie, id).then((bonusSeason) => {
+        if (!bonusSeason || seasons.some((season) => Number(season.seasonNo) === 0)) return;
+        seasons.push(bonusSeason);
+        seasons.sort((a, b) => Number(a.seasonNo) - Number(b.seasonNo));
+        rebuildSeasonMenu();
+    }).catch(() => {});
 
     select.addEventListener('click', (event) => {
         event.stopPropagation();
