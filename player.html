@@ -3995,15 +3995,18 @@
                     <button class="fs-back-btn" id="fsBackBtn" aria-label="Back to home"><i class="fa-solid fa-arrow-left"></i></button>
                     <button class="ui-watchparty-btn" id="uiWatchPartyBtn" aria-label="Open watch together"><i class="fa-solid fa-window-restore"></i></button>
                     <button class="ui-chat-btn" id="uiChatBtn" aria-label="Open live chat"><i class="fa-solid fa-comment"></i></button>
+                    <button class="ctrl-icon" id="shareEpisodeBtn" aria-label="Share episode" title="Share episode">
+                        <i class="fa-solid fa-share-nodes"></i>
+                    </button>
                     <button class="ui-lock-btn" id="uiLockBtn" aria-label="Lock controls"><i class="fa-solid fa-lock-open"></i></button>
                 </div>
                 <button class="ctrl-icon" id="customServerBtn" aria-label="Servers">
                     <i class="fa-solid fa-layer-group"></i>
                 </button>
-                <button class="ctrl-icon" id="customEpisodeBtn" aria-label="Episodes" style="display:none;">
-                    <i class="fa-solid fa-rectangle-list"></i>
-                </button>
-                <button class="ctrl-icon" id="custom-audio-btn" aria-label="Audio">
+                 <button class="ctrl-icon" id="customEpisodeBtn" aria-label="Episodes" style="display:none;">
+                     <i class="fa-solid fa-rectangle-list"></i>
+                 </button>
+                 <button class="ctrl-icon" id="custom-audio-btn" aria-label="Audio">
                     <svg class="audio-wave-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M4 14V10M8 17V7M12 20V4M16 16V8M20 13V11" stroke="currentColor" stroke-width="2"
                             stroke-linecap="round" />
@@ -4598,7 +4601,8 @@
         const skipBackBtn = document.getElementById('skipBackBtn');
         const skipFwdBtn = document.getElementById('skipFwdBtn');
         const customServerBtn = document.getElementById('customServerBtn');
-        const customEpisodeBtn = document.getElementById('customEpisodeBtn');
+         const customEpisodeBtn = document.getElementById('customEpisodeBtn');
+         const shareEpisodeBtn = document.getElementById('shareEpisodeBtn');
         const customAudioBtn = document.getElementById('custom-audio-btn');
         const captionsBtn = document.getElementById('captionsBtn');
         const qualityBtn = document.getElementById('qualityBtn');
@@ -4627,7 +4631,39 @@
         const captionsMenu = document.getElementById('captionsMenu');
         const playbackMenu = document.getElementById('playbackMenu');
         const preferencesMenu = document.getElementById('preferencesMenu');
-        const volumeMenu = document.getElementById('volumeMenu');
+         const volumeMenu = document.getElementById('volumeMenu');
+
+         function getShareEpisodeUrl() {
+             const shareUrl = new URL(location.href);
+             ['t', 'time', 'start', 'startTime', 'resume'].forEach((key) => shareUrl.searchParams.delete(key));
+             return shareUrl.toString();
+         }
+
+         async function shareCurrentEpisode() {
+             const url = getShareEpisodeUrl();
+             const title = String(currentMediaInfo?.title || currentMediaInfo?.name || document.title || 'StreamVerse').trim();
+             try {
+                 if (navigator.share) {
+                     await navigator.share({ title, url });
+                 } else if (navigator.clipboard?.writeText) {
+                     await navigator.clipboard.writeText(url);
+                     showToast('Episode link copied');
+                 } else {
+                     const input = document.createElement('textarea');
+                     input.value = url;
+                     input.setAttribute('readonly', '');
+                     input.style.position = 'fixed';
+                     input.style.opacity = '0';
+                     document.body.appendChild(input);
+                     input.select();
+                     document.execCommand('copy');
+                     input.remove();
+                     showToast('Episode link copied');
+                 }
+             } catch (error) {
+                 if (error?.name !== 'AbortError') showToast('Unable to share episode link');
+             }
+         }
 
         // -----------------------------------------------------------------------
         //  STATE
@@ -14048,10 +14084,10 @@
             if (watchPartyRole !== 'guest') return;
             const target = event.target;
             if (!target?.closest) return;
-            if (target.closest('#watchPartyPanel, #watchTogetherBtn, #fullscreenBtn, #muteBtn, #volumeMenu')) return;
+            if (target.closest('#watchPartyPanel, #watchTogetherBtn, #shareEpisodeBtn, #fullscreenBtn, #muteBtn, #volumeMenu')) return;
             const chatOnlyOpen = document.body.classList.contains('watch-party-open') && watchPartyCardCollapsed && !watchPartyChatCollapsed;
             if (chatOnlyOpen && target.closest('#playPauseBtn')) return;
-            if (target.closest('#player-video, .player-wrap, .control-center, #playPauseBtn, #skipBackBtn, #skipFwdBtn, .seek-wrapper, #customServerBtn, #customEpisodeBtn, #custom-audio-btn, #audio-panel, #source-panel, #ep-panel, #captionsBtn, #captionsMenu, #qualityBtn, #qualityMenu, #playbackBtn, #playbackMenu, #preferencesBtn, #preferencesMenu')) {
+            if (target.closest('#player-video, .player-wrap, .control-center, #playPauseBtn, #skipBackBtn, #skipFwdBtn, .seek-wrapper, #customServerBtn, #customEpisodeBtn, #shareEpisodeBtn, #custom-audio-btn, #audio-panel, #source-panel, #ep-panel, #captionsBtn, #captionsMenu, #qualityBtn, #qualityMenu, #playbackBtn, #playbackMenu, #preferencesBtn, #preferencesMenu')) {
                 event.preventDefault();
                 event.stopPropagation();
                 watchPartyToast('Only the host can control playback');
@@ -15099,6 +15135,12 @@
                 e.stopPropagation();
                 if (wakeControlsIfHidden()) return;
                 toggleEpPanel(customEpisodeBtn);
+            });
+
+            shareEpisodeBtn?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (wakeControlsIfHidden()) return;
+                shareCurrentEpisode();
             });
 
             qualityBtn.addEventListener('click', (e) => {
