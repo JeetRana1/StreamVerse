@@ -6134,6 +6134,26 @@ function getProxiedUrl(url, referer = '') {
                     }
                 }
 
+                if (isBufferAppend) {
+                    consecutiveBufferErrors += 1;
+                    if (hls.levels && hls.levels.length > 1) {
+                        try {
+                            hls.autoLevelCapping = 0;
+                            hls.nextLevel = 0;
+                            hls.loadLevel = 0;
+                            hls.stopLoad();
+                            hls.startLoad(Math.max(0, Number(video?.currentTime || 0) - 0.25));
+                            hls.recoverMediaError();
+                            console.warn('[hls] bufferAppendError: retrying lowest quality rendition');
+                        } catch (_) { }
+                    }
+                    if (consecutiveBufferErrors >= 4 && typeof onErrorFallback === 'function') {
+                        consecutiveBufferErrors = 0;
+                        onErrorFallback('buffer_append_unrecoverable');
+                    }
+                    return;
+                }
+
                 // Ã¢â€â‚¬Ã¢â€â‚¬ bufferFullError: flush stale back-buffer instead of spiralling Ã¢â€â‚¬Ã¢â€â‚¬
                 if (isBufferFull && !d.fatal) {
                     consecutiveBufferErrors++;
