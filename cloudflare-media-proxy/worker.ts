@@ -30,6 +30,27 @@ const DEFAULT_REFERER = 'https://streameeeeee.site/';
 /** Worker environment bindings. MEDIA_PROXY_KEY is optional — set via `wrangler secret put`. */
 interface Env {
   MEDIA_PROXY_KEY?: string;
+  MEDIA_PROXY_TOKEN_SECRET?: string;
+}
+
+function base64UrlBytes(value: string): Uint8Array {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function isValidMediaProxyToken(token: string, secret: string): Promise<boolean> {
+  try {
+    const [payload, signature] = token.split('.');
+    if (!payload || !signature) return false;
+    const data = base64UrlBytes(payload);
+    const parsed = JSON.parse(new TextDecoder().decode(data));
+    if (!Number.isFinite(Number(parsed?.exp)) || Number(parsed.exp) < Math.floor(Date.now() / 1000)) return false;
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+    return crypto.subtle.verify('HMAC', key, base64UrlBytes(signature), new TextEncoder().encode(payload));
+  } catch {
+    return false;
+  }
 }
 
 // Hosts that reject the provider-site referer but accept the Megaplay origin
@@ -145,7 +166,11 @@ export default {
 
     // ---- Auth gate: enforce the shared key if configured. ----
     const expectedKey = String(env?.MEDIA_PROXY_KEY || '').trim();
-    if (expectedKey) {
+    const tokenSecret = String(env?.MEDIA_PROXY_TOKEN_SECRET || '').trim();
+    if (tokenSecret) {
+      const providedToken = String(url.searchParams.get('token') || '');
+      if (!(await isValidMediaProxyToken(providedToken, tokenSecret))) return unauthorized();
+    } else if (expectedKey) {
       const providedKey =
         String(url.searchParams.get('key') || '') ||
         String(request.headers.get('x-media-proxy-key') || '');
@@ -274,6 +299,7 @@ export default {
       const text = await upstream.text();
       const publicOrigin = url.origin;
       const authKey = String(env?.MEDIA_PROXY_KEY || '').trim();
+      const authToken = String(url.searchParams.get('token') || '');
       const refererParam = requestReferer ? `&referer=${encodeURIComponent(requestReferer)}` : '';
       const rewriteUri = (line: string): string => {
         const trimmed = line.trim();
@@ -288,7 +314,8 @@ export default {
           return line;
         }
         const params = new URLSearchParams({ url: resolved.toString() });
-        if (authKey) params.set('key', authKey);
+        if (authToken) params.set('token', authToken);
+        else if (authKey) params.set('key', authKey);
         if (requestReferer) params.set('referer', requestReferer);
         return `${publicOrigin}/proxy?${params.toString()}`;
       };

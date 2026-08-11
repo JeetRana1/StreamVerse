@@ -9,6 +9,6 @@
   FALLBACK_API_BASE: 'https://consumet-api.vercel.app/meta/tmdb',
 SAME_ORIGIN_MEDIA_PROXY: false,
   MEDIA_PROXY_BASE: 'https://fluxiumlab-media-proxy.jeetrana790.workers.dev',
-  MEDIA_PROXY_KEY: '5RWuIhOJaTkcPd1CvinNzgX7SFUl0DqE'
+  MEDIA_PROXY_KEY: ''
 };
 

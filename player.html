@@ -4125,6 +4125,16 @@
             'https://proxy-jade-kappa-94.vercel.app'
         ).replace(/\/$/, '');
         const MEDIA_PROXY_KEY = String(RUNTIME_CONFIG.MEDIA_PROXY_KEY || '').trim();
+        let MEDIA_PROXY_TOKEN = '';
+        async function ensureMediaProxyToken() {
+            if (MEDIA_PROXY_TOKEN) return MEDIA_PROXY_TOKEN;
+            const apiUrl = String(activeApiBase || API_BASE || '').replace(/\/meta\/tmdb\/?$/i, '') + '/media-proxy/token';
+            try {
+                const response = await fetch(apiUrl, { credentials: 'omit' });
+                if (response.ok) MEDIA_PROXY_TOKEN = String((await response.json())?.token || '').trim();
+            } catch (_) {}
+            return MEDIA_PROXY_TOKEN;
+        }
         const LOCAL_MEDIA_PROXY_BASE = String(
             RUNTIME_CONFIG.LOCAL_MEDIA_PROXY_BASE ||
             RUNTIME_CONFIG.LOCAL_PROXY_BASE ||
@@ -4225,8 +4235,10 @@
 function getProxiedUrl(url, referer = '') {
             if (!url) return '';
             const appendKey = (targetUrl) => {
-                const withKey = MEDIA_PROXY_KEY
-                    ? `${targetUrl}${(targetUrl || '').includes('?') ? '&' : '?'}key=${encodeURIComponent(MEDIA_PROXY_KEY)}`
+                const authValue = MEDIA_PROXY_TOKEN || MEDIA_PROXY_KEY;
+                const authName = MEDIA_PROXY_TOKEN ? 'token' : 'key';
+                const withKey = authValue
+                    ? `${targetUrl}${(targetUrl || '').includes('?') ? '&' : '?'}${authName}=${encodeURIComponent(authValue)}`
                     : targetUrl;
                 console.log('[StreamVerse:media-proxy] proxied URL =>', withKey, '| key set:', Boolean(MEDIA_PROXY_KEY));
                 return withKey;
@@ -16423,6 +16435,8 @@ function getProxiedUrl(url, referer = '') {
         async function init() {
             if (!TMDB_ID) { showError('Missing ID', 'No media ID was provided.'); return; }
 
+            await ensureMediaProxyToken();
+
             setLoader('Fetching media info...', 'Connecting to TMDB');
             buildChips();
 
@@ -22106,9 +22120,10 @@ function getProxiedUrl(url, referer = '') {
             const animeSaltCdnUrl = /^https?:\/\/(?:as-cdn\d+|z\d+)\.(?:top|ac|pro|xyz|click|link|net|cc|org)\//i.test(rawUrl);
             // Append the shared auth key so the Cloudflare proxy authorizes this request.
             const withMediaProxyAuth = (targetUrl) => {
-                if (!MEDIA_PROXY_KEY) return targetUrl;
+                const authValue = MEDIA_PROXY_TOKEN || MEDIA_PROXY_KEY;
+                if (!authValue) return targetUrl;
                 const joined = (targetUrl || '').includes('?') ? '&' : '?';
-                return `${targetUrl}${joined}key=${encodeURIComponent(MEDIA_PROXY_KEY)}`;
+                return `${targetUrl}${joined}${MEDIA_PROXY_TOKEN ? 'token' : 'key'}=${encodeURIComponent(authValue)}`;
             };
             // Already proxy-wrapped streams must not be wrapped again.
             try {

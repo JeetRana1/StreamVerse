@@ -50,7 +50,6 @@ const START_LOCAL_API = String(process.env.START_LOCAL_API || 'false').toLowerCa
 const SITE_MEDIA_PROXY_BASE =
     process.env.SITE_MEDIA_PROXY_BASE ||
     'https://fluxiumlab-media-proxy.jeetrana790.workers.dev';
-const SITE_MEDIA_PROXY_KEY = process.env.SITE_MEDIA_PROXY_KEY || '';
 
 function asJsString(value) {
     return JSON.stringify(String(value || ''));
@@ -65,7 +64,6 @@ function buildClientConfigScript() {
     STREAM_API_BASE: ${asJsString(SITE_STREAM_API_BASE)},
   SAME_ORIGIN_MEDIA_PROXY: true,
   MEDIA_PROXY_BASE: ${asJsString(SITE_MEDIA_PROXY_BASE)},
-  MEDIA_PROXY_KEY: ${asJsString(SITE_MEDIA_PROXY_KEY)},
   WIREGUARD_ENDPOINT: ${asJsString(WIREGUARD_ENDPOINT)}
 };
 `;
