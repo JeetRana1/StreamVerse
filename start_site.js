@@ -47,6 +47,10 @@ const SITE_STREAM_API_BASE =
     'https://convinced-nara-personal122-7da52759.koyeb.app/api/v1';
 const WIREGUARD_ENDPOINT = process.env.WIREGUARD_ENDPOINT || '';
 const START_LOCAL_API = String(process.env.START_LOCAL_API || 'false').toLowerCase() === 'true';
+const SITE_MEDIA_PROXY_BASE =
+    process.env.SITE_MEDIA_PROXY_BASE ||
+    'https://fluxiumlab-media-proxy.jeetrana790.workers.dev';
+const SITE_MEDIA_PROXY_KEY = process.env.SITE_MEDIA_PROXY_KEY || '';
 
 function asJsString(value) {
     return JSON.stringify(String(value || ''));
@@ -60,6 +64,8 @@ function buildClientConfigScript() {
   LOCAL_META_API_BASE: ${asJsString(SITE_META_API_BASE)},
     STREAM_API_BASE: ${asJsString(SITE_STREAM_API_BASE)},
   SAME_ORIGIN_MEDIA_PROXY: true,
+  MEDIA_PROXY_BASE: ${asJsString(SITE_MEDIA_PROXY_BASE)},
+  MEDIA_PROXY_KEY: ${asJsString(SITE_MEDIA_PROXY_KEY)},
   WIREGUARD_ENDPOINT: ${asJsString(WIREGUARD_ENDPOINT)}
 };
 `;
@@ -297,6 +303,9 @@ const server = http.createServer((req, res) => {
     const routeMap = {
         '/': 'index.html',
         '/player': 'player.html',
+        '/anime': 'player.html',
+        '/anime/player': 'player.html',
+        '/anime/player.html': 'player.html',
         '/manga': 'manga.html',
         '/favicon.ico': 'logo.png',
     };

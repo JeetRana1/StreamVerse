@@ -1,0 +1,20 @@
+# FluxiumLab — Media Proxy Worker
+# Deploys the edge media proxy that replaces the Google Cloud VM proxy.
+
+name = "fluxiumlab-media-proxy"
+main = "worker.ts"
+compatibility_date = "2024-11-01"
+
+# Standalone Worker on workers.dev (no default routes so it won't hijack
+# traffic until you point the frontend at it).
+workers_dev = true
+
+# Optional: if you later want to serve this from your own domain instead of
+# *.workers.dev, uncomment and set a route, e.g.:
+#   routes = [
+#     { pattern = "media.yourdomain.com", custom_domain = true }
+#   ]
+
+# No KV / D1 / R2 / secrets are required for a stateless streaming proxy.
+# If you want to add auth or a key later, define it under [vars] or use
+# `wrangler secret put MEDIA_PROXY_KEY` and read it via `env.MEDIA_PROXY_KEY`.

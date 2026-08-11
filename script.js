@@ -1136,8 +1136,11 @@ function createContinueWatchingCard(item) {
     };
     const audioLabel = getPrettyAudio(item.audio, item.audioLabel);
 
+    const isBonusContinueItem = /bonus/i.test(String(item?.seasonTitle || item?.seasonName || item?.category || ''));
     const seasonNoRaw = Number(item?.seasonNo);
-    const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw > 0
+    const seasonNo = isBonusContinueItem
+        ? 0
+        : Number.isFinite(seasonNoRaw) && seasonNoRaw > 0
         ? seasonNoRaw
         : (() => {
             const legacySeasonIndex = Number(item?.seasonIndex);

@@ -4119,10 +4119,12 @@
             'https://consumet-api.vercel.app/meta/tmdb'
         );
         const PROXY_GATEWAY_BASE = String(
+            RUNTIME_CONFIG.MEDIA_PROXY_BASE ||
             RUNTIME_CONFIG.PROXY_GATEWAY_BASE ||
             RUNTIME_CONFIG.PROXY_BASE ||
             'https://proxy-jade-kappa-94.vercel.app'
         ).replace(/\/$/, '');
+        const MEDIA_PROXY_KEY = String(RUNTIME_CONFIG.MEDIA_PROXY_KEY || '').trim();
         const LOCAL_MEDIA_PROXY_BASE = String(
             RUNTIME_CONFIG.LOCAL_MEDIA_PROXY_BASE ||
             RUNTIME_CONFIG.LOCAL_PROXY_BASE ||
@@ -4197,17 +4199,14 @@
         }
 
         function getMediaProxyOrigin() {
+            // Local dev keeps media proxying on the same VM/API host as before.
             if (effectiveApiSource === 'local' && LOCAL_MEDIA_PROXY_BASE) {
                 try {
                     return new URL(LOCAL_MEDIA_PROXY_BASE, location.href).origin;
                 } catch (_) { }
             }
 
-            // Keep prod media proxying on the same API host as metadata/watch calls.
-            // The VM API exposes /proxy/hls and /utils/proxy; the old Vercel proxy does not.
-            const apiOrigin = getProxyGatewayOrigin(activeApiBase || API_BASE);
-            if (apiOrigin) return apiOrigin;
-
+            // Prod: prefer the edge media proxy (Cloudflare Worker) when configured.
             const proxyBase = String(PROXY_GATEWAY_BASE || '').trim();
             if (proxyBase && proxyBase.startsWith('http')) {
                 try {
@@ -4215,21 +4214,34 @@
                 } catch (_) { }
             }
 
+            // Keep prod media proxying on the same API host as metadata/watch calls
+            // when no dedicated edge proxy is configured. The VM API exposes
+            // /proxy/hls and /utils/proxy; the old Vercel proxy does not.
+            const apiOrigin = getProxyGatewayOrigin(activeApiBase || API_BASE);
+            if (apiOrigin) return apiOrigin;
+
             return location.origin;
         }
-        function getProxiedUrl(url, referer = '') {
+function getProxiedUrl(url, referer = '') {
             if (!url) return '';
+            const appendKey = (targetUrl) => {
+                const withKey = MEDIA_PROXY_KEY
+                    ? `${targetUrl}${(targetUrl || '').includes('?') ? '&' : '?'}key=${encodeURIComponent(MEDIA_PROXY_KEY)}`
+                    : targetUrl;
+                console.log('[StreamVerse:media-proxy] proxied URL =>', withKey, '| key set:', Boolean(MEDIA_PROXY_KEY));
+                return withKey;
+            };
             try {
                 const u = new URL(url);
                 if (u.hostname === 'image.tmdb.org') {
                     const mediaProxyOrigin = getMediaProxyOrigin();
-                    return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(url)}`;
+                    return appendKey(`${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(url)}`);
                 }
                 if (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || url.includes('/proxy')) return url;
                 // Use the active API origin for media proxying so prod matches local behavior
                 const mediaProxyOrigin = getMediaProxyOrigin();
                 // Route through the API proxy endpoint using 'url' parameter with full encoding
-                return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(url)}`;
+                return appendKey(`${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(url)}`);
             } catch (_) { return url; }
         }
 
@@ -5344,7 +5356,8 @@
                 const seasonRef = tvSeasons?.[Number(curSeason || 0)];
                 const hintSeasonNo = Number(hint?.seasonNo || 0);
                 const seasonNoRaw = Number(seasonRef?.seasonNo);
-                const isBonusSelection = /bonus/i.test(String(hint?.seasonTitle || URL_SEASON_TITLE || seasonRef?.name || ''));
+                const liveSeasonTitle = String(u.searchParams.get('seasonTitle') || '').trim();
+                const isBonusSelection = u.searchParams.get('season') === '0' || /bonus/i.test(String(hint?.seasonTitle || liveSeasonTitle || URL_SEASON_TITLE || seasonRef?.name || ''));
                 const seasonNo = isBonusSelection
                     ? 0
                     : Number.isFinite(hintSeasonNo) && hintSeasonNo > 0
@@ -5466,6 +5479,11 @@
                 maxBufferSize: isHdstream && !isThumbnail ? 50 * 1000 * 1000 : maxBufferSize,
                 startLevel: isHdstream && !isThumbnail ? 0 : undefined,
                 audioCodec: undefined,
+                // Only fetch quality levels the player can actually display. This
+                // stops hls.js from probing/downloading the highest-res variant
+                // when a smaller player window fits, cutting segment requests.
+                capLevelToPlayerSize: !isThumbnail,
+                capLevelOnFPSDrop: !isThumbnail && !isVega,
                 // Keep audio/video timelines aligned when a CDN briefly delays a
                 // video fragment instead of letting audio run ahead of the frame.
                 maxAudioFramesDrift: isThumbnail ? 2 : (isVega ? 4 : (isFlixHq ? 8 : 4)),
@@ -6738,7 +6756,7 @@
                     }
                 }
             }
-            if (!useResumePosition && currentParams.get('seasonTitle') && !(Number.isFinite(currentSeason) && currentSeason > 0)) {
+            if (!useResumePosition && currentParams.get('seasonTitle') && (urlRequestsExtrasSeason || !(Number.isFinite(currentSeason) && currentSeason > 0))) {
                 const sTitle = rawSeasonTitle;
                 if (specialTitleHint && !seasonZeroExplicit) {
                     matchedExplicitSeasonRef = false;
@@ -7635,8 +7653,6 @@
         }
 
         function readCachedProviderSources(provider = 'flixhq') {
-            // Disabled caching to prevent cross-contamination
-            return [];
             try {
                 const raw = localStorage.getItem(getSourceCacheKey(provider));
                 if (!raw) return [];
@@ -7667,8 +7683,6 @@
         }
 
         function readCachedMediaInfo(allowStale = false) {
-            // Disabled caching to prevent cross-contamination
-            return null;
             try {
                 const keys = [getMediaInfoCacheKey(true), getMediaInfoCacheKey(false)];
                 for (const key of keys) {
@@ -8522,9 +8536,18 @@
                     Number.isFinite(preferredYear) &&
                     Math.abs(best.rowYear - preferredYear) <= 3;
 
-                // Strong (contains / high token overlap) match: trust Japanese/JP/animation
-                // metadata, or a genuinely nearby release year.
-                if (best.bestQuality.strong && (hasSoftAnimeMetadata || yearClose)) return true;
+                // Strong (contains / high token overlap) match: trust animation metadata,
+                // a true substring match with a nearby year, or Japanese origin with a
+                // nearby year. A pure token-overlap "strong" match must NOT be trusted on
+                // a coincidental nearby year alone — otherwise unrelated live-action titles
+                // that share a common word (e.g. "House of the Dragon" vs "Dragon Goes
+                // House-Hunting") get misclassified as anime.
+                const strongIsSubstring = best.bestQuality.contains;
+                if (best.bestQuality.strong && (
+                    hasSoftAnimeMetadata ||
+                    (strongIsSubstring && yearClose) ||
+                    (hasJapaneseAnimationMetadata && yearClose)
+                )) return true;
 
                 // Lenient partial match is only trusted with both soft-anime metadata
                 // and a genuinely nearby year, to avoid misclassifying live-action shows.
@@ -16709,7 +16732,14 @@
                         const seasonPartNo = Number(ep?.part || ep?.partNo || ep?.seasonPart || 0) || 0;
                         const key = makeSeasonKey(seasonNo, seasonPartNo);
                         const episodeNo = toEpisodeNumber(ep, index);
-                        const episodeTitle = String(ep?.title || `Episode ${episodeNo}`);
+                        let episodeTitle = String(ep?.title || `Episode ${episodeNo}`);
+                        if (isBonus && String(TMDB_ID) === '262838') {
+                            const bonusTitles = {
+                                1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
+                                2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
+                            };
+                            episodeTitle = bonusTitles[episodeNo] || episodeTitle;
+                        }
                         if (!buckets.has(key)) {
                             buckets.set(key, {
                                 seasonNo,
@@ -17563,7 +17593,7 @@
                     ))
                 )
             ) {
-                (async () => {
+                await (async () => {
                     try {
                         const hdProviderBase = API_BASE.replace('/meta/tmdb', '/movies/hdstream4u');
                         const hdProviderTitle = String(info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || '').trim();
@@ -17643,18 +17673,43 @@
                                 String(episode?.id || '').trim().toLowerCase() === bonusId.toLowerCase(),
                             )) return;
                             const bonusNo = bonusIndex + 1;
+                            let bonusTitle = String(bonusEpisode?.title || bonusEpisode?.name || `Bonus EP ${bonusIndex + 1}`).trim();
+                            if (String(TMDB_ID) === '262838') {
+                                const customBonusTitles = {
+                                    1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
+                                    2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
+                                };
+                                bonusTitle = customBonusTitles[bonusNo] || bonusTitle;
+                            }
                             targetSeason.episodes.push({
                                 id: bonusId,
                                 url: String(bonusEpisode?.url || bonusEpisode?.episodeId || '').trim() || bonusId,
                                 episode: bonusNo,
                                 number: bonusNo,
                                 episodeNum: bonusNo,
-                                title: String(bonusEpisode?.title || bonusEpisode?.name || `Bonus EP ${bonusIndex + 1}`).trim(),
+                                title: bonusTitle,
                             });
                             appended = true;
                         });
                         if (!appended) return;
                         targetSeason.episodes.sort((a, b) => Number(a?.episode || 0) - Number(b?.episode || 0));
+                        // Bonus episodes are fetched after the initial TV position is
+                        // resolved. Re-match an explicit continue-watching episodeId
+                        // now that the provider bonus catalog exists, instead of
+                        // leaving playback/menu state on Season 1 Episode 1.
+                        const requestedBonusId = String(new URLSearchParams(location.search).get('episodeId') || '').trim().toLowerCase();
+                        const requestedBonusSeason = new URLSearchParams(location.search).get('season') === '0' || /bonus/i.test(String(new URLSearchParams(location.search).get('seasonTitle') || ''));
+                        const requestedBonusIndex = requestedBonusSeason
+                            ? targetSeason.episodes.findIndex((episode) => String(episode?.id || '').trim().toLowerCase() === requestedBonusId)
+                            : -1;
+                        if (requestedBonusIndex >= 0) {
+                            const targetSeasonIndex = tvSeasons.indexOf(targetSeason);
+                            if (targetSeasonIndex >= 0 && (curSeason !== targetSeasonIndex || curEpisode !== requestedBonusIndex)) {
+                                curSeason = targetSeasonIndex;
+                                curEpisode = requestedBonusIndex;
+                                await playTvEp(curSeason, curEpisode);
+                            }
+                        }
                         // Refresh the menu in case it was already rendered.
                         if (document.querySelector('.ep-item')) {
                             const previousScrollTop = getEpisodePanelScrollTop();
@@ -19158,9 +19213,15 @@
                         ep?.backdrop_path ||
                         ''
                     ).trim();
-                    const epThumb = shouldPreferProviderEpisodeMeta && providerThumbRaw
+                    let epThumb = shouldPreferProviderEpisodeMeta && providerThumbRaw
                         ? (buildTmdbImageUrl(providerThumbRaw, 'w342') || providerThumbRaw)
                         : getEpisodeThumbnailUrl(ep, tmdbEpisode);
+                    const isBonusMenuEpisode = Number(s?.seasonNo || 0) <= 0 || /bonus/i.test(String(s?.name || ''));
+                    if (String(TMDB_ID) === '262838' && isBonusMenuEpisode && epNo === 1) {
+                        epThumb = 'https://media.themoviedb.org/t/p/w160_and_h90_face/wC7frShPQxJoZ8QwuhpXC1kRkgg.jpg';
+                    } else if (String(TMDB_ID) === '262838' && isBonusMenuEpisode && epNo === 2) {
+                        epThumb = 'https://i.ytimg.com/vi/otawyZaOxvs/maxresdefault.jpg';
+                    }
                     const progressKeys = getWatchedKeysForEpisodeIdentity({
                         provider: String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase(),
                         providerAnimeId: String(s?.providerAnimeId || '').trim().toLowerCase(),
@@ -20854,15 +20915,26 @@
                 return;
             }
 
-            // Fast boot: if we recently played this media with HDStream4u, start immediately from cache.
-            const preferProviderForFastBoot = FORCED_PROVIDER || (!currentIsLikelyAnime && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv') ? 'hdstream4u' : '');
-            if (preferProviderForFastBoot) {
-                const cachedSources = readCachedProviderSources(preferProviderForFastBoot);
-                if (cachedSources.length) {
-                    providerResults[preferProviderForFastBoot] = cachedSources;
-                    chipState(preferProviderForFastBoot, 'success');
-                    setLoader('Loading cached stream...', 'Refreshing sources in background');
-                    updateSourceList();
+            // Fast boot: if we recently played this media, start immediately from cache.
+            // Consult every active provider's cache (not just hdstream4u) so revisiting
+            // a title skips VM re-extraction. Remaining providers still refresh in
+            // the background below, so the cache is only a boot accelerator.
+            if (!currentArchiveFallback) {
+                const preferProviderForFastBoot = FORCED_PROVIDER || (!currentIsLikelyAnime && (MEDIA_TYPE === 'movie' || MEDIA_TYPE === 'tv') ? 'hdstream4u' : '');
+                const cacheProbeOrder = [preferProviderForFastBoot, ...activeProviders].filter(Boolean);
+                const seen = new Set();
+                for (const probe of cacheProbeOrder) {
+                    const p = String(probe).toLowerCase();
+                    if (seen.has(p)) continue;
+                    seen.add(p);
+                    const cachedSources = readCachedProviderSources(p);
+                    if (cachedSources.length) {
+                        providerResults[p] = cachedSources;
+                        chipState(p, 'success');
+                        setLoader('Loading cached stream...', 'Refreshing sources in background');
+                        updateSourceList();
+                        break;
+                    }
                 }
             }
 
@@ -22032,6 +22104,12 @@
             const rawUrl = String(url || '').trim();
             const providerName = String(provider || '').toLowerCase();
             const animeSaltCdnUrl = /^https?:\/\/(?:as-cdn\d+|z\d+)\.(?:top|ac|pro|xyz|click|link|net|cc|org)\//i.test(rawUrl);
+            // Append the shared auth key so the Cloudflare proxy authorizes this request.
+            const withMediaProxyAuth = (targetUrl) => {
+                if (!MEDIA_PROXY_KEY) return targetUrl;
+                const joined = (targetUrl || '').includes('?') ? '&' : '?';
+                return `${targetUrl}${joined}key=${encodeURIComponent(MEDIA_PROXY_KEY)}`;
+            };
             // Already proxy-wrapped streams must not be wrapped again.
             try {
                 const parsedRaw = new URL(rawUrl, location.href);
@@ -22053,8 +22131,8 @@
                 const safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
                 if (safeReferer) params.set('referer', String(safeReferer));
                 if (origin) params.set('origin', String(origin));
-                if (cookieHeader) params.set('cookie', String(cookieHeader));
-                return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
+if (cookieHeader) params.set('cookie', String(cookieHeader));
+                return withMediaProxyAuth(`${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`);
             }
             if (forceHls || /\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
                 try {
@@ -22070,7 +22148,10 @@
                     }
                     const proxyPath = `${mediaProxyOrigin}/proxy/hls/${parsed.host}${parsed.pathname}${parsed.search}`;
                     const withReferer = safeReferer ? `${proxyPath}${proxyPath.includes('?') ? '&' : '?'}referer=${encodeURIComponent(safeReferer)}` : proxyPath;
-                    return cookieHeader ? `${withReferer}${withReferer.includes('?') ? '&' : '?'}cookie=${encodeURIComponent(String(cookieHeader))}` : withReferer;
+                    const withCookie = cookieHeader ? `${withReferer}${withReferer.includes('?') ? '&' : '?'}cookie=${encodeURIComponent(String(cookieHeader))}` : withReferer;
+                    const result = withMediaProxyAuth(withCookie);
+                    console.log('[StreamVerse:media-proxy] HLS url =>', result, '| withKey:', (result || '').includes('key='));
+                    return result;
                 } catch (_) {
                     return rawUrl;
                 }
@@ -22082,7 +22163,9 @@
             if (safeReferer) params.set('referer', String(safeReferer));
             if (origin) params.set('origin', String(origin));
             if (cookieHeader) params.set('cookie', String(cookieHeader));
-            return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`;
+            const routeResult = withMediaProxyAuth(`${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?${params.toString()}`);
+            console.log('[StreamVerse:media-proxy] generic url =>', routeResult, '| withKey:', (routeResult || '').includes('key='));
+            return routeResult;
         }
 
         function warmupPreviewVideo(previewVideo) {
