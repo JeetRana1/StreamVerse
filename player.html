@@ -22324,9 +22324,9 @@ function getProxiedUrl(url, referer = '') {
                 if (/^\/(?:proxy|utils\/proxy|m3u8-proxy)(?:[/?]|$)/i.test(rawUrl)) return rawUrl;
             }
             if (providerName === 'archive.org') {
-                const mediaProxyOrigin = RUNTIME_CONFIG.SAME_ORIGIN_MEDIA_PROXY
-                    ? location.origin
-                    : getMediaProxyOrigin();
+                // Archive MKVs need the backend range proxy directly. Do not
+                // send them through the page/Cloudflare media proxy first.
+                const mediaProxyOrigin = getProxyGatewayOrigin(activeApiBase || API_BASE);
                 const params = new URLSearchParams({ url: rawUrl });
                 const safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
                 if (safeReferer) params.set('referer', String(safeReferer));
