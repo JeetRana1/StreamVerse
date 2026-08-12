@@ -902,34 +902,35 @@
         }
 
         .seek-preview-time {
-            width: auto;
-            min-width: 70px;
-            background: rgba(15, 15, 15, 0.75);
-            /* ENHANCED: Better overlay background */
-            border: 1.5px solid rgba(229, 9, 20, 0.5);
-            /* ENHANCED: Red accent */
-            backdrop-filter: blur(12px);
+            min-width: 116px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.07) 48%, rgba(10, 10, 14, 0.38));
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.24), inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(18px) saturate(145%);
+            -webkit-backdrop-filter: blur(18px) saturate(145%);
             color: #fff;
             text-align: center;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            font-weight: 700;
-            letter-spacing: 0.5px;
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-size: 1.05rem;
+            font-variant-numeric: tabular-nums;
+            font-weight: 800;
+            letter-spacing: 0.03em;
             position: relative;
-            margin-top: 10px;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+            margin-top: 0;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
         }
 
         .seek-preview-time::after {
             content: "";
             position: absolute;
-            bottom: -7px;
+            bottom: -13px;
             left: 50%;
             transform: translateX(-50%);
             border-left: 7px solid transparent;
             border-right: 7px solid transparent;
-            border-top: 7px solid rgba(15, 15, 15, 0.75);
+            border-top: 7px solid rgba(15, 15, 15, 0.96);
+            filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.25));
         }
 
             .pause-media-card {
@@ -4502,6 +4503,8 @@ function getProxiedUrl(url, referer = '') {
         const MEDIA_TYPE = (rawType === 'undefined' || !rawType) ? 'movie' : rawType;
         let effectiveMediaType = MEDIA_TYPE;
         let FORCED_PROVIDER = params.get('provider') || '';
+        const ARCHIVE_PROVIDER_REQUESTED = String(FORCED_PROVIDER).trim().toLowerCase() === 'archive.org';
+        if (ARCHIVE_PROVIDER_REQUESTED) FORCED_PROVIDER = '';
         const normalizedForcedProvider = String(FORCED_PROVIDER || '').trim().toLowerCase();
         if (normalizedForcedProvider && REMOVED_PROVIDER_MAP[normalizedForcedProvider]) {
             FORCED_PROVIDER = REMOVED_PROVIDER_MAP[normalizedForcedProvider];
@@ -4606,6 +4609,16 @@ function getProxiedUrl(url, referer = '') {
         // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         let suppressClicksUntil = 0;
         let video = document.getElementById('player-video');
+        function restoreSavedAudioState(targetVideo = video) {
+            if (!targetVideo) return;
+            try {
+                const saved = JSON.parse(localStorage.getItem('streamverse:audio-state') || 'null');
+                const volume = Number(saved?.volume);
+                if (Number.isFinite(volume) && volume > 0) targetVideo.volume = Math.max(0, Math.min(1, volume));
+                if (saved && typeof saved.muted === 'boolean') targetVideo.muted = saved.muted;
+            } catch (_) { }
+        }
+        restoreSavedAudioState();
          const loader = document.getElementById('loader');
          const loaderHomeBtn = document.getElementById('loader-home-btn');
         const playerHeader = document.getElementById('player-header');
@@ -4705,6 +4718,13 @@ function getProxiedUrl(url, referer = '') {
         function setExternalSubtitleTracks(tracks) {
             externalSubtitleTracks = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
             window.externalSubtitleTracks = externalSubtitleTracks;
+            if (String(TMDB_ID || '') === '838209' && externalSubtitleTracks.length) {
+                const archiveSubtitle = externalSubtitleTracks.find((track) => /exhuma_eng\.srt/i.test(String(track?.src || '')));
+                if (archiveSubtitle) {
+                    activeSubtitleTrackIndex = 0;
+                    try { localStorage.setItem('preferredSubtitleLabel', archiveSubtitle.label || 'English (Archive)'); } catch (_) { }
+                }
+            }
             return externalSubtitleTracks;
         }
 
@@ -4739,6 +4759,7 @@ function getProxiedUrl(url, referer = '') {
 
         let _iosNativePlayerActive = false; // Tracks whether iOS native player is currently in fullscreen
         let currentIdx = 0;
+        let activePlaybackSourceUrl = '';
         let currentMediaInfo = null;
         let currentAnimeCanonicalInfo = null;
         let currentAnimeCanonicalInfoPromise = null;
@@ -5608,11 +5629,10 @@ function getProxiedUrl(url, referer = '') {
             const isHdstreamJump = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase().includes('hdstream');
 
             try {
-                // For FlixHQ, avoid stopLoad/startLoad churn during rapid seeks; stale XHR callbacks can race destroyed loaders.
-                // HDStream VOD playlists handle seeks better when the existing
-                // loader remains alive; stopLoad() leaves the target fragment in
-                // a stalled state and triggers the watchdog unnecessarily.
-                if (!isFlixHqJump && !isHdstreamJump) hlsInst.stopLoad();
+                // Cancel stale fragment requests on HDStream jumps. Keeping the
+                // old loader alive makes large seeks compete with the new target
+                // fragment and commonly produces fragLoadError/buffer stalls.
+                if (!isFlixHqJump) hlsInst.stopLoad();
                 
                 if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) {
                     // Temporarily drop quality to load thumbnails/segments instantly
@@ -5624,7 +5644,7 @@ function getProxiedUrl(url, referer = '') {
                     }, 1500);
                 }
                 
-                hlsInst.startLoad(Math.max(0, clampedTarget - (isFlixHqJump ? 0.35 : 0)));
+                hlsInst.startLoad(Math.max(0, clampedTarget - (isFlixHqJump ? 0.35 : 0.2)));
             } catch (_) { }
         }
 
@@ -5782,10 +5802,13 @@ function getProxiedUrl(url, referer = '') {
             if (seekBurstCount >= 6) rapidSeekModeUntil = now + 9000;
             const elapsed = now - lastAppliedSeekAt;
             const isFlixHq = isCurrentFlixHqStream();
+            const isHdstream = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase().includes('hdstream');
             const minGap = isFlixHq
                 ? (seekBurstCount >= 8 ? 170 : 90)
-                : (seekBurstCount >= 8 ? 100 : 40);
-            const delay = elapsed >= minGap ? 0 : (minGap - elapsed);
+                : isHdstream
+                    ? (seekBurstCount >= 4 ? 260 : 180)
+                    : (seekBurstCount >= 8 ? 100 : 40);
+            const delay = elapsed >= minGap ? (isHdstream ? 80 : 0) : (minGap - elapsed);
 
             seekApplyTimer = setTimeout(() => {
                 if (!video || !isFinite(video.duration) || queuedSeekTime == null) return;
@@ -6054,6 +6077,17 @@ function getProxiedUrl(url, referer = '') {
             };
 
             hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
+                if (isHdstream && !isThumbnail && bandwidthSampleCount === 0 && hls.levels.length > 1) {
+                    setTimeout(() => {
+                        if (hls === hlsInst && hls.levels.length > 1) {
+                            hls.startLevel = -1;
+                            hls.nextLevel = -1;
+                            hls.loadLevel = -1;
+                            hls.autoLevelCapping = -1;
+                            console.log('[hls] HDStream startup sample complete; adaptive quality enabled');
+                        }
+                    }, 2500);
+                }
                 const bw = Number(data?.stats?.bwEstimate || 0);
                 if (!Number.isFinite(bw) || bw <= 0) return;
                 bandwidthSampleCount += 1;
@@ -9434,6 +9468,7 @@ function getProxiedUrl(url, referer = '') {
                 const subtitleHost = (() => { try { return new URL(rawSrc, location.href).hostname; } catch (_) { return ''; } })();
                 if (
                     IS_IOS ||
+                    subtitleProvider === 'archive.org' ||
                     subtitleProvider === 'hdstream4u' ||
                     subtitleProvider === 'flixhq' ||
                     subtitleProvider === 'animesalt' ||
@@ -9646,7 +9681,7 @@ function getProxiedUrl(url, referer = '') {
                 track.dataset.extSub = '1';
                 track.id = `track-${i}`;
 
-                if (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) {
+                if ((activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) || String(TMDB_ID || '') === '838209') {
                     track.default = true;
                 }
 
@@ -9724,8 +9759,11 @@ function getProxiedUrl(url, referer = '') {
                     updateCaptionsButtonVisibility();
                     buildCaptionsMenu();
                     // If this was the intended active track, refresh
-                    if (activeSubtitleTrackIndex >= 0 && videoEl.textTracks?.[activeSubtitleTrackIndex]?.label === track.label) {
-                       renderSubtitleOverlayFromTrack(videoEl.textTracks[activeSubtitleTrackIndex]);
+                    if (String(TMDB_ID || '') === '838209') {
+                        const exhumaIndex = Array.from(videoEl.textTracks || []).findIndex((item) => item.label === track.label);
+                        if (exhumaIndex >= 0) selectSubtitleTrack(exhumaIndex);
+                    } else if (activeSubtitleTrackIndex >= 0 && videoEl.textTracks?.[activeSubtitleTrackIndex]?.label === track.label) {
+                        renderSubtitleOverlayFromTrack(videoEl.textTracks[activeSubtitleTrackIndex]);
                     }
                 });
                 track.addEventListener('error', (e) => {
@@ -9754,7 +9792,10 @@ function getProxiedUrl(url, referer = '') {
                 const tracks = Array.from(videoEl.textTracks || []);
                 let bestIdx = -1;
 
-                if (preferredLabel && tracks.length && !/^(unknown|off|)$/i.test(String(preferredLabel).trim())) {
+                 if (String(TMDB_ID || '') === '838209' && tracks.length) {
+                     bestIdx = tracks.findIndex((track) => /english|archive/i.test(`${track.label} ${track.language || ''}`));
+                }
+                if (bestIdx === -1 && preferredLabel && tracks.length && !/^(unknown|off|)$/i.test(String(preferredLabel).trim())) {
                     bestIdx = tracks.findIndex(t => t.label === preferredLabel);
                 }
 
@@ -10020,6 +10061,13 @@ function getProxiedUrl(url, referer = '') {
                 });
                 track.__overlayBound = true;
             });
+            if (String(TMDB_ID || '') === '838209' && !video.__exhumaSubtitlePoll) {
+                video.__exhumaSubtitlePoll = setInterval(() => {
+                    if (activeSubtitleTrackIndex >= 0 && video?.textTracks?.[activeSubtitleTrackIndex]) {
+                        renderSubtitleOverlayFromTrack(video.textTracks[activeSubtitleTrackIndex]);
+                    }
+                }, 300);
+            }
         }
 
         // Flag to suppress our own programmatic track mode changes from triggering the native listener
@@ -14329,6 +14377,12 @@ function getProxiedUrl(url, referer = '') {
                         ? '<i class="fa-solid fa-volume-xmark"></i>'
                         : '<i class="fa-solid fa-volume-high"></i>';
                 }
+                try {
+                    localStorage.setItem('streamverse:audio-state', JSON.stringify({
+                        volume: Number(video.volume),
+                        muted: Boolean(video.muted),
+                    }));
+                } catch (_) { }
             });
             video.addEventListener('play', () => {
                 watchPartyEmitHostState('play');
@@ -14606,10 +14660,14 @@ function getProxiedUrl(url, referer = '') {
                 : [];
             const animekaiAudioSources = animekaiAudioSourcesAll;
             const hasAnimekaiAudioSources = animekaiAudioSources.length > 0;
+            const archiveAudioSources = Array.isArray(allSources)
+                ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'archive.org' && s?.audioLabel)
+                : [];
+            const hasArchiveAudioSources = archiveAudioSources.length > 1;
             const hasHlsTracks = hlsTracks.length > 1;
 
             // Only show "no tracks" message if we're sure there are none
-            if (!hasHlsTracks && !hasSatoruSources && !hasAnimesaltAudioSources) {
+            if (!hasHlsTracks && !hasSatoruSources && !hasAnimesaltAudioSources && !hasArchiveAudioSources) {
                 // Check if satoru sources might be loading in background
                 const satoruLoading = activeProviders.includes('satoru') && currentIsLikelyAnime;
                 if (!satoruLoading) {
@@ -14769,6 +14827,10 @@ function getProxiedUrl(url, referer = '') {
                 ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animekai' && !s?.isEmbed)
                 : [];
             const hasAnimekaiAudioSources = animekaiAudioSources.length > 0;
+            const archiveAudioSources = Array.isArray(allSources)
+                ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'archive.org' && s?.audioLabel)
+                : [];
+            const hasArchiveAudioSources = archiveAudioSources.length > 1;
             const useProviderPrefixedAudioLabels = [hasAnimesaltAudioSources, hasSatoruSources].filter(Boolean).length > 1;
 
             // iOS Safari uses native HLS (no HLS.js), so hlsInst is null.
@@ -14777,7 +14839,7 @@ function getProxiedUrl(url, referer = '') {
                 ? Array.from(video.audioTracks)
                 : [];
 
-            const hasAnyTracks = hlsTracks.length > 0 || hasSatoruSources || hasAnimesaltAudioSources || hasAnimekaiAudioSources || iosNativeTracks.length > 0;
+            const hasAnyTracks = hlsTracks.length > 0 || hasSatoruSources || hasAnimesaltAudioSources || hasAnimekaiAudioSources || hasArchiveAudioSources || iosNativeTracks.length > 0;
 
             audioBtn.style.display = 'flex';
 
@@ -14883,7 +14945,9 @@ function getProxiedUrl(url, referer = '') {
             const renderProviderAudioSources = (providerName, providerSources) => {
                 if (!Array.isArray(providerSources) || !providerSources.length) return;
                 providerSources.forEach((src) => {
-                    const isCurrent = String(allSources?.[currentIdx]?.url || '') === String(src.url || '');
+                    const activeSourceUrl = String(activePlaybackSourceUrl || video?.currentSrc || video?.src || '').trim();
+                    const currentIndexMatches = String(allSources?.[currentIdx]?.url || '').trim() === String(src.url || '').trim();
+                    const isCurrent = currentIndexMatches || activeSourceUrl === String(src.url || '').trim();
                     const cleanLabel = String(src.audioLabel || src.audio || src.lang || src.language || src.quality || src.label || '')
                         .replace(new RegExp(`^${providerLabel(providerName)}\\s*-\\s*`, 'i'), '')
                         .replace(new RegExp(`^${providerName}\\s*-\\s*`, 'i'), '')
@@ -14924,6 +14988,7 @@ function getProxiedUrl(url, referer = '') {
 
             renderProviderAudioSources('animesalt', animesaltAudioSources);
             renderProviderAudioSources('animekai', animekaiAudioSources);
+            renderProviderAudioSources('archive.org', archiveAudioSources);
             // Virtual source-backed tracks (used for multi-language variants)
             const showVirtualSatoruTracks = hasSatoruSources;
             if (showVirtualSatoruTracks) {
@@ -15831,7 +15896,7 @@ function getProxiedUrl(url, referer = '') {
                 const leftInParent = anchorClientX - parentRect.left;
                 seekPreview.classList.add('visible');
                 const previewWidth = seekPreview.offsetWidth || 240;
-                const previewHeight = seekPreview.offsetHeight || 190;
+                const previewHeight = previewTime?.offsetHeight || 34;
                 // Keep alignment to hovered time while preventing edge clipping.
                 const edgePad = 8;
                 const minLeft = (previewWidth / 2) + edgePad;
@@ -15840,6 +15905,11 @@ function getProxiedUrl(url, referer = '') {
                 seekPreview.style.left = `${clampedLeft}px`;
                 seekPreview.style.top = `${(rect.top - parentRect.top) - previewHeight - 14}px`;
                 previewTime.textContent = formatTime(seekTime);
+
+                // Keep the hover timer, but never decode a second preview stream.
+                const previewThumb = document.querySelector('.seek-preview-thumb');
+                if (previewThumb) previewThumb.style.display = 'none';
+                return;
 
                 // ENHANCED: Frame-accurate preview thumbnail display
                 const previewVideo = document.getElementById('previewVideo');
@@ -16651,6 +16721,12 @@ function getProxiedUrl(url, referer = '') {
                 if (REMOVED_PROVIDER_MAP[forcedProviderLower]) {
                     FORCED_PROVIDER = REMOVED_PROVIDER_MAP[forcedProviderLower];
                     console.warn('[providers] Remapped removed forced provider:', forcedProviderLower, '->', FORCED_PROVIDER);
+                }
+                // Archive fallback sources are local title mappings, not API
+                // providers. Treat an explicit Archive URL as a preference so
+                // the fallback boot path can select audio=english/hindi.
+                if (String(FORCED_PROVIDER || '').trim().toLowerCase() === 'archive.org') {
+                    FORCED_PROVIDER = '';
                 }
                 if (FORCED_PROVIDER) {
                     activeProviders = [FORCED_PROVIDER];
@@ -20386,6 +20462,26 @@ function getProxiedUrl(url, referer = '') {
                         srclang: 'en',
                     }],
                 },
+                '262838': {
+                    title: "India's Got Latent",
+                    bonusEpisodes: {
+                        2: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2BE2.mkv',
+                    },
+                },
+                '838209': {
+                    title: 'Exhuma',
+                    audioSources: {
+                        hin: 'https://archive.org/download/exhuma-english/Exhuma_Hindi.mkv',
+                        eng: 'https://archive.org/download/exhuma-english/Exhuma_English.mkv',
+                        kor: 'https://archive.org/download/exhuma-english/Exhuma_Korean.mkv',
+                    },
+                    subtitles: [{
+                        label: 'English (Archive)',
+                        srclang: 'en',
+                        src: 'https://archive.org/download/exhuma-english/Exhuma_Eng.srt',
+                        provider: 'archive.org',
+                    }],
+                },
                 '67178': {
                     title: "Marvel's The Punisher (2017)",
                     episodes: {
@@ -20762,6 +20858,40 @@ function getProxiedUrl(url, referer = '') {
             });
             const currentArchiveFallback = archiveFallbackSources[String(TMDB_ID).trim()] || null;
             const getArchiveFallbackSource = (fallback) => {
+                if (fallback?.audioSources) {
+                    const requestedAudio = String(URL_AUDIO || preferredAudioToken || '').toLowerCase();
+                    const language = /^(ko|kor|korean)/i.test(requestedAudio)
+                        ? 'kor'
+                        : (/^(en|eng|english|dub|dubbed)/i.test(requestedAudio) ? 'eng' : 'hin');
+                    const audioUrl = fallback.audioSources[language] || fallback.audioSources.hin;
+                    return {
+                        label: `${fallback.title || 'Archive'} (${language === 'eng' ? 'English' : (language === 'kor' ? 'Korean' : 'Hindi')})`,
+                        url: audioUrl,
+                        isM3U8: false,
+                        isMP4: true,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: language === 'eng',
+                        audio: language,
+                        audioLabel: language === 'eng' ? 'English' : (language === 'kor' ? 'Korean' : 'Hindi'),
+                        provider: 'archive.org',
+                    };
+                }
+                if (fallback?.bonusEpisodes && /bonus/i.test(String(URL_SEASON_TITLE || tvSeasons?.[Number(curSeason || 0)]?.name || ''))) {
+                    const episodeNo = Number(curEpisode || 0) + 1;
+                    const episodeUrl = fallback.bonusEpisodes[episodeNo];
+                    if (!episodeUrl) return null;
+                    return {
+                        label: `${fallback.title || 'Archive'} Bonus EP${episodeNo} (Archive MKV)`,
+                        url: episodeUrl,
+                        isM3U8: false,
+                        isMP4: true,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    };
+                }
                 if (!fallback?.episodes) return fallback?.source || null;
                 const seasonNo = Math.max(1, Number(curSeason || 0) + 1);
                 const episodeNo = Math.max(1, Number(curEpisode || 0) + 1);
@@ -20787,6 +20917,29 @@ function getProxiedUrl(url, referer = '') {
                     provider: 'archive.org',
                 };
             };
+            const getArchiveFallbackSources = (fallback) => {
+                if (!fallback?.audioSources) return getArchiveFallbackSource(fallback) ? [getArchiveFallbackSource(fallback)] : [];
+                const requestedAudio = String(URL_AUDIO || preferredAudioToken || '').toLowerCase();
+                const requestedLanguage = /^(ko|kor|korean)/i.test(requestedAudio)
+                    ? 'kor'
+                    : (/^(en|eng|english|dub|dubbed)/i.test(requestedAudio) ? 'eng' : 'hin');
+                const orderedLanguages = Object.keys(fallback.audioSources).sort((a) => a === requestedLanguage ? -1 : 1);
+                return orderedLanguages.map((language) => {
+                    const audioUrl = fallback.audioSources[language];
+                    return {
+                    label: `${fallback.title || 'Archive'} (${language === 'eng' ? 'English' : (language === 'kor' ? 'Korean' : 'Hindi')})`,
+                    url: audioUrl,
+                    isM3U8: false,
+                    isMP4: !/\.mka(?:$|\?)/i.test(audioUrl),
+                    isEmbed: false,
+                    referer: null,
+                    isDub: language === 'eng',
+                    audio: language,
+                    audioLabel: language === 'eng' ? 'English' : (language === 'kor' ? 'Korean' : 'Hindi'),
+                    provider: 'archive.org',
+                    };
+                });
+            };
             const getArchiveFallbackSubtitles = (fallback) => {
                 if (!fallback?.subtitles) return [];
                 if (Array.isArray(fallback.subtitles)) return fallback.subtitles;
@@ -20811,7 +20964,8 @@ function getProxiedUrl(url, referer = '') {
             const providersToRun = effectiveForcedProvider
                 ? [effectiveForcedProvider]
                 : activeProviders;
-            const orderedProviders = currentArchiveFallback && !effectiveForcedProvider && !currentIsLikelyAnime
+            const archiveExplicitlyRequested = effectiveForcedProvider === 'archive.org';
+            const orderedProviders = currentArchiveFallback && (!effectiveForcedProvider || archiveExplicitlyRequested) && !currentIsLikelyAnime
                 ? [...providersToRun, 'archive.org']
                 : providersToRun;
             providersToRun.forEach(p => providerResults[p] = []);
@@ -20911,8 +21065,12 @@ function getProxiedUrl(url, referer = '') {
 
                     if (!isFirstLoaded) {
                         isFirstLoaded = true;
-                        currentIdx = 0;
-                        playSource(0, startT);
+                        const requestedArchiveAudio = String(URL_AUDIO || preferredAudioToken || '').toLowerCase();
+                        const initialArchiveIndex = requestedArchiveAudio && currentArchiveFallback?.audioSources
+                            ? providerResults['archive.org'].findIndex((src) => String(src.audio || '').toLowerCase() === (/^(ko|kor|korean)/i.test(requestedArchiveAudio) ? 'kor' : (requestedArchiveAudio.startsWith('en') || requestedArchiveAudio === 'dub' || requestedArchiveAudio === 'dubbed' ? 'eng' : 'hin')))
+                            : -1;
+                        currentIdx = initialArchiveIndex >= 0 ? initialArchiveIndex : 0;
+                        playSource(currentIdx, startT);
                         // Rebuild after the first source is selected so archive
                         // proxy media can enable Cinema Audio.
                         buildPreferencesMenu();
@@ -20924,7 +21082,7 @@ function getProxiedUrl(url, referer = '') {
                 if (!currentArchiveFallback) return false;
                 const source = getArchiveFallbackSource(currentArchiveFallback);
                 if (!source) return false;
-                providerResults['archive.org'] = [source];
+                providerResults['archive.org'] = getArchiveFallbackSources(currentArchiveFallback);
                 writeCachedProviderSources('archive.org', providerResults['archive.org']);
                 const archiveSubtitles = getArchiveFallbackSubtitles(currentArchiveFallback);
                 if (archiveSubtitles.length) {
@@ -20935,18 +21093,20 @@ function getProxiedUrl(url, referer = '') {
                 return true;
             };
 
-            if (currentArchiveFallback && !effectiveForcedProvider && !currentIsLikelyAnime) {
+            if (currentArchiveFallback && (!effectiveForcedProvider || archiveExplicitlyRequested) && !currentIsLikelyAnime) {
                 console.log('[archive fallback] immediate source for movie ID', TMDB_ID);
                 const source = getArchiveFallbackSource(currentArchiveFallback);
-                if (!source) return;
-                providerResults['archive.org'] = [source];
-                chipState('archive.org', 'success');
-                const archiveSubtitles = getArchiveFallbackSubtitles(currentArchiveFallback);
-                if (archiveSubtitles.length) {
-                    setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, archiveSubtitles));
+                if (source) {
+                    providerResults['archive.org'] = getArchiveFallbackSources(currentArchiveFallback);
+                    chipState('archive.org', 'success');
+                    const archiveSubtitles = getArchiveFallbackSubtitles(currentArchiveFallback);
+                    if (archiveSubtitles.length) {
+                        setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, archiveSubtitles));
+                    }
+                    updateSourceList();
+                    return;
                 }
-                updateSourceList();
-                return;
+                console.log('[archive fallback] no matching source; continuing providers');
             }
 
             // Fast boot: if we recently played this media, start immediately from cache.
@@ -20959,6 +21119,10 @@ function getProxiedUrl(url, referer = '') {
                 const seen = new Set();
                 for (const probe of cacheProbeOrder) {
                     const p = String(probe).toLowerCase();
+                    // HDStream tokens are short-lived and can point at a stale
+                    // CDN node. Do not start cached HDStream HLS and then replace
+                    // it with a fresh extraction during startup.
+                    if (p === 'hdstream4u') continue;
                     if (seen.has(p)) continue;
                     seen.add(p);
                     const cachedSources = readCachedProviderSources(p);
@@ -22105,6 +22269,7 @@ function getProxiedUrl(url, referer = '') {
                 wrap.insertBefore(newVideo, wrap.firstChild);
             }
             video = document.getElementById('player-video');
+            restoreSavedAudioState(video);
         }
 
         // ----------------------------------------------------------------------------------------------------
@@ -22244,6 +22409,9 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
 
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0, sourceCookieHeader = '') {
             console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
+            activePlaybackSourceUrl = String(url || '').trim();
+            if (Number.isInteger(srcIdx) && srcIdx >= 0) currentIdx = srcIdx;
+            setTimeout(() => updateAudioTracks(), 0);
             const selectedSource = allSources?.[srcIdx] || {};
             const sourceProvider = String(selectedSource?.provider || '').toLowerCase();
             if (sourceProvider) chipState(sourceProvider, 'success');
@@ -22482,7 +22650,9 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             // Reset state for new load
             stallAdaptiveLowest = false;
             if (stallRecoveryTimer) { clearTimeout(stallRecoveryTimer); stallRecoveryTimer = null; }
-            activeSubtitleTrackIndex = -1;
+            // Exhuma uses the supplied English SRT for every Archive audio source.
+            // Keep it selected while Hindi/English MKV sources are reloaded.
+            if (String(TMDB_ID || '') !== '838209') activeSubtitleTrackIndex = -1;
             renderSubtitleOverlayFromTrack(null);
             
             const previewVideo = document.getElementById('previewVideo');
@@ -23220,7 +23390,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     window.previewLastSecond = -1;
                     window.previewLastCapturedSecond = -1;
                     window.previewLastRequestAt = 0;
-                    previewVideo.preload = 'auto';
+                    previewVideo.preload = 'none';
                     previewVideo.src = proxiedUrl;
                     warmupPreviewVideo(previewVideo);
                 }
@@ -23502,8 +23672,10 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     } else {
                         previewVideo.crossOrigin = 'anonymous';
                     }
-                    previewVideo.src = isArchiveDirect ? directMp4Url : proxiedMp4Url;
-                    warmupPreviewVideo(previewVideo);
+                    // Seek previews are disabled to avoid an extra media pipeline
+                    // competing with the main stream during scrubbing.
+                    previewVideo.removeAttribute('src');
+                    previewVideo.load();
                 }
 
                 initPlyr();
@@ -23526,7 +23698,10 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 if (watchPartyPauseOnNextLoad) {
                     enforceWatchPartyPauseHold();
                 } else if (shouldAutoplayCurrentLoad()) {
-                    video.play().catch(() => hideLoader());
+                    video.play().catch(() => {
+                        // Keep the loading surface visible until metadata/canplay
+                        // confirms that a refreshed Archive source is ready.
+                    });
                 }
 
             } else {
