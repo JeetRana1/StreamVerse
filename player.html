@@ -23543,7 +23543,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     }
                 };
                 const getArchiveBackendProxyUrl = () => {
-                    const mediaProxyOrigin = getMediaProxyOrigin();
+                    const mediaProxyOrigin = getProxyGatewayOrigin(activeApiBase || API_BASE);
                     return `${mediaProxyOrigin}${getMediaProxyPath(mediaProxyOrigin)}?url=${encodeURIComponent(directMp4Url)}`;
                 };
                 const tryArchiveBackendProxyFallback = () => {
