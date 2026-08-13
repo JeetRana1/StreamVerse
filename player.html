@@ -5961,11 +5961,12 @@ function getProxiedUrl(url, referer = '') {
             }
         }
 
-        function svAttachHlsListeners(hls, startTime, onParsedAction, onErrorFallback) {
+        function svAttachHlsListeners(hls, startTime, onParsedAction, onErrorFallback, isThumbnail = false) {
             let fatalRecoveryTimer = null;
             let fragParseBurstCount = 0;
             let fragParseBurstStartAt = 0;
             let lastFragBypassAt = 0;
+            let hlsStartupSampleDone = false;
             const watchdogAvoidStopLoad = () => typeof isCurrentFlixHqStream === 'function' && isCurrentFlixHqStream();
             const clearFatalRecoveryTimer = () => {
                 if (fatalRecoveryTimer) {
@@ -6098,7 +6099,9 @@ function getProxiedUrl(url, referer = '') {
             };
 
             hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
-                if (isHdstream && !isThumbnail && bandwidthSampleCount === 0 && hls.levels.length > 1) {
+const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase().includes('hdstream');
+                if (fragLoadedIsHdstream && !isThumbnail && !hlsStartupSampleDone && hls.levels.length > 1) {
+                    hlsStartupSampleDone = true;
                     setTimeout(() => {
                         if (hls === hlsInst && hls.levels.length > 1) {
                             hls.startLevel = -1;
@@ -6134,6 +6137,7 @@ function getProxiedUrl(url, referer = '') {
             });
 
             hls.on(Hls.Events.ERROR, function (_, d) {
+                try {
                 // A source switch can finish an old network request after its
                 // HLS instance has been destroyed. Never let that stale error
                 // trigger recovery on the newly selected source.
@@ -6560,6 +6564,11 @@ function getProxiedUrl(url, referer = '') {
                         if (typeof onErrorFallback === 'function') onErrorFallback('fatal_unknown');
                     }
                 }
+                } catch (error) {
+                    // A throwing error handler can recursively re-trigger
+                    // internalException from hls.js; never let that cascade.
+                    console.warn('[hls] HLS error handler threw:', error);
+                }
             });
 
             // Stall watchdog Ã¢â‚¬â€ checks every 2.5s, escalates after 3 consecutive stalls (~7.5s total)
@@ -6664,7 +6673,7 @@ function getProxiedUrl(url, referer = '') {
                 } catch (_) { }
             } else {
                 hlsInst = svCreateHlsInstance(targetTime, false, currentStreamProvider);
-                svAttachHlsListeners(hlsInst, targetTime, onReady);
+                svAttachHlsListeners(hlsInst, targetTime, onReady, null, false);
                 hlsInst.loadSource(proxiedStreamUrl(url, referer, currentStreamProvider, sourceOrigin, true, sourceCookieHeader));
                 hlsInst.attachMedia(video);
                 try {
@@ -22953,7 +22962,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                                 if (switched) return;
                                 showProviderExhaustedError(reason2);
                             });
-                        });
+                        }, false);
                         hlsInst.loadSource(directUrl);
                         hlsInst.attachMedia(video);
                     } catch (_) { return false; }
@@ -23118,7 +23127,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     // On iOS, we just make sure we're ready for the user to tap play
                     setPlayIcon(false);
                 }
-                }, recoverSameSourceWithDirectFallback);
+                }, recoverSameSourceWithDirectFallback, false);
 
                 hlsInst.loadSource(streamUrl);
                 hlsInst.attachMedia(video);
