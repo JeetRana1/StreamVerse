@@ -4773,6 +4773,7 @@ function getProxiedUrl(url, referer = '') {
         let currentCoverUrl = null; // poster/backdrop used as transition overlay background
         let isFirstLoad = true;     // true until the very first stream produces real frames
         let pauseCardHideTimer = null;
+        let userPaused = false;     // true when the user explicitly paused; suppresses auto-resume recovery
 
         let tvSeasons = [];
         let providerSeasonCatalog = new Map();
@@ -6060,6 +6061,10 @@ function getProxiedUrl(url, referer = '') {
             let lastBufferFlushAt = 0;
             let flixhqGlitchCount = 0;
             let flixhqGlitchWindowStartAt = 0;
+            let nonFatalErrorKey = '';
+            let nonFatalErrorLastAt = 0;
+            let nonFatalErrorBurst = 0;
+            let nonFatalErrorQuietUntil = 0;
             const markFlixhqAudioGlitch = (weight = 1) => {
                 const now = Date.now();
                 if (now - flixhqGlitchWindowStartAt > 10000) {
@@ -6140,6 +6145,24 @@ function getProxiedUrl(url, referer = '') {
                 }
                 console.log('HLS Error:', d.type, d.details, 'fatal:', d.fatal);
                 const detailText = String(d?.details || '').toLowerCase();
+                if (!d.fatal) {
+                    const errKey = `${d.type}|${d.details}`;
+                    const now = Date.now();
+                    if (errKey === nonFatalErrorKey && now - nonFatalErrorLastAt < 3000) {
+                        nonFatalErrorBurst += 1;
+                    } else {
+                        nonFatalErrorBurst = 0;
+                        nonFatalErrorKey = errKey;
+                    }
+                    nonFatalErrorLastAt = now;
+                    if (nonFatalErrorBurst > 8 && now < nonFatalErrorQuietUntil) {
+                        return; // Repeated identical non-fatal noise; nothing productive to do.
+                    }
+                    if (nonFatalErrorBurst > 8) {
+                        nonFatalErrorQuietUntil = now + 4000;
+                        console.warn('[hls] Suppressing repeated non-fatal HLS errors for 4s.');
+                    }
+                }
                 const isFragParsing = detailText.includes('fragparsingerror') || d?.details === Hls.ErrorDetails.FRAG_PARSING_ERROR;
                 const isBufferAppend =
                     detailText.includes('bufferappend') ||
@@ -6235,9 +6258,9 @@ function getProxiedUrl(url, referer = '') {
                 }
 
                 // Auto-resume playback on non-fatal errors
-                if (!d.fatal && video && video.paused && !isSourceSwitching) {
+                if (!d.fatal && video && video.paused && !isSourceSwitching && !userPaused) {
                     setTimeout(() => {
-                        if (video && video.paused && !isSourceSwitching) {
+                        if (video && video.paused && !isSourceSwitching && !userPaused) {
                             video.play().catch(() => {
                                 video.muted = true;
                                 video.play().catch(() => { });
@@ -6311,9 +6334,9 @@ function getProxiedUrl(url, referer = '') {
                 }
 
                 // Auto-resume playback on non-fatal errors
-                if (!d.fatal && video && video.paused && !isSourceSwitching) {
+                if (!d.fatal && video && video.paused && !isSourceSwitching && !userPaused) {
                     setTimeout(() => {
-                        if (video && video.paused && !isSourceSwitching) {
+                        if (video && video.paused && !isSourceSwitching && !userPaused) {
                             video.play().catch(() => {
                                 video.muted = true;
                                 video.play().catch(() => { });
@@ -6664,7 +6687,7 @@ function getProxiedUrl(url, referer = '') {
                 isSourceSwitching = false;
                 forceVideoSeek(targetTime);
                 hideBufferingOverlaySoon(60);
-                if (wasPlaying || video.paused) {
+                if (wasPlaying) {
                     forceRecoveredPlay();
                 }
                 video.removeEventListener('canplay', resumeRecoveredPlayback);
@@ -8289,8 +8312,32 @@ function getProxiedUrl(url, referer = '') {
             return out;
         }
 
+        function normalizeAnimeTitleStructure(value) {
+            const ordinalWords = {
+                first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
+                sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10,
+            };
+            const romanValues = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+            return normalizeAnimeSearchQuery(value).toLowerCase()
+                .replace(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+(season|part|cour)\b/g, (_, ordinal, marker) => `${marker} ${ordinalWords[ordinal]}`)
+                .replace(/\b(\d+)(?:st|nd|rd|th)\s+(season|part|cour)\b/g, '$2 $1')
+                .replace(/\b(season|part|cour)\s+(i{1,3}|iv|v|vi{0,3}|ix|x)\b/g, (_, marker, roman) => `${marker} ${romanValues[roman] || roman}`)
+                .replace(/\bs\s*(\d+)\b/g, 'season $1')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function getAnimeTitleMarkers(value) {
+            const normalized = normalizeAnimeTitleStructure(value);
+            return {
+                season: Number(normalized.match(/\bseason\s+(\d+)\b/)?.[1] || 0),
+                part: Number(normalized.match(/\bpart\s+(\d+)\b/)?.[1] || 0),
+                cour: Number(normalized.match(/\bcour\s+(\d+)\b/)?.[1] || 0),
+            };
+        }
+
         function getTitleMatchQuality(candidateTitle, wantedTitle) {
-            const normalize = (value) => normalizeAnimeSearchQuery(value).toLowerCase();
+            const normalize = (value) => normalizeAnimeTitleStructure(value);
             const compact = (value) => normalize(value).replace(/[^a-z0-9]+/g, '');
             const tokenSet = (value) => new Set(
                 normalize(value)
@@ -8321,6 +8368,15 @@ function getProxiedUrl(url, referer = '') {
                 (compactCandidate.includes(compactWanted) || compactWanted.includes(compactCandidate));
             const strong = exact || contains || distinctiveSingleTokenMatch || (wantedTokens.size >= 2 && tokenRatio >= 0.75);
             return { exact, contains, tokenRatio, strong };
+        }
+
+        function isCompatibleStandaloneAnimeTitle(candidateTitle, wantedTitle) {
+            const candidateMarkers = getAnimeTitleMarkers(candidateTitle);
+            const wantedMarkers = getAnimeTitleMarkers(wantedTitle);
+            if (wantedMarkers.season && candidateMarkers.season !== wantedMarkers.season) return false;
+            if (wantedMarkers.part && candidateMarkers.part !== wantedMarkers.part) return false;
+            if (wantedMarkers.cour && candidateMarkers.cour !== wantedMarkers.cour) return false;
+            return getTitleMatchQuality(candidateTitle, wantedTitle).strong;
         }
 
         function isStrongAnimeProviderTitleMatch(row, wantedTitle) {
@@ -11692,6 +11748,7 @@ function getProxiedUrl(url, referer = '') {
                     if (!video) return;
                     try { video.autoplay = false; } catch (_) { }
                     try { video.pause(); } catch (_) { }
+                    userPaused = true;
                     setPlayIcon(false);
                 }, 120);
                 return;
@@ -13910,6 +13967,7 @@ function getProxiedUrl(url, referer = '') {
             }
             try { video.autoplay = false; } catch (_) { }
             try { video.pause(); } catch (_) { }
+            userPaused = true;
             setPlayIcon(false);
             refreshWatchPartyPauseGuard();
             return true;
@@ -14076,8 +14134,10 @@ function getProxiedUrl(url, referer = '') {
             watchPartyApplyingRemote = true;
             if (state.paused === true || state.action === 'pause') {
                 // Just pause — no seeking, avoids frame glitch
+                userPaused = true;
                 try { video.pause(); } catch (_) { }
             } else if (state.paused === false || state.action === 'play') {
+                userPaused = false;
                 if (shouldForceSeek) {
                     const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
                     if (video.readyState >= 1) seekToHost();
@@ -15098,9 +15158,13 @@ function getProxiedUrl(url, referer = '') {
                     refreshWatchPartyPauseGuard();
                     const ctx = ensureAudioContext();
                     if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => { });
+                    userPaused = false;
                     video.play();
                 }
-                else video.pause();
+                else {
+                    userPaused = true;
+                    video.pause();
+                }
             });
 
             skipBackBtn.addEventListener('click', (e) => {
@@ -16866,7 +16930,7 @@ function getProxiedUrl(url, referer = '') {
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v54';
+                    const seasonCacheVersion = 'v55';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -16979,11 +17043,14 @@ function getProxiedUrl(url, referer = '') {
                         }
                     }
 
-                    const searchTerms = getAnimeSearchTerms(animeSeriesTitle, preferredYear, 1, '', false).slice(0, 5);
+                    const titleMarkers = getAnimeTitleMarkers(animeSeriesTitle);
+                    const targetSeasonNo = Number(titleMarkers.season || URL_SEASON || 1) || 1;
+                    const targetSeasonLabel = String(URL_SEASON_TITLE || animeSeriesTitle || '').trim();
+                    const searchTerms = getAnimeSearchTerms(animeSeriesTitle, preferredYear, targetSeasonNo, targetSeasonLabel, false).slice(0, 5);
                     const animekaiCandidateMap = new Map();
 
                     // Check cache for previous search result
-                    const searchCacheVersion = 'v6';
+                    const searchCacheVersion = 'v7';
                     const searchCacheKey = `anime_search_${searchCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cachedSearch = localStorage.getItem(searchCacheKey);
                     if (!bestResult && cachedSearch) {
@@ -17022,7 +17089,7 @@ function getProxiedUrl(url, referer = '') {
                             const picked =
                                 pickAnimeResultByAniListId(searchPool, String((currentAnimeCanonicalInfo || await getCanonicalAnimeInfo())?.id || currentMediaInfo?.anilistId || '').trim()) ||
                                 findExactProviderSeasonMatch(providerName, searchPool, '') ||
-                                pickAnimeResultByTitle(searchPool, animeSeriesTitle, preferredYear, 1, '', false);
+                                pickAnimeResultByTitle(searchPool, animeSeriesTitle, preferredYear, targetSeasonNo, targetSeasonLabel, false, providerName);
 
                             if (!bestResult && picked?.id && isAllowedAmbiguousAnimeProviderMatch(picked, animeSeriesTitle, preferredYear)) {
                                 bestResult = picked;
@@ -17138,13 +17205,14 @@ function getProxiedUrl(url, referer = '') {
                                 .filter((name) => name && !/^season\s+\d+$/i.test(name))
                             : [];
                         const anikotoTerms = [
-                            ...getAnimeSearchTerms(animeSeriesTitle, preferredYear, 1, '', false).slice(0, 5),
+                            ...getAnimeSearchTerms(animeSeriesTitle, preferredYear, targetSeasonNo, targetSeasonLabel, false).slice(0, 5),
                             ...tmdbSeasonTerms.map((seasonName) => `${animeSeriesTitle} ${seasonName}`),
                             `${animeSeriesTitle} specials`,
                             `${animeSeriesTitle} ova`,
                         ];
                         const anikotoCandidates = new Map();
-                        for (const term of anikotoTerms) {
+                        if (bestResult?.id) anikotoCandidates.set(String(bestResult.id), bestResult);
+                        for (const term of (ANIME_MODE && bestResult?.id ? [] : anikotoTerms)) {
                             const { res: searchRes } = await fetchJsonWithApiFallback(
                                 `${API_BASE.replace('/meta/tmdb', '/anime/anikoto')}/${encodeURIComponent(term)}`,
                                 { signal: AbortSignal.timeout(Math.max(timeoutMs, 12000)) },
@@ -17154,8 +17222,6 @@ function getProxiedUrl(url, referer = '') {
                             const results = getAnimeSearchResults(searchData);
                             results.forEach((result) => {
                                 const resultTitle = String(result?.title || result?.name || '');
-                                const titleQuality = getTitleMatchQuality(resultTitle, normalizeAnimeSearchQuery(animeSeriesTitle));
-                                const isRelatedExtra = /\b(specials?|ovas?|onas?|recaps?|bonus)\b/i.test(resultTitle);
                                 const baseTitle = normalizeTitleForMatch(animeSeriesTitle);
                                 const candidateTitle = normalizeTitleForMatch(resultTitle);
                                 const isExactTitleFamily = !!baseTitle && (
@@ -17163,7 +17229,8 @@ function getProxiedUrl(url, referer = '') {
                                     || candidateTitle.startsWith(`${baseTitle} `)
                                     || candidateTitle.includes(` ${baseTitle} `)
                                 );
-                                if (!result?.id || !isExactTitleFamily) return;
+                                const isStandaloneMatch = ANIME_MODE && isCompatibleStandaloneAnimeTitle(resultTitle, animeSeriesTitle);
+                                if (!result?.id || (!isStandaloneMatch && !isExactTitleFamily)) return;
                                 anikotoCandidates.set(String(result.id), result);
                             });
                         }
@@ -22820,7 +22887,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                             hlsFragErrorBurst = 0;
                             hlsSessionIsFragile = false;
                             hideBufferingOverlaySoon(120);
-                            if (video && video.paused) {
+                            if (video && video.paused && !userPaused) {
                                 Promise.resolve(video.play()).catch(() => {
                                     video.muted = true;
                                     Promise.resolve(video.play()).catch(() => { });
@@ -22873,7 +22940,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                             hideBufferingOverlaySoon(120);
                             isFirstLoad = false;
                             hideLoader();
-                            if (video && video.paused) {
+                            if (video && video.paused && !userPaused) {
                                 Promise.resolve(video.play()).catch(() => { video.muted = true; Promise.resolve(video.play()).catch(() => {}); });
                             }
                         }, (reason2) => {
@@ -23038,7 +23105,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                         setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
                         setTimeout(clearHlsStartupWatchdog, 30000);
                     }
-                if (!IS_IOS) {
+                if (!IS_IOS && !userPaused) {
                     video.play().catch(() => {
                         video.muted = true;
                         video.play()
@@ -23343,7 +23410,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
                 }
 
-                if (shouldAutoplayCurrentLoad()) video.play().catch(() => hideLoader());
+                if (shouldAutoplayCurrentLoad() && !userPaused) video.play().catch(() => hideLoader());
 
             } else if (isEmbed) {
                 console.log('Branch: Embed iframe');
@@ -23618,8 +23685,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                         e.preventDefault();
                         e.stopPropagation();
                         // Toggle play/pause
-                        if (video && video.paused) video.play();
-                        else if (video) video.pause();
+                        if (video && video.paused) { userPaused = false; video.play(); }
+                        else if (video) { userPaused = true; video.pause(); }
                         break;
                     case 'arrowleft':
                         e.preventDefault();
