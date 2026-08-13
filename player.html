@@ -3991,7 +3991,6 @@
             <div class="control-actions action-row">
                 <div class="mobile-aux-right">
                     <button class="fs-back-btn" id="fsBackBtn" aria-label="Back to home"><i class="fa-solid fa-arrow-left"></i></button>
-                    <button class="ui-watchparty-btn" id="uiWatchPartyBtn" aria-label="Open watch together"><i class="fa-solid fa-window-restore"></i></button>
                     <button class="ui-chat-btn" id="uiChatBtn" aria-label="Open live chat"><i class="fa-solid fa-comment"></i></button>
                     <button class="ctrl-icon" id="shareEpisodeBtn" aria-label="Share episode" title="Share episode">
                         <i class="fa-solid fa-share-nodes"></i>
@@ -22241,7 +22240,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             return '/proxy';
         }
 
-        function proxiedStreamUrl(url, referer, provider = '', origin = '', forceHls = false, cookieHeader = '') {
+        function proxiedStreamUrl(url, referer, provider = '', origin = '', forceHls = false, cookieHeader = '', originOverride = '') {
             const rawUrl = String(url || '').trim();
             const providerName = String(provider || '').toLowerCase();
             const animeSaltCdnUrl = /^https?:\/\/(?:as-cdn\d+|z\d+)\.(?:top|ac|pro|xyz|click|link|net|cc|org)\//i.test(rawUrl);
@@ -22279,7 +22278,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             if (forceHls || /\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
                 try {
                     const parsed = new URL(rawUrl);
-                    const mediaProxyOrigin = getMediaProxyOrigin();
+                    const mediaProxyOrigin = originOverride || getMediaProxyOrigin();
                     let safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
                     if (
                         providerName === 'animesalt' &&
@@ -22929,6 +22928,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 // Some CDNs (e.g. satoru.one) block reverse-proxy user agents with 502/403
                 // but allow direct browser access, so we fall back to raw after proxy failure.
                 let hlsDirectFallbackAttempted = false;
+                let hlsApiProxyRetryAttempted = false;
 
                 const recoverWithDirectUrl = (resumeTime) => {
                     if (proxyOnlyProvider) return false;
@@ -22969,6 +22969,57 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     return true;
                 };
 
+                // Some origins (e.g. morencius.com) reject the Cloudflare worker's
+                // edge IP with 403 but accept the VM API's outbound proxy chain.
+                // Retry the same manifest through the API proxy origin before the
+                // raw (unproxied) URL fallback.
+                const recoverWithApiProxyUrl = (resumeTime) => {
+                    // NOTE: proxyOnlyProvider is intentionally NOT checked here —
+                    // this retry still routes through a proxy (the VM API origin
+                    // and its outbound proxy chain), just not the edge worker.
+                    if (hlsApiProxyRetryAttempted) return false;
+                    const rawTarget = String(originalStreamUrl || url || '').trim();
+                    if (!rawTarget) return false;
+                    let apiProxyOrigin = '';
+                    try { apiProxyOrigin = getProxyGatewayOrigin(activeApiBase || API_BASE); } catch (_) { }
+                    if (!apiProxyOrigin) return false;
+                    let workerOrigin = '';
+                    try { workerOrigin = getMediaProxyOrigin(); } catch (_) { }
+                    if (apiProxyOrigin === workerOrigin) return false; // no different path to try
+                    hlsApiProxyRetryAttempted = true;
+                    const apiProxyUrl = proxiedStreamUrl(rawTarget, referer, sourceProvider, sourceOrigin, true, sourceCookieHeader, apiProxyOrigin);
+                    if (!apiProxyUrl || apiProxyUrl === streamUrl) return false;
+                    console.warn('[hls] Worker proxy returned error; retrying via API proxy origin:', apiProxyUrl);
+                    showBufferingOverlay();
+                    try {
+                        if (hlsInst) { hlsInst.stopLoad(); hlsInst.detachMedia(); hlsInst.destroy(); hlsInst = null; }
+                        clearVideoMediaSource();
+                        hlsInst = svCreateHlsInstance(resumeTime, false, currentStreamProvider);
+                        svAttachHlsListeners(hlsInst, resumeTime, () => {
+                            if (!plyr) initPlyr();
+                            hideBufferingOverlaySoon(120);
+                            isFirstLoad = false;
+                            hideLoader();
+                            if (video && video.paused && !userPaused) {
+                                Promise.resolve(video.play()).catch(() => { video.muted = true; Promise.resolve(video.play()).catch(() => {}); });
+                            }
+                        }, (reason2) => {
+                            console.warn('[hls] API proxy URL also failed:', reason2);
+                            sameSourceRecoveryLock = false;
+                            if (failoverToNextSource(`api_proxy_failed:${reason2}`)) {
+                                return;
+                            }
+                            tryAlternateFlixhqServer(`api_proxy_failed:${reason2}`).then((switched) => {
+                                if (switched) return;
+                                showProviderExhaustedError(reason2);
+                            });
+                        }, false);
+                        hlsInst.loadSource(apiProxyUrl);
+                        hlsInst.attachMedia(video);
+                    } catch (_) { return false; }
+                    return true;
+                };
+
                 // Wrap recoverSameSource to inject direct-URL step before giving up
                 const recoverSameSourceWithDirectFallback = (reason) => {
                     if (isStaleSourceContext()) return;
@@ -22997,6 +23048,35 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                         });
                         return;
                     }
+                    // The edge worker's IP can be rejected by the origin (403)
+                    // while the VM API's outbound proxy chain still works (e.g.
+                    // morencius.com). Retry the manifest via the API proxy origin
+                    // before the direct-URL / failover paths.
+                    if (
+                        isM3U8 &&
+                        !hlsApiProxyRetryAttempted &&
+                        (reason === 'fatal_manifest_unavailable'
+                            || reason === 'fatal_network_error'
+                            || lowerReason.includes('manifest')
+                            || lowerReason.includes('network'))
+                    ) {
+                        const resumeTime = Number(video?.currentTime || startTime || 0);
+                        const tried = recoverWithApiProxyUrl(resumeTime);
+                        if (tried) {
+                            setTimeout(() => { sameSourceRecoveryLock = false; }, 600);
+                            return;
+                        }
+                    }
+
+                    if (shouldPreferDirectRetry && !hlsApiProxyRetryAttempted) {
+                        const resumeTime = Number(video?.currentTime || startTime || 0);
+                        const tried = recoverWithApiProxyUrl(resumeTime);
+                        if (tried) {
+                            setTimeout(() => { sameSourceRecoveryLock = false; }, 600);
+                            return;
+                        }
+                    }
+
                     if (shouldPreferDirectRetry && !hlsDirectFallbackAttempted) {
                         const resumeTime = Number(video?.currentTime || startTime || 0);
                         const tried = recoverWithDirectUrl(resumeTime);
