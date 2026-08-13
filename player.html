@@ -2213,12 +2213,6 @@
            - Our custom overlay (#subtitleOverlay) renders subtitles in the
              web player via JS/cuechange events. We suppress browser's own
              rendering (::cue) so there is no double display.
-           - The -webkit-media-text-track-container is NOT suppressed here.
-             When iOS native QuickTime player is active (webkitbeginfullscreen),
-             our JS sets track.mode = 'showing' and iOS renders the captions
-             natively inside that container. On webkitendfullscreen we restore
-             track.mode = 'hidden' and our overlay takes back over.
-           - body.ios-native-player is toggled by JS to allow native rendering.
         Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
 
         /* Always hide Plyr's built-in caption UI Ã¢â‚¬â€ we never use it */
@@ -3046,7 +3040,7 @@
             }
 
             @media (orientation: portrait) {
-                .ctrl-icon:not(#fullscreenBtn):not(#custom-audio-btn) {
+                .ctrl-icon:not(#fullscreenBtn):not(#custom-audio-btn):not(#customEpisodeBtn) {
                     display: none !important;
                 }
 
@@ -3768,7 +3762,7 @@
         .seek-wrapper .seek-track-fill { position: absolute; left: 0; top: 50%; width: min(100%, calc(var(--seek-percent, 0%) + 9px)); height: 5px; transform: translateY(-50%); border-radius: 999px; background: linear-gradient(90deg, rgba(229,9,20,.96), rgba(255,59,71,.92)); box-shadow: 0 0 10px rgba(229,9,20,.22); pointer-events: none; z-index: 1; transition: width .35s cubic-bezier(.22,.61,.36,1); }
         .seek-wrapper .seek-bar { z-index: 2; }
         @media (pointer: coarse) { .action-row { gap: 8px; justify-content: flex-start; } .action-row .mobile-aux-right { margin-right: auto; } .bottom-shell .seek-shell { transform: translateY(34px); padding: 14px 11px; width: calc(100% - 28px); } .bottom-shell .time-readout { left: 17px; width: 83px; min-width: 83px; transform: translateY(8px); } .mobile-aux-right { gap: 6px; } .action-row .ctrl-icon, .action-row .fs-back-btn, .action-row .ui-watchparty-btn, .action-row .ui-chat-btn, .action-row .ui-lock-btn { width: 46px; height: 46px; font-size: 16px; } }
-        @media (pointer: coarse) and (orientation: portrait) { .mobile-aux-right .ui-watchparty-btn, .mobile-aux-right .ui-chat-btn, .mobile-aux-right .ui-lock-btn { display: none !important; } .center-play .ctrl-btn.skip-btn { margin: 0 clamp(44px, 15vw, 110px); } .action-row #customServerBtn, .action-row #customEpisodeBtn, .action-row #custom-audio-btn, .action-row #captionsBtn, .action-row #qualityBtn, .action-row #playbackBtn, .action-row #preferencesBtn, .action-row #watchTogetherBtn, .action-row #fitBtn { display: none !important; } }
+        @media (pointer: coarse) and (orientation: portrait) { .mobile-aux-right .ui-watchparty-btn, .mobile-aux-right .ui-chat-btn, .mobile-aux-right .ui-lock-btn { display: none !important; } .center-play .ctrl-btn.skip-btn { margin: 0 clamp(44px, 15vw, 110px); } .action-row #customServerBtn, .action-row #custom-audio-btn, .action-row #captionsBtn, .action-row #qualityBtn, .action-row #playbackBtn, .action-row #preferencesBtn, .action-row #watchTogetherBtn, .action-row #fitBtn { display: none !important; } }
         @media (pointer: coarse) and (orientation: landscape) { #chatPanel, #watchPartyPanel { right: 40px !important; left: auto !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 50px) !important; } }
         @media (max-width: 600px) { #watchPartyPanel { right: 16px !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px) !important; width: calc(100vw - 32px) !important; } }
         @media (pointer: coarse) and (max-height: 600px) { #watchPartyPanel { top: auto !important; bottom: 70px !important; max-height: calc(100vh - 82px) !important; overflow: hidden !important; overflow-x: hidden !important; box-sizing: border-box !important; } #watchPartyPanel .watch-party-card { max-height: calc(100vh - 82px) !important; overflow: hidden !important; } #watchPartyPanel .watch-party-stage { max-height: calc(100vh - 170px) !important; overflow-y: auto !important; overflow-x: hidden !important; } #watchPartyPanel .watch-party-public-list { max-height: none !important; overflow: visible !important; } }
@@ -3847,6 +3841,7 @@
              #source-panel,
              #audio-panel { width: min(268px, calc(100vw - 28px)); max-width: min(268px, calc(100vw - 28px)); }
          }
+
     </style>
 </head>
 
@@ -3878,7 +3873,7 @@
 
     <!-- VIDEO PLAYER -->
     <div class="player-wrap">
-        <video id="player-video"></video>
+        <video id="player-video" playsinline webkit-playsinline preload="metadata"></video>
         <script>
             (function() {
                 const v = document.getElementById('player-video');
@@ -3888,6 +3883,8 @@
                 v.setAttribute('playsinline', '');
                 v.setAttribute('webkit-playsinline', 'true');
                 v.playsInline = true;
+                v.controls = false;
+                v.removeAttribute('controls');
             })();
         </script>
         <div id="video-brightness-overlay"></div>
@@ -4154,11 +4151,19 @@
 
         const requestedApiSource = String(PARAMS_BOOT.get('apiSource') || '').toLowerCase();
         const storedApiSource = String(localStorage.getItem('api_source') || '').toLowerCase();
-        const autoDefaultApiSource = /localhost|127\.0\.0\.1/i.test(location.hostname || '') ? 'local' : 'prod';
+        const pageHost = String(location.hostname || '').toLowerCase();
+        const isLanHost = pageHost === 'localhost' || pageHost === '0.0.0.0' || pageHost.endsWith('.local') ||
+            /^127(?:\.\d{1,3}){3}$/.test(pageHost) ||
+            /^10(?:\.\d{1,3}){3}$/.test(pageHost) ||
+            /^192\.168(?:\.\d{1,3}){2}$/.test(pageHost) ||
+            /^169\.254(?:\.\d{1,3}){2}$/.test(pageHost) ||
+            /^172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}$/.test(pageHost) ||
+            pageHost === '::1' || pageHost.startsWith('fc') || pageHost.startsWith('fd') || /^fe[89ab]/.test(pageHost);
+        const autoDefaultApiSource = isLanHost ? 'local' : 'prod';
         const effectiveApiSource =
             requestedApiSource === 'local' || requestedApiSource === 'prod'
                 ? requestedApiSource
-            : (storedApiSource === 'local' || storedApiSource === 'prod' ? storedApiSource : autoDefaultApiSource);
+            : (isLanHost ? 'local' : (storedApiSource === 'local' || storedApiSource === 'prod' ? storedApiSource : autoDefaultApiSource));
         const selectedMetaApi = effectiveApiSource === 'local' ? LOCAL_META_API : PROD_META_API;
         const API_BASE = selectedMetaApi || DEFAULT_META_API;
         const IS_MOBILE_CLIENT =
@@ -4167,7 +4172,8 @@
         const IS_TOUCH_CLIENT =
             IS_MOBILE_CLIENT ||
             (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches);
-        const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const IS_IOS = (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) && !window.MSStream;
         const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         const IS_PWA = (IS_IOS && navigator.standalone) || window.matchMedia('(display-mode: standalone)').matches;
 
@@ -4188,7 +4194,7 @@
             return deduped;
         })();
 
-        const IS_LOCAL_API = /localhost|127\.0\.0\.1/i.test(API_BASE);
+        const IS_LOCAL_API = isLanHost || /localhost|127\.0\.0\.1/i.test(API_BASE);
         let activeApiBase = API_BASE;
         
         function getProxyGatewayOrigin(fallbackBase = activeApiBase || API_BASE) {
@@ -4952,6 +4958,7 @@ function getProxiedUrl(url, referer = '') {
         let controlsHoldVisibleUntil = 0;
         let seekBufferOverlayTimer = null;
         let waitingOverlayTimer    = null; // iOS: debounces spurious 'waiting' events
+        let iosArchiveLoaderHold = false;
         window.addEventListener('beforeunload', () => { subtitleBlobUrls = []; });
         const fitModes = [
             { value: 'contain', label: 'Contain', icon: 'fa-up-right-and-down-left-from-center' },
@@ -4971,12 +4978,14 @@ function getProxiedUrl(url, referer = '') {
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
-        function hideLoader() {
+        function hideLoader(force = false) {
+            if (iosArchiveLoaderHold && !force) return;
             loader.style.opacity = '0';
             setTimeout(() => loader.style.display = 'none', 0);
         }
         function showError(title, msg) {
-            hideLoader();
+            iosArchiveLoaderHold = false;
+            hideLoader(true);
             document.getElementById('err-title').textContent = title;
             document.getElementById('err-msg').textContent = msg;
             if (errorNextEpisodeBtn) {
@@ -5216,7 +5225,14 @@ function getProxiedUrl(url, referer = '') {
                 return null;
             }
             if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContextCtor) return null;
+                try {
+                    audioCtx = new AudioContextCtor();
+                } catch (error) {
+                    console.warn('Web Audio is unavailable; continuing without audio enhancement.', error);
+                    return null;
+                }
             }
 
             if (!sourceNode || sourceNodeVideo !== video) {
@@ -9453,9 +9469,7 @@ function getProxiedUrl(url, referer = '') {
             const rawSrc = String(sub?.src || '').trim();
             if (!rawSrc) return '';
 
-            // iOS AVKit native fullscreen CANNOT load data: URI text tracks Ã¢â‚¬â€ needs a real HTTP URL.
-            // Route all subtitle fetching through /utils/vtt which does server-side fetch+convert
-            // and returns proper text/vtt with CORS headers that iOS AVKit can load natively.
+            // Prefer the existing subtitle proxy when the provider needs conversion or request headers.
             try {
                 const apiOrigin = getProxyGatewayOrigin();
                 const referer = String(sub?.referer || '').trim();
@@ -9467,7 +9481,6 @@ function getProxiedUrl(url, referer = '') {
                 const subtitleProvider = String(sub?.provider || '').toLowerCase();
                 const subtitleHost = (() => { try { return new URL(rawSrc, location.href).hostname; } catch (_) { return ''; } })();
                 if (
-                    IS_IOS ||
                     subtitleProvider === 'archive.org' ||
                     subtitleProvider === 'hdstream4u' ||
                     subtitleProvider === 'flixhq' ||
@@ -9551,7 +9564,7 @@ function getProxiedUrl(url, referer = '') {
                 const lower = String(rawSrc || '').toLowerCase();
 
                 // CRITICAL FIX: Direct skip if already a VTT and on iOS 
-                // Normal HTTP URLs are much more stable for AVKit probes than Blobs.
+                // Normal HTTP URLs avoid creating and retaining unnecessary Blob URLs.
                 if (IS_IOS && lower.split('?')[0].endsWith('.vtt')) {
                      return proxied;
                 }
@@ -9651,53 +9664,6 @@ function getProxiedUrl(url, referer = '') {
             return '';
         }
 
-        function applyExternalSubtitlesToVideoSync(videoEl) {
-            if (!IS_IOS) return;
-            const activeTracks = getActiveExternalSubtitleTracks();
-            if (!videoEl || activeTracks.length === 0) return;
-
-            // Derive API origin for proxy. Must point to the BACKEND server, not the frontend origin.
-            let apiOrigin = '';
-            try {
-                apiOrigin = getProxyGatewayOrigin();
-            } catch (e) {
-                apiOrigin = location.origin;
-            }
-
-            console.log('[sub] iOS Sync Injection using API Origin:', apiOrigin);
-            videoEl.querySelectorAll('track[data-ext-sub="1"]').forEach(t => t.remove());
-
-            activeTracks.forEach((sub, i) => {
-                const track = document.createElement('track');
-                track.kind = 'captions';
-                track.label = sub.label || `Subtitle ${i + 1}`;
-                track.srclang = sub.srclang || 'en';
-                const rs = String(sub?.src || '').trim();
-                const rf = String(sub?.referer || '').trim();
-
-                const vttUrl = `${apiOrigin}/utils/vtt?url=${encodeURIComponent(rs)}${rf ? `&referer=${encodeURIComponent(rf)}` : ''}`;
-                track.src = vttUrl;
-                track.type = 'text/vtt';
-                track.dataset.extSub = '1';
-                track.id = `track-${i}`;
-
-                if ((activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) || String(TMDB_ID || '') === '838209') {
-                    track.default = true;
-                }
-
-                videoEl.appendChild(track);
-
-                try {
-                    if (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex) {
-                        track.track.mode = 'showing';
-                    } else {
-                        track.track.mode = 'disabled';
-                    }
-                } catch(e) { }
-            });
-            console.log(`[sub] iOS Sync Injection complete: ${activeTracks.length} tracks added.`);
-        }
-
         async function applyExternalSubtitlesToVideo(videoEl) {
             if (!videoEl) return;
             const applyVersion = ++subtitleApplyVersion;
@@ -9732,7 +9698,7 @@ function getProxiedUrl(url, referer = '') {
 
             resolved.forEach((sub, i) => {
                 const track = document.createElement('track');
-                track.kind = 'captions'; // captions work more reliably in native iOS menu
+                track.kind = 'subtitles';
                 
                 let trackLabel = sub.label || `Subtitle ${i + 1}`;
                 if (sub.provider) {
@@ -10125,45 +10091,12 @@ function getProxiedUrl(url, referer = '') {
                 const isTheActiveOne = (activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex);
                 if (isTheActiveOne) {
                     // 'hidden' is the magic mode: events fire (for our overlay) but browser doesn't draw.
-                    // On iOS, we only elevate to 'showing' when fullscreen is active.
-                    t.mode = (IS_IOS && document.webkitDisplayingFullscreen) ? 'showing' : 'hidden';
+                    t.mode = 'hidden';
                 } else {
                     t.mode = 'disabled';
                 }
             });
             setTimeout(() => { _suppressNativeTrackChange = false; }, 50);
-        }
-
-        function activateTracksForIOSNativePlayer(showNative = true) {
-            if (!video || !video.textTracks) return;
-            const tracks = Array.from(video.textTracks);
-            
-            // To avoid double subtitles in the browser (inline), we set mode to 'hidden' (still loads but doesn't render).
-            // When in native fullscreen, we set it to 'showing'.
-            const targetMode = showNative ? 'showing' : 'hidden';
-
-            console.log(`[sub] iOS Native Handoff: ${tracks.length} tracks, targetMode=${targetMode}, activeIdx=${activeSubtitleTrackIndex}`);
-            
-            tracks.forEach((t, i) => {
-                const shouldBeActive = activeSubtitleTrackIndex >= 0 && i === activeSubtitleTrackIndex;
-                if (shouldBeActive) {
-                    t.mode = targetMode;
-                } else {
-                    t.mode = 'disabled';
-                }
-            });
-        }
-
-        // Restore subtitle tracks to 'hidden'/'disabled' after iOS native player exits
-        function deactivateTracksFromIOSNativePlayer() {
-             _iosNativePlayerActive = false;
-             silenceNativeTracks();
-             // Re-bind cue listeners in case iOS cleared them
-             bindSubtitleCueListeners();
-             // Ensure custom overlay is updated
-             if (activeSubtitleTrackIndex >= 0 && video && video.textTracks) {
-                 renderSubtitleOverlayFromTrack(video.textTracks[activeSubtitleTrackIndex]);
-             }
         }
 
         function selectSubtitleTrack(index) {
@@ -14275,20 +14208,6 @@ function getProxiedUrl(url, referer = '') {
                 // resets if the user jumps back past the 30-second threshold.
                 updateNextEpisodeButton(false);
             });
-            video.addEventListener('webkitbeginfullscreen', () => {
-                document.body.classList.add('ios-native-player');
-                // On iOS native fullscreen, our custom overlay is invisible, so we MUST use native tracks.
-                activateTracksForIOSNativePlayer(true);
-            });
-            video.addEventListener('webkitendfullscreen', () => {
-                document.body.classList.remove('ios-native-player');
-                // Back in the browser inline mode, we want to use our custom overlay and hide native ones to avoid double subs.
-                activateTracksForIOSNativePlayer(false);
-            });
-            // Backup listener for track propagation on iOS
-            video.addEventListener('loadedmetadata', () => {
-                if (IS_IOS) activateTracksForIOSNativePlayer(document.webkitDisplayingFullscreen);
-            });
             video.addEventListener('loadedmetadata', () => {
                 isSourceSwitching = false;
                 enforceWatchPartyPauseHold();
@@ -14346,24 +14265,6 @@ function getProxiedUrl(url, referer = '') {
                 if (watchPartyRole === 'guest' && watchPartyLastRemoteState?.paused === true) {
                     enforceWatchPartyRemotePlayback(watchPartyLastRemoteState);
                 }
-            });
-            video.addEventListener('webkitbeginfullscreen', () => {
-                console.log('[ios] Native fullscreen begin');
-                _iosNativePlayerActive = true;
-                document.body.classList.add('ios-native-player');
-                
-                // Allow CSS rules to update before native player probes
-                setTimeout(() => {
-                    activateTracksForIOSNativePlayer();
-                }, 100);
-
-                const overlay = document.getElementById('subtitleOverlay');
-                if (overlay) overlay.style.display = 'none';
-            });
-            video.addEventListener('webkitendfullscreen', () => {
-                console.log('[ios] Native fullscreen end');
-                document.body.classList.remove('ios-native-player');
-                deactivateTracksFromIOSNativePlayer();
             });
             video.addEventListener('volumechange', () => {
                 updateMuteIcon();
@@ -15327,40 +15228,25 @@ function getProxiedUrl(url, referer = '') {
                 fullscreenPointerHandledAt = Date.now();
 
                 // Ã¢â€â‚¬Ã¢â€â‚¬ iOS Pseudo-Fullscreen Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-                // iOS Safari's document.requestFullscreen() silently fails, and
-                // video.webkitEnterFullscreen() launches native AVKit which hides
-                // all custom UI (server switchers, skip buttons, episode list, etc.)
-                //
-                // Instead we promote the player/controls to a very high z-index
-                // via a CSS class, and lock body scrolling. The video keeps its
-                // `playsinline` attribute so AVKit is never triggered.
+                // Native AVKit is the primary iOS fullscreen path.
                 if (IS_IOS) {
-                    if (!IS_PWA) {
+                    if (video && typeof video.webkitEnterFullscreen === 'function') {
                         try {
-                            if (video) {
-                                video.removeAttribute('playsinline');
-                                video.removeAttribute('webkit-playsinline');
-                                video.playsInline = false;
-                                
-                                if (video.webkitEnterFullscreen) {
-                                    video.webkitEnterFullscreen();
-                                } else if (video.requestFullscreen) {
-                                    video.requestFullscreen();
-                                }
-
-                                const restorePlaysinline = () => {
-                                    if (!IS_PWA) {
-                                        video.setAttribute('playsinline', '');
-                                        video.setAttribute('webkit-playsinline', 'true');
-                                        video.playsInline = true;
-                                    }
-                                    video.removeEventListener('webkitendfullscreen', restorePlaysinline);
-                                };
-                                video.addEventListener('webkitendfullscreen', restorePlaysinline);
-                            }
-                        } catch (err) {
-                            console.warn('Native iOS fullscreen failed', err);
+                            document.documentElement.classList.remove('ios-pseudo-fs-active');
+                            video.webkitEnterFullscreen();
+                            return;
+                        } catch (error) {
+                            console.warn('Native iOS fullscreen failed; using web fallback.', error);
                         }
+                    }
+
+                    const target = document.documentElement;
+                    const canUseDocumentFullscreen = Boolean(
+                        target.requestFullscreen || target.webkitRequestFullscreen
+                    );
+
+                    if (!IS_PWA && canUseDocumentFullscreen) {
+                        await toggleStandardFullscreen();
                         return;
                     }
 
@@ -15379,14 +15265,6 @@ function getProxiedUrl(url, referer = '') {
 
                         // Ã¢â€â‚¬Ã¢â€â‚¬ TECHNIQUE 1: Auto-rotate screen Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
                         // Toggle orientation: portrait Ã¢â€ â€ landscape for fullscreen immersion
-                        if (screen.orientation?.lock) {
-                            const isCurrentlyLandscape = window.innerWidth > window.innerHeight;
-                            const targetOrientation = isCurrentlyLandscape ? 'portrait' : 'landscape';
-                            screen.orientation.lock(targetOrientation).catch(() => {
-                                // lock() not supported or denied Ã¢â‚¬â€ just continue
-                            });
-                        }
-
                         // Ã¢â€â‚¬Ã¢â€â‚¬ TECHNIQUE 2: Address-bar scroll-collapse Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
                         // Safari's URL bar is gesture-driven but it CAN be forced into
                         // its collapsed state by scrolling the page by at least 1px.
@@ -15433,10 +15311,6 @@ function getProxiedUrl(url, referer = '') {
                         if (rotateHint) rotateHint.classList.remove('show');
 
                         // Unlock orientation
-                        if (screen.orientation?.unlock) {
-                            try { screen.orientation.unlock(); } catch (_) { }
-                        }
-
                         // Restore scroll position
                         const savedY = parseInt(html.dataset.pseudoFsScrollY || '0', 10);
                         delete html.dataset.pseudoFsScrollY;
@@ -15482,14 +15356,11 @@ function getProxiedUrl(url, referer = '') {
                     if (!document.documentElement.classList.contains('ios-pseudo-fs-active')) return;
                     const rotateHint = document.getElementById('ios-rotate-hint');
                     if (!rotateHint) return;
-                    const isPortrait = window.innerHeight > window.innerWidth;
-                    if (isPortrait) {
+                    if (window.innerHeight > window.innerWidth) {
                         rotateHint.textContent = 'Ã¢Å¸Â³ Rotate for best experience';
                         rotateHint.classList.add('show');
                         if (iosOrientHintTimer) clearTimeout(iosOrientHintTimer);
                         iosOrientHintTimer = setTimeout(() => rotateHint.classList.remove('show'), 2500);
-                    } else {
-                        rotateHint.classList.remove('show');
                     }
                 });
 
@@ -20586,20 +20457,13 @@ function getProxiedUrl(url, referer = '') {
                     source: {
                         label: 'Dil Se.. (1998) (Archive)',
                         url: 'https://ia801607.us.archive.org/32/items/dil-se..-1998/Dil%20Se..%20%281998%29.mp4',
+                        iosUrl: 'https://archive.org/download/dil-se-1998-dv-drip-x-264-ac-3-5.1-ddr/Dil%20Se%201998%20%20DvDRip%20x264%20AC3%205.1%20%5BDDR%5D.mp4',
                         isM3U8: false,
                         isEmbed: false,
                         referer: null,
                         isDub: false,
                         provider: 'archive.org',
                     },
-                    subtitles: [
-                        {
-                            label: 'English (Archive.org)',
-                            srclang: 'en',
-                            src: 'https://archive.org/download/dil-se..-1998/Dil%20Se..%281998%29.vtt',
-                            provider: 'archive.org',
-                        },
-                    ],
                 },
                 '1069945': {
                     source: {
@@ -22264,6 +22128,8 @@ function getProxiedUrl(url, referer = '') {
                 newVideo.playsInline = true;
                 newVideo.setAttribute('playsinline', '');
                 newVideo.setAttribute('webkit-playsinline', 'true');
+                newVideo.controls = false;
+                newVideo.disablePictureInPicture = IS_IOS;
                 newVideo.preload = 'auto';
                 installWatchPartyPausePlayGuard(newVideo);
                 wrap.insertBefore(newVideo, wrap.firstChild);
@@ -22408,12 +22274,22 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
         }
 
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0, sourceCookieHeader = '') {
-            console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
-            activePlaybackSourceUrl = String(url || '').trim();
             if (Number.isInteger(srcIdx) && srcIdx >= 0) currentIdx = srcIdx;
             setTimeout(() => updateAudioTracks(), 0);
             const selectedSource = allSources?.[srcIdx] || {};
             const sourceProvider = String(selectedSource?.provider || '').toLowerCase();
+            const isIOSArchiveLoad = IS_IOS && sourceProvider === 'archive.org' && !isEmbed;
+            iosArchiveLoaderHold = isIOSArchiveLoad;
+            const originalStreamUrl = String(url || '').trim();
+            if (IS_IOS && sourceProvider === 'archive.org' && selectedSource?.iosUrl) {
+                url = String(selectedSource.iosUrl).trim();
+                console.log('[ios] Using Archive iOS source:', url);
+            } else if (IS_IOS && sourceProvider === 'archive.org' && /\.mkv(?:\?|$)/i.test(originalStreamUrl)) {
+                url = originalStreamUrl.replace(/\.mkv(?=\?|$)/i, '.mp4');
+                console.log('[ios] Using Archive H.264 derivative:', url);
+            }
+            console.log('loadStream:', { url, isM3U8, isEmbed, srcIdx, startTime });
+            activePlaybackSourceUrl = String(url || '').trim();
             if (sourceProvider) chipState(sourceProvider, 'success');
             const sourceOrigin = selectedSource?.origin || null;
             const rawStreamUrlLower = String(url || '').toLowerCase();
@@ -22426,7 +22302,6 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 // HDStream requires the media proxy for CDN headers and HLS segments.
                 sourceProvider === 'hdstream4u' ||
                 isFlixhqProtectedCdn;
-            const originalStreamUrl = String(url || '').trim();
             if (isM3U8 && originalStreamUrl) {
                 url = proxiedStreamUrl(originalStreamUrl, referer, sourceProvider, sourceOrigin, true, sourceCookieHeader);
             }
@@ -22688,7 +22563,9 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             // Visual Bridge: capture current frame before we wipe anything.
             // Skip on the very first load Ã¢â‚¬â€ the #loader (with cover art) is already
             // covering everything, so there's no black gap to bridge.
-            if (!isFirstLoad) {
+            if (isIOSArchiveLoad) {
+                setLoader('Loading Archive video...', selectedSource?.label || 'Waiting for the video to be ready');
+            } else if (!isFirstLoad) {
                 captureVideoFrameToOverlay();
             } else {
                 showLoader();
@@ -22730,6 +22607,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 newVideo.playsInline = true;
                 newVideo.setAttribute('playsinline', '');
                 newVideo.setAttribute('webkit-playsinline', 'true');
+                newVideo.controls = false;
+                newVideo.disablePictureInPicture = IS_IOS;
                 if (String(sourceProvider || '').toLowerCase() === 'archive.org') {
                     newVideo.crossOrigin = 'anonymous';
                 } else {
@@ -22781,12 +22660,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
 
             const initPlyr = () => {
                 console.log('Initializing Plyr...');
-                // Ensure subtitles are applied to the NEW video element. 
-                // Sync version for native iOS probe early-takeover, async for others.
-                applyExternalSubtitlesToVideoSync(video);
-                applyExternalSubtitlesToVideo(video);
-                // Extra sync for iOS just in case
-                if (IS_IOS) setTimeout(() => applyExternalSubtitlesToVideoSync(video), 600);
+                // Keep iOS playback video-only; other platforms retain existing subtitles.
+                if (!IS_IOS) applyExternalSubtitlesToVideo(video);
                 const qualities = hlsInst
                     ? [...new Set(hlsInst.levels.map(l => l.height).filter(Boolean))]
                     : [];
@@ -22798,6 +22673,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     muted: video.muted,
                     clickToPlay: false,
                     keyboard: false,
+                    fullscreen: { enabled: !IS_IOS, fallback: true, iosNative: false },
                     controls: [
                         'play-large',
                         'play',
@@ -22829,8 +22705,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 // Load subtitles after player is ready
                 plyr.on('ready', async () => {
                     enforceWatchPartyPauseHold();
-                    // Hide loader on iOS or if not first load
-                    if (!isFirstLoad || IS_IOS) hideLoader();
+                    // Archive MP4s can initialize Plyr long before iOS has media data.
+                    if (!isIOSArchiveLoad && (!isFirstLoad || IS_IOS)) hideLoader();
                 });
 
                 // Sync play icon in case video was already playing when Plyr initialized
@@ -23290,22 +23166,9 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 IS_SAFARI
             )) {
                 console.log('Branch: Native HLS (iOS Safari/WebKit)');
-                // On iOS, crossOrigin='anonymous' triggers CORS preflight for every segment
-                // request, which can cause failures when the CDN doesn't support CORS.
-                // Remove it for native HLS Ã¢â‚¬â€ canvas thumbnail capture isn't used on iOS.
-                // Exception: 'justanime' keeps external subtitles as direct text tracks when possible.
-                // If we remove crossorigin, iOS WebKit instantly crashes the <video> when the <track> is added.
+                // Keep native HLS requests CORS-compatible with the existing proxy path.
                 video.setAttribute('crossorigin', 'anonymous');
                 video.crossOrigin = 'anonymous';
-
-                // CRITICAL SYNC INJECTION for iOS Safari/AVKit. 
-                // Any 'await' here before source assignment would break the native probe.
-                if (IS_IOS && (externalSubtitleTracks || []).length > 0) {
-                     applyExternalSubtitlesToVideoSync(video);
-                // Redundancy for native HLS playback on iOS
-                setTimeout(() => { if (video) applyExternalSubtitlesToVideoSync(video); }, 800);
-                setTimeout(() => { if (video) activateTracksForIOSNativePlayer(); }, 2000);
-                }
 
                 const proxiedUrl = proxiedStreamUrl(url, referer, sourceProvider, sourceOrigin, false, sourceCookieHeader);
                 const directUrl = url;
@@ -23607,13 +23470,30 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                         hideLoader();
                     }
                 };
+                const revealIOSArchiveWhenReady = () => {
+                    if (!isIOSArchiveLoad || !isCurrentMp4Load()) return;
+                    // iOS may stop at HAVE_METADATA until playback is started by a
+                    // user gesture. A valid duration is enough to expose controls
+                    // without showing the empty 0:00 player state.
+                    if (video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) return;
+                    iosArchiveLoaderHold = false;
+                    isFirstLoad = false;
+                    hideLoader(true);
+                    hideTransitionOverlay();
+                    if (playerWrap) {
+                        playerWrap.style.opacity = '1';
+                        playerWrap.style.visibility = 'visible';
+                    }
+                };
                 video.addEventListener('playing', () => {
                     if (enforceWatchPartyPauseHold()) return;
+                    revealIOSArchiveWhenReady();
                     clearMp4ErrorUiIfRecovered();
                     clearMp4StallWatchdog();
                 });
                 video.addEventListener('canplay', () => {
                     enforceWatchPartyPauseHold();
+                    revealIOSArchiveWhenReady();
                     clearMp4ErrorUiIfRecovered();
                     clearMp4StallWatchdog();
                 });
@@ -23642,7 +23522,10 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 video.addEventListener('loadedmetadata', () => {
                     clearTimeout(metadataFallbackTimer);
                     buildPreferencesMenu();
+                    revealIOSArchiveWhenReady();
                 }, { once: true });
+                video.addEventListener('durationchange', revealIOSArchiveWhenReady);
+                video.addEventListener('loadeddata', revealIOSArchiveWhenReady, { once: true });
 
                 if (isArchiveDirect) {
                     video.crossOrigin = 'anonymous';
@@ -23689,8 +23572,11 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     video && video.addEventListener('timeupdate', onFirstFrame);
                     setTimeout(() => {
                         if (isFirstLoad && video && video.readyState >= 2) {
-                            isFirstLoad = false;
-                            hideLoader();
+                            if (isIOSArchiveLoad) revealIOSArchiveWhenReady();
+                            else {
+                                isFirstLoad = false;
+                                hideLoader();
+                            }
                         }
                     }, 10000);
                 }

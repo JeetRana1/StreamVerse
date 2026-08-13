@@ -230,21 +230,25 @@ function toggleApi(source) {
 }
 
 function getDefaultApiSource() {
-    const host = String(window.location.hostname || '').toLowerCase();
-    const isLocalHost = isDevHost();
-    return isLocalHost ? 'local' : 'prod';
+    return isDevHost() ? 'local' : 'prod';
 }
 
 function isDevHost() {
     const host = String(window.location.hostname || '').toLowerCase();
-    return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.endsWith('.local');
+    return host === 'localhost' || host === '0.0.0.0' || host.endsWith('.local') ||
+        /^127(?:\.\d{1,3}){3}$/.test(host) ||
+        /^10(?:\.\d{1,3}){3}$/.test(host) ||
+        /^192\.168(?:\.\d{1,3}){2}$/.test(host) ||
+        /^169\.254(?:\.\d{1,3}){2}$/.test(host) ||
+        /^172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}$/.test(host) ||
+        host === '::1' || host.startsWith('fc') || host.startsWith('fd') || /^fe[89ab]/.test(host);
 }
 
 function getCurrentApiSource() {
+    if (isDevHost()) return 'local';
     const saved = String(localStorage.getItem('api_source') || '').toLowerCase();
     const source = saved === 'local' || saved === 'prod' ? saved : getDefaultApiSource();
-    const isLocalHost = isDevHost();
-    if (!isLocalHost && source === 'local') return 'prod';
+    if (source === 'local') return 'prod';
     return source;
 }
 

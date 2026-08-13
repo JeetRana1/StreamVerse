@@ -5105,3 +5105,68 @@ body.watch-party-home-open {
         grid-template-columns: 1fr;
     }
 }
+
+@media (max-width: 600px) {
+    .container-header {
+        gap: 0.5rem;
+    }
+
+    .logo {
+        flex: 0 0 auto;
+        font-size: 1.25rem;
+        white-space: nowrap;
+    }
+
+    .header-actions {
+        flex: 0 0 auto;
+        gap: 0.5rem;
+    }
+
+    .api-switcher.dev-visible,
+    .cache-clear-btn {
+        display: none;
+    }
+
+    .watch-party-header-btn {
+        width: 42px;
+        min-width: 42px;
+        height: 42px;
+        padding: 0;
+        justify-content: center;
+    }
+
+    #main-header.mobile-search-open .container-header {
+        justify-content: stretch;
+    }
+
+    #main-header.mobile-search-open .logo,
+    #main-header.mobile-search-open .watch-party-header-btn,
+    #main-header.mobile-search-open .genre-filter-btn,
+    #main-header.mobile-search-open .cache-clear-btn,
+    #main-header.mobile-search-open .mobile-menu-btn {
+        display: none !important;
+    }
+
+    #main-header.mobile-search-open .header-actions {
+        flex: 1 1 auto;
+        width: 100%;
+    }
+
+    #main-header.mobile-search-open .search-bar.mobile-search-expanded {
+        flex: 1 1 auto;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+    }
+}
+
+@media (max-width: 360px) {
+    .container-header,
+    .header-actions {
+        gap: 0.4rem;
+    }
+
+    .watch-party-header-btn {
+        display: none;
+    }
+}
