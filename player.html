@@ -13823,7 +13823,11 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             return Math.max(0, baseTime + elapsed - mobileGuestLatency);
         }
 
+        let watchPartyUrlTimeThrottle = 0;
         function updateWatchPartyUrlTime(time) {
+            const now = Date.now();
+            if (now - watchPartyUrlTimeThrottle < 2000) return;
+            watchPartyUrlTimeThrottle = now;
             try {
                 const nextUrl = new URL(location.href);
                 nextUrl.searchParams.set('t', formatWatchPartyTimeParam(time));
@@ -14215,7 +14219,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 refreshWatchPartyPauseGuard();
             }
             const now = Date.now();
-            if (action === 'play' && now - watchPartyLastEmitTime < 100) return;
+            if (action === 'play' && now - watchPartyLastEmitTime < 800) return;
             watchPartyLastEmitTime = now;
             watchPartySend('host:state', { action, currentTime: Number(video.currentTime || 0), paused: Boolean(video.paused), route: getWatchPartyRouteState() });
         }
