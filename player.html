@@ -11278,6 +11278,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             controlSurface.classList.add('visible');
             playerHeader.classList.remove('hidden');
             document.body.classList.remove('player-cursor-hidden');
+            positionWatchPartyChat();
 
             clearTimeout(controlsHideTimer);
             clearTimeout(headerTimer);
@@ -11344,6 +11345,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             document.body.classList.add('player-cursor-hidden');
             closeCustomMenus();
             lastTap = 0; // Reset double-tap sequence on hide
+            positionWatchPartyChat();
         }
 
         function isFullscreenActive() {
@@ -11772,8 +11774,18 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
         let watchPartyMembersData = { count: 1, members: [] };
         let watchPartyReclaimTimer = null;
 
+        let watchPartyPollMode = false;
+        let watchPartyPollClientId = '';
+        let watchPartyPollTimer = null;
+        let watchPartyWsFailed = false;
+        let watchPartyTransportMode = 'ws'; // 'ws' | 'http'
+
+        function getWatchPartyApiRoot() {
+            return String(activeApiBase || API_BASE || '').replace(/\/meta\/tmdb\/?$/i, '');
+        }
+
         function getWatchPartyWsUrl() {
-            const apiRoot = String(activeApiBase || API_BASE || '').replace(/\/meta\/tmdb\/?$/i, '');
+            const apiRoot = getWatchPartyApiRoot();
             try {
                 const parsed = new URL(apiRoot || location.origin, location.href);
                 parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -11787,7 +11799,33 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             }
         }
 
+        function getWatchPartyHttpBase() {
+            return getWatchPartyApiRoot() || location.origin;
+        }
+
+        function getWatchPartyPollClientId() {
+            if (watchPartyPollClientId) return watchPartyPollClientId;
+            watchPartyPollClientId = (() => {
+                try { return String(sessionStorage.getItem('wpPollId') || ''); } catch (_) { return ''; }
+            })();
+            if (!watchPartyPollClientId) {
+                watchPartyPollClientId = 'c' + Math.random().toString(36).slice(2, 12);
+                try { sessionStorage.setItem('wpPollId', watchPartyPollClientId); } catch (_) {}
+            }
+            return watchPartyPollClientId;
+        }
+
         function watchPartySend(type, payload = {}) {
+            if (watchPartyTransportMode === 'http') {
+                const body = JSON.stringify({ clientId: getWatchPartyPollClientId(), type, ...payload });
+                const base = getWatchPartyHttpBase();
+                fetch(`${base}/watch-party/action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body,
+                }).catch(() => {});
+                return true;
+            }
             const message = JSON.stringify({ type, ...payload });
             if (watchPartySocket?.readyState === WebSocket.OPEN) {
                 watchPartySocket.send(message);
@@ -11805,10 +11843,79 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             else console.log('[watch-party]', message);
         }
 
+        let watchPartyMsgPopupEl = null;
+        let watchPartyMsgPopupTimer = null;
+        function showWatchPartyMsgPopup(msg) {
+            const myId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
+            if (String(msg.userId || '') === myId) return;
+            if (!watchPartyMsgPopupEl) {
+                watchPartyMsgPopupEl = document.createElement('div');
+                watchPartyMsgPopupEl.className = 'watch-party-msg-popup';
+                watchPartyMsgPopupEl.innerHTML = '<span class="wp-msg-name"></span><span class="wp-msg-text"></span>';
+                document.body.appendChild(watchPartyMsgPopupEl);
+            }
+            watchPartyMsgPopupEl.querySelector('.wp-msg-name').textContent = String(msg.name || 'Viewer');
+            watchPartyMsgPopupEl.querySelector('.wp-msg-text').textContent = String(msg.text || '');
+            watchPartyMsgPopupEl.classList.add('show');
+            if (watchPartyMsgPopupTimer) clearTimeout(watchPartyMsgPopupTimer);
+            watchPartyMsgPopupTimer = setTimeout(() => {
+                if (watchPartyMsgPopupEl) watchPartyMsgPopupEl.classList.remove('show');
+            }, 5000);
+        }
+
+        function startWatchPartyHttpPolling() {
+            if (watchPartyTransportMode === 'http') return;
+            watchPartyTransportMode = 'http';
+            watchPartySetStatus('Connected (fallback)');
+            console.log('[wt-player] WebSocket blocked; using HTTP polling fallback');
+            if (watchPartySocket) { try { watchPartySocket.close(); } catch (_) {} watchPartySocket = null; }
+            // Flush any messages queued while the WS was still CONNECTING.
+            const pending = watchPartyPendingMessages.splice(0);
+            pending.forEach((message) => {
+                try {
+                    const parsed = JSON.parse(message);
+                    if (parsed && parsed.type) {
+                        const { type, ...payload } = parsed;
+                        watchPartySend(type, payload);
+                    }
+                } catch (_) {}
+            });
+            const poll = () => {
+                const clientId = getWatchPartyPollClientId();
+                const base = getWatchPartyHttpBase();
+                fetch(`${base}/watch-party/poll?clientId=${encodeURIComponent(clientId)}`, { cache: 'no-store' })
+                    .then((res) => res.json())
+                    .then((data) => {
+                        if (data && Array.isArray(data.events)) {
+                            data.events.forEach((msg) => {
+                                if (msg && msg.type) handleWatchPartyMessage(msg);
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            };
+            poll();
+            if (watchPartyPollTimer) clearInterval(watchPartyPollTimer);
+            watchPartyPollTimer = setInterval(poll, 1800);
+        }
+
+        function stopWatchPartyHttpPolling() {
+            if (watchPartyPollTimer) { clearInterval(watchPartyPollTimer); watchPartyPollTimer = null; }
+        }
+
         function ensureWatchPartySocket() {
+            if (watchPartyTransportMode === 'http') return null;
             if (watchPartySocket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(watchPartySocket.readyState)) return watchPartySocket;
             watchPartySocket = new WebSocket(getWatchPartyWsUrl());
+            let settled = false;
+            const fallbackToHttp = () => {
+                if (settled) return;
+                settled = true;
+                startWatchPartyHttpPolling();
+            };
             watchPartySocket.addEventListener('open', () => {
+                settled = true;
+                watchPartyWsFailed = false;
                 watchPartySetStatus('Connected');
                 watchPartySocket.send(JSON.stringify({ type: 'rooms:list' }));
                 const pending = watchPartyPendingMessages.splice(0);
@@ -11826,7 +11933,13 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     watchPartyReconnectTimeout = setTimeout(() => watchPartyReconnect(), delay);
                 }
             });
-            watchPartySocket.addEventListener('error', () => watchPartySetStatus('Connection error'));
+            watchPartySocket.addEventListener('error', () => {
+                watchPartyWsFailed = true;
+                watchPartySetStatus('Connection error');
+                setTimeout(fallbackToHttp, 500);
+            });
+            // If the socket never opens within 4s, assume it is being blocked.
+            setTimeout(() => { if (watchPartyTransportMode === 'ws' && !settled) fallbackToHttp(); }, 4000);
             watchPartySocket.addEventListener('message', (event) => {
                 let msg = null;
                 try { msg = JSON.parse(String(event.data || '{}')); } catch (_) { return; }
@@ -11842,13 +11955,24 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             const savedName = (() => { try { return String(sessionStorage.getItem('wpRoomName') || '').trim(); } catch (_) { return ''; } })();
             if (!savedCode || !watchPartyRoomCode) { watchPartyReconnectAttempts = 0; return; }
             if (savedName) watchPartyName = savedName;
+            if (watchPartyTransportMode === 'http') {
+                startWatchPartyHttpPolling();
+                watchPartySend('room:join', { code: savedCode, name: watchPartyName });
+                return;
+            }
             ensureWatchPartySocket();
             const prevUserId = (() => { try { return String(sessionStorage.getItem('wpUserId') || ''); } catch (_) { return ''; } })();
             const attemptJoin = () => {
+                if (watchPartyTransportMode === 'http') {
+                    watchPartySend('room:join', { code: savedCode, name: watchPartyName, previousUserId: prevUserId });
+                    return;
+                }
                 if (watchPartySocket?.readyState === WebSocket.OPEN) {
                     watchPartySend('room:join', { code: savedCode, name: watchPartyName, previousUserId: prevUserId });
                 } else if (watchPartySocket?.readyState === WebSocket.CONNECTING) {
                     setTimeout(attemptJoin, 200);
+                } else {
+                    setTimeout(attemptJoin, 400);
                 }
             };
             setTimeout(attemptJoin, 300);
@@ -12166,6 +12290,43 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     backdrop-filter: none;
                     -webkit-backdrop-filter: none;
                 }
+                .watch-party-msg-popup {
+                    position: fixed;
+                    top: 80px;
+                    right: 156px;
+                    z-index: 360;
+                    max-width: 300px;
+                    min-width: 220px;
+                    padding: 10px 14px;
+                    border-radius: 14px;
+                    background: linear-gradient(135deg, rgba(20,20,26,.92), rgba(14,14,18,.86));
+                    border: 1px solid rgba(255,255,255,.12);
+                    box-shadow: 0 18px 50px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
+                    backdrop-filter: blur(16px);
+                    -webkit-backdrop-filter: blur(16px);
+                    color: rgba(255,255,255,.9);
+                    font-size: 13px;
+                    line-height: 1.4;
+                    opacity: 0;
+                    transform: translateY(-8px) scale(.97);
+                    pointer-events: none;
+                    transition: opacity .25s ease, transform .25s ease;
+                }
+                .watch-party-msg-popup.show {
+                    opacity: 1;
+                    transform: translateY(0) scale(1);
+                }
+                .watch-party-msg-popup .wp-msg-name {
+                    display: block;
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: rgba(255,255,255,.55);
+                    margin-bottom: 3px;
+                }
+                .watch-party-msg-popup .wp-msg-text {
+                    display: block;
+                    word-break: break-word;
+                }
                 .watch-party-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
                 .watch-party-head-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
                 .watch-party-card-title {
@@ -12204,15 +12365,23 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.22), rgba(255,255,255,.06));
                     margin: 18px 0 16px;
                 }
-                .watch-party-close {
+                .watch-party-card .watch-party-close,
+                .watch-party-chat .watch-party-close {
                     width: 42px;
                     height: 42px;
                     border-radius: 14px;
-                    border: 1px solid rgba(255,255,255,.12);
-                    background: rgba(255,255,255,.06);
-                    color: #fff;
+                    border: 1px solid rgba(255,70,70,.25);
+                    background: rgba(255,70,70,.12);
+                    color: #ff6b6b;
                     cursor: pointer;
                     flex-shrink: 0;
+                    transition: background .15s, border-color .15s, color .15s;
+                }
+                .watch-party-card .watch-party-close:hover,
+                .watch-party-chat .watch-party-close:hover {
+                    background: rgba(255,70,70,.22);
+                    border-color: rgba(255,70,70,.4);
+                    color: #fff;
                 }
                 .watch-party-collapse {
                     width: 42px;
@@ -12525,10 +12694,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     background: rgba(255,255,255,.04);
                     border: 1px solid rgba(255,255,255,.08);
                     border-radius: 12px;
-                    padding: 4px;
+                    padding: 6px;
                     display: flex;
                     flex-direction: column;
-                    gap: 1px;
+                    gap: 6px;
                     max-height: none;
                     overflow: visible;
                 }
@@ -12538,25 +12707,29 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 .watch-party-member-row {
                     display: flex;
                     align-items: center;
-                    gap: 6px;
-                    font-size: 13px;
+                    gap: 8px;
+                    font-size: 15px;
                     color: rgba(255,255,255,.82);
-                    padding: 5px 8px;
-                    border-radius: 8px;
-                    transition: background .15s;
-                    border-bottom: 1px solid rgba(255,255,255,.06);
+                    padding: 8px 12px;
+                    min-height: 40px;
+                    border-radius: 10px;
+                    background: rgba(255,255,255,.03);
+                    border: 1px solid rgba(255,255,255,.08);
+                    transition: background .15s, border-color .15s;
+                }
+                .watch-party-member-row:hover {
+                    background: rgba(255,255,255,.08);
+                    border-color: rgba(255,255,255,.15);
                 }
                 .watch-party-member-row:last-child {
                     border-bottom: none;
                 }
-                .watch-party-member-row:hover {
-                    background: rgba(255,255,255,.06);
-                }
                 .watch-party-member-row.is-host {
                     background: rgba(255,215,0,.1);
+                    border-color: rgba(255,215,0,.25);
                 }
                 .watch-party-member-row.is-host:hover {
-                    background: rgba(255,215,0,.14);
+                    background: rgba(255,215,0,.16);
                 }
                 .watch-party-member-name {
                     flex: 1;
@@ -12568,27 +12741,40 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
                 .watch-party-member-actions {
                     display: flex;
-                    gap: 1px;
+                    gap: 6px;
                     flex-shrink: 0;
                 }
-                .watch-party-member-btn {
-                    background: none;
-                    border: none;
-                    color: rgba(255,255,255,.4);
+                .watch-party-card .watch-party-member-btn {
+                    background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.05));
+                    border: 1px solid rgba(255,255,255,.16);
+                    color: rgba(255,255,255,.85);
                     cursor: pointer;
-                    font-size: 11px;
-                    padding: 3px 7px;
-                    border-radius: 6px;
+                    font-size: 13px;
+                    padding: 6px 10px;
+                    border-radius: 9px;
+                    backdrop-filter: blur(12px) saturate(140%);
+                    -webkit-backdrop-filter: blur(12px) saturate(140%);
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 2px 8px rgba(0,0,0,.15);
                     transition: all .15s;
                     line-height: 1;
                 }
-                .watch-party-member-btn:hover {
-                    color: rgba(255,255,255,.9);
-                    background: rgba(255,255,255,.1);
+                .watch-party-card .watch-party-member-btn:hover {
+                    color: rgba(255,255,255,1);
+                    background: linear-gradient(135deg, rgba(255,255,255,.22), rgba(255,255,255,.09));
+                    border-color: rgba(255,255,255,.28);
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 12px rgba(0,0,0,.22);
                 }
-                .watch-party-member-btn.danger:hover {
-                    color: #ff6b6b;
-                    background: rgba(255,0,0,.15);
+                .watch-party-card .watch-party-member-btn.danger {
+                    background: linear-gradient(135deg, rgba(255,60,60,.32), rgba(255,0,0,.12));
+                    border-color: rgba(255,80,80,.4);
+                    color: #ffd7d7;
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 2px 8px rgba(255,0,0,.18);
+                }
+                .watch-party-card .watch-party-member-btn.danger:hover {
+                    background: linear-gradient(135deg, rgba(255,70,70,.45), rgba(255,0,0,.22));
+                    border-color: rgba(255,90,90,.55);
+                    color: #fff;
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 3px 12px rgba(255,0,0,.3);
                 }
                 .watch-party-public-list {
                     display:grid;
@@ -12664,26 +12850,26 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     color: rgba(255,255,255,.7);
                     letter-spacing: .12em;
                 }
-                .watch-party-public-join {
+                .watch-party-card .watch-party-public-join {
                     flex-shrink: 0;
                     align-self: center;
                     padding: 9px 20px;
-                    border-radius: 10px;
+                    border-radius: 9px;
                     background: rgba(255,74,93,.14);
-                    border: 1px solid rgba(255,31,62,.72);
-                    color: #ff727e !important;
-                    box-shadow: 0 0 18px rgba(255,31,62,.12), inset 0 1px 0 rgba(255,255,255,.06);
+                    border: 1px solid rgba(255,31,62,.55);
+                    color: #ff9aa3 !important;
+                    box-shadow: 0 0 18px rgba(255,31,62,.1), inset 0 1px 0 rgba(255,255,255,.06);
                     font-size: 12px;
-                    font-weight: 800;
+                    font-weight: 900;
                     cursor: pointer;
-                    transition: none;
+                    transition: all .15s;
                 }
-                .watch-party-public-join:hover {
-                    background: rgba(255,74,93,.14);
+                .watch-party-card .watch-party-public-join:hover {
+                    background: rgba(255,74,93,.22);
                     border-color: rgba(255,31,62,.72);
-                    color: #ff727e !important;
+                    color: #ffc4c9 !important;
                     transform: none;
-                    box-shadow: 0 0 18px rgba(255,31,62,.12), inset 0 1px 0 rgba(255,255,255,.06);
+                    box-shadow: 0 0 22px rgba(255,31,62,.16), inset 0 1px 0 rgba(255,255,255,.1);
                 }
                 .watch-party-room-badge {
                     display:grid;
@@ -12744,7 +12930,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     gap:8px;
                     flex-shrink:0;
                 }
-                .watch-party-leave-btn {
+                .watch-party-card .watch-party-leave-btn,
+                .watch-party-chat .watch-party-leave-btn {
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -12753,18 +12940,19 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     margin-top: 6px;
                     padding: 10px;
                     border-radius: 10px;
-                    background: rgba(255,255,255,.04);
-                    border: 1px solid rgba(255,255,255,.1);
-                    color: rgba(255,255,255,.65);
+                    background: rgba(255,70,70,.12);
+                    border: 1px solid rgba(255,70,70,.25);
+                    color: #ff6b6b;
                     font-size: 13px;
                     font-weight: 600;
                     cursor: pointer;
                     transition: all .15s;
                 }
-                .watch-party-leave-btn:hover {
-                    background: rgba(255,70,70,.12);
-                    border-color: rgba(255,70,70,.25);
-                    color: #ff6b6b;
+                .watch-party-card .watch-party-leave-btn:hover,
+                .watch-party-chat .watch-party-leave-btn:hover {
+                    background: rgba(255,70,70,.2);
+                    border-color: rgba(255,70,70,.4);
+                    color: #ff8b8b;
                 }
                 .watch-party-reconnect-btn {
                     display: flex;
@@ -12836,29 +13024,39 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 .watch-party-chat-name {
                     display: none;
                 }
-                #watchPartyMessages { position: fixed; right: 42px; bottom: 214px; min-height: 0; max-height: 160px; overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; pointer-events: none !important; display: block; padding: 4px 2px 8px 0; width: min(320px, calc(100vw - 84px)); margin: 0; scrollbar-width: none; -ms-overflow-style: none; z-index: 10049; }
+                #watchPartyMessages { position: fixed; right: 42px; bottom: 214px; min-height: 0; max-height: min(38vh, 220px); overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; pointer-events: none !important; display: block; padding: 4px 2px 8px 0; width: min(340px, calc(100vw - 84px)); margin: 0; scrollbar-width: none; -ms-overflow-style: none; z-index: 10049; }
                 #watchPartyMessages::-webkit-scrollbar { width: 0; height: 0; display: none; }
-                .watch-party-message { max-width: 100%; width: fit-content; margin: 0 auto 8px 0; background:rgba(12,12,14,.62); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px 12px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); overflow-wrap:anywhere; word-break:break-word; pointer-events: auto; }
+                .watch-party-message { max-width: 100%; width: fit-content; margin: 0 auto 8px 0; background: linear-gradient(135deg, rgba(255,255,255,.11), rgba(255,255,255,.04)); border:1px solid rgba(255,255,255,.13); border-radius:16px; padding:10px 13px; backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%); box-shadow: 0 4px 14px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.12); overflow-wrap:anywhere; word-break:break-word; pointer-events: auto; }
                 .watch-party-message:last-child { margin-bottom: 0; }
-                .watch-party-message.is-self { margin: 0 0 8px auto; background: rgba(229,9,20,.14); border-color: rgba(229,9,20,.22); }
+                .watch-party-message.is-self { margin: 0 0 8px auto; background: linear-gradient(135deg, rgba(229,9,20,.30), rgba(229,9,20,.16)); border-color: rgba(229,9,20,.38); box-shadow: 0 4px 16px rgba(229,9,20,.22), inset 0 1px 0 rgba(255,255,255,.10); }
                 .watch-party-message small { display:block; color:rgba(255,255,255,.55); margin-bottom:3px; }
-                #watchPartyChatForm { position: fixed; right: 42px; bottom: 156px; display:block; width: min(320px, calc(100vw - 84px)); margin: 0; padding: 0; pointer-events: none; z-index: 10050; }
-                #watchPartyChatForm input { width: 100%; background: rgba(12,12,14,.68); border-color: rgba(255,255,255,.08); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding-right: 56px; pointer-events: auto; }
+                #watchPartyChatForm { position: fixed; right: 42px; bottom: 156px; display:block; width: min(340px, calc(100vw - 84px)); margin: 0; padding: 6px; pointer-events: none; z-index: 10050; border-radius: 26px; background: linear-gradient(135deg, rgba(255,255,255,.13), rgba(255,255,255,.03)); border: 1px solid rgba(255,255,255,.18); box-shadow: 0 10px 32px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22), inset 0 -10px 22px rgba(255,255,255,.04); backdrop-filter: blur(24px) saturate(170%); -webkit-backdrop-filter: blur(24px) saturate(170%); transition: border-color .2s ease, box-shadow .2s ease; }
+                #watchPartyChatForm::before { content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; background: linear-gradient(120deg, rgba(255,255,255,.55), rgba(255,255,255,.06) 30%, rgba(229,9,20,.5) 82%, rgba(255,255,255,.35)); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; opacity: .75; }
+                #watchPartyChatForm:focus-within { border-color: rgba(255,255,255,.34); box-shadow: 0 10px 36px rgba(0,0,0,.5), 0 0 28px rgba(229,9,20,.30), inset 0 1px 0 rgba(255,255,255,.28); }
+                #watchPartyChatForm input { width: 100%; background: transparent; border: none; border-radius: 20px; color: #fff; padding: 12px 58px 12px 16px; outline: none; font-size: 14px; backdrop-filter: none; -webkit-backdrop-filter: none; pointer-events: auto; }
+                #watchPartyChatForm input::placeholder { color: rgba(255,255,255,.42); }
                 #watchPartyChatForm button {
                     position: absolute;
                     top: 50%;
                     right: 8px;
                     transform: translateY(-50%);
-                    width: 38px;
-                    min-width: 38px;
-                    height: 38px;
+                    width: 42px;
+                    min-width: 42px;
+                    height: 42px;
                     padding: 0;
-                    border-radius: 12px;
-                    background:#ef0712;
-                    border-color:#ef0712;
-                    color:#fff;
+                    border-radius: 50%;
+                    border: none;
+                    background: linear-gradient(135deg, #ff3b4e, #ef0712 55%, #c4050e);
+                    color: #fff;
                     pointer-events: auto;
+                    box-shadow: 0 4px 14px rgba(239,7,18,.45), inset 0 1px 0 rgba(255,255,255,.35), inset 0 -2px 6px rgba(0,0,0,.25);
+                    overflow: hidden;
+                    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
                 }
+                #watchPartyChatForm button::after { content: ''; position: absolute; top: 0; left: -80%; width: 60%; height: 100%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.45), transparent); transform: skewX(-20deg); transition: left .5s ease; pointer-events: none; }
+                #watchPartyChatForm button:hover { transform: translateY(-50%) scale(1.06); box-shadow: 0 6px 22px rgba(239,7,18,.6), 0 0 24px rgba(239,7,18,.35), inset 0 1px 0 rgba(255,255,255,.42); filter: brightness(1.08); }
+                #watchPartyChatForm button:hover::after { left: 130%; }
+                #watchPartyChatForm button:active { transform: translateY(-50%) scale(.93); }
                 body.watch-party-guest #playPauseBtn,
                 body.watch-party-guest #skipBackBtn,
                 body.watch-party-guest #skipFwdBtn,
@@ -12927,7 +13125,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     #watchPartyMessages {
                         right: 12px;
                         bottom: 240px;
-                        width: min(calc(100vw - 24px), 200px);
+                        width: min(calc(100vw - 24px), 300px);
                     }
                     #watchPartyChatForm {
                         position: fixed;
@@ -12935,7 +13133,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         right: 12px;
                         bottom: 156px;
                         transform: none;
-                        width: min(calc(100vw - 24px), 200px);
+                        width: min(calc(100vw - 24px), 300px);
                         z-index: 10050;
                         margin: 0;
                     }
@@ -12982,12 +13180,12 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     #watchPartyMessages {
                         right: 10px;
                         bottom: 228px;
-                        width: min(calc(100vw - 20px), 196px);
+                        width: min(calc(100vw - 20px), 280px);
                     }
                     #watchPartyChatForm {
                         bottom: 148px;
                         right: 10px;
-                        width: min(calc(100vw - 20px), 196px);
+                        width: min(calc(100vw - 20px), 280px);
                     }
                 }
                 @media (max-width: 640px) and (min-height: 541px) {
@@ -13054,12 +13252,12 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     #watchPartyMessages {
                         right: 8px;
                         bottom: 236px;
-                        width: min(calc(100vw - 16px), 188px);
+                        width: min(calc(100vw - 16px), 300px);
                     }
                     #watchPartyChatForm {
                         bottom: 152px;
                         right: 8px;
-                        width: min(calc(100vw - 16px), 188px);
+                        width: min(calc(100vw - 16px), 300px);
                     }
                 }
             `;
@@ -13147,6 +13345,33 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
             });
             renderWatchPartyView();
+            positionWatchPartyChat();
+            window.addEventListener('resize', positionWatchPartyChat);
+            window.addEventListener('orientationchange', positionWatchPartyChat);
+            document.addEventListener('fullscreenchange', positionWatchPartyChat);
+            document.addEventListener('webkitfullscreenchange', positionWatchPartyChat);
+            document.addEventListener('mozfullscreenchange', positionWatchPartyChat);
+            document.addEventListener('MSFullscreenChange', positionWatchPartyChat);
+        }
+
+        function positionWatchPartyChat() {
+            const form = document.getElementById('watchPartyChatForm');
+            const msgs = document.getElementById('watchPartyMessages');
+            if (!form) return;
+            const controlBottom = document.querySelector('.control-bottom');
+            const controlsVisible = controlSurface?.classList.contains('visible');
+            let baseBottom = 156;
+            if (controlBottom && controlsVisible) {
+                const rect = controlBottom.getBoundingClientRect();
+                const gap = 14;
+                baseBottom = Math.max(12, Math.round(window.innerHeight - rect.top + gap));
+            } else if (!controlsVisible) {
+                baseBottom = 16;
+            }
+            const maxBottom = window.innerHeight - form.offsetHeight - 16;
+            baseBottom = Math.min(baseBottom, Math.max(16, maxBottom));
+            form.style.bottom = baseBottom + 'px';
+            msgs.style.bottom = (baseBottom + form.offsetHeight + 8) + 'px';
         }
 
         function updateWatchPartyButtonState() {
@@ -13383,7 +13608,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
 
         function getWatchPartyRoomMarkup() {
             const hostLabel = escapeWatchPartyHtml(watchPartyHostName || (watchPartyRole === 'host' ? (watchPartyName || getWatchPartyName()) : 'Unknown'));
-            const isDisconnected = !watchPartySocket || watchPartySocket.readyState !== WebSocket.OPEN;
+            const isDisconnected = watchPartyTransportMode !== 'http' && (!watchPartySocket || watchPartySocket.readyState !== WebSocket.OPEN);
             return `
                 <div class="watch-party-label">${escapeWatchPartyHtml(watchPartyName || getWatchPartyName())},</div>
                 <div class="watch-party-room-badge">
@@ -13780,7 +14005,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 const isSelf = member?.id === userId;
                 const name = escapeWatchPartyHtml(String(member?.name || 'Unknown').slice(0, 24));
                 const displayName = name;
-                const crown = isHost ? '<i class="fa-solid fa-crown" style="color:gold;font-size:12px;width:16px;text-align:center;filter:drop-shadow(0 0 3px rgba(255,215,0,.5))"></i>' : '<span style="width:16px;display:inline-block"></span>';
+                const crown = isHost ? '<i class="fa-solid fa-crown" style="color:gold;font-size:14px;width:20px;text-align:center;filter:drop-shadow(0 0 3px rgba(255,215,0,.5))"></i>' : '<span style="width:20px;display:inline-block"></span>';
                 const selfTag = isSelf ? ' <span style="font-size:10px;font-weight:600;background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;color:rgba(255,255,255,.46);margin-left:2px">you</span>' : '';
                 let actions = '';
                 if (watchPartyRole === 'host' && !isHost && member?.id) {
@@ -13923,6 +14148,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 if (!document.body.classList.contains('watch-party-open') || watchPartyChatCollapsed) {
                     watchPartyHasUnread = true;
                     updateWatchPartyButtonState();
+                    showWatchPartyMsgPopup(msg);
                 }
             }
             if (msg.type === 'room:destroyed') {

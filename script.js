@@ -5998,8 +5998,9 @@ function initHomeWatchParty() {
     let chatMessages = [];
     let homeWpAudioCtx = null;
     let homeWpChatCooldownUntil = 0;
-    const RECONNECT_DELAYS = [1000, 2000, 4000, 8000];
+const RECONNECT_DELAYS = [1000, 2000, 4000, 8000];
     let reconnectTimer = null;
+    let homePendingMessages = [];
 
     // Parse wpRoom/wpUser from URL for guest navigation from player.html
     (function() {
@@ -6033,23 +6034,91 @@ function initHomeWatchParty() {
         }
     }
 
+    let homePollMode = false;
+    let homePollClientId = '';
+    let homePollTimer = null;
+    let homeWsFailed = false;
+
+    function getHomeApiRoot() {
+        const root = String((getCurrentApiSource() === 'local' ? LOCAL_API : PROD_API) || '').replace(/\/meta\/tmdb\/?$/i, '');
+        return root || location.origin;
+    }
+
+    function getHomePollClientId() {
+        if (homePollClientId) return homePollClientId;
+        homePollClientId = (() => { try { return String(sessionStorage.getItem('wpPollId') || ''); } catch (_) { return ''; } })();
+        if (!homePollClientId) {
+            homePollClientId = 'c' + Math.random().toString(36).slice(2, 12);
+            try { sessionStorage.setItem('wpPollId', homePollClientId); } catch (_) {}
+        }
+        return homePollClientId;
+    }
+
+    function startHomeHttpPolling() {
+        if (homePollMode) return;
+        homePollMode = true;
+        console.log('[watch-party-home] WebSocket blocked; using HTTP polling fallback');
+        if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+        const pending = homePendingMessages.splice(0);
+        pending.forEach((message) => {
+            try {
+                const parsed = JSON.parse(message);
+                if (parsed && parsed.type) {
+                    const { type, ...payload } = parsed;
+                    send({ type, ...payload });
+                }
+            } catch (_) {}
+        });
+        const poll = () => {
+            const base = getHomeApiRoot();
+            fetch(`${base}/watch-party/poll?clientId=${encodeURIComponent(getHomePollClientId())}`, { cache: 'no-store' })
+                .then((res) => res.json())
+                .then((data) => {
+                    if (data && Array.isArray(data.events)) {
+                        data.events.forEach((msg) => {
+                            if (msg && msg.type) handleMsg(msg);
+                        });
+                    }
+                })
+                .catch(() => {});
+        };
+        poll();
+        if (homePollTimer) clearInterval(homePollTimer);
+        homePollTimer = setInterval(poll, 1800);
+    }
+
     function ensureSocket() {
+        if (homePollMode) return null;
         if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return ws;
         if (ws) { try { ws.close(); } catch (_) {} }
         ws = new WebSocket(wsUrl());
+        let settled = false;
+        const fallback = () => {
+            if (settled) return;
+            settled = true;
+            startHomeHttpPolling();
+        };
         ws.addEventListener('open', () => {
+            settled = true;
+            homeWsFailed = false;
             reconnectAttempts = 0;
             if (roomCode) {
                 send({ type: 'room:join', code: roomCode, name: name || getName(), previousUserId: userId });
             }
         });
         ws.addEventListener('close', () => {
+            if (homePollMode) return;
             if (!intentionallyLeft && roomCode && reconnectAttempts < RECONNECT_DELAYS.length) {
                 const delay = RECONNECT_DELAYS[reconnectAttempts];
                 reconnectAttempts++;
                 reconnectTimer = setTimeout(() => { ensureSocket(); }, delay);
             }
         });
+        ws.addEventListener('error', () => {
+            homeWsFailed = true;
+            setTimeout(fallback, 500);
+        });
+        setTimeout(() => { if (!homePollMode && !settled) fallback(); }, 4000);
         ws.addEventListener('message', (e) => {
             try {
                 const msg = JSON.parse(e.data);
@@ -6060,8 +6129,19 @@ function initHomeWatchParty() {
     }
 
     function send(data) {
+        if (homePollMode) {
+            const base = getHomeApiRoot();
+            fetch(`${base}/watch-party/action`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId: getHomePollClientId(), ...data }),
+            }).catch(() => {});
+            return;
+        }
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(data));
+        } else if (ws && ws.readyState === WebSocket.CONNECTING) {
+            homePendingMessages.push(JSON.stringify(data));
         }
     }
 
