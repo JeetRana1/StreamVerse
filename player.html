@@ -11711,8 +11711,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             preferencesMenu.appendChild(outroRow);
         }
 
-        const WATCH_PARTY_DRIFT_TOLERANCE = 0.2;
-        const WATCH_PARTY_SOFT_DRIFT_TOLERANCE = 0.05;
+        const WATCH_PARTY_DRIFT_TOLERANCE = 1.0;
+        const WATCH_PARTY_SOFT_DRIFT_TOLERANCE = 0.08;
         const WATCH_PARTY_SYNC_HEARTBEAT_MS = 1500;
         const WATCH_PARTY_GUEST_PLAYBACK_LATENCY = 0.12;
         let watchPartySocket = null;
@@ -14362,6 +14362,9 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
         function enforceWatchPartyRemotePlayback(state = watchPartyLastRemoteState, options = {}) {
             if (watchPartyRole !== 'guest' || !state || !video) return;
             const hostTime = options.fixedTime !== undefined ? options.fixedTime : getAdjustedWatchPartyTime(state || {});
+            // While the guest is still buffering, avoid hard seeks/rate changes that
+            // interrupt the video element and cause stalling.
+            const buffering = Date.now() < watchPartyGuestBufferingUntil;
             const isLivePlayback = state.paused === false && state.action !== 'play' && state.action !== 'pause' && state.action !== 'seek' && state.action !== 'route';
             const targetTime = Math.max(0, hostTime);
             const shouldForceSeek = options.forceSeek === true || state.action === 'seek' || state.action === 'route';
@@ -14376,15 +14379,15 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 try { video.pause(); } catch (_) { }
             } else if (state.paused === false || state.action === 'play') {
                 userPaused = false;
-                if (shouldForceSeek) {
+                if (shouldForceSeek && !buffering) {
                     const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
                     if (video.readyState >= 1) seekToHost();
                     else video.addEventListener('loadedmetadata', seekToHost, { once: true });
-                } else if (drift > WATCH_PARTY_DRIFT_TOLERANCE) {
+                } else if (!buffering && drift > WATCH_PARTY_DRIFT_TOLERANCE) {
                     const seekToHost = () => { try { video.currentTime = Math.max(0, targetTime); } catch (_) { } };
                     if (video.readyState >= 1) seekToHost();
                     else video.addEventListener('loadedmetadata', seekToHost, { once: true });
-                } else if (isLivePlayback && canSoftCorrect && drift > WATCH_PARTY_SOFT_DRIFT_TOLERANCE) {
+                } else if (canSoftCorrect && drift > WATCH_PARTY_SOFT_DRIFT_TOLERANCE) {
                     const nextRate = getWatchPartyDynamicRate(signedDrift);
                     const dur = Math.max(800, Math.min(3000, drift * 60 * 5));
                     setWatchPartyGuestPlaybackRate(nextRate, dur);
