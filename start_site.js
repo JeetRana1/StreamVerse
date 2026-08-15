@@ -2,8 +2,21 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const os = require('os');
 const { Readable } = require('stream');
 const { spawn } = require('child_process');
+
+function detectLanIp() {
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+        for (const info of ifaces[name] || []) {
+            if (info.family === 'IPv4' && !info.internal && /^192\.168\./.test(info.address)) {
+                return info.address;
+            }
+        }
+    }
+    return '127.0.0.1';
+}
 
 const DEFAULT_SITE_PORT = 3005;
 const SITE_DIR = __dirname;
@@ -39,7 +52,16 @@ for (const [k, v] of Object.entries(envFromFile)) {
 
 const apiEnvFromFile = parseDotEnv(API_ENV_PATH);
 const API_PORT = Number(process.env.API_PORT || apiEnvFromFile.PORT || 3000);
-const SITE_API_BASE = process.env.SITE_API_BASE || `http://127.0.0.1:${API_PORT}`;
+const detectedLanIp = detectLanIp();
+const configuredApiBase = process.env.SITE_API_BASE || `http://127.0.0.1:${API_PORT}`;
+const configuredLanIp = (configuredApiBase.match(/^https?:\/\/([^:/]+)/) || [])[1] || '';
+const currentIps = new Set(
+    Object.values(os.networkInterfaces()).flat().filter(Boolean).map((i) => i.address)
+);
+const SITE_API_BASE =
+    configuredLanIp && configuredLanIp !== '127.0.0.1' && !currentIps.has(configuredLanIp)
+        ? configuredApiBase.replace(configuredLanIp, detectedLanIp)
+        : configuredApiBase;
 const SITE_META_API_BASE = process.env.SITE_META_API_BASE || `${SITE_API_BASE.replace(/\/$/, '')}/meta/tmdb`;
 const SITE_STREAM_API_BASE =
     process.env.SITE_STREAM_API_BASE ||
