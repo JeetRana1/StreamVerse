@@ -3625,6 +3625,18 @@ function normalizeModalTvSeasons(movie, options = {}) {
     return [];
 }
 
+function normalizeModalTitleForMatch(v) {
+    return String(v || '')
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/\(([^)]*)\)/g, ' ')
+        .replace(/\[[^\]]*\]/g, ' ')
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 async function fetchModalHdstreamBonusSeason(movie, id) {
     const title = String(movie?.title || movie?.name || '').trim();
     const tmdbId = normalizeTmdbId(id);
@@ -3648,25 +3660,40 @@ async function fetchModalHdstreamBonusSeason(movie, id) {
                 String(episode?.seasonName || '').toLowerCase() === 'bonus' ||
                 /bonus/i.test(String(episode?.title || episode?.name || episode?.episodeName || ''));
             if (!isBonus) return false;
-            const titleKey = normalizeTitleForMatch(String(episode?.title || episode?.name || episode?.episodeName || ''));
+            const titleKey = normalizeModalTitleForMatch(String(episode?.title || episode?.name || episode?.episodeName || ''));
             const idKey = String(episode?.episodeId || episode?.url || episode?.id || '').trim().toLowerCase();
             const key = titleKey || idKey;
             if (!key || seen.has(key)) return false;
             seen.add(key);
             return true;
         });
-        if (!bonusEpisodes.length) return null;
+        if (!bonusEpisodes.length && tmdbId !== '262838') return null;
+        const archiveBonusUrls = {
+            2: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2BE2.mkv',
+        };
+        const bonusThumbnails = {
+            1: 'https://media.themoviedb.org/t/p/w160_and_h90_face/wC7frShPQxJoZ8QwuhpXC1kRkgg.jpg',
+            2: 'https://i.ytimg.com/vi/otawyZaOxvs/maxresdefault.jpg',
+        };
+        const customBonusTitles = tmdbId === '262838'
+            ? {
+                1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
+                2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
+            }
+            : {};
         return {
             seasonNo: 0,
             seasonTitle: 'Bonus',
             seasonKey: String(match.url || match.id || '').trim(),
             seasonImage: getModalEpisodeImage(movie),
-            episodes: bonusEpisodes.map((episode, index) => ({
+            episodes: (bonusEpisodes.length ? bonusEpisodes : [{ title: 'Bonus EP 1' }, { title: 'Bonus EP 2' }]).map((episode, index) => ({
                 ...episode,
                 episodeNo: index + 1,
-                title: String(episode?.title || episode?.name || `Bonus EP ${index + 1}`).trim(),
-                name: String(episode?.title || episode?.name || `Bonus EP ${index + 1}`).trim(),
-                image: getModalEpisodeImage(episode, getModalEpisodeImage(movie)),
+                id: archiveBonusUrls[index + 1] || String(episode?.episodeId || episode?.url || episode?.id || '').trim(),
+                url: archiveBonusUrls[index + 1] || String(episode?.url || episode?.episodeId || '').trim(),
+                title: customBonusTitles[index + 1] || String(episode?.title || episode?.name || `Bonus EP ${index + 1}`).trim(),
+                name: customBonusTitles[index + 1] || String(episode?.title || episode?.name || `Bonus EP ${index + 1}`).trim(),
+                image: bonusThumbnails[index + 1] || getModalEpisodeImage(episode, getModalEpisodeImage(movie)),
             })),
         };
     } catch (_) {
@@ -3809,7 +3836,9 @@ function isModalCurrentlyWatchingEpisode(continueEntry, seasonNo, episodeNo, pro
 
 function buildModalTvEpisodesSection(movie, id, type, provider = '') {
     if (String(type).toLowerCase() !== 'tv') return '';
-    const seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false });
+    const hideIndiaGotLatentSeasonOne = normalizeTmdbId(id) === '262838';
+    const seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false })
+        .filter((season) => !hideIndiaGotLatentSeasonOne || Number(season.seasonNo) !== 1);
     if (!seasons.length) return '';
     const selectedSeason = seasons.find((season) => Number(season.seasonNo) === 1) || seasons[0];
     const providerOptions = getModalEpisodeProviderOptions(movie, provider);
@@ -3892,13 +3921,15 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
     if (!root || !dropdown || !select || !menu || !list) return;
 
     let selectedProvider = 'tmdb';
-    let seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false });
+    const hideIndiaGotLatentSeasonOne = normalizeTmdbId(id) === '262838';
+    let seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false })
+        .filter((season) => !hideIndiaGotLatentSeasonOne || Number(season.seasonNo) !== 1);
     if (!seasons.length) return;
     const apiSource = getCurrentApiSource();
     const state = readModalEpisodeState(id, type);
     const continueEntry = readModalContinueWatchingEntry(id, type);
     const modalFallbackImage = getCover(movie) || getPoster(movie) || getModalEpisodeImage(movie);
-    let selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo || seasons[0]?.seasonNo || 1);
+    let selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo ?? seasons[0]?.seasonNo ?? 1);
 
     const setDropdownOpen = (isOpen) => {
         dropdown.classList.toggle('open', isOpen);
@@ -3906,7 +3937,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
     };
 
     const syncDropdownSelection = (season) => {
-        selectedSeasonNo = Number(season?.seasonNo || selectedSeasonNo || 1);
+        selectedSeasonNo = Number(season?.seasonNo ?? selectedSeasonNo ?? 1);
         if (currentLabel) currentLabel.textContent = season?.seasonTitle || `Season ${selectedSeasonNo}`;
         menu.querySelectorAll('.modal-season-option').forEach((option) => {
             const isSelected = Number(option.dataset.season || 0) === selectedSeasonNo;
@@ -3917,7 +3948,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
 
     const rebuildSeasonMenu = () => {
         const selectedSeason = seasons.find((season) => Number(season.seasonNo) === selectedSeasonNo) || seasons[0];
-        selectedSeasonNo = Number(selectedSeason?.seasonNo || 1);
+        selectedSeasonNo = Number(selectedSeason?.seasonNo ?? 1);
         menu.innerHTML = seasons.map((season) => `
             <button type="button"
                     class="modal-season-option ${Number(season.seasonNo) === selectedSeasonNo ? 'selected' : ''}"
@@ -3930,7 +3961,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
         menu.querySelectorAll('.modal-season-option').forEach((option) => {
             option.addEventListener('click', (event) => {
                 event.stopPropagation();
-                renderSeason(option.dataset.season || '1');
+                renderSeason(option.dataset.season ?? '1');
                 setDropdownOpen(false);
             });
         });
@@ -3953,7 +3984,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
     };
 
     const renderSeason = (seasonNoValue) => {
-        const seasonNo = Number(seasonNoValue || 1);
+        const seasonNo = Number(seasonNoValue ?? 1);
         const season = seasons.find((row) => Number(row.seasonNo) === seasonNo) || seasons[0];
         if (!season) return;
         syncDropdownSelection(season);
@@ -4094,7 +4125,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
                 setProviderDropdownOpen(false);
                 return;
             }
-        selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo || seasons[0]?.seasonNo || 1);
+        selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo ?? seasons[0]?.seasonNo ?? 1);
             rebuildSeasonMenu();
             renderSeason(selectedSeasonNo);
             setProviderDropdownOpen(false);

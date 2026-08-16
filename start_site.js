@@ -53,7 +53,7 @@ for (const [k, v] of Object.entries(envFromFile)) {
 const apiEnvFromFile = parseDotEnv(API_ENV_PATH);
 const API_PORT = Number(process.env.API_PORT || apiEnvFromFile.PORT || 3000);
 const detectedLanIp = detectLanIp();
-const configuredApiBase = process.env.SITE_API_BASE || `http://127.0.0.1:${API_PORT}`;
+const configuredApiBase = process.env.SITE_API_BASE || `http://${detectedLanIp}:${API_PORT}`;
 const configuredLanIp = (configuredApiBase.match(/^https?:\/\/([^:/]+)/) || [])[1] || '';
 const currentIps = new Set(
     Object.values(os.networkInterfaces()).flat().filter(Boolean).map((i) => i.address)
@@ -396,6 +396,7 @@ const server = http.createServer((req, res) => {
 function listenSite(startPort) {
     server.listen(startPort, () => {
         console.log(`Site running at http://localhost:${startPort}`);
+        console.log(`LAN test URL: http://${detectedLanIp}:${startPort}`);
         console.log(`API expected at ${SITE_META_API_BASE}`);
     });
 

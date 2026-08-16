@@ -2008,30 +2008,82 @@
             box-shadow: 0 0 10px rgba(239,68,68,.35);
         }
 
-        .skip-segment-btn {
+        /* --- Liquid-glass skip / next-episode buttons --- */
+        .skip-segment-btn,
+        .next-episode-btn {
             position: fixed;
             right: 40px;
-            bottom: 120px;
             z-index: 340;
-            border: 1px solid rgba(255, 255, 255, 0.10);
+            border: 1px solid rgba(255, 255, 255, 0.18);
             border-radius: 18px;
-            background: linear-gradient(135deg, rgba(12, 12, 14, 0.82), rgba(18, 18, 20, 0.56));
             color: #fff;
             padding: 14px 24px;
             font-size: .95rem;
             font-weight: 700;
             cursor: pointer;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
             display: none;
             align-items: center;
-            gap: 10px;
-            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
             letter-spacing: 0.5px;
             white-space: nowrap;
             overflow: hidden;
             isolation: isolate;
+            /* Liquid-glass surface: translucent light layer over a dark base,
+               heavy backdrop blur + saturation, specular inner edge */
+            background:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 45%, rgba(255, 255, 255, 0.02) 100%),
+                linear-gradient(135deg, rgba(22, 24, 30, 0.62), rgba(10, 12, 16, 0.40));
+            -webkit-backdrop-filter: blur(24px) saturate(190%);
+            backdrop-filter: blur(24px) saturate(190%);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.32),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+                inset 0 0 24px rgba(255, 255, 255, 0.05),
+                0 18px 50px rgba(0, 0, 0, 0.45);
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+        }
+
+        .skip-segment-btn {
+            bottom: 120px;
+            gap: 10px;
+        }
+
+        .next-episode-btn {
+            bottom: 180px;
+            /* Positioned above skip button when both active */
+            gap: 12px;
+        }
+
+        /* Liquid sheen sweeping across the glass surface */
+        .skip-segment-btn::after,
+        .next-episode-btn::after {
+            content: '';
+            position: absolute;
+            top: -12%;
+            bottom: -12%;
+            left: 0;
+            width: 45%;
+            background: linear-gradient(
+                105deg,
+                transparent 0%,
+                rgba(255, 255, 255, 0.10) 40%,
+                rgba(255, 255, 255, 0.22) 50%,
+                rgba(255, 255, 255, 0.10) 60%,
+                transparent 100%
+            );
+            transform: translateX(-170%) skewX(-18deg);
+            pointer-events: none;
+            z-index: 0;
+            animation: liquid-glass-sheen 5s ease-in-out infinite;
+        }
+
+        @keyframes liquid-glass-sheen {
+            0%, 55% {
+                transform: translateX(-170%) skewX(-18deg);
+            }
+            85%, 100% {
+                transform: translateX(340%) skewX(-18deg);
+            }
         }
 
         .skip-segment-btn::before {
@@ -2082,39 +2134,18 @@
             flex: 0 0 auto;
         }
 
-        .skip-segment-btn:hover {
-            background: linear-gradient(135deg, rgba(18, 18, 20, 0.92), rgba(24, 24, 28, 0.66));
-            border-color: rgba(229, 9, 20, 0.45);
-            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5), 0 0 22px rgba(229, 9, 20, 0.20);
+        .skip-segment-btn:hover,
+        .next-episode-btn:hover {
+            border-color: rgba(255, 255, 255, 0.34);
+            background:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.08) 45%, rgba(255, 255, 255, 0.03) 100%),
+                linear-gradient(135deg, rgba(28, 30, 36, 0.66), rgba(14, 16, 20, 0.46));
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.42),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.10),
+                0 22px 60px rgba(0, 0, 0, 0.55),
+                0 0 24px rgba(229, 9, 20, 0.20);
             transform: translateY(-2px);
-        }
-
-        .next-episode-btn {
-            position: fixed;
-            right: 40px;
-            bottom: 180px;
-            /* Positioned above skip button when both active */
-            z-index: 340;
-            border: 1px solid rgba(255, 255, 255, 0.10);
-            border-radius: 18px;
-            background: linear-gradient(135deg, rgba(12, 12, 14, 0.82), rgba(18, 18, 20, 0.56));
-            color: #fff;
-            padding: 14px 24px;
-            font-size: .95rem;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            display: none;
-            align-items: center;
-            gap: 12px;
-            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
-            letter-spacing: 0.5px;
-            white-space: nowrap;
-            overflow: hidden;
-            /* Scope mix-blend-mode to THIS button only, not video beneath */
-            isolation: isolate;
         }
 
         /* Progress fill sweep */
@@ -2155,14 +2186,6 @@
             z-index: 1;
             mix-blend-mode: normal;
             color: #fff;
-        }
-
-        .next-episode-btn:hover {
-            /* Keep background dark Ã¢â‚¬â€ light hover + difference = invisible white text */
-            background: linear-gradient(135deg, rgba(18, 18, 20, 0.92), rgba(24, 24, 28, 0.66));
-            border-color: rgba(229, 9, 20, 0.45);
-            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5), 0 0 22px rgba(229, 9, 20, 0.20);
-            transform: translateY(-2px);
         }
 
         /* Hide legacy floating buttons (replaced by custom control surface actions) */
@@ -3040,6 +3063,41 @@
             }
 
             @media (orientation: portrait) {
+                .player-header.top-meta {
+                    gap: 10px;
+                    align-items: flex-start;
+                }
+
+                .player-header.top-meta .header-poster {
+                    width: 64px;
+                    height: 88px;
+                    flex-basis: 64px;
+                }
+
+                .player-header.top-meta .header-info {
+                    display: block;
+                    min-width: 0;
+                    max-width: calc(100vw - 102px - var(--safe-left) - var(--safe-right));
+                    padding-top: 4px;
+                    transform: none;
+                }
+
+                .player-header.top-meta .header-info h2 {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    font-size: 18px;
+                    line-height: 1.15;
+                }
+
+                .player-header.top-meta .header-info p {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    margin-top: 5px;
+                    font-size: 12px;
+                }
+
                 .ctrl-icon:not(#fullscreenBtn):not(#custom-audio-btn):not(#customEpisodeBtn) {
                     display: none !important;
                 }
@@ -3834,15 +3892,498 @@
          #audio-panel { width: min(268px, calc(100vw - 32px)); }
          #ep-panel { width: min(600px, calc(100vw - 20px)); max-height: min(65vh, 520px); }
 
-         @media (pointer: coarse) {
-             .control-menu { min-width: 180px; max-width: min(88vw, 260px); }
-             .control-menu.episode-menu,
-             #ep-panel { width: min(360px, calc(100vw - 28px)); max-width: min(360px, calc(100vw - 28px)); max-height: 65vh; }
+          @media (pointer: coarse) {
+              .control-menu { min-width: 180px; max-width: min(88vw, 260px); }
+              .control-menu.episode-menu,
+              #ep-panel { width: min(360px, calc(100vw - 28px)); max-width: min(360px, calc(100vw - 28px)); max-height: 65vh; }
              #source-panel,
-             #audio-panel { width: min(268px, calc(100vw - 28px)); max-width: min(268px, calc(100vw - 28px)); }
-         }
+              #audio-panel { width: min(268px, calc(100vw - 28px)); max-width: min(268px, calc(100vw - 28px)); }
+          }
 
-    </style>
+          /* Final responsive episode-panel sizing across phones, tablets and desktop. */
+          #ep-panel {
+              box-sizing: border-box;
+              width: min(680px, calc(100vw - 32px));
+              max-width: calc(100vw - 32px);
+              max-height: min(78dvh, 720px);
+              min-height: 0;
+              overflow: hidden;
+              overscroll-behavior: contain;
+              transition: none;
+          }
+
+          #ep-panel .ep-panel-scroll {
+              min-height: 0;
+              max-height: none;
+              overflow-y: auto;
+              overflow-x: hidden;
+              overscroll-behavior: contain;
+              -webkit-overflow-scrolling: touch;
+              touch-action: pan-y;
+              transition: opacity 120ms ease-out;
+          }
+
+          #ep-panel .ep-season-tabs,
+          #ep-panel .ep-episode-tabs-wrap {
+              min-width: 0;
+              max-width: 100%;
+              touch-action: pan-x;
+              overscroll-behavior-x: contain;
+              -webkit-overflow-scrolling: touch;
+          }
+
+          #ep-panel .ep-item {
+              min-width: 0;
+              max-width: 100%;
+          }
+
+          #ep-panel .ep-item-copy,
+          #ep-panel .ep-item-title,
+          #ep-panel .ep-item-desc {
+              min-width: 0;
+          }
+
+          @media (pointer: coarse), (max-width: 720px) {
+              #ep-panel {
+                  left: max(4px, env(safe-area-inset-left)) !important;
+                  right: max(4px, env(safe-area-inset-right)) !important;
+                  bottom: calc(76px + env(safe-area-inset-bottom)) !important;
+                  width: auto !important;
+                  max-width: none !important;
+                  max-height: min(76dvh, calc(100dvh - 96px)) !important;
+                  padding: 16px 8px calc(10px + env(safe-area-inset-bottom)) !important;
+                  border-radius: 22px !important;
+              }
+
+              #ep-panel .ep-panel-scroll {
+                  max-height: calc(min(76dvh, calc(100dvh - 96px)) - 62px) !important;
+                  padding: 4px !important;
+                  margin: 0 !important;
+                  gap: 8px !important;
+              }
+
+              #ep-panel .ep-item {
+                  min-height: clamp(92px, 20vw, 112px) !important;
+                  border-radius: 14px !important;
+              }
+
+              #ep-panel .ep-item-thumb {
+                  width: clamp(84px, 23vw, 116px) !important;
+                  flex: 0 0 clamp(84px, 23vw, 116px) !important;
+              }
+
+              #ep-panel .ep-item-copy {
+                  padding-right: 8px !important;
+              }
+
+              #ep-panel .ep-item-title {
+                  display: block;
+                  max-width: 100%;
+                  white-space: nowrap;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  font-size: clamp(.72rem, 2.5vw, .94rem) !important;
+              }
+
+              #ep-panel .ep-item-desc {
+                  font-size: clamp(.62rem, 2vw, .74rem) !important;
+              }
+          }
+
+          @media (pointer: coarse) and (orientation: landscape) {
+              #ep-panel {
+                  left: auto !important;
+                  right: max(12px, env(safe-area-inset-right)) !important;
+                  width: min(540px, 56vw) !important;
+                  max-width: 56vw !important;
+                  bottom: calc(70px + env(safe-area-inset-bottom)) !important;
+                  max-height: min(90dvh, calc(100dvh - 30px)) !important;
+                  transform: none !important;
+              }
+
+              #ep-panel.open {
+                  transform: none !important;
+              }
+
+              #ep-panel .ep-panel-scroll {
+                  max-height: calc(min(90dvh, calc(100dvh - 30px)) - 62px) !important;
+              }
+          }
+
+          @media (min-width: 721px) and (min-height: 700px) {
+              #ep-panel {
+                  width: min(760px, calc(100vw - 40px));
+                  max-width: calc(100vw - 40px);
+                  max-height: min(78dvh, 760px);
+              }
+          }
+
+          @media (min-width: 721px) {
+              .player-header.top-meta {
+                  gap: 18px;
+                  padding: calc(24px + var(--safe-top)) 28px 24px;
+              }
+
+              .player-header.top-meta .header-poster {
+                  width: 68px;
+                  height: 94px;
+                  flex-basis: 68px;
+                  border-radius: 10px;
+              }
+
+              .player-header.top-meta .header-info h2 {
+                  font-size: clamp(30px, 3.2vw, 44px);
+                  line-height: 1.05;
+              }
+
+              .player-header.top-meta .header-info p {
+                  margin-top: 10px;
+                  font-size: clamp(13px, 1.15vw, 17px);
+              }
+
+          }
+
+          /* Liquid-glass episode panel */
+          #ep-panel {
+              isolation: isolate;
+              border: 1px solid rgba(255, 255, 255, .22) !important;
+              background: rgba(13, 14, 20, .62) !important;
+              -webkit-backdrop-filter: blur(30px) saturate(165%);
+              backdrop-filter: blur(30px) saturate(165%);
+              box-shadow:
+                  inset 0 1px 0 rgba(255, 255, 255, .34),
+                  inset 0 -1px 0 rgba(255, 255, 255, .08),
+                  0 30px 90px rgba(0, 0, 0, .58),
+                  0 0 50px rgba(201, 53, 126, .12) !important;
+          }
+
+          #ep-panel::after {
+              content: '';
+              position: absolute;
+              inset: 0;
+              z-index: -1;
+              pointer-events: none;
+              border-radius: inherit;
+              background: rgba(255, 255, 255, .035);
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18);
+          }
+
+          #ep-panel .ep-panel-head {
+              min-height: 38px;
+              padding: 0 6px 8px !important;
+              border-bottom: 1px solid rgba(255, 255, 255, .10);
+          }
+
+          #ep-panel .ep-mark-seen-btn {
+              border-color: rgba(255, 255, 255, .18);
+              background: rgba(255, 255, 255, .08);
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 8px 24px rgba(0, 0, 0, .18);
+              -webkit-backdrop-filter: blur(12px);
+              backdrop-filter: blur(12px);
+          }
+
+          #ep-panel .ep-season-tabs-wrap {
+              margin-top: 8px;
+              border: 1px solid rgba(255, 255, 255, .12);
+              background: rgba(30, 31, 40, .46);
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+              -webkit-backdrop-filter: blur(16px);
+              backdrop-filter: blur(16px);
+          }
+
+          #ep-panel .ep-season-tabs button,
+          #ep-panel .ep-episode-tab {
+              border-color: rgba(255, 255, 255, .14);
+              background: rgba(255, 255, 255, .085);
+              color: rgba(255, 255, 255, .74);
+              transition: transform .2s ease, background .2s ease, border-color .2s ease, color .2s ease;
+          }
+
+          #ep-panel .ep-season-tabs button:hover,
+          #ep-panel .ep-episode-tab:hover {
+              transform: translateY(-1px);
+              border-color: rgba(255, 255, 255, .30);
+              background: rgba(255, 255, 255, .15);
+              color: #fff;
+          }
+
+          #ep-panel .ep-season-tabs button.active,
+          #ep-panel .ep-episode-tab.active {
+              border-color: rgba(255, 116, 158, .78);
+              background: rgba(139, 45, 91, .88);
+              color: #fff;
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 5px 18px rgba(205, 42, 117, .20);
+          }
+
+          #ep-panel .ep-item {
+              border: 1px solid rgba(255, 255, 255, .10) !important;
+              background: rgba(32, 33, 42, .38) !important;
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .11), 0 10px 26px rgba(0, 0, 0, .16);
+              -webkit-backdrop-filter: blur(14px);
+              backdrop-filter: blur(14px);
+              overflow: hidden !important;
+          }
+
+          #ep-panel .ep-item:hover {
+              transform: translateY(-2px) !important;
+              border-color: rgba(255, 255, 255, .26) !important;
+              background: rgba(55, 57, 70, .50) !important;
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 14px 30px rgba(0, 0, 0, .25);
+          }
+
+          #ep-panel .ep-item.active {
+              border-color: rgba(255, 104, 148, .78) !important;
+              background: rgba(37, 45, 67, .52) !important;
+              outline: none !important;
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 0 24px rgba(221, 39, 115, .18) !important;
+          }
+
+          #ep-panel .ep-item.has-mark-seen .ep-item-copy {
+              padding-right: clamp(145px, 30%, 250px) !important;
+          }
+
+          #ep-panel .ep-item-title {
+              display: -webkit-box;
+              -webkit-box-orient: vertical;
+              line-clamp: 2;
+              -webkit-line-clamp: 2;
+              white-space: normal;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              line-height: 1.18 !important;
+          }
+
+          #ep-panel .ep-item .ep-mark-seen-btn.current {
+              max-width: min(320px, 42vw);
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+              border-color: rgba(92, 255, 165, .62);
+              background: rgba(52, 190, 119, .18);
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 0 18px rgba(52, 220, 135, .12);
+          }
+
+          #ep-panel .ep-item .ep-mark-seen-btn.current span {
+              overflow: hidden;
+              text-overflow: ellipsis;
+          }
+
+          #ep-panel .ep-item.bonus-episode {
+              border-color: rgba(255, 190, 95, .28) !important;
+              background: rgba(48, 40, 31, .46) !important;
+          }
+
+          #ep-panel .ep-item.bonus-episode.active {
+              border-color: rgba(255, 104, 148, .78) !important;
+              background: rgba(37, 45, 67, .52) !important;
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 0 24px rgba(221, 39, 115, .18) !important;
+          }
+
+          #ep-panel .ep-item-info {
+              min-width: 0 !important;
+              width: 100% !important;
+              overflow: hidden;
+          }
+
+          #ep-panel .ep-item-thumb {
+              width: clamp(88px, 22vw, 150px) !important;
+              flex: 0 0 clamp(88px, 22vw, 150px) !important;
+              min-width: 0;
+              height: 100%;
+              align-self: stretch;
+              margin: 0 !important;
+              border: 1px solid rgba(255, 255, 255, .20) !important;
+              border-radius: 16px !important;
+              overflow: hidden !important;
+              clip-path: inset(0 round 16px);
+          }
+
+          #ep-panel .ep-item-copy {
+              flex: 1 1 0 !important;
+              width: 0;
+              min-width: 0;
+          }
+
+          #ep-panel .ep-item-title,
+          #ep-panel .ep-item-desc {
+              transform: translateY(-4px);
+          }
+
+          #ep-panel .ep-item-thumb {
+              border: 1px solid rgba(255, 255, 255, .16);
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18);
+          }
+
+          #ep-panel .season-divider {
+              border: 1px solid rgba(255, 255, 255, .10);
+              border-radius: 12px;
+              background: rgba(27, 29, 38, .48);
+              color: rgba(255, 255, 255, .82);
+          }
+
+          #ep-panel .ep-season {
+              background: rgba(29, 30, 39, .48) !important;
+              border-color: rgba(255, 255, 255, .14) !important;
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+              -webkit-backdrop-filter: blur(14px);
+              backdrop-filter: blur(14px);
+          }
+
+          /* Blue Watch Together / Join treatment for episode controls. */
+          #ep-panel .ep-mark-seen-btn:not(.current) {
+              background: rgba(77, 159, 255, .14) !important;
+              border-color: rgba(77, 159, 255, .55) !important;
+              color: #a6cbff !important;
+              box-shadow: 0 0 18px rgba(77, 159, 255, .10), inset 0 1px 0 rgba(255, 255, 255, .08);
+          }
+
+          #ep-panel .ep-mark-seen-btn:not(.current):hover {
+              background: rgba(77, 159, 255, .24) !important;
+              border-color: rgba(125, 187, 255, .82) !important;
+              color: #d9eaff !important;
+          }
+
+          #ep-panel .ep-season,
+          #ep-panel .season-divider {
+              background: rgba(77, 159, 255, .10) !important;
+              border-color: rgba(77, 159, 255, .38) !important;
+              color: #a6cbff !important;
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 0 16px rgba(77, 159, 255, .06);
+          }
+
+          #ep-panel .ep-panel-scroll {
+              scrollbar-width: thin;
+              scrollbar-color: rgba(77, 159, 255, .82) transparent;
+          }
+
+          #ep-panel .ep-panel-scroll::-webkit-scrollbar {
+              width: 10px;
+              background: transparent;
+          }
+
+          #ep-panel .ep-panel-scroll::-webkit-scrollbar-track {
+              margin: 8px 0;
+              border-radius: 999px;
+              background: transparent;
+              box-shadow: none;
+          }
+
+          #ep-panel .ep-panel-scroll::-webkit-scrollbar-thumb {
+              min-height: 42px;
+              border: 2px solid transparent;
+              border-radius: 999px;
+              background: rgba(77, 159, 255, .82);
+              background-clip: padding-box;
+              box-shadow: 0 0 10px rgba(77, 159, 255, .22);
+          }
+
+          #ep-panel .ep-panel-scroll::-webkit-scrollbar-thumb:hover {
+              background: rgba(125, 187, 255, .96);
+          }
+
+          #ep-panel .ep-season-tabs-wrap {
+              background: rgba(13, 18, 29, .46);
+              border-color: rgba(77, 159, 255, .28);
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 12px 30px rgba(0, 0, 0, .16);
+          }
+
+          #ep-panel .ep-season-tabs button.active,
+          #ep-panel .ep-episode-tab.active {
+              background: rgba(77, 159, 255, .26);
+              border-color: rgba(77, 159, 255, .72);
+              color: #d9eaff;
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 0 18px rgba(77, 159, 255, .16);
+          }
+
+          /* Liquid-glass center playback controls. */
+          .center-play .ctrl-btn,
+          .center-play .play-btn {
+              isolation: isolate;
+              overflow: hidden;
+              border: 1px solid rgba(255, 255, 255, .22) !important;
+              background: rgba(18, 19, 25, .56) !important;
+              -webkit-backdrop-filter: blur(22px) saturate(170%);
+              backdrop-filter: blur(22px) saturate(170%);
+              box-shadow:
+                  inset 0 1px 0 rgba(255, 255, 255, .28),
+                  inset 0 -1px 0 rgba(255, 255, 255, .08),
+                  0 16px 38px rgba(0, 0, 0, .42),
+                  0 0 22px rgba(255, 255, 255, .06);
+          }
+
+          .center-play .ctrl-btn::after,
+          .center-play .play-btn::after {
+              content: '';
+              position: absolute;
+              inset: 0;
+              border-radius: inherit;
+              pointer-events: none;
+              background: rgba(255, 255, 255, .045);
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16);
+              z-index: -1;
+          }
+
+          .center-play .ctrl-btn:hover,
+          .center-play .play-btn:hover {
+              background: rgba(30, 31, 40, .68) !important;
+              border-color: rgba(255, 255, 255, .42) !important;
+              box-shadow:
+                  inset 0 1px 0 rgba(255, 255, 255, .34),
+                  0 18px 44px rgba(0, 0, 0, .48),
+                  0 0 24px rgba(229, 9, 20, .22);
+          }
+
+          .center-play .ctrl-btn.skip-btn {
+              width: 70px !important;
+              height: 70px !important;
+          }
+
+          @media (max-width: 600px) {
+              .center-play .ctrl-btn.skip-btn {
+                  width: 64px !important;
+                  height: 64px !important;
+              }
+          }
+
+          #ep-panel .ep-progress {
+              position: absolute;
+              left: clamp(120px, 20vw, 200px);
+              right: 22px;
+              bottom: 8px;
+              width: auto !important;
+              min-width: 0;
+              grid-template-columns: minmax(0, 1fr) auto;
+              z-index: 3;
+          }
+
+          #ep-panel .ep-progress-track {
+              width: 100%;
+              min-width: 0;
+              height: 7px;
+              border: 1px solid rgba(255, 255, 255, .12);
+              background: rgba(255, 255, 255, .12);
+              box-shadow: inset 0 1px 2px rgba(0, 0, 0, .28), 0 0 10px rgba(255, 255, 255, .04);
+          }
+
+          @media (max-width: 420px) {
+              #ep-panel .ep-progress {
+                  left: 120px;
+                  right: 16px;
+              }
+          }
+
+          #ep-panel .ep-progress-fill {
+              background: #e95788;
+              box-shadow: 0 0 8px rgba(233, 87, 136, .42);
+          }
+
+          @media (max-width: 420px) {
+              #ep-panel .ep-progress {
+                  min-width: 130px;
+              }
+          }
+
+     </style>
 </head>
 
 <body>
@@ -4823,6 +5364,7 @@ function getProxiedUrl(url, referer = '') {
         let animeSkipSegments = { intro: null, outro: null };
         let skippedSegments = { intro: false, outro: false };
         let hasApiSkipSegments = false;
+        const HDSTREAM_FALLBACK_INTRO_SECONDS = 60; // hdstream movies: first ~1 min is the studio intro
         let lastSuccessfulProvider = '';
         let satoruAudioSources = []; // background-fetched satoru sources used as virtual audio tracks
         let currentAudioSource = 'animesalt'; // active stream provider for virtual/audio switching
@@ -5607,6 +6149,13 @@ function getProxiedUrl(url, referer = '') {
             if (!video) return;
             const progressed = Number(video.currentTime || 0) >= Number(minProgress || 0);
             const readyEnough = Number(video.readyState || 0) >= 2;
+            // Strict check for hiding the loader: a slow CDN (hdstream4u) can
+            // populate the bare timeline (readyState 2 / currentTime ~0.01) long
+            // before the first decodable frame, which flashes a black 0:00 player.
+            // Keep the loader until the video can genuinely render instead.
+            const canActuallyPlay =
+                Number(video.readyState || 0) >= 3 ||
+                Number(video.currentTime || 0) >= 0.5;
             if (!progressed && !readyEnough) return;
 
             if (waitingOverlayTimer) {
@@ -5615,7 +6164,7 @@ function getProxiedUrl(url, referer = '') {
             }
 
             isSourceSwitching = false;
-            hideLoader();
+            if (canActuallyPlay) hideLoader();
             hideTransitionOverlay();
         }
 
@@ -6903,15 +7452,22 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     }
                 }
             }
-            if (!useResumePosition && currentParams.get('seasonTitle') && (urlRequestsExtrasSeason || !(Number.isFinite(currentSeason) && currentSeason > 0))) {
+            if (!useResumePosition && currentParams.get('seasonTitle') && !matchedExplicitSeasonRef && (urlRequestsExtrasSeason || !(Number.isFinite(currentSeason) && currentSeason > 0))) {
                 const sTitle = rawSeasonTitle;
                 if (specialTitleHint && !seasonZeroExplicit) {
                     matchedExplicitSeasonRef = false;
                 } else {
                 const wantedSeasonTitle = normalizeSeasonSearchLabel(sTitle).toLowerCase();
-                const bySeasonTitle = safeSeasons.findIndex((s) =>
-                    normalizeSeasonSearchLabel(String(s?.name || '')).toLowerCase() === wantedSeasonTitle
-                );
+                // A generic "Season N" label normalizes to an empty token, which
+                // also matches every other numbered season. Only name-match when
+                // the label carries real distinguishing text (provider extras names
+                // like "Bonus" / "Specials") so a precise episodeId/seasonKey match
+                // already found is not overridden by a bogus empty-token collision.
+                const bySeasonTitle = wantedSeasonTitle && wantedSeasonTitle !== 'season'
+                    ? safeSeasons.findIndex((s) =>
+                        normalizeSeasonSearchLabel(String(s?.name || '')).toLowerCase() === wantedSeasonTitle
+                    )
+                    : -1;
                 if (bySeasonTitle >= 0) {
                     si = bySeasonTitle;
                     matchedExplicitSeasonRef = true;
@@ -9575,21 +10131,27 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 const providerParam = sub?.provider ? `&provider=${encodeURIComponent(String(sub.provider))}` : '';
                 const bustParam = String(sub?.provider || '').toLowerCase() === 'animesalt' ? `&_t=${Date.now()}` : '';
                 const vttUrl = `${apiOrigin}/utils/vtt?url=${encodeURIComponent(rawSrc)}${refParam}${providerParam}${bustParam}`;
+                const isZipSubtitle = /\.zip(?:[\\/]|\?|$)/i.test(rawSrc);
                 console.log('[sub] track src Ã¢â€ â€™ /utils/vtt proxy:', rawSrc.slice(0, 60));
                 const subtitleProvider = String(sub?.provider || '').toLowerCase();
                 const subtitleHost = (() => { try { return new URL(rawSrc, location.href).hostname; } catch (_) { return ''; } })();
-                if (
-                    subtitleProvider === 'archive.org' ||
+                if (!isZipSubtitle && (
                     subtitleProvider === 'hdstream4u' ||
                     subtitleProvider === 'flixhq' ||
                     subtitleProvider === 'animesalt' ||
                     /(^|\.)qqqcdn\.cloud$/i.test(subtitleHost) ||
                     /(^|\.)swiftstream\.top$/i.test(subtitleHost) ||
                     /(^|\.)subst\.krussdomi\.com$/i.test(subtitleHost)
-                ) return vttUrl;
+                )) return vttUrl;
             } catch (_) { /* fall through to legacy data URI path */ }
 
-            const proxied = proxiedStreamUrl(rawSrc, sub?.referer || null);
+            // Archive.org's nested ZIP path can resolve to the wrong file when
+            // proxied directly. Fetch the ZIP archive itself, then let the
+            // browser-side extractor select the requested inner subtitle path.
+            const zipArchiveSrc = /\.zip[\\/]/i.test(rawSrc)
+                ? rawSrc.replace(/(\.zip)[\\/].*$/i, '$1')
+                : rawSrc;
+            const proxied = proxiedStreamUrl(zipArchiveSrc, sub?.referer || null);
 
             const toVttBlobUrl = (text) => {
                 const vttText = String(text || '');
@@ -9608,6 +10170,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             };
             const sanitizeText = (text) => String(text || '').replace(/\r+/g, '').replace(/^\uFEFF/, '');
             const stripSubtitleMarkup = (text) => String(text || '')
+                .replace(/\{\\[^}]*\}/g, '')
+                .replace(/\{[^}]*\}/g, '')
                 .replace(/<\/?(i|b|u|font|c|ruby|rt|v)(?:\s+[^>]*)?>/gi, '')
                 .replace(/<[^>]+>/g, '');
             const sanitizeCueText = (text) => sanitizeText(text)
@@ -9657,6 +10221,78 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 if (!cues.length) return '';
                 return `WEBVTT\n\n${cues.join('\n\n')}`;
             };
+            const extractZipSubtitle = async (buffer, sourceUrl) => {
+                const bytes = new Uint8Array(buffer);
+                const view = new DataView(buffer);
+                const decoder = new TextDecoder();
+                const requestedPath = decodeURIComponent(String(sourceUrl || '').split(/\.zip[\\/]/i)[1] || '').split('?')[0].replace(/^\/+/, '').toLowerCase();
+                const inflate = async (data) => {
+                    if (typeof DecompressionStream === 'undefined') throw new Error('ZIP decompression is unavailable');
+                    const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+                    return new Uint8Array(await new Response(stream).arrayBuffer());
+                };
+                let offset = 0;
+                while (offset + 30 <= bytes.length) {
+                    const signature = view.getUint32(offset, true);
+                    if (signature !== 0x04034b50) break;
+                    const method = view.getUint16(offset + 8, true);
+                    const compressedSize = view.getUint32(offset + 18, true);
+                    const nameLength = view.getUint16(offset + 26, true);
+                    const extraLength = view.getUint16(offset + 28, true);
+                    const nameStart = offset + 30;
+                    const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLength));
+                    const dataStart = nameStart + nameLength + extraLength;
+                    const dataEnd = dataStart + compressedSize;
+                    if (dataEnd > bytes.length) break;
+                    const normalizedName = name.replace(/^\/+/, '').toLowerCase();
+                    const matches = requestedPath
+                        ? normalizedName === requestedPath || normalizedName.endsWith(`/${requestedPath}`)
+                        : /\.(?:srt|vtt|ass|ssa)$/i.test(normalizedName);
+                    if (matches) {
+                        const compressed = bytes.slice(dataStart, dataEnd);
+                        const extracted = method === 0 ? compressed : (method === 8 ? await inflate(compressed) : null);
+                        if (!extracted) throw new Error(`Unsupported ZIP compression method: ${method}`);
+                        return decoder.decode(extracted);
+                    }
+                    offset = dataEnd;
+                }
+                // ZIPs using a data descriptor leave sizes as zero in the local
+                // header. Fall back to the central directory, which stores the
+                // definitive compressed size and local-header offset.
+                for (let directory = bytes.length - 22; directory >= 0; directory -= 1) {
+                    if (view.getUint32(directory, true) !== 0x06054b50) continue;
+                    const centralOffset = view.getUint32(directory + 16, true);
+                    const totalEntries = view.getUint16(directory + 10, true);
+                    let entryOffset = centralOffset;
+                    for (let entry = 0; entry < totalEntries && entryOffset + 46 <= bytes.length; entry += 1) {
+                        if (view.getUint32(entryOffset, true) !== 0x02014b50) break;
+                        const method = view.getUint16(entryOffset + 10, true);
+                        const compressedSize = view.getUint32(entryOffset + 20, true);
+                        const nameLength = view.getUint16(entryOffset + 28, true);
+                        const extraLength = view.getUint16(entryOffset + 30, true);
+                        const commentLength = view.getUint16(entryOffset + 32, true);
+                        const localOffset = view.getUint32(entryOffset + 42, true);
+                        const nameStart = entryOffset + 46;
+                        const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLength));
+                        const normalizedName = name.replace(/^\/+/, '').toLowerCase();
+                        const matches = requestedPath
+                            ? normalizedName === requestedPath || normalizedName.endsWith(`/${requestedPath}`)
+                            : /\.(?:srt|vtt|ass|ssa)$/i.test(normalizedName);
+                        if (matches && localOffset + 30 <= bytes.length) {
+                            const localNameLength = view.getUint16(localOffset + 26, true);
+                            const localExtraLength = view.getUint16(localOffset + 28, true);
+                            const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+                            const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+                            const extracted = method === 0 ? compressed : (method === 8 ? await inflate(compressed) : null);
+                            if (!extracted) throw new Error(`Unsupported ZIP compression method: ${method}`);
+                            return decoder.decode(extracted);
+                        }
+                        entryOffset += 46 + nameLength + extraLength + commentLength;
+                    }
+                    break;
+                }
+                return '';
+            };
 
             try {
                 const lower = String(rawSrc || '').toLowerCase();
@@ -9702,7 +10338,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 
                 if (txtRes?.ok) {
                     try {
-                        const txt = await txtRes.text();
+                        const isZipSubtitle = /\.zip(?:[\\/]|\?|$)/i.test(rawSrc);
+                        const txt = isZipSubtitle
+                            ? await extractZipSubtitle(await txtRes.arrayBuffer(), rawSrc)
+                            : await txtRes.text();
                         if (!txt) return '';
                         const ln = txt.trim().toLowerCase();
                         
@@ -9735,6 +10374,12 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         else if (finalHasCue) vttContent = `WEBVTT\n\n${sanitizeCueText(content)}`;
 
                         if (vttContent) {
+                            // Apply a final pass after every conversion path so
+                            // cached/provider-supplied VTT text cannot expose ASS
+                            // positioning or formatting tags such as {\\an8}.
+                            vttContent = vttContent
+                                .replace(/\{\\[^}]*\}/g, '')
+                                .replace(/\{[^}]*\}/g, '');
                             subtitleBlobCache.set(lower, vttContent);
                             const subtitleProvider = String(sub?.provider || "").toLowerCase();
                             const subtitleHost = (() => { try { return new URL(rawSrc, location.href).hostname; } catch (_) { return ""; } })();
@@ -10965,12 +11610,14 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             if (!container) return;
             container.innerHTML = '';
 
-            if (!hasApiSkipSegments || !video || !video.duration || !isFinite(video.duration) || video.duration <= 0) return;
+            const fallbackIntro = getHdstreamFallbackIntro();
+            if ((!hasApiSkipSegments && !fallbackIntro) || !video || !video.duration || !isFinite(video.duration) || video.duration <= 0) return;
 
             const dur = video.duration;
             const segments = [];
             if (animeSkipSegments.intro) segments.push({ ...animeSkipSegments.intro, type: 'intro' });
             if (animeSkipSegments.outro) segments.push({ ...animeSkipSegments.outro, type: 'outro' });
+            if (fallbackIntro) segments.push({ ...fallbackIntro, type: 'intro' });
 
             segments.forEach(seg => {
                 if (seg.start >= 0 && seg.end <= dur && seg.end > seg.start) {
@@ -11187,9 +11834,17 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             }
         }
 
+        function getHdstreamFallbackIntro() {
+            if (hasApiSkipSegments || !isCurrentHdstreamStream()) return null;
+            if (!video || !Number.isFinite(video.duration) || video.duration <= 90) return null;
+            const end = Math.min(HDSTREAM_FALLBACK_INTRO_SECONDS, video.duration - 2);
+            if (end <= 0) return null;
+            return { start: 0, end };
+        }
+
         function getActiveSkipSegment(nowSec) {
             if (!Number.isFinite(nowSec)) return null;
-            const intro = animeSkipSegments.intro;
+            const intro = animeSkipSegments.intro || getHdstreamFallbackIntro();
             if (intro && nowSec >= intro.start && nowSec < intro.end) {
                 return { type: 'intro', start: intro.start, end: intro.end };
             }
@@ -11201,7 +11856,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
         }
 
         function updateSkipSegmentButton() {
-            if (!video || !currentIsLikelyAnime || !hasApiSkipSegments) {
+            const fallbackIntro = getHdstreamFallbackIntro();
+            if (!video || (!hasApiSkipSegments && !fallbackIntro)) {
                 if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
                 _clearSkipCountdown();
                 _skipBtnWasVisible = false;
@@ -11255,13 +11911,6 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     m.classList.remove('active');
                 }
             });
-
-            if (!hasApiSkipSegments) {
-                if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
-                _clearSkipCountdown();
-                _skipBtnWasVisible = false;
-                return;
-            }
 
             if (!active) {
                 if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
@@ -14877,6 +15526,9 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 positionMenuAbove(epPanel, btn);
                 buildEpPanel();
                 epPanel.classList.add('open');
+                // Reposition after the menu content is rendered so short
+                // seasons use their real height while keeping the bottom edge
+                // aligned with the normal episode panel.
                 epPanelUserScrollUntil = 0;
                 epPanelAllowNextAutoScroll = true;
                 updateEpUI(curSeason, curEpisode, { scroll: true, forceScroll: true });
@@ -16389,29 +17041,52 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             let gestureType = null;
             let bLevel = 1.0;
 
+            const mobileLandscapeFullscreen = () => {
+                if (!IS_MOBILE_CLIENT) return false;
+                const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+                const videoFullscreen = Boolean(video?.webkitDisplayingFullscreen);
+                return Boolean(fullscreenElement || videoFullscreen) && window.innerWidth > window.innerHeight;
+            };
+
             controlSurface.addEventListener('touchstart', (e) => {
                 if (e.touches.length > 1) return;
+                if (!mobileLandscapeFullscreen()) {
+                    isGesturing = true;
+                    gestureType = null;
+                    return;
+                }
+                // Button taps, especially Android fullscreen taps, must not
+                // become edge volume/brightness gestures if the finger moves
+                // slightly before the native fullscreen transition begins.
+                if (e.target.closest('button, input, select, label, .control-menu, .panel, .ctrl-btn, .ctrl-icon')) {
+                    isGesturing = true;
+                    gestureType = null;
+                    return;
+                }
                 const touch = e.touches[0];
                 startX = touch.clientX;
                 startY = touch.clientY;
+                startTime = Date.now();
                 isGesturing = false;
                 gestureType = null;
             }, { passive: true });
 
             controlSurface.addEventListener('touchmove', (e) => {
-                if (isUiLocked || e.touches.length > 1) return;
+                if (isUiLocked || e.touches.length > 1 || !mobileLandscapeFullscreen()) return;
                 const touch = e.touches[0];
                 const dx = touch.clientX - startX;
                 const dy = startY - touch.clientY;
 
-                if (!isGesturing && Math.abs(dy) > 30 && Math.abs(dy) > Math.abs(dx)) {
+                const elapsed = Date.now() - startTime;
+                const edgeWidth = Math.max(96, window.innerWidth * 0.22);
+                const isEdgeSwipe = startX <= edgeWidth || startX >= window.innerWidth - edgeWidth;
+                if (!isGesturing && elapsed >= 80 && Math.abs(dy) > 55 && Math.abs(dy) > Math.abs(dx) * 1.25 && isEdgeSwipe) {
                     isGesturing = true;
-                    const third = window.innerWidth / 3;
-                    if (startX < third) {
+                    if (startX <= edgeWidth) {
                         gestureType = 'brightness';
                         startVal = bLevel;
                         bOverlay.classList.add('visible');
-                    } else if (startX > 2 * third) {
+                    } else {
                         gestureType = 'volume';
                         startVal = video.volume;
                         vOverlay.classList.add('visible');
@@ -16436,10 +17111,14 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
             }, { passive: false });
 
-            controlSurface.addEventListener('touchend', () => {
+            const resetTouchGesture = () => {
                 bOverlay.classList.remove('visible');
                 vOverlay.classList.remove('visible');
-            }, { passive: true });
+                isGesturing = false;
+                gestureType = null;
+            };
+            controlSurface.addEventListener('touchend', resetTouchGesture, { passive: true });
+            controlSurface.addEventListener('touchcancel', resetTouchGesture, { passive: true });
 
 
             // Global blocker: Show controls on any screen interaction when hidden
@@ -16580,6 +17259,11 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
 
             controlSurface.addEventListener('touchstart', (e) => {
                 if (e.touches.length > 1) return;
+                if (e.target.closest('button, input, select, label, .control-menu, .panel, .ctrl-btn, .ctrl-icon')) {
+                    isGesturing = true;
+                    gestureType = null;
+                    return;
+                }
                 const touch = e.touches[0];
                 startX = touch.clientX;
                 startY = touch.clientY;
@@ -18130,12 +18814,14 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 epPanel.style.left = '';
                 epPanel.style.top = 'auto';
                 epPanel.style.bottom = '';
-                epPanel.style.width = '';
-                epPanel.style.maxHeight = '';
+                 epPanel.style.width = '';
+                 epPanel.style.height = '';
+                 epPanel.style.maxHeight = '';
                 return;
             }
             const panelWidth = Math.min(640, window.innerWidth - 32);
-            const panelHeight = Math.min(Math.round(window.innerHeight * 0.74), 720);
+            const defaultPanelHeight = Math.min(Math.round(window.innerHeight * 0.74), 720);
+            const panelHeight = defaultPanelHeight;
             const seekRect = seekWrapper?.getBoundingClientRect?.() || null;
             const skipRect = skipFwdBtn?.getBoundingClientRect?.() || null;
 
@@ -18147,15 +18833,13 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             }
             left = Math.max(16, left);
 
-            let top = seekRect
-                ? seekRect.top - panelHeight - 22
-                : window.innerHeight - panelHeight - 132;
-            top = Math.max(88, top);
-
             epPanel.style.left = `${Math.round(left)}px`;
-            epPanel.style.top = `${Math.round(top)}px`;
-            epPanel.style.bottom = 'auto';
+            epPanel.style.top = 'auto';
+            epPanel.style.bottom = seekRect
+                ? `${Math.max(16, Math.round(window.innerHeight - seekRect.top + 22))}px`
+                : '132px';
             epPanel.style.width = `${Math.round(panelWidth)}px`;
+            epPanel.style.height = 'auto';
             epPanel.style.maxHeight = `${Math.round(panelHeight)}px`;
         }
 
@@ -18282,6 +18966,9 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
         }
 
         function getEpisodeMenuSeasons() {
+            const hideIndiaGotLatentSeasonOne = (seasons) => String(TMDB_ID) === '262838'
+                ? (Array.isArray(seasons) ? seasons : []).filter((season) => Number(season?.seasonNo || 0) !== 1)
+                : seasons;
             const removeMovieEntriesFromTvMenu = (seasons) => {
                 if (MEDIA_TYPE !== 'tv') return Array.isArray(seasons) ? seasons : [];
                 return (Array.isArray(seasons) ? seasons : []).filter((season) => {
@@ -18305,9 +18992,9 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     let providerScoped = scopedProvider === 'animesalt'
                         ? mergeMenuSeasonsBySeasonNo(scoped)
                         : scoped;
-                    return cloneAndSortMenuSeasons(removeDuplicateExtrasMenuSeasons(removeMovieEntriesFromTvMenu(providerScoped), {
+                    return cloneAndSortMenuSeasons(hideIndiaGotLatentSeasonOne(removeDuplicateExtrasMenuSeasons(removeMovieEntriesFromTvMenu(providerScoped), {
                         dropExtras: isFlixhqEpisodeMenuContext(scopedProvider),
-                    }));
+                    })));
                 }
             }
             let menuSeasons = removeDuplicateExtrasMenuSeasons(removeMovieEntriesFromTvMenu(chooseExpandedEpisodeMenuSeasons(tvSeasons)), {
@@ -18329,7 +19016,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 if (hasHdstreamProvider && Number(season?.seasonNo || 0) <= 0 && !/bonus/i.test(seasonName)) return false;
                 return true;
             });
-            return cloneAndSortMenuSeasons(menuSeasons);
+            return cloneAndSortMenuSeasons(hideIndiaGotLatentSeasonOne(menuSeasons));
         }
 
         function mergeMenuSeasonsBySeasonNo(seasons) {
@@ -19490,13 +20177,20 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                      const anikotoVisibleEpisodeNo = isAniKotoMenu && /^part\s+\d+$/i.test(String(s?.name || '').trim())
                          ? ((Number(s?.seasonNo || si + 1) - 1) * 50) + epNo
                          : epNo;
-                     const epTitle = shouldPreferProviderEpisodeMeta && !(isAniKotoMenu && isGenericEpisodeTitle(providerTitle, epNo))
-                         ? providerTitle
-                         : (
-                            tmdbTitle && !isGenericEpisodeTitle(tmdbTitle, absoluteEpisodeNo) && (hasTmdbRichMeta || !providerTitle || isGenericEpisodeTitle(providerTitle, epNo))
-                                ? tmdbTitle
-                                 : (providerTitle && !isGenericEpisodeTitle(providerTitle, epNo) ? providerTitle : `Episode ${anikotoVisibleEpisodeNo}`)
-                        );
+                     let epTitle = shouldPreferProviderEpisodeMeta && !(isAniKotoMenu && isGenericEpisodeTitle(providerTitle, epNo))
+                          ? providerTitle
+                          : (
+                             tmdbTitle && !isGenericEpisodeTitle(tmdbTitle, absoluteEpisodeNo) && (hasTmdbRichMeta || !providerTitle || isGenericEpisodeTitle(providerTitle, epNo))
+                                 ? tmdbTitle
+                                  : (providerTitle && !isGenericEpisodeTitle(providerTitle, epNo) ? providerTitle : `Episode ${anikotoVisibleEpisodeNo}`)
+                         );
+                     if (String(TMDB_ID) === '262838' && isBonusSeason) {
+                         const bonusTitles = {
+                             1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
+                             2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
+                         };
+                         epTitle = bonusTitles[epNo] || epTitle;
+                     }
                     const seriesDescription = String(
                         currentMediaInfo?.overview ||
                         currentMediaInfo?.description ||
@@ -19554,7 +20248,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         provider: String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase(),
                         providerAnimeId: String(s?.providerAnimeId || '').trim().toLowerCase(),
                         episodeId: String(ep?.id || '').trim().toLowerCase(),
-                        seasonNo: Number(s?.seasonNo || si + 1),
+                        seasonNo: Number(s?.seasonNo ?? si + 1),
                         episodeNo: epNo,
                         absoluteEpisodeNo,
                     });
@@ -19608,7 +20302,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     item.dataset.menuEpisodeIndex = String(ei);
                     item.dataset.provider = String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase();
                     item.dataset.episodeId = String(ep?.id || '').trim().toLowerCase();
-                    item.dataset.seasonNo = String(Number(s?.seasonNo || si + 1));
+                    item.dataset.seasonNo = String(Number(s?.seasonNo ?? si + 1));
                     item.dataset.episodeNo = String(epNo);
                     item.dataset.absoluteEpisodeNo = String(absoluteEpisodeNo || epNo);
                     item.dataset.providerAnimeId = String(s?.providerAnimeId || '').trim().toLowerCase();
@@ -19634,7 +20328,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         const target = currentIsLikelyAnime && menuProvider !== 'animekai'
                                 ? resolveGlobalEpisodeIndices(s, ep, si, ei, true)
                                 : { seasonIndex: si, episodeIndex: ei };
-                        const isBonusEpisode = /bonus/i.test(String(epTitle || ep?.title || ep?.name || ep?.episodeName || ep?.episode_name || ''));
+                        const isBonusEpisode = isBonusSeason || /bonus/i.test(String(epTitle || ep?.title || ep?.name || ep?.episodeName || ep?.episode_name || ''));
                         const hintEpisodeNoRaw = Number(ep?.episode || ep?.number || ep?.episodeNum || displayEpNo);
                         const hintSeasonNoRaw = Number(s?.seasonNo || 0);
                         const hintSeasonPartRaw = Number(s?.seasonPartNo || s?.part || s?.partNo || 0);
@@ -19670,11 +20364,11 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                              isBonusEpisode || /bonus/i.test(String(s?.name || ''))
                          );
                           if (!selectedEntryIsMovie) {
-                              selectedUrl.searchParams.set('season', isHdstreamBonus ? '0' : String(s?.seasonNo || si + 1));
+                               selectedUrl.searchParams.set('season', isHdstreamBonus ? '0' : String(s?.seasonNo ?? si + 1));
                               selectedUrl.searchParams.set('seasonIndex', String(si));
                               selectedUrl.searchParams.set('seasonPart', String(Number(s?.seasonPartNo || s?.part || s?.partNo || String(s?.name || '').match(/\bpart\s*(\d+)/i)?.[1] || 0)));
                               selectedUrl.searchParams.set('episode', String(selectedEpisodeNo));
-                              selectedUrl.searchParams.set('seasonTitle', isHdstreamBonus || isBonusEpisode ? 'Bonus' : String(s?.name || `Season ${s?.seasonNo || si + 1}`));
+                               selectedUrl.searchParams.set('seasonTitle', isHdstreamBonus || isBonusEpisode ? 'Bonus' : String(s?.name || `Season ${s?.seasonNo ?? si + 1}`));
                          }
                          selectedUrl.searchParams.set('episodeId', String(isBonusEpisode
                              ? (ep?.url || ep?.providerUrl || ep?.providerEpisodeId || ep?.watchUrl || ep?.embedUrl || ep?.link || ep?.href || ep?.id || '')
@@ -19730,6 +20424,14 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 applyEpisodeRangeFilter(seasonIndex, 1);
             };
             const applySeasonFilter = (seasonIndex) => {
+                const canAnimatePanel = epPanel && !IS_MOBILE_CLIENT && window.matchMedia('(min-width: 721px) and (pointer: fine)').matches;
+                const previousHeight = canAnimatePanel ? epPanel.getBoundingClientRect().height : 0;
+                if (canAnimatePanel && previousHeight > 0) {
+                    epPanel.style.transition = 'none';
+                    epPanel.style.height = `${Math.round(previousHeight)}px`;
+                    void epPanel.offsetHeight;
+                    scrollRoot.style.opacity = '0.82';
+                }
                 scrollRoot.querySelectorAll('.ep-season, .ep-item').forEach((node) => {
                     const visible = Number(node.dataset.seasonIndex) === seasonIndex;
                     node.hidden = !visible;
@@ -19755,6 +20457,27 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     requestAnimationFrame(animateSeasonTab);
                 });
                 rebuildEpisodeRangeTabs(seasonIndex);
+                if (canAnimatePanel && previousHeight > 0) {
+                    requestAnimationFrame(() => {
+                        const nextHeight = Math.min(epPanel.scrollHeight, Math.min(Math.round(window.innerHeight * 0.74), 720));
+                        const targetHeight = Math.max(1, nextHeight);
+                        epPanel._episodeHeightAnimation?.cancel();
+                        const heightAnimation = epPanel.animate([
+                            { height: `${Math.round(previousHeight)}px` },
+                            { height: `${targetHeight}px` },
+                        ], {
+                            duration: 360,
+                            easing: 'cubic-bezier(.16, 1, .3, 1)',
+                            fill: 'forwards',
+                        });
+                        heightAnimation.onfinish = () => {
+                            epPanel.style.height = 'auto';
+                            heightAnimation.cancel();
+                        };
+                        epPanel._episodeHeightAnimation = heightAnimation;
+                        scrollRoot.style.opacity = '1';
+                    });
+                }
             };
             seasonTabs.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => {
                 seasonTabsDidDrag = false;
@@ -19768,7 +20491,18 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             const currentMenuPartNo = Number(currentMenuSeason?.seasonPartNo || currentMenuSeason?.part || currentMenuSeason?.partNo || String(currentMenuSeason?.name || '').match(/\bpart\s*(\d+)/i)?.[1] || 0);
             const currentMenuSeasonName = String(currentMenuSeason?.name || '').trim();
             let rememberedSeason = -1;
-            if (currentMenuSeason) {
+            const routeParams = new URLSearchParams(location.search);
+            const routeSeason = Number(routeParams.get('season') || 0);
+            const routeSeasonTitle = String(routeParams.get('seasonTitle') || '').trim();
+            const routeRequestsBonus = routeSeason === 0 || /bonus/i.test(routeSeasonTitle);
+            if (routeRequestsBonus) {
+                rememberedSeason = menuSeasons.findIndex((season) =>
+                    Number(season?.seasonNo || 0) <= 0 || /bonus/i.test(String(season?.name || '')),
+                );
+            } else if (routeSeason > 0) {
+                rememberedSeason = menuSeasons.findIndex((season) => Number(season?.seasonNo || 0) === routeSeason);
+            }
+            if (rememberedSeason < 0 && currentMenuSeason) {
                 // The episode panel can reorder/filter seasons (specials/bonus tabs
                 // are sorted after numbered ones), so map the currently playing
                 // season onto the menu by identity instead of by raw index.
@@ -20189,7 +20923,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             const preservedSegment = _skipActiveSegment && _skipActiveType === type ? { ..._skipActiveSegment } : null;
             _clearSkipCountdown();
             const active = getActiveSkipSegment(video.currentTime);
-            const segment = preservedSegment || active || (type === 'intro' ? animeSkipSegments.intro : animeSkipSegments.outro);
+            const segment = preservedSegment || active || (type === 'intro' ? (animeSkipSegments.intro || getHdstreamFallbackIntro()) : animeSkipSegments.outro);
 
             if (!segment) {
                 console.log(`[Skip] Cannot skip ${type}: segment metadata missing.`);
@@ -20687,7 +21421,20 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 },
                 '262838': {
                     title: "India's Got Latent",
+                    season2Episodes: {
+                        1: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2E1.mkv',
+                        2: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2E2.mkv',
+                        3: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2E3.mkv',
+                        4: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2E4.mkv',
+                    },
+                    season2Subtitles: {
+                        1: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2E1.srt',
+                        2: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2E2.srt',
+                        3: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2E3.srt',
+                        4: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2E4.srt',
+                    },
                     bonusEpisodes: {
+                        1: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2BE1.mkv',
                         2: 'https://archive.org/download/i.-g.-l-2-be-2/I.G.L-2BE2.mkv',
                     },
                 },
@@ -21093,23 +21840,49 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         provider: 'archive.org',
                     };
                 }
-                if (fallback?.bonusEpisodes && /bonus/i.test(String(URL_SEASON_TITLE || tvSeasons?.[Number(curSeason || 0)]?.name || ''))) {
-                    const episodeNo = Number(curEpisode || 0) + 1;
-                    const episodeUrl = fallback.bonusEpisodes[episodeNo];
-                    if (!episodeUrl) return null;
-                    return {
-                        label: `${fallback.title || 'Archive'} Bonus EP${episodeNo} (Archive MKV)`,
-                        url: episodeUrl,
-                        isM3U8: false,
-                        isMP4: true,
-                        isEmbed: false,
-                        referer: null,
-                        isDub: false,
-                        provider: 'archive.org',
-                    };
+                if (fallback?.bonusEpisodes) {
+                    const seasonRef = tvSeasons?.[Number(curSeason || 0)];
+                    const rawSeasonName = String(seasonRef?.name || '').trim();
+                    const urlSeasonTitle = String(URL_SEASON_TITLE || '').trim();
+                    let seasonParam = '';
+                    try { seasonParam = String(new URLSearchParams(location.search).get('season') || '').trim(); } catch (_) {}
+                    const isBonusContext =
+                        /^0$/.test(seasonParam) ||
+                        /bonus/i.test(urlSeasonTitle) ||
+                        /^season\s*0$/i.test(urlSeasonTitle) ||
+                        /^(specials?|ovas?|extras?|recaps?)$/i.test(urlSeasonTitle) ||
+                        /bonus/i.test(rawSeasonName) ||
+                        (/^(specials?|ovas?|extras?|recaps?)$/i.test(rawSeasonName) && Number(seasonRef?.seasonNo || 0) <= 0);
+                    if (isBonusContext) {
+                        // Prefer the URL-requested episode number in an explicit
+                        // season-0 context so a dead provider merge (which may leave
+                        // the bonus catalog un-injected) still resolves the archive
+                        // entry the user clicked from the homepage.
+                        const urlEpisode = Number(URL_EPISODE || 0);
+                        const episodeNo = /^0$/.test(seasonParam) && Number.isFinite(urlEpisode) && urlEpisode > 0
+                            ? urlEpisode
+                            : (Number(curEpisode || 0) + 1);
+                        const episodeUrl = fallback.bonusEpisodes[episodeNo];
+                        if (episodeUrl) {
+                            return {
+                                label: `${fallback.title || 'Archive'} Bonus EP${episodeNo} (Archive MKV)`,
+                                url: episodeUrl,
+                                isM3U8: false,
+                                isMP4: true,
+                                isEmbed: false,
+                                referer: null,
+                                isDub: false,
+                                provider: 'archive.org',
+                            };
+                        }
+                    }
                 }
-                if (!fallback?.episodes) return fallback?.source || null;
-                const seasonNo = Math.max(1, Number(curSeason || 0) + 1);
+                if (!fallback?.episodes && !fallback?.season2Episodes) return fallback?.source || null;
+                const currentSeasonRow = tvSeasons?.[Number(curSeason || 0)];
+                const seasonNo = Math.max(
+                    1,
+                    Number(currentSeasonRow?.seasonNo || 0) || (Number(curSeason || 0) + 1),
+                );
                 const episodeNo = Math.max(1, Number(curEpisode || 0) + 1);
                 const seasonEpisodes = seasonNo === 2 && fallback.season2Episodes
                     ? fallback.season2Episodes
@@ -21157,9 +21930,11 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 });
             };
             const getArchiveFallbackSubtitles = (fallback) => {
-                if (!fallback?.subtitles) return [];
+                if (!fallback?.subtitles && !fallback?.season2Subtitles) return [];
                 if (Array.isArray(fallback.subtitles)) return fallback.subtitles;
-                const subtitleMap = Number(curSeason || 0) + 1 === 2
+                const currentSeasonRow = tvSeasons?.[Number(curSeason || 0)];
+                const currentSeasonNo = Number(currentSeasonRow?.seasonNo || 0) || (Number(curSeason || 0) + 1);
+                const subtitleMap = currentSeasonNo === 2
                     ? fallback.season2Subtitles
                     : fallback.subtitles;
                 if (!subtitleMap) return [];
@@ -22630,6 +23405,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             setTimeout(() => updateAudioTracks(), 0);
             const selectedSource = allSources?.[srcIdx] || {};
             const sourceProvider = String(selectedSource?.provider || '').toLowerCase();
+            if (video) video.preload = sourceProvider === 'archive.org' && !isEmbed ? 'auto' : 'metadata';
             const isIOSArchiveLoad = IS_IOS && sourceProvider === 'archive.org' && !isEmbed;
             iosArchiveLoaderHold = isIOSArchiveLoad;
             const originalStreamUrl = String(url || '').trim();
@@ -23064,7 +23840,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 // Sync play icon in case video was already playing when Plyr initialized
                 if (video && !video.paused) setPlayIcon(true);
                 const hideIfReady = () => {
-                    if (video && video.readyState >= 2) {
+                    if (video && (video.readyState >= 3 || Number(video.currentTime || 0) >= 0.5)) {
                         hideLoader();
                     }
                 };
@@ -23462,9 +24238,14 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     // showing a black gap between loader and first frame.
                     if (isFirstLoad) {
                         const onFirstFrame = () => {
+                            if (!video) return;
+                            // Only reveal the player once the first frame can
+                            // actually render; the first timeupdate can fire at
+                            // ~0.01s before a slow CDN delivers a decodable frame.
+                            if (!(video.readyState >= 3 || Number(video.currentTime || 0) >= 0.5)) return;
                             isFirstLoad = false;
                             hideLoader();
-                            video && video.removeEventListener('timeupdate', onFirstFrame);
+                            video.removeEventListener('timeupdate', onFirstFrame);
                         };
                         video && video.addEventListener('timeupdate', onFirstFrame);
                         // Safety: hide after 10s no matter what
