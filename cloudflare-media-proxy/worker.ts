@@ -290,7 +290,10 @@ export default {
       // reasonably fresh without re-invoking the Worker on every sub-request.
       responseHeaders.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=300');
     } else {
-      responseHeaders.set('Cache-Control', 'public, max-age=86400, immutable');
+      // Do not cache media responses at the edge. A cached 200 response can be
+      // incorrectly reused for a later byte-range request, breaking playback
+      // for large Archive.org files.
+      responseHeaders.set('Cache-Control', 'no-store');
     }
 
     Object.entries(buildCorsHeaders()).forEach(([k, v]) => responseHeaders.set(k, v));
