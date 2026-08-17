@@ -23341,7 +23341,10 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             if (forceHls || /\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
                 try {
                     const parsed = new URL(rawUrl);
-                    const mediaProxyOrigin = originOverride || getMediaProxyOrigin();
+                    const useApiProxyForMorencius = /(^|\.)morencius\.com$/i.test(parsed.hostname);
+                    const mediaProxyOrigin = originOverride || (useApiProxyForMorencius
+                        ? getProxyGatewayOrigin(activeApiBase || API_BASE)
+                        : getMediaProxyOrigin());
                     let safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
                     if (
                         providerName === 'animesalt' &&
