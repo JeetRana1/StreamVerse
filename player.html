@@ -23349,8 +23349,9 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             if (forceHls || /\.m3u8(?:[?#]|$)/i.test(rawUrl)) {
                 try {
                     const parsed = new URL(rawUrl);
-                    const useApiProxyForMorencius = /(^|\.)morencius\.com$/i.test(parsed.hostname);
-                    const mediaProxyOrigin = originOverride || (useApiProxyForMorencius
+                    const useApiProxyForRestrictedCdn = /(^|\.)morencius\.com$/i.test(parsed.hostname)
+                        || /(^|\.)acek-cdn\.com$/i.test(parsed.hostname);
+                    const mediaProxyOrigin = originOverride || (useApiProxyForRestrictedCdn
                         ? getProxyGatewayOrigin(activeApiBase || API_BASE)
                         : getMediaProxyOrigin());
                     let safeReferer = normalizeStreamReferer(providerName, { url: rawUrl, referer }, referer);
