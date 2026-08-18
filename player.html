@@ -24236,7 +24236,9 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                             if (!altSwitched) recoverSameSourceWithDirectFallback('hls_startup_timeout');
                         });
                     }
-                 }, String(FORCED_PROVIDER || '').toLowerCase() === 'anikoto' ? 4000 : (isHdstream ? 60000 : 18000));
+                 }, String(FORCED_PROVIDER || '').toLowerCase() === 'anikoto'
+                     ? 4000
+                     : (String(currentStreamProvider || '').toLowerCase().includes('hdstream') ? 60000 : 18000));
                 const clearHlsStartupWatchdog = () => {
                     clearTimeout(hlsStartupWatchdog);
                     video && video.removeEventListener('timeupdate', markHlsProgress);
