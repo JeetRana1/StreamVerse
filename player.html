@@ -24273,8 +24273,15 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                             video.removeEventListener('timeupdate', onFirstFrame);
                         };
                         video && video.addEventListener('timeupdate', onFirstFrame);
-                        // Safety: hide after 10s no matter what
-                        setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; hideLoader(); } }, 10000);
+                        // Keep HDStream's cover visible while its first segment is
+                        // still buffering; revealing an empty 0:00 surface is more
+                        // confusing than waiting for a real decodable frame.
+                        const firstFrameTimeout = String(currentStreamProvider || '').toLowerCase().includes('hdstream') ? 60000 : 10000;
+                        setTimeout(() => {
+                            if (!isFirstLoad) return;
+                            const canReveal = video && (video.readyState >= 3 || Number(video.currentTime || 0) >= 0.5);
+                            if (canReveal) { isFirstLoad = false; hideLoader(); }
+                        }, firstFrameTimeout);
                         setTimeout(clearHlsStartupWatchdog, 30000);
                     }
                 if (!IS_IOS && !userPaused) {
