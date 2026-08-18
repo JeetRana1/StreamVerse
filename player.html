@@ -7217,7 +7217,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             if (!watchdogAvoidStopLoad()) hls.stopLoad();
                             hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
                         } catch (_) { }
-                    } else if (watchdogStallCount >= 4) {
+                    } else if (watchdogStallCount >= (isCurrentHdstreamStream() ? 8 : 4)) {
                         console.warn('[hls-watchdog] Persistent stall, attempting same-source recovery...');
                         watchdogStallCount = 0;
                         if (typeof onErrorFallback === 'function') onErrorFallback('watchdog_stall');
@@ -20960,6 +20960,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             }
 
             console.log(`[Skip] Executing ${type} skip to ${segment.end} (Manual: ${manual})`);
+
+            // Inform the stall watchdog that a seek just occurred so it does not
+            // fire recovery during the normal buffer-refill window after a skip.
+            lastUserSeekAt = Date.now();
 
             if (type === 'intro') skippedSegments.intro = true;
             if (type === 'outro') skippedSegments.outro = true;
