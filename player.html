@@ -23383,7 +23383,9 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 try {
                     const parsed = new URL(rawUrl);
                     const useApiProxyForRestrictedCdn = /(^|\.)morencius\.com$/i.test(parsed.hostname)
-                        || /(^|\.)acek-cdn\.com$/i.test(parsed.hostname);
+                        || /(^|\.)acek-cdn\.com$/i.test(parsed.hostname)
+                        || /^cdn\.watching\.onl$/i.test(parsed.hostname)
+                        || /\.akirax\.buzz$/i.test(parsed.hostname);
                     const mediaProxyOrigin = originOverride || (useApiProxyForRestrictedCdn
                         ? getProxyGatewayOrigin(activeApiBase || API_BASE)
                         : getMediaProxyOrigin());
