@@ -6445,6 +6445,12 @@ function getProxiedUrl(url, referer = '') {
 
             if (tracks.length === 0) return;
 
+            // HDStream audio playlists are unreliable during startup. Keep the
+            // default track until playback is initialized instead of resetting
+            // MediaSource while the first video segment is loading.
+            const provider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
+            if (provider === 'hdstream4u' && !isNative) return;
+
             // Vegamovies sources already ship with the intended audio; forcing a
             // generic preference here can lock the player onto the wrong track.
             if (isVegamoviesPlaybackProvider()) return;
@@ -6543,6 +6549,17 @@ function getProxiedUrl(url, referer = '') {
             let fragParseBurstStartAt = 0;
             let lastFragBypassAt = 0;
             let hlsStartupSampleDone = false;
+            const getValidInitialSeekTime = () => {
+                const requested = Number(startTime || 0);
+                const duration = Number(video?.duration);
+                if (!Number.isFinite(requested) || requested <= 0) return 0;
+                if (!Number.isFinite(duration) || duration <= 0) return 0;
+                if (requested >= duration) {
+                    console.warn('[hls] Ignoring out-of-range resume time:', requested, 'duration:', duration);
+                    return 0;
+                }
+                return requested;
+            };
             const watchdogAvoidStopLoad = () => typeof isCurrentFlixHqStream === 'function' && isCurrentFlixHqStream();
             const clearFatalRecoveryTimer = () => {
                 if (fatalRecoveryTimer) {
@@ -6572,8 +6589,11 @@ function getProxiedUrl(url, referer = '') {
                 hlsFragErrorBurst = 0;
                 hlsSessionIsFragile = false;
                 nonFatalLevelErrorCount = 0;
-                if (startTime > 0 && video) video.currentTime = startTime;
-                svApplyPreferredAudioToHls(hls);
+                const initialSeekTime = getValidInitialSeekTime();
+                if (initialSeekTime > 0 && video) video.currentTime = initialSeekTime;
+                setTimeout(() => {
+                    if (hls === hlsInst) svApplyPreferredAudioToHls(hls);
+                }, 1200);
                 if (onParsedAction) onParsedAction();
                 updateAudioTracks();
                 hideBufferingOverlaySoon(40);
@@ -15213,8 +15233,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 
                 // Fallback seek for continue watching if canplay didn't work
                 if (!URL_DISABLE_RESUME && !initialSeekDone && startT > 0 && video) {
-                    console.log('[loadedmetadata] Fallback resume seek to:', startT);
-                    video.currentTime = startT;
+                    const duration = Number(video.duration);
+                    const resumeTime = Number.isFinite(duration) && duration > 0 && startT >= duration ? 0 : startT;
+                    console.log('[loadedmetadata] Fallback resume seek to:', resumeTime);
+                    if (resumeTime > 0) video.currentTime = resumeTime;
                     initialSeekDone = true;
                 }
                             enforceWatchPartyRemotePlayback(watchPartyLastRemoteState, { forceSeek: true });
@@ -15388,6 +15410,13 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     } else if (!URL_DISABLE_RESUME && startT > 0) {
                         seekTo = startT;
                         console.log('[canplay] Using startT from URL');
+                    }
+                    if (seekTo > 0 && video) {
+                        const duration = Number(video.duration);
+                        if (Number.isFinite(duration) && duration > 0 && seekTo >= duration) {
+                            console.warn('[canplay] Ignoring out-of-range resume seek:', seekTo, 'duration:', duration);
+                            seekTo = 0;
+                        }
                     }
                     if (seekTo > 0 && video) {
                         console.log('[video] Initial/Resume seek to:', seekTo);
