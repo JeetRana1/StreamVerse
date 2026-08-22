@@ -3735,6 +3735,7 @@ function getModalEpisodeProviderOptions(movie = {}, provider = '') {
 
     if (isModalAnimeLike(movie)) {
         addProvider('animesalt', 'AnimeSalt');
+        addProvider('anikoto', 'AniKoto');
     }
 
     return options;

@@ -5027,7 +5027,7 @@ function getProxiedUrl(url, referer = '') {
 
         // Provider pools - automatically selected based on anime detection
         // ANIME_PROVIDERS: Specialized anime providers (used exclusively for anime content)
-        const ANIME_PROVIDERS = ['anikoto'];
+        const ANIME_PROVIDERS = ['anikoto', 'animesalt'];
         const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['anikoto', 'animesalt'];
         const REMOVED_PROVIDER_MAP = {
             satoru: 'animesalt',
@@ -5469,18 +5469,22 @@ function getProxiedUrl(url, referer = '') {
         let bufferingRecoveryTimer = null;
         let lastHlsKickAt = 0;
         let lastUserSeekAt = 0;
+        let bufferDebugSeek = null;
+        let bufferDebugStall = null;
         let isSeekDragging = false;
         let pendingSeekPercent = null;
         let wasPlayingBeforeDragSeek = false;
         let queuedSeekTime = null;
         let seekApplyTimer = null;
         let lastAppliedSeekAt = 0;
+        let lastAppliedSeekTarget = null;
         let seekBurstWindowStart = 0;
         let seekBurstCount = 0;
         let rapidSeekModeUntil = 0;
         let jumpCooldownUntil = 0;
         let pendingJumpTarget = null;
         let jumpRecoveryTimer = null;
+        let jumpRequestVersion = 0;
         let jumpInFlightUntil = 0;
         let lastSeekBurstRebuildAt = 0;
         let recoveryQualityTimer = null;
@@ -5516,6 +5520,12 @@ function getProxiedUrl(url, referer = '') {
             document.getElementById('loader-title').textContent = title;
             document.getElementById('loader-sub').textContent = sub;
             showLoader();
+        }
+        function setPlaybackStatus(title, sub) {
+            const titleEl = document.getElementById('loader-title');
+            const subEl = document.getElementById('loader-sub');
+            if (titleEl) titleEl.textContent = title;
+            if (subEl) subEl.textContent = sub;
         }
         function showLoader() {
             loader.style.display = 'flex';
@@ -6061,8 +6071,11 @@ function getProxiedUrl(url, referer = '') {
                 // Long VOD seeks are more reliable after the playlist has established
                 // a media buffer. Starting directly at a distant timestamp frequently
                 // causes CDN segment stalls on HDStream and AniKoto.
-                startPosition: !isThumbnail && Number(startTime || 0) > 30 ? 0 : startTime,
-                autoStartLoad: !isThumbnail,
+                startPosition: !isThumbnail && !isHdstream && Number(startTime || 0) > 30 ? 0 : startTime,
+                 // HDStream can ignore startPosition when auto-starting and
+                 // fetch fragment 1 before applying a resume position. Start
+                 // it explicitly after MANIFEST_PARSED instead.
+                 autoStartLoad: !isThumbnail && !isHdstream,
                 enableWorker: !isThumbnail && !isFlixHq,
                 lowLatencyMode: false,
                 backBufferLength: backBufferLength,
@@ -6212,23 +6225,55 @@ function getProxiedUrl(url, referer = '') {
             const isFlixHqJump = isCurrentFlixHqStream();
             const isHdstreamJump = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase().includes('hdstream');
 
+            // Cooldown: don't fire startLoad more than once per 800ms for hdstream.
+            // Rapid-fire seeks queue up multiple startLoad calls that each kick off
+            // redundant fragment downloads — only the last position matters.
+            if (isHdstreamJump) {
+                const now = Date.now();
+                if (typeof tuneHlsForJump._lastStartLoad !== 'undefined' && now - tuneHlsForJump._lastStartLoad < 800) return;
+                tuneHlsForJump._lastStartLoad = now;
+            }
+
             try {
-                // Cancel stale fragment requests on HDStream jumps. Keeping the
-                // old loader alive makes large seeks compete with the new target
-                // fragment and commonly produces fragLoadError/buffer stalls.
-                if (!isFlixHqJump) hlsInst.stopLoad();
-                
-                if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) {
-                    // Temporarily drop quality to load thumbnails/segments instantly
-                    hlsInst.currentLevel = 0;
-                    hlsInst.loadLevel = 0;
-                    
-                         setTimeout(() => {
-                        if (hlsInst) hlsInst.loadLevel = -1; // Resume auto
-                    }, 1500);
+                // Cancel stale fragment requests on jumps. Keeping the old loader
+                // alive makes large seeks compete with the new target fragment.
+                // On slow CDNs (hdstream/acek-cdn), aborting a near-complete
+                // download wastes bandwidth — but for large jumps (>15s), the old
+                // fragment is far behind the playhead and useless. Only skip
+                // stopLoad for small nearby seeks where the download might finish
+                // in time.
+                if (isHdstreamJump) {
+                    if (jumpDistance > 15) hlsInst.stopLoad();
+                } else {
+                    hlsInst.stopLoad();
                 }
                 
-                hlsInst.startLoad(Math.max(0, clampedTarget - (isFlixHqJump ? 0.35 : 0.2)));
+                 if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1) {
+                     // On slow CDNs (hdstream/acek-cdn), dropping to level 0 wastes
+                     // a full round-trip during ordinary nearby seeks. For a large
+                     // jump, however, the target is not buffered at all, so use the
+                     // smallest rendition for the first target segment and restore
+                     // adaptive quality after it has had time to arrive.
+                     if (isHdstreamJump && isLargeJump) {
+                         setTemporaryRecoveryQuality(12000);
+                     } else if (!isHdstreamJump) {
+                         hlsInst.currentLevel = 0;
+                         hlsInst.loadLevel = 0;
+                        
+                             setTimeout(() => {
+                            if (hlsInst) hlsInst.loadLevel = -1; // Resume auto
+                        }, 1500);
+                    }
+                }
+                
+                 // HLS otherwise tends to select the preceding 10-second
+                 // fragment, forcing a large seek to download an unnecessary
+                 // CDN segment before the target segment. Bias HDStream into
+                 // the target fragment; keep the conservative anchor elsewhere.
+                 const loadAnchor = isHdstreamJump
+                     ? clampedTarget + 0.75
+                     : clampedTarget - (isFlixHqJump ? 0.35 : 0.2);
+                 hlsInst.startLoad(Math.max(0, loadAnchor));
             } catch (_) { }
         }
 
@@ -6244,6 +6289,29 @@ function getProxiedUrl(url, referer = '') {
                 currentStreamProvider || allSources?.[currentIdx]?.provider || FORCED_PROVIDER || ''
             ).toLowerCase();
             return provider.includes('hdstream');
+        }
+
+        function isVideoTimeBuffered(targetTime, edge = 0.15) {
+            if (!video || !Number.isFinite(targetTime)) return false;
+            try {
+                for (let i = 0; i < video.buffered.length; i += 1) {
+                    if (targetTime >= video.buffered.start(i) - edge && targetTime <= video.buffered.end(i) + edge) return true;
+                }
+            } catch (_) { }
+            return false;
+        }
+
+        function getBufferedAheadSeconds() {
+            if (!video) return 0;
+            const now = Number(video.currentTime || 0);
+            try {
+                for (let i = 0; i < video.buffered.length; i += 1) {
+                    if (now >= video.buffered.start(i) - 0.15 && now <= video.buffered.end(i) + 0.15) {
+                        return Math.max(0, Number(video.buffered.end(i) - now).toFixed(2));
+                    }
+                }
+            } catch (_) { }
+            return 0;
         }
 
         function setTemporaryRecoveryQuality(ms = 4500) {
@@ -6267,12 +6335,13 @@ function getProxiedUrl(url, referer = '') {
 
         function schedulePendingJump(targetTime, reason = 'seek') {
             const normalizedTarget = Math.max(0, Number(targetTime || 0));
+            const requestVersion = ++jumpRequestVersion;
             pendingJumpTarget = { time: normalizedTarget, reason };
             lastRequestedPlaybackTarget = normalizedTarget;
             if (jumpRecoveryTimer) clearTimeout(jumpRecoveryTimer);
             // ENHANCED: Faster scheduling for rapid seeks
             jumpRecoveryTimer = setTimeout(() => {
-                if (!pendingJumpTarget || !video) return;
+                if (requestVersion !== jumpRequestVersion || !pendingJumpTarget || !video) return;
                 const next = pendingJumpTarget;
                 jumpCooldownUntil = Date.now() + 400; // ENHANCED: Faster repeat seeks
                 jumpInFlightUntil = Date.now() + 1000;
@@ -6290,8 +6359,19 @@ function getProxiedUrl(url, referer = '') {
 
             const clampedTarget = Math.max(0, Number(targetTime));
             const now = Date.now();
+            const requestVersion = ++jumpRequestVersion;
             const jumpDistance = Math.abs(clampedTarget - Number(video.currentTime || 0));
             const isFlixHq = isCurrentFlixHqStream();
+            const isHdstream = isCurrentHdstreamStream();
+            const targetAlreadyBuffered = isVideoTimeBuffered(clampedTarget);
+
+            // On slow CDN, deduplicate: if we already have a pending jump to a
+            // nearby position (within 5s), don't queue another one — it would
+            // abort the in-flight download and restart.
+            if (isHdstream && pendingJumpTarget && Math.abs(clampedTarget - pendingJumpTarget.time) < 5) {
+                return;
+            }
+
             pendingJumpTarget = { time: clampedTarget, reason };
             lastRequestedPlaybackTarget = clampedTarget;
 
@@ -6320,9 +6400,9 @@ function getProxiedUrl(url, referer = '') {
             }
 
             // ENHANCED: More aggressive HLS tuning for better responsiveness
-            if (reason === 'skip' || jumpDistance > 20) {
+            if (!targetAlreadyBuffered && (reason === 'skip' || jumpDistance > 20)) {
                 tuneHlsForJump(clampedTarget, jumpDistance, reason);
-            } else if (jumpDistance > 5) {
+            } else if (!targetAlreadyBuffered && jumpDistance > 5) {
                 tuneHlsForJump(clampedTarget, jumpDistance, reason);
             }
             if (jumpDistance > 20 && hlsInst) {
@@ -6331,11 +6411,17 @@ function getProxiedUrl(url, referer = '') {
                 // source of bufferStalledError on both HDStream and AniKoto.
                 // The acek CDN is slow, so allow extra time on hdstream.
                 const isSlowHdstreamJump = isCurrentHdstreamStream();
+                // On slow CDN, do NOT add extra delay — the requestSeekToTime
+                // debounce already handles batching. Extra delay here lets new
+                // seeks pile up on top of the pending jump.
                 setTimeout(() => {
                     if (!video || !hlsInst || isSourceSwitching) return;
+                    // Never let an older delayed jump override a newer seek.
+                    if (requestVersion !== jumpRequestVersion) return;
+                    if (!pendingJumpTarget || Math.abs(Number(pendingJumpTarget.time) - clampedTarget) > 0.75) return;
                     forceVideoSeek(clampedTarget);
                     pendingJumpTarget = null;
-                }, isSlowHdstreamJump ? 1400 : 700);
+                }, isSlowHdstreamJump ? 0 : 700);
             } else {
                 forceVideoSeek(clampedTarget);
                 pendingJumpTarget = null;
@@ -6396,12 +6482,18 @@ function getProxiedUrl(url, referer = '') {
             const elapsed = now - lastAppliedSeekAt;
             const isFlixHq = isCurrentFlixHqStream();
             const isHdstream = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase().includes('hdstream');
+            // On slow CDNs, each seek aborts the in-flight fragment download.
+            // Use a much longer debounce to let the current download finish.
             const minGap = isFlixHq
                 ? (seekBurstCount >= 8 ? 170 : 90)
                 : isHdstream
-                    ? (seekBurstCount >= 4 ? 260 : 180)
+                    ? (seekBurstCount >= 6 ? 600 : 300)
                     : (seekBurstCount >= 8 ? 100 : 40);
-            const delay = elapsed >= minGap ? (isHdstream ? 80 : 0) : (minGap - elapsed);
+            // Deduplicate: if we already applied a seek to within 2s of this target, skip
+            if (isHdstream && Math.abs(clampedTime - (lastAppliedSeekTarget ?? -999)) < 3 && elapsed < 3000) {
+                return;
+            }
+            const delay = elapsed >= minGap ? 0 : (minGap - elapsed);
 
             seekApplyTimer = setTimeout(() => {
                 if (!video || !isFinite(video.duration) || queuedSeekTime == null) return;
@@ -6409,6 +6501,7 @@ function getProxiedUrl(url, referer = '') {
                 const pct = (queuedSeekTime / Math.max(0.001, video.duration)) * 100;
                 performResponsiveSeek(pct);
                 lastAppliedSeekAt = Date.now();
+                lastAppliedSeekTarget = clampedTime;
                 queuedSeekTime = null;
                 if (keepPlaying && !wasPaused) {
                     Promise.resolve(video.play()).catch(() => { });
@@ -6444,12 +6537,6 @@ function getProxiedUrl(url, referer = '') {
             }
 
             if (tracks.length === 0) return;
-
-            // HDStream audio playlists are unreliable during startup. Keep the
-            // default track until playback is initialized instead of resetting
-            // MediaSource while the first video segment is loading.
-            const provider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
-            if (provider === 'hdstream4u' && !isNative) return;
 
             // Vegamovies sources already ship with the intended audio; forcing a
             // generic preference here can lock the player onto the wrong track.
@@ -6560,7 +6647,14 @@ function getProxiedUrl(url, referer = '') {
                 }
                 return requested;
             };
-            const watchdogAvoidStopLoad = () => typeof isCurrentFlixHqStream === 'function' && isCurrentFlixHqStream();
+            const watchdogAvoidStopLoad = () => {
+                if (typeof isCurrentFlixHqStream === 'function' && isCurrentFlixHqStream()) return true;
+                // On slow CDNs (acek-cdn for hdstream), stopLoad+startLoad aborts
+                // the in-flight download and restarts it — the CDN is too slow for
+                // the cycle to ever complete. Only avoid if a load is actively in flight.
+                if (isCurrentHdstreamStream() && Date.now() - lastFragLoadStartAt < 35000) return true;
+                return false;
+            };
             const clearFatalRecoveryTimer = () => {
                 if (fatalRecoveryTimer) {
                     clearTimeout(fatalRecoveryTimer);
@@ -6585,23 +6679,38 @@ function getProxiedUrl(url, referer = '') {
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 if (hls !== hlsInst) return;
                 console.log('MANIFEST_PARSED - audio tracks:', hls.audioTracks?.length || 0);
+                setPlaybackStatus('Stream found', 'Manifest loaded, preparing video');
                 const parsedProvider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
                 hlsFragErrorBurst = 0;
                 hlsSessionIsFragile = false;
                 nonFatalLevelErrorCount = 0;
-                const initialSeekTime = getValidInitialSeekTime();
-                if (initialSeekTime > 0 && video) video.currentTime = initialSeekTime;
-                setTimeout(() => {
+                 const initialSeekTime = getValidInitialSeekTime();
+                 if (initialSeekTime > 0 && video) video.currentTime = initialSeekTime;
+                 if (parsedProvider.includes('hdstream')) {
+                     // Avoid downloading the beginning of a long movie before
+                     // a resume/episode target is known. This removes the
+                     // wasted sn=1 request seen on resume startup.
+                     try {
+                         hls.startLevel = 0;
+                         hls.autoLevelCapping = 0;
+                         hls.nextLevel = 0;
+                         hls.loadLevel = 0;
+                         const initialLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
+                         hls.startLoad(initialLoadTarget > 0 ? initialLoadTarget + 0.75 : 0);
+                     } catch (_) { }
+                 }
+                 setTimeout(() => {
                     if (hls === hlsInst) svApplyPreferredAudioToHls(hls);
                 }, 1200);
                 if (onParsedAction) onParsedAction();
                 updateAudioTracks();
                 hideBufferingOverlaySoon(40);
                 clearFatalRecoveryTimer();
-                // Start at highest quality
-                if (Array.isArray(hls.levels) && hls.levels.length > 1) {
-                    hls.nextLevel = hls.levels.length - 1;
-                }
+                 // Start at highest quality for providers that do not use the
+                 // HDStream low-quality startup path above.
+                 if (!parsedProvider.includes('hdstream') && Array.isArray(hls.levels) && hls.levels.length > 1) {
+                     hls.nextLevel = hls.levels.length - 1;
+                 }
             });
 
             hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
@@ -6694,9 +6803,53 @@ function getProxiedUrl(url, referer = '') {
                 }
             };
 
+            // Track when HLS starts loading a fragment so the watchdog knows
+            // the CDN is actively working (just slow) vs truly stuck.
+            let lastFragLoadPerfTime = 0;
+            hls.on(Hls.Events.FRAG_LOADING, (_, data) => {
+                lastFragLoadStartAt = Date.now();
+                lastFragLoadPerfTime = performance.now();
+                if (isCurrentHdstreamStream() && data?.frag) {
+                    const fragSn = data.frag.sn;
+                    const fragStart = data.frag.start;
+                    const fragType = data?.frag?.type === 'audio' ? 'audio' : 'video';
+                    setPlaybackStatus('Loading stream', `Requesting ${fragType} segment ${fragSn}`);
+                    console.log(`[hdstream-timing] FRAG_LOADING sn=${fragSn} start=${Number(fragStart||0).toFixed(1)}s type=${data?.frag?.type ?? '?'}`);
+                    console.log('[buffer-debug] FRAG_REQUEST', {
+                        sn: fragSn,
+                        type: data?.frag?.type ?? '?',
+                        start: Number(fragStart || 0).toFixed(2),
+                        seekTarget: bufferDebugSeek?.target ?? null,
+                        stallMs: bufferDebugStall ? Date.now() - bufferDebugStall.startedAt : 0,
+                    });
+                }
+            });
+
             hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
 const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase().includes('hdstream');
-                if (fragLoadedIsHdstream && !isThumbnail && !hlsStartupSampleDone && hls.levels.length > 1) {
+                if (fragLoadedIsHdstream && data?.frag) {
+                    const fragSn = data.frag.sn;
+                    const fragType = data?.frag?.type === 'audio' ? 'audio' : 'video';
+                    const loadMs = Math.round(performance.now() - lastFragLoadPerfTime);
+                    const statsRaw = data?.stats;
+                    const statTrequest = Number(statsRaw?.trequest || 0);
+                    const statTload = Number(statsRaw?.tload || 0);
+                    const statTotal = Number(statsRaw?.total || 0);
+                    const statLoaded = Number(statsRaw?.loaded || 0);
+                    const totalMs = statTload > 0 && statTrequest > 0 ? Math.round(statTload - statTrequest) : loadMs;
+                    setPlaybackStatus('Segment loaded', `${fragType} segment ${fragSn} ready`);
+                    console.log(`[hdstream-timing] FRAG_LOADED sn=${fragSn} loadTime=${loadMs}ms totalTime=${totalMs}ms size=${statTotal || statLoaded || data?.frag?.stats?.total || 0} bytes`);
+                    console.log('[buffer-debug] FRAG_COMPLETE', {
+                        sn: fragSn,
+                        type: data?.frag?.type ?? '?',
+                        loadMs: totalMs,
+                        size: statTotal || statLoaded || data?.frag?.stats?.total || 0,
+                        currentTime: Number(video?.currentTime || 0).toFixed(2),
+                        bufferedAhead: getBufferedAheadSeconds(),
+                        stallMs: bufferDebugStall ? Date.now() - bufferDebugStall.startedAt : 0,
+                    });
+                }
+                if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsStartupSampleDone && hls.levels.length > 1) {
                     hlsStartupSampleDone = true;
                     setTimeout(() => {
                         if (hls === hlsInst && hls.levels.length > 1) {
@@ -6706,7 +6859,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             hls.autoLevelCapping = -1;
                             console.log('[hls] HDStream startup sample complete; adaptive quality enabled');
                         }
-                    }, 2500);
+                    }, 500);
                 }
                 const bw = Number(data?.stats?.bwEstimate || 0);
                 if (!Number.isFinite(bw) || bw <= 0) return;
@@ -6971,6 +7124,15 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         d.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
                         d.details === Hls.ErrorDetails.BUFFER_NUDGE_ON_STALL
                     ) {
+                            // On slow CDNs (acek-cdn, 5-20s/segment) HLS is
+                            // legitimately loading — the stall errors are noise.
+                            // Skip counting while a fragment load is in flight.
+                            if (isCurrentHdstreamStream() && Date.now() - lastFragLoadStartAt < 35000) {
+                                // Even though we skip recovery, show the buffering
+                                // overlay so the user sees activity instead of black.
+                                showBufferingOverlay();
+                                return;
+                            }
                             repeatedStallErrorCount++;
                             const now = Date.now();
                             if (now - lastStallNudgeAt < 800) return;
@@ -6983,16 +7145,23 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                     // the slow-CDN fragment never gets a chance to
                                     // finish. Escalation below still covers real stalls.
                                     if (!isSeekRecoveryInFlight()) {
-                                        video.currentTime = Math.min(
-                                            (video.duration || Infinity) - 0.05,
-                                            (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.1 : 0.2),
-                                        );
-                                        kickHlsLoadNearCurrentTime(video.currentTime, true);
+                                        // On slow CDNs, aggressive kickHlsLoadNearCurrentTime
+                                        // (stopLoad + startLoad) aborts the in-flight download
+                                        // and restarts it — the cycle never completes. Only
+                                        // nudge when the CDN is known-fast.
+                                        if (!isCurrentHdstreamStream()) {
+                                            video.currentTime = Math.min(
+                                                (video.duration || Infinity) - 0.05,
+                                                (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.1 : 0.2),
+                                            );
+                                            kickHlsLoadNearCurrentTime(video.currentTime, true);
+                                        }
                                         Promise.resolve(video.play()).catch(() => { });
                                     }
                                 } catch (_) { }
                             }
-                            if (repeatedStallErrorCount >= 4 && typeof onErrorFallback === 'function') {
+                            const stallEscalationThreshold = isCurrentHdstreamStream() ? 20 : 4;
+                            if (repeatedStallErrorCount >= stallEscalationThreshold && typeof onErrorFallback === 'function') {
                                 console.warn('[hls] Repeated buffer stall errors, escalating to source recovery');
                                 repeatedStallErrorCount = 0;
                                 onErrorFallback('buffer_stall_repeated');
@@ -7176,6 +7345,11 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             // Stall watchdog Ã¢â‚¬â€ checks every 2.5s, escalates after 3 consecutive stalls (~7.5s total)
             let lastWatchdogTime = -1;
             let watchdogStallCount = 0;
+            // Track when HLS last started loading a fragment so the watchdog
+            // knows the CDN is actively working (just slow) vs truly stuck.
+            // Seed with Date.now() so the initial load gets the full 35s grace
+            // window before the watchdog starts counting stalls.
+            let lastFragLoadStartAt = Date.now();
             const watchdogInterval = setInterval(function () {
                 if (!video || video.paused || video.ended || video.readyState === 0) {
                     watchdogStallCount = 0;
@@ -7195,29 +7369,60 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     lastWatchdogTime = video ? video.currentTime : -1;
                     return;
                 }
+                // If HLS started loading a fragment recently, the CDN is working
+                // (just slow). Do not count stalls while fragment loads are in
+                // progress — the buffer will fill once the download completes.
+                if (isCurrentHdstreamStream() && Date.now() - lastFragLoadStartAt < 35000) {
+                    watchdogStallCount = 0;
+                    lastWatchdogTime = video ? video.currentTime : -1;
+                    return;
+                }
                 const now = video.currentTime;
                 const bufferAhead = getBufferedAheadSeconds();
                 const likelyStarving = video.readyState < 3 || bufferAhead < 0.4;
                 if (Math.abs(now - lastWatchdogTime) < 0.05 && likelyStarving) {
                     watchdogStallCount++;
+                    const avoidStop = watchdogAvoidStopLoad();
                     if (watchdogStallCount === 1) {
-                        console.warn('[hls-watchdog] Stall detected, nudging startLoad...');
-                        try {
-                            if (!watchdogAvoidStopLoad()) hls.stopLoad();
-                            hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
-                        } catch (_) { }
+                        if (avoidStop) {
+                            // Slow CDN — the in-flight download will finish eventually.
+                            // Just show the buffering overlay; do NOT restart the loader.
+                            console.warn('[hls-watchdog] Stall detected on slow CDN, waiting for in-flight load...');
+                            showBufferingOverlay();
+                            Promise.resolve(video.play()).catch(() => {});
+                        } else {
+                            console.warn('[hls-watchdog] Stall detected, nudging startLoad...');
+                            try {
+                                hls.stopLoad();
+                                hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
+                            } catch (_) { }
+                        }
                     } else if (watchdogStallCount === 2) {
-                        // Second check: try quality drop + reload
-                        console.warn('[hls-watchdog] Stall persists, dropping quality...');
-                        try {
-                            if (hls.levels && hls.levels.length > 1) {
-                                hls.autoLevelCapping = 0; hls.nextLevel = 0;
-                                setTimeout(() => { try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { } }, 4000);
-                            }
-                            if (!watchdogAvoidStopLoad()) hls.stopLoad();
-                            hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
-                        } catch (_) { }
-                    } else if (watchdogStallCount >= (isCurrentHdstreamStream() ? 8 : 4)) {
+                        if (avoidStop) {
+                            // Still waiting on slow CDN — try dropping quality to speed
+                            // up the next fragment load, but do NOT abort the current one.
+                            console.warn('[hls-watchdog] Stall persists on slow CDN, dropping quality...');
+                            try {
+                                if (hls.levels && hls.levels.length > 1) {
+                                    hls.autoLevelCapping = 0; hls.nextLevel = 0;
+                                    setTimeout(() => { try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { } }, 4000);
+                                }
+                            } catch (_) { }
+                        } else {
+                            // Second check: try quality drop + reload
+                            console.warn('[hls-watchdog] Stall persists, dropping quality...');
+                            try {
+                                if (hls.levels && hls.levels.length > 1) {
+                                    hls.autoLevelCapping = 0; hls.nextLevel = 0;
+                                    setTimeout(() => { try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { } }, 4000);
+                                }
+                                hls.stopLoad();
+                                hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
+                            } catch (_) { }
+                        }
+                    } else if (watchdogStallCount >= (avoidStop ? 20 : 4)) {
+                        // On slow CDN, allow many more stall cycles before giving up —
+                        // the CDN may just be very slow (20s+ per segment is normal).
                         console.warn('[hls-watchdog] Persistent stall, attempting same-source recovery...');
                         watchdogStallCount = 0;
                         if (typeof onErrorFallback === 'function') onErrorFallback('watchdog_stall');
@@ -10124,6 +10329,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
         function shouldUsePreviewHls(sourceUrl, sourceProvider) {
             const provider = String(sourceProvider || '').toLowerCase();
             const raw = String(sourceUrl || '').toLowerCase();
+            // HDStream/acek sources are already slow on their first segment.
+            // A second preview HLS session competes with the main player and
+            // can delay startup or trigger manifest timeout recovery.
+            if (provider.includes('hdstream') || /(?:acek-cdn|dramiyos-cdn)\.com/i.test(raw)) return false;
             // Vegamovies often returns tokenized playlist .txt URLs that are not stable enough
             // for a second HLS session; keep preview in canvas-only mode to avoid extra failures.
             if (provider === 'vegamovies') return false;
@@ -15232,11 +15441,14 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
                 
                 // Fallback seek for continue watching if canplay didn't work
-                if (!URL_DISABLE_RESUME && !initialSeekDone && startT > 0 && video) {
+                if (!URL_DISABLE_RESUME && !initialSeekDone && startT > 0 && video && !isCurrentHdstreamStream()) {
                     const duration = Number(video.duration);
                     const resumeTime = Number.isFinite(duration) && duration > 0 && startT >= duration ? 0 : startT;
                     console.log('[loadedmetadata] Fallback resume seek to:', resumeTime);
-                    if (resumeTime > 0) video.currentTime = resumeTime;
+                    if (resumeTime > 0) {
+                        lastUserSeekAt = Date.now();
+                        video.currentTime = resumeTime;
+                    }
                     initialSeekDone = true;
                 }
                             enforceWatchPartyRemotePlayback(watchPartyLastRemoteState, { forceSeek: true });
@@ -15266,6 +15478,15 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 if (!_iosNativePlayerActive) silenceNativeTracks();
             });
             video.addEventListener('playing', () => {
+                if (bufferDebugStall) {
+                    console.log('[buffer-debug] PLAYBACK_RECOVERED', {
+                        stallMs: Date.now() - bufferDebugStall.startedAt,
+                        seekTarget: bufferDebugStall.seekTarget,
+                        currentTime: Number(video.currentTime || 0).toFixed(2),
+                        bufferedAhead: getBufferedAheadSeconds(),
+                    });
+                    bufferDebugStall = null;
+                }
                 if (enforceWatchPartyPauseHold()) return;
                 if (!_iosNativePlayerActive) silenceNativeTracks();
                 if (watchPartyRole === 'guest' && watchPartyLastRemoteState?.paused === true) {
@@ -15332,6 +15553,15 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             video.addEventListener('seeking', () => {
                 isUserSeeking = true;
                 lastUserSeekAt = Date.now();
+                bufferDebugSeek = {
+                    startedAt: Date.now(),
+                    target: Number(video.currentTime || 0),
+                };
+                console.log('[buffer-debug] SEEK_START', {
+                    target: Number(video.currentTime || 0).toFixed(2),
+                    from: Number(lastAppliedSeekTarget ?? 0).toFixed(2),
+                    provider: currentStreamProvider || allSources?.[currentIdx]?.provider || '',
+                });
                 maybeShowSeekBufferingOverlay(240);
                 // tuneHlsForJump already anchored the loader near the target for
                 // jump seeks; don't restart it here or the slow-CDN fragment
@@ -15339,13 +15569,32 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 if (!isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
             });
             video.addEventListener('seeked', () => {
+                if (bufferDebugSeek) {
+                    console.log('[buffer-debug] SEEKED', {
+                        seekMs: Date.now() - bufferDebugSeek.startedAt,
+                        target: Number(video.currentTime || 0).toFixed(2),
+                        bufferedAhead: getBufferedAheadSeconds(),
+                    });
+                }
                 watchPartyHandleSeeked();
                 isUserSeeking = false;
-                if (!isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
+                if (!isCurrentHdstreamStream() && !isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
                 if (bufferingRecoveryTimer) clearTimeout(bufferingRecoveryTimer);
                 bufferingRecoveryTimer = setTimeout(() => hideBufferingOverlaySoon(80), 120);
             });
             video.addEventListener('waiting', () => {
+                if (!bufferDebugStall) {
+                    bufferDebugStall = {
+                        startedAt: Date.now(),
+                        seekTarget: bufferDebugSeek?.target ?? null,
+                    };
+                    console.warn('[buffer-debug] STALL_START', {
+                        currentTime: Number(video.currentTime || 0).toFixed(2),
+                        seekTarget: bufferDebugSeek?.target ?? null,
+                        readyState: video.readyState,
+                        bufferedAhead: getBufferedAheadSeconds(),
+                    });
+                }
                 // iOS Safari fires 'waiting' between HLS segments during normal
                 // playback. Only show the spinner if the video is genuinely stuck
                 // (not just briefly buffering the next segment during active play).
@@ -15370,7 +15619,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             showBufferingOverlay();
                             // Don't abort a fragment download that a recent seek
                             // already anchored; just surface the buffering state.
-                            if (!isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
+                            if (!isCurrentHdstreamStream() && !isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
                             // Drop to lowest quality on confirmed stall
                             if (hlsInst && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
                                 stallAdaptiveLowest = true;
@@ -15396,6 +15645,15 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
             });
             video.addEventListener('canplay', () => {
+                setPlaybackStatus('Ready to play', 'Video data loaded');
+                // canplay means the browser has a decodable frame. Do not keep
+                // the full-screen loader waiting for autoplay/playing, which
+                // may be delayed or blocked even though the stream is ready.
+                if (video.readyState >= 3) {
+                    isSourceSwitching = false;
+                    hideLoader();
+                    hideTransitionOverlay();
+                }
                 clearOverlaysOnPlaybackProgress(0.01);
                 hideBufferingOverlaySoon(80);
                 if (!initialSeekDone) {
@@ -15437,6 +15695,16 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     }
                     skipInitialCanplaySeekOnce = false;
                     initialSeekDone = true;
+                }
+            });
+            video.addEventListener('loadeddata', () => {
+                // loadeddata is the earliest reliable signal that the first
+                // video frame has decoded; playing can be delayed by autoplay
+                // policy even when the stream is ready for the user.
+                if (video.readyState >= 2) {
+                    isSourceSwitching = false;
+                    hideLoader();
+                    hideTransitionOverlay();
                 }
             });
             video.addEventListener('pause', () => {
@@ -20896,6 +21164,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             if (!video || !Number.isFinite(target)) return;
 
             const clampedTarget = Math.max(0, target);
+            // A newer user seek supersedes delayed retries from an older seek.
+            if (pendingJumpTarget && Math.abs(Number(pendingJumpTarget.time) - clampedTarget) > 0.75) return;
             const seekDistance = Math.abs(clampedTarget - Number(video.currentTime || 0));
             const inRapidSeekMode = Date.now() < rapidSeekModeUntil || seekBurstCount >= 6;
             const lockedHlsAudioTrack = (hlsInst && Number.isInteger(hlsInst.audioTrack) && hlsInst.audioTrack >= 0)
@@ -20910,7 +21180,9 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     // do NOT restart it here — tuneHlsForJump already called
                     // startLoad near the target. A second stopLoad/startLoad aborts
                     // the slow CDN fragment download and stalls the seek.
-                    if (!inRapidSeekMode && seekDistance > 12 && !pendingJumpTarget) {
+                    // On slow CDNs (hdstream/acek), skip the kick entirely — it
+                    // calls stopLoad+startLoad which aborts in-flight downloads.
+                    if (!inRapidSeekMode && seekDistance > 12 && !pendingJumpTarget && !isCurrentHdstreamStream()) {
                         kickHlsLoadNearCurrentTime(clampedTarget, seekDistance > 24);
                     }
                 } catch (_) { }
@@ -20985,6 +21257,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
 
             // Use gentler quality tuning for the skip operation
             tuneHlsForJump(target, jumpDistance, 'skip');
+            const skipApplyDelay = isCurrentHdstreamStream() ? 0 : 500;
 
             if (hlsInst && hlsSessionIsFragile) {
                 console.log(`[Skip] HLS session is fragile, hot-reloading stream for ${type} skip.`);
@@ -21028,7 +21301,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         } catch (_) { }
                     }
                 }, 300);
-            }, 500); // Short pre-buffer delay before actual skip (avoids jarring transitions)
+            }, skipApplyDelay); // HDStream is already anchored by tuneHlsForJump
         }
 
         function _tickSkipCountdown() {
@@ -21585,6 +21858,38 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         },
                     ],
                 },
+                '256040': {
+                    source: {
+                        label: 'Bāhubali: The Beginning (Archive)',
+                        url: 'https://archive.org/download/magadheera_202608/BaahubaliBeginning.mkv',
+                        isM3U8: false,
+                        isMP4: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/magadheera_202608/BaahubaliBeginning.eng.srt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '1511417': {
+                    source: {
+                        label: 'Bāhubali: The Epic (Archive)',
+                        url: 'https://archive.org/download/magadheera_202608/BaahubaliTE.mkv',
+                        isM3U8: false,
+                        isMP4: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                },
                 '26247': {
                     source: {
                         label: 'Bombay (Archive)',
@@ -22008,7 +22313,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 ? [effectiveForcedProvider]
                 : activeProviders;
             const archiveExplicitlyRequested = effectiveForcedProvider === 'archive.org';
-            const orderedProviders = currentArchiveFallback && (!effectiveForcedProvider || archiveExplicitlyRequested) && !currentIsLikelyAnime
+            let orderedProviders = currentArchiveFallback && (!effectiveForcedProvider || archiveExplicitlyRequested) && !currentIsLikelyAnime
                 ? [...providersToRun, 'archive.org']
                 : providersToRun;
             providersToRun.forEach(p => providerResults[p] = []);
@@ -22866,8 +23171,33 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 if (allSources.length === 0 && !hdstreamDone) {
                     await hdstreamPromise;
                 }
+
+                // hdstream4u failed — try anime providers as automatic fallback.
+                // Many TV shows (e.g. Doraemon, Shinchan) are anime but aren't
+                // detected as such from TMDB metadata alone. If hdstream can't
+                // find the episode, anime providers often can.
+                if (allSources.length === 0 && MEDIA_TYPE === 'tv') {
+                    console.log('[fallback] hdstream4u failed for TV — trying anime providers:', ANIME_PROVIDERS);
+                    const animeFallbacks = ANIME_PROVIDERS.filter((p) => !orderedProviders.includes(p));
+                    animeFallbacks.forEach((p) => {
+                        orderedProviders.push(p);
+                        providerResults[p] = [];
+                    });
+                    await Promise.all(animeFallbacks.map((p) => processProvider(p)));
+                }
             } else {
                 await Promise.all(orderedProviders.map(p => processProvider(p)));
+            }
+
+            // Same anime fallback for the parallel execution path
+            if (allSources.length === 0 && MEDIA_TYPE === 'tv' && !currentIsLikelyAnime) {
+                console.log('[fallback] all providers failed for TV — trying anime providers:', ANIME_PROVIDERS);
+                const animeFallbacks = ANIME_PROVIDERS.filter((p) => !orderedProviders.includes(p));
+                animeFallbacks.forEach((p) => {
+                    orderedProviders.push(p);
+                    providerResults[p] = [];
+                });
+                await Promise.all(animeFallbacks.map((p) => processProvider(p)));
             }
             
             if (wasForced && !ANIME_MODE && allSources.length === 0) {
@@ -23385,7 +23715,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     const useApiProxyForRestrictedCdn = /(^|\.)morencius\.com$/i.test(parsed.hostname)
                         || /(^|\.)acek-cdn\.com$/i.test(parsed.hostname)
                         || /^cdn\.watching\.onl$/i.test(parsed.hostname)
-                        || /\.akirax\.buzz$/i.test(parsed.hostname);
+                        || /\.akirax\.buzz$/i.test(parsed.hostname)
+                        || /(^|\.)as-cdn\d+\.(?:top|ac|pro|xyz|click|link|net|cc|org)$/i.test(parsed.hostname);
                     const mediaProxyOrigin = originOverride || (useApiProxyForRestrictedCdn
                         ? getProxyGatewayOrigin(activeApiBase || API_BASE)
                         : getMediaProxyOrigin());
@@ -23395,7 +23726,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                         animeSaltCdnUrl &&
                         (!safeReferer || /animesalt\.ac/i.test(safeReferer))
                     ) {
-                        safeReferer = String(currentStreamUrl || '').trim() || safeReferer;
+                        safeReferer = 'https://animesalt.ac/';
                     }
                     const proxyPath = `${mediaProxyOrigin}/proxy/hls/${parsed.host}${parsed.pathname}${parsed.search}`;
                     const withReferer = safeReferer ? `${proxyPath}${proxyPath.includes('?') ? '&' : '?'}referer=${encodeURIComponent(safeReferer)}` : proxyPath;
@@ -23981,9 +24312,10 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 const isVegamoviesManifestFailure =
                     sourceProvider === 'vegamovies' &&
                     (lowerReason.includes('manifest') || lowerReason.includes('network') || lowerReason.includes('startup_timeout'));
+                const isHdstreamSlowCdn = isCurrentHdstreamStream() && lowerReason === 'watchdog_stall';
                 const maxAttempts = isConfirmedManifestUnavailable
                     ? 0
-                    : (isVegamoviesManifestFailure ? 2 : (reason === 'fatal_network_error' ? 1 : 8));
+                    : (isVegamoviesManifestFailure ? 2 : (reason === 'fatal_network_error' ? 1 : (isHdstreamSlowCdn ? 2 : 8)));
 
                 if (hlsInst && isM3U8 && sameSourceRecoverCount <= maxAttempts) {
                     try {
