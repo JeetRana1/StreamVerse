@@ -23714,6 +23714,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     const parsed = new URL(rawUrl);
                     const useApiProxyForRestrictedCdn = /(^|\.)morencius\.com$/i.test(parsed.hostname)
                         || /(^|\.)acek-cdn\.com$/i.test(parsed.hostname)
+                        || providerName === 'hdstream4u'
+                        || /(^|\.)dramiyos-cdn\.com$/i.test(parsed.hostname)
                         || /^cdn\.watching\.onl$/i.test(parsed.hostname)
                         || /\.akirax\.buzz$/i.test(parsed.hostname)
                         || /(^|\.)as-cdn\d+\.(?:top|ac|pro|xyz|click|link|net|cc|org)$/i.test(parsed.hostname);
