@@ -174,17 +174,6 @@ function handleWatchlistToggle(id, type, provider) {
     saveWatchlist(list);
 }
 
-(() => {
-    let notice = '';
-    try { notice = sessionStorage.getItem('streamverse_auth_notice') || ''; sessionStorage.removeItem('streamverse_auth_notice'); } catch (_) { }
-    if (!notice) return;
-    const el = document.createElement('div');
-    el.innerHTML = `<i class="fa-solid fa-circle-check"></i><span>${notice}</span>`;
-    Object.assign(el.style, { position:'fixed', top:'42px', right:'24px', zIndex:'9999', display:'flex', gap:'10px', alignItems:'center', padding:'14px 18px', border:'1px solid rgba(89,224,145,.5)', borderRadius:'16px', background:'rgba(22,55,39,.94)', color:'#d9ffe6', boxShadow:'0 16px 40px rgba(0,0,0,.4)', font:'13px DM Sans, sans-serif' });
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 5000);
-})();
-
 let shareCopyTimer;
 async function copyMovieShareUrl() {
     const btn = document.getElementById('modal-share-btn');

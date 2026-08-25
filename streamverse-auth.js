@@ -4,6 +4,7 @@
     const LOCAL_KEY = 'sv_continue_watching';
     const PENDING_KEY_PREFIX = 'sv_pending_merge_local_';
     const REVIEWED_KEY_PREFIX = 'sv_merge_reviewed_';
+    const COMPLETED_KEY_PREFIX = 'sv_merge_completed_';
     const state = { user: null, ready: false, reconcilePromise: Promise.resolve(), stopRealtime: null };
 
     function pendingKeyFor(uid) {
@@ -16,6 +17,10 @@
 
     function reviewedKey() {
         return `${REVIEWED_KEY_PREFIX}${state.user?.uid || 'guest'}`;
+    }
+
+    function completedKey() {
+        return `${COMPLETED_KEY_PREFIX}${state.user?.uid || 'guest'}`;
     }
 
     function readPendingItems() {
@@ -189,7 +194,8 @@
             const cloudItem = cloudMap.get(itemKey(item));
             return !cloudItem || itemFingerprint(item) !== itemFingerprint(cloudItem);
         }) || cloud.some((item) => !localMap.has(itemKey(item)));
-        const needsPrompt = hasDifferences && localStorage.getItem(reviewedKey()) !== libraryFingerprint(local, cloud);
+        const hasCompletedMerge = localStorage.getItem(completedKey()) === 'true';
+        const needsPrompt = !hasCompletedMerge && hasDifferences && localStorage.getItem(reviewedKey()) !== libraryFingerprint(local, cloud);
         let finalItems = cloud;
         if (needsPrompt && (local.length || cloud.length)) {
             const shouldMerge = await showMergePrompt(local, cloud);
@@ -198,6 +204,7 @@
                     .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item);
                 await Promise.all(finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
                 localStorage.setItem(reviewedKey(), libraryFingerprint(finalItems, finalItems));
+                localStorage.setItem(completedKey(), 'true');
                 showSyncNotice('Library merged successfully');
             } else {
                 // Declining means this signed-in session should show no continue-watching data.
@@ -205,6 +212,10 @@
                 finalItems = [];
                 localStorage.removeItem(LOCAL_KEY);
             }
+        } else if (hasCompletedMerge && hasDifferences) {
+            finalItems = [...new Map([...cloud, ...local].map((item) => [itemKey(item), item])).values()]
+                .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item);
+            await Promise.all(finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
         }
         finalItems = finalItems.sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0));
         if (finalItems.length) localStorage.setItem(LOCAL_KEY, JSON.stringify(finalItems));
@@ -230,6 +241,7 @@
         localStorage.setItem(LOCAL_KEY, JSON.stringify(merged));
         localStorage.removeItem(pendingKey());
         localStorage.setItem(reviewedKey(), libraryFingerprint(merged, merged));
+        localStorage.setItem(completedKey(), 'true');
         showSyncNotice('Library merged successfully');
         startRealtimeSync();
         updateAuthButton();
@@ -374,6 +386,11 @@
         state.ready = true;
         window.dispatchEvent(new CustomEvent('streamverse-auth-changed', { detail: { user } }));
         updateAuthButton();
+        if (user && !/\/login\.html$/i.test(window.location.pathname)) {
+            let authNotice = '';
+            try { authNotice = sessionStorage.getItem('streamverse_auth_notice') || ''; sessionStorage.removeItem('streamverse_auth_notice'); } catch (_) { }
+            if (authNotice) showSyncNotice(authNotice);
+        }
         state.reconcilePromise = user
             ? reconcileLocalAndCloud().then(() => startRealtimeSync()).catch((error) => console.warn('[auth] sync failed:', error))
             : Promise.resolve();
