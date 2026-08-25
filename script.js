@@ -729,6 +729,7 @@ function getType(item) {
 
 function getItemProvider(item) {
     const explicit = String(item?.provider || item?.source || item?.sourceProvider || '').trim().toLowerCase();
+    if (explicit === 'animesalt') return 'anikoto';
     if (explicit) return explicit;
 
     const source = String(item?.url || item?.link || item?.sourceUrl || item?.href || item?.id || '').trim().toLowerCase();
@@ -736,9 +737,7 @@ function getItemProvider(item) {
 
     if (source.includes('dramacool')) return 'dramacool';
     if (source.includes('flixhq')) return 'flixhq';
-    if (source.includes('animesalt')) return 'animesalt';
-    if (source.includes('justanime')) return 'animesalt';
-    if (source.includes('satoru')) return 'animesalt';
+    if (source.includes('animesalt') || source.includes('justanime') || source.includes('satoru')) return 'anikoto';
     if (source.includes('hdstream4u') || source.includes('hubstream')) return 'hdstream4u';
 
     return '';
@@ -963,6 +962,7 @@ function updateContinueWatchingControls(totalCount = 0) {
     if (!continueClearToggleBtn || !continueClearConfirmBtn || !continueClearCancelBtn) return;
 
     const hasItems = Number(totalCount) > 0;
+    continueWatchingSection?.classList.toggle('continue-selection-active', hasItems && continueSelectionMode);
     continueClearToggleBtn.style.display = hasItems && !continueSelectionMode ? 'inline-flex' : 'none';
     continueClearConfirmBtn.style.display = hasItems && continueSelectionMode ? 'inline-flex' : 'none';
     if (continueClearAllBtn) {
@@ -971,7 +971,7 @@ function updateContinueWatchingControls(totalCount = 0) {
     continueClearCancelBtn.style.display = hasItems && continueSelectionMode ? 'inline-flex' : 'none';
 
     const selectedCount = continueSelectedKeys.size;
-    continueClearConfirmBtn.textContent = selectedCount > 0 ? `Clear Selected (${selectedCount})` : 'Clear Selected';
+    continueClearConfirmBtn.innerHTML = `<i class="fa-solid fa-trash-can"></i> ${selectedCount > 0 ? `Clear Selected (${selectedCount})` : 'Clear Selected'}`;
     continueClearConfirmBtn.disabled = selectedCount === 0;
     continueClearConfirmBtn.style.opacity = selectedCount === 0 ? '0.55' : '1';
     continueClearConfirmBtn.style.cursor = selectedCount === 0 ? 'not-allowed' : 'pointer';
@@ -3758,7 +3758,6 @@ function getModalEpisodeProviderOptions(movie = {}, provider = '') {
     ].forEach((value) => addProvider(value));
 
     if (isModalAnimeLike(movie)) {
-        addProvider('animesalt', 'AnimeSalt');
         addProvider('anikoto', 'AniKoto');
     }
 

@@ -1,7 +1,7 @@
-import TubesCursor from 'https://cdn.jsdelivr.net/npm/threejs-components@0.0.19/build/cursors/tubes1.min.js';
-
-const canvas = document.getElementById('tubes-canvas');
-if (canvas) {
+const startTubes = async () => {
+  const canvas = document.getElementById('tubes-canvas');
+  if (!canvas) return;
+  const { default: TubesCursor } = await import('https://cdn.jsdelivr.net/npm/threejs-components@0.0.19/build/cursors/tubes1.min.js');
   const colors = ['#f967fb', '#53bc28', '#6958d5'];
   const app = TubesCursor(canvas, {
     tubes: {
@@ -15,4 +15,7 @@ if (canvas) {
     app.tubes.setColors(randomColors(3));
     app.tubes.setLightsColors(randomColors(4));
   });
-}
+};
+
+if (window.requestIdleCallback) requestIdleCallback(startTubes, { timeout: 1200 });
+else window.setTimeout(startTubes, 250);

@@ -8,6 +8,7 @@
     <meta name="description"
         content="Watch your favorite movies and TV shows for free in high quality with multi-audio support.">
     <link rel="stylesheet" href="style.css?v=2.4">
+    <link rel="prefetch" href="/login.html" as="document">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="dns-prefetch" href="//image.tmdb.org">
@@ -147,10 +148,10 @@
                 <div class="section-title-row">
                     <h2 class="section-title">Continue Watching</h2>
                     <div class="continue-actions" id="continue-actions">
-                        <button type="button" class="continue-action-btn" id="continue-clear-toggle">Clear</button>
-                        <button type="button" class="continue-action-btn continue-action-btn-danger" id="continue-clear-confirm" style="display:none;">Clear Selected</button>
-                        <button type="button" class="continue-action-btn continue-action-btn-danger" id="continue-clear-all" style="display:none;">Clear All</button>
-                        <button type="button" class="continue-action-btn" id="continue-clear-cancel" style="display:none;">Cancel</button>
+                        <button type="button" class="continue-action-btn" id="continue-clear-toggle"><i class="fa-solid fa-trash-can"></i> Clear</button>
+                        <button type="button" class="continue-action-btn continue-action-btn-danger" id="continue-clear-confirm" style="display:none;"><i class="fa-solid fa-trash-can"></i> Clear Selected</button>
+                        <button type="button" class="continue-action-btn continue-action-btn-danger" id="continue-clear-all" style="display:none;"><i class="fa-solid fa-trash"></i> Clear All</button>
+                        <button type="button" class="continue-action-btn" id="continue-clear-cancel" style="display:none;"><i class="fa-solid fa-xmark"></i> Cancel</button>
                     </div>
                 </div>
                 <div class="movie-grid" id="continue-watching-grid">

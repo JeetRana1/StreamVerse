@@ -4892,7 +4892,7 @@ function getProxiedUrl(url, referer = '') {
             const providerName = String(provider || src.provider || '').toLowerCase();
             const rawUrl = String(src?.url || '').toLowerCase();
             const serverName = String(src?.server || src?.flixhqServer || '').toLowerCase();
-            const headerReferer = src?.headers?.Referer || src?.headers?.referer || fallbackReferer || src?.referer || '';
+            const headerReferer = src?.headers?.Referer || src?.headers?.referer || src?.referer || fallbackReferer || '';
             const isVidkingStream = serverName.includes('vidking') || /goldweather\.net|vidking\.net/i.test(rawUrl);
             if (isVidkingStream) return 'https://www.vidking.net/';
             const isFlixhqStream = providerName === 'flixhq' || /sb\d|mooncarpet|hydrogen|nightspeedster/i.test(rawUrl);
@@ -5032,18 +5032,19 @@ function getProxiedUrl(url, referer = '') {
 
         // Provider pools - automatically selected based on anime detection
         // ANIME_PROVIDERS: Specialized anime providers (used exclusively for anime content)
-        const ANIME_PROVIDERS = ['anikoto', 'animesalt'];
-        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['anikoto', 'animesalt'];
+        const ANIME_PROVIDERS = ['anikoto'];
+        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['anikoto'];
         const REMOVED_PROVIDER_MAP = {
-            satoru: 'animesalt',
-            justanime: 'animesalt',
+            satoru: 'anikoto',
+            justanime: 'anikoto',
+            animesalt: 'anikoto',
             flixhq: 'hdstream4u'
         };
         
         // NOTE: MOVIE_PROVIDERS is legacy - replaced with intelligent anime detection
         // For non-anime content: HDStream4u is the primary provider.
         // For anime content: ANIME_PROVIDERS only (most reliable)
-        const MOVIE_PROVIDERS = ['hdstream4u', 'animesalt'];
+        const MOVIE_PROVIDERS = ['hdstream4u'];
 
         const params = new URLSearchParams(location.search);
         const TMDB_ID = params.get('id');
@@ -5372,7 +5373,7 @@ function getProxiedUrl(url, referer = '') {
         const HDSTREAM_FALLBACK_INTRO_SECONDS = 60; // hdstream movies: first ~1 min is the studio intro
         let lastSuccessfulProvider = '';
         let satoruAudioSources = []; // background-fetched satoru sources used as virtual audio tracks
-        let currentAudioSource = 'animesalt'; // active stream provider for virtual/audio switching
+        let currentAudioSource = 'anikoto'; // active stream provider for virtual/audio switching
         let activeSatoruTrackIndex = -1; // -1 means none, or index in satoruAudioSources
         const ANIME_PROVIDER_INFO_CACHE_TTL_MS = 30 * 60 * 1000;
         const animeProviderInfoCache = new Map();
@@ -9242,6 +9243,22 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             return aliases[compact] || [];
         }
 
+        function isAnikotoSlugMatch(row, wantedTitle) {
+            const wantedSlug = normalizeAnimeSearchQuery(wantedTitle)
+                .replace(/\b(?:season|part|cour)\s*\d+\b/gi, ' ')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            if (!wantedSlug) return false;
+            const candidates = [String(row?.id || ''), String(row?.slug || '')];
+            try {
+                const pathParts = new URL(String(row?.url || '')).pathname.split('/').filter(Boolean);
+                const watchIndex = pathParts.findIndex((part) => part.toLowerCase() === 'watch');
+                if (watchIndex >= 0 && pathParts[watchIndex + 1]) candidates.push(pathParts[watchIndex + 1]);
+            } catch (_) { }
+            return candidates.some((candidate) => String(candidate).toLowerCase() === wantedSlug);
+        }
+
         function isAllowedAmbiguousAnimeProviderMatch(row, wantedTitle, preferredYear = null) {
             if (!isStrongAnimeProviderTitleMatch(row, wantedTitle)) {
                 const partialMatch = getAnimeResultTitleTexts(row).some((candidateTitle) => {
@@ -10147,8 +10164,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     if (meaningfulWanted.length && !meaningfulOverlap) continue;
                 }
                 const yearBackedPartialMatch = advancedAnikotoMovieMatch && preferredYear && itemYear === preferredYear && matchQuality.tokenRatio >= 0.5;
-                if (!matchQuality.strong && !seasonLabel && !yearBackedPartialMatch && !(advancedAnikotoMovieMatch && matchQuality.tokenRatio >= 0.5)) continue;
+                const anikotoSlugMatch = String(providerName || '').toLowerCase() === 'anikoto' && isAnikotoSlugMatch(r, normTitle);
+                if (!matchQuality.strong && !anikotoSlugMatch && !seasonLabel && !yearBackedPartialMatch && !(advancedAnikotoMovieMatch && matchQuality.tokenRatio >= 0.5)) continue;
                 if (!isAllowedAmbiguousAnimeProviderMatch(r, normTitle, preferredYear)
+                    && !anikotoSlugMatch
                     && !(isMovie && matchQuality.tokenRatio >= 0.5)) continue;
 
                 let score = 0;
@@ -10166,6 +10185,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 if (itemTitle === normTitle) score += 120;
                 else if (itemTitle.startsWith(normTitle)) score += 95;
                 else if (itemTitle.includes(normTitle)) score += 80;
+                if (anikotoSlugMatch) score += 180;
 
                 const tWords = itemTitle.split(' ').filter(Boolean);
                 const common = qWords.filter((w) => tWords.includes(w)).length;
@@ -21491,7 +21511,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             allSources.length = 0;
             activeFlixhqServerName = '';
             satoruAudioSources = [];
-            currentAudioSource = 'animesalt';
+            currentAudioSource = 'anikoto';
             activeSatoruTrackIndex = -1;
             setExternalSubtitleTracks([]);
             currentIdx = 0;
@@ -21531,7 +21551,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             ? 'flixhq'
                             : (/\$episode\$/i.test(bootEpisodeId || continueEpisodeId)
                                 ? 'anikoto'
-                                : ((bootSeasonKey || continueSeasonKey) ? 'animesalt' : null))));
+                                : ((bootSeasonKey || continueSeasonKey) ? 'anikoto' : null))));
                 pendingEpisodeSelectionHint = {
                     provider: bootProviderHint,
                     episodeId: (urlEpisodeIdLooksProviderScoped ? bootEpisodeId : '') || (continueEpisodeIdLooksProviderScoped ? continueEpisodeId : '') || null,
@@ -22680,6 +22700,13 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                         : results;
                                      const searchPool = filteredResults.length ? filteredResults : results;
                                      lastSearchPool = searchPool;
+                                     if (provider === 'anikoto') {
+                                         const slugMatch = searchPool.find((row) => isAnikotoSlugMatch(row, resContext.mediaTitle));
+                                         if (slugMatch?.id) {
+                                             bestAnime = slugMatch;
+                                             break;
+                                         }
+                                     }
                                      if (provider === 'animekai' && searchPool.length) {
                                          bestAnime = searchPool.find((row) => String(row?.type || '').toLowerCase() === 'tv') || searchPool[0];
                                          break;
@@ -22692,7 +22719,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                     const matchedCanonicalId = canonicalAnimeId && bestAnimeCanonicalId && bestAnimeCanonicalId === canonicalAnimeId;
                                      const moviePartialMatch = provider === 'anikoto' && MEDIA_TYPE === 'movie' && getAnimeResultTitleTexts(bestAnime || {})
                                          .some((candidateTitle) => getTitleMatchQuality(candidateTitle, resContext.mediaTitle).tokenRatio >= 0.5);
-                                     if (bestAnime?.id && !matchedCanonicalId && !isAllowedAmbiguousAnimeProviderMatch(bestAnime, resContext.mediaTitle, getPreferredMediaYear()) && !moviePartialMatch) {
+                                     const anikotoSlugMatch = provider === 'anikoto' && isAnikotoSlugMatch(bestAnime, resContext.mediaTitle);
+                                     if (bestAnime?.id && !matchedCanonicalId && !anikotoSlugMatch && !isAllowedAmbiguousAnimeProviderMatch(bestAnime, resContext.mediaTitle, getPreferredMediaYear()) && !moviePartialMatch) {
                                         console.warn(`[${provider}] rejected wrong-title anime match for "${resContext.mediaTitle}"`, getAnimeResultTitleTexts(bestAnime).join(' / ') || bestAnime.id);
                                         bestAnime = null;
                                     }
@@ -23069,7 +23097,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             low.includes('.mp4') ||
                             low.includes('.mpd');
                         const isAllowedFlixhqEmbed = false;
-                        if (!isAllowedFlixhqEmbed && (src?.isEmbed || src?.isIframe || low.includes('/embed') || low.includes('/iframe') || !isDirectPlayable)) {
+                         const isAllowedAnimeSaltEmbed = provider === 'animesalt' && (src?.isEmbed || src?.isIframe);
+                         if (!isAllowedFlixhqEmbed && !isAllowedAnimeSaltEmbed && (src?.isEmbed || src?.isIframe || low.includes('/embed') || low.includes('/iframe') || !isDirectPlayable)) {
                             return false;
                         }
                         if (provider === 'vegamovies') {
@@ -23768,7 +23797,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                         animeSaltCdnUrl &&
                         (!safeReferer || /animesalt\.ac/i.test(safeReferer))
                     ) {
-                        safeReferer = 'https://animesalt.ac/';
+                         safeReferer = 'https://animesalt.cx/';
                     }
                     const proxyPath = `${mediaProxyOrigin}/proxy/hls/${parsed.host}${parsed.pathname}${parsed.search}`;
                     const withReferer = safeReferer ? `${proxyPath}${proxyPath.includes('?') ? '&' : '?'}referer=${encodeURIComponent(safeReferer)}` : proxyPath;
