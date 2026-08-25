@@ -22,12 +22,22 @@ fs.writeFileSync(path.join(__dirname, 'firebaseConfig.js'), output, 'utf8');
 const publicDir = path.join(__dirname, 'public');
 fs.rmSync(publicDir, { recursive: true, force: true });
 fs.mkdirSync(publicDir, { recursive: true });
-fs.cpSync(__dirname, publicDir, {
-    recursive: true,
-    filter: (source) => {
-        const relative = path.relative(__dirname, source);
-        return !relative || !/^(public|node_modules|\.git|\.vercel)(\\|\/|$)/.test(relative);
-    },
-});
+const excludedEntries = new Set([
+    'public',
+    'node_modules',
+    '.git',
+    '.vercel',
+    '.env',
+    '.env.vercel',
+    'firebase-service-account.json',
+]);
+for (const entry of fs.readdirSync(__dirname)) {
+    if (excludedEntries.has(entry)) continue;
+    fs.cpSync(
+        path.join(__dirname, entry),
+        path.join(publicDir, entry),
+        { recursive: true },
+    );
+}
 fs.writeFileSync(path.join(publicDir, 'firebaseConfig.js'), output, 'utf8');
 console.log('Generated public output and firebaseConfig.js from environment variables.');
