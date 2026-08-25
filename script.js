@@ -899,9 +899,19 @@ function getContinueWatchingItems() {
     }
 }
 
+function deleteContinueWatchingCloud(item) {
+    const promise = window.StreamVerseAuth?.deleteItem?.(item);
+    promise?.catch?.((error) => console.warn('[auth] continue item delete failed:', error));
+}
+
 function removeContinueWatchingEntry(id, type) {
     try {
         const items = getContinueWatchingItems();
+        const removed = items.filter((row) => (
+            String(row?.id || '') === String(id || '') &&
+            String(row?.type || '').toLowerCase() === String(type || '').toLowerCase()
+        ));
+        removed.forEach(deleteContinueWatchingCloud);
         const filtered = items.filter((row) => !(
             String(row?.id || '') === String(id || '') &&
             String(row?.type || '').toLowerCase() === String(type || '').toLowerCase()
@@ -930,6 +940,8 @@ function initContinueWatchingControls() {
     continueClearConfirmBtn.addEventListener('click', () => {
         if (!continueSelectedKeys.size) return;
         const items = getContinueWatchingItems();
+        items.filter((item) => continueSelectedKeys.has(getContinueItemKey(item)))
+            .forEach(deleteContinueWatchingCloud);
         const filtered = items.filter((item) => !continueSelectedKeys.has(getContinueItemKey(item)));
         localStorage.setItem('sv_continue_watching', JSON.stringify(filtered));
         continueSelectionMode = false;
@@ -939,6 +951,7 @@ function initContinueWatchingControls() {
 
     if (continueClearAllBtn) {
         continueClearAllBtn.addEventListener('click', () => {
+            getContinueWatchingItems().forEach(deleteContinueWatchingCloud);
             localStorage.removeItem('sv_continue_watching');
             continueSelectionMode = false;
             continueSelectedKeys = new Set();

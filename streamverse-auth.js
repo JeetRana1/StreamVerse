@@ -4,7 +4,7 @@
     const LOCAL_KEY = 'sv_continue_watching';
     const PENDING_KEY_PREFIX = 'sv_pending_merge_local_';
     const REVIEWED_KEY_PREFIX = 'sv_merge_reviewed_';
-    const state = { user: null, ready: false, reconcilePromise: Promise.resolve() };
+    const state = { user: null, ready: false, reconcilePromise: Promise.resolve(), stopRealtime: null };
 
     function pendingKeyFor(uid) {
         return `${PENDING_KEY_PREFIX}${uid || 'guest'}`;
@@ -27,6 +27,24 @@
     function collection() {
         if (!state.user || !window.firebaseDb) return null;
         return window.firebaseDb.collection('users').doc(state.user.uid).collection('continueWatching');
+    }
+
+    function dispatchCloudItems(items) {
+        if (readPendingItems().length && !readLocalItems().length) return;
+        if (items.length) localStorage.setItem(LOCAL_KEY, JSON.stringify(items));
+        else localStorage.removeItem(LOCAL_KEY);
+        window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: state.user, items } }));
+    }
+
+    function startRealtimeSync() {
+        state.stopRealtime?.();
+        const ref = collection();
+        if (!ref) return;
+        state.stopRealtime = ref.onSnapshot((snapshot) => {
+            const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id)
+                .sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0));
+            dispatchCloudItems(cloud);
+        }, (error) => console.warn('[auth] realtime sync failed:', error));
     }
 
     function readLocalItems() {
@@ -61,6 +79,20 @@
         const value = item?.poster || item?.posterUrl || item?.image || item?.poster_path || '';
         if (!value) return 'https://placehold.co/160x240/171923/e50914?text=No+Poster';
         return /^https?:\/\//i.test(value) ? value : `https://image.tmdb.org/t/p/w342${value}`;
+    }
+
+    function showSyncNotice(message) {
+        let notice = document.getElementById('streamverse-sync-notice');
+        if (!notice) {
+            notice = document.createElement('div');
+            notice.id = 'streamverse-sync-notice';
+            notice.style.cssText = 'position:fixed;top:24px;right:24px;z-index:11000;display:flex;align-items:center;gap:10px;padding:13px 17px;border:1px solid rgba(106,226,166,.4);border-radius:14px;background:rgba(10,11,15,.9);backdrop-filter:blur(18px);color:#b8f5d0;box-shadow:0 14px 35px rgba(0,0,0,.35);font:600 13px Segoe UI,system-ui,sans-serif;opacity:0;transform:translateY(-8px);transition:.25s ease;';
+            document.body.appendChild(notice);
+        }
+        notice.innerHTML = '<i class="fa-solid fa-circle-check"></i> ' + escapeHtml(message);
+        requestAnimationFrame(() => { notice.style.opacity = '1'; notice.style.transform = 'translateY(0)'; });
+        clearTimeout(notice._hideTimer);
+        notice._hideTimer = setTimeout(() => { notice.style.opacity = '0'; notice.style.transform = 'translateY(-8px)'; }, 3200);
     }
 
     function ensureMergeModalStyles() {
@@ -166,6 +198,7 @@
                     .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item);
                 await Promise.all(finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
                 localStorage.setItem(reviewedKey(), libraryFingerprint(finalItems, finalItems));
+                showSyncNotice('Library merged successfully');
             } else {
                 // Declining means this signed-in session should show no continue-watching data.
                 if (local.length) localStorage.setItem(pendingKey(), JSON.stringify(local));
@@ -197,6 +230,8 @@
         localStorage.setItem(LOCAL_KEY, JSON.stringify(merged));
         localStorage.removeItem(pendingKey());
         localStorage.setItem(reviewedKey(), libraryFingerprint(merged, merged));
+        showSyncNotice('Library merged successfully');
+        startRealtimeSync();
         updateAuthButton();
         window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: state.user, items: merged } }));
     }
@@ -235,6 +270,12 @@
         await ref.doc(`${item.type || 'movie'}_${item.id}`).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
     }
 
+    async function deleteItem(item) {
+        const ref = collection();
+        if (!ref || !item?.id) return;
+        await ref.doc(itemKey(item)).delete();
+    }
+
     window.StreamVerseAuth = {
         state,
         signInGoogle,
@@ -243,6 +284,7 @@
         resetPassword,
         signOut,
         saveItem,
+        deleteItem,
         getUser: () => state.user,
         whenReady: () => state.reconcilePromise,
     };
@@ -320,6 +362,7 @@
     window.firebaseDb = firebase.firestore();
     window.firebaseAuth.onAuthStateChanged(async (user) => {
         const previousUser = state.user;
+        if (!user) state.stopRealtime?.();
         let restoredItems = [];
         if (!user && previousUser) {
             try { restoredItems = JSON.parse(localStorage.getItem(pendingKeyFor(previousUser.uid)) || '[]'); } catch (_) { restoredItems = []; }
@@ -331,7 +374,9 @@
         state.ready = true;
         window.dispatchEvent(new CustomEvent('streamverse-auth-changed', { detail: { user } }));
         updateAuthButton();
-        state.reconcilePromise = user ? reconcileLocalAndCloud().catch((error) => console.warn('[auth] sync failed:', error)) : Promise.resolve();
+        state.reconcilePromise = user
+            ? reconcileLocalAndCloud().then(() => startRealtimeSync()).catch((error) => console.warn('[auth] sync failed:', error))
+            : Promise.resolve();
         if (!user && restoredItems.length) {
             window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: null, items: restoredItems } }));
         }
