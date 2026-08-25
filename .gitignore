@@ -1,6 +1,7 @@
 .env
 .env.vercel
 firebaseConfig.js
+public/
 node_modules/
 *.png
 test-mobile-safari.js

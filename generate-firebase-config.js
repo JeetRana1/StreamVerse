@@ -18,4 +18,16 @@ if (missing.length) {
 const config = Object.fromEntries(fields.map(([key, envName]) => [key, process.env[envName].trim()]));
 const output = `window.streamVerseFirebaseConfig = ${JSON.stringify(config, null, 4)};\n`;
 fs.writeFileSync(path.join(__dirname, 'firebaseConfig.js'), output, 'utf8');
-console.log('Generated firebaseConfig.js from environment variables.');
+
+const publicDir = path.join(__dirname, 'public');
+fs.rmSync(publicDir, { recursive: true, force: true });
+fs.mkdirSync(publicDir, { recursive: true });
+fs.cpSync(__dirname, publicDir, {
+    recursive: true,
+    filter: (source) => {
+        const relative = path.relative(__dirname, source);
+        return !relative || !/^(public|node_modules|\.git|\.vercel)(\\|\/|$)/.test(relative);
+    },
+});
+fs.writeFileSync(path.join(publicDir, 'firebaseConfig.js'), output, 'utf8');
+console.log('Generated public output and firebaseConfig.js from environment variables.');
