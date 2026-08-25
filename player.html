@@ -6066,12 +6066,12 @@ function getProxiedUrl(url, referer = '') {
             // (oversized buffers fill up, HLS.js panics Ã¢â€ â€™ stall loop)
             // Keep FlixHQ buffers modest. Large audio buffers can preserve decoder drift
             // after seeks/track refreshes, which sounds like robotic/distorted audio.
-            const backBufferLength = isThumbnail ? 4 : (isVega ? 30 : (isHdstream ? 20 : (isFlixHq ? 8 : (isAnimeKai ? (mobileMain ? 6 : 10) : (mobileMain ? 8 : 12)))));
-            const maxBufferLength = isThumbnail ? 12 : (isVega ? 60 : (isHdstream ? 50 : (isFlixHq ? 18 : (isAnimeKai ? (mobileMain ? 10 : 16) : (mobileMain ? 14 : 20)))));
-            const maxMaxBufferLength = isThumbnail ? 24 : (isVega ? 120 : (isHdstream ? 100 : (isFlixHq ? 30 : (isAnimeKai ? (mobileMain ? 20 : 28) : (mobileMain ? 28 : 40)))));
+            const backBufferLength = isThumbnail ? 4 : (isVega ? 30 : (isHdstream || isAniKoto ? 20 : (isFlixHq ? 8 : (isAnimeKai ? (mobileMain ? 6 : 10) : (mobileMain ? 8 : 12)))));
+            const maxBufferLength = isThumbnail ? 12 : (isVega ? 60 : (isHdstream ? 50 : (isAniKoto ? 45 : (isFlixHq ? 18 : (isAnimeKai ? (mobileMain ? 10 : 16) : (mobileMain ? 14 : 20))))));
+            const maxMaxBufferLength = isThumbnail ? 24 : (isVega ? 120 : (isHdstream ? 100 : (isAniKoto ? 90 : (isFlixHq ? 30 : (isAnimeKai ? (mobileMain ? 20 : 28) : (mobileMain ? 28 : 40))))));
             const maxBufferSize = isThumbnail
                 ? 6 * 1024 * 1024
-                : (isVega ? 150 * 1000 * 1000 : (isFlixHq ? 36 * 1000 * 1000 : (isAnimeKai ? (mobileMain ? 14 * 1000 * 1000 : 22 * 1000 * 1000) : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000))));
+                : (isVega ? 150 * 1000 * 1000 : (isHdstream || isAniKoto ? 60 * 1000 * 1000 : (isFlixHq ? 36 * 1000 * 1000 : (isAnimeKai ? (mobileMain ? 14 * 1000 * 1000 : 22 * 1000 * 1000) : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000)))));
 
             return new Hls({
                 // Long VOD seeks are more reliable after the playlist has established
@@ -6100,7 +6100,7 @@ function getProxiedUrl(url, referer = '') {
                 maxAudioFramesDrift: isThumbnail ? 2 : (isVega ? 4 : (isFlixHq ? 8 : 4)),
                 stretchShortVideoTrack: true,
                 forceKeyFrameOnDiscontinuity: true,
-                maxBufferHole: isThumbnail ? 0.1 : (isVega ? 0.08 : ((isHdstream || isAnimeKai) ? 0.6 : 0.3)),
+                 maxBufferHole: isThumbnail ? 0.1 : (isVega ? 0.08 : ((isHdstream || isAniKoto || isAnimeKai) ? 0.6 : 0.3)),
                 startFragPrefetch: !isThumbnail && !isAnimeKai && !isFlixHq,
                 testBandwidth: !isThumbnail,
                 progressive: !isFlixHq,
@@ -6109,8 +6109,8 @@ function getProxiedUrl(url, referer = '') {
                 nudgeOffset: isVega ? 0.1 : (isFlixHq ? 0.04 : 0.1),
                 maxFragLookUpTolerance: isVega ? 0.05 : 0.2,
                 highBufferWatchdogPeriod: isVega ? 2 : 3,
-                maxStarvationDelay: isThumbnail ? 4 : (isVega ? 12 : (isHdstream ? 12 : (isFlixHq ? 8 : 4))),
-                maxLoadingDelay: isThumbnail ? 4 : (isVega ? 12 : (isHdstream ? 12 : (isFlixHq ? 8 : 4))),
+                 maxStarvationDelay: isThumbnail ? 4 : (isVega ? 12 : (isHdstream || isAniKoto ? 12 : (isFlixHq ? 8 : 4))),
+                 maxLoadingDelay: isThumbnail ? 4 : (isVega ? 12 : (isHdstream || isAniKoto ? 12 : (isFlixHq ? 8 : 4))),
                 // Fast, bounded retries: with server-side segment retry + cache,
                 // most transient CDN 500s resolve within the first attempt. A short
                 // client retry delay avoids multi-second stalls when one slips through.
@@ -6121,13 +6121,13 @@ function getProxiedUrl(url, referer = '') {
                 // 7-23s to download. Defaults abort fragments at 20s, which fires
                 // fragLoadTimeOut on slow-but-fine segments and drains the buffer.
                 // Give slow segments room to finish instead of killing them early.
-                fragLoadingTimeOut: isThumbnail ? 10000 : (isHdstream ? 40000 : 20000),
-                 manifestLoadingTimeOut: isThumbnail ? 8000 : (isHdstream ? 60000 : 15000),
-                 levelLoadingTimeOut: isThumbnail ? 5000 : (isHdstream ? 40000 : 8000),
+                 fragLoadingTimeOut: isThumbnail ? 10000 : (isHdstream || isAniKoto ? 45000 : 20000),
+                  manifestLoadingTimeOut: isThumbnail ? 8000 : (isHdstream || isAniKoto ? 60000 : 15000),
+                  levelLoadingTimeOut: isThumbnail ? 5000 : (isHdstream || isAniKoto ? 40000 : 8000),
                 xhrSetup: (xhr, url) => {
                     xhr.timeout = isThumbnail
                         ? (isFlixHq ? 3500 : 5000)
-                        : (isHdstream ? 45000 : (isVega ? 30000 : (isAnimeKai ? 28000 : (isFlixHq ? 35000 : 25000))));
+                        : (isHdstream || isAniKoto ? 45000 : (isVega ? 30000 : (isAnimeKai ? 28000 : (isFlixHq ? 35000 : 25000))));
                 },
             });
         }
@@ -6295,6 +6295,13 @@ function getProxiedUrl(url, referer = '') {
                 currentStreamProvider || allSources?.[currentIdx]?.provider || FORCED_PROVIDER || ''
             ).toLowerCase();
             return provider.includes('hdstream');
+        }
+
+        function isCurrentAniKotoStream() {
+            const provider = String(
+                currentStreamProvider || allSources?.[currentIdx]?.provider || FORCED_PROVIDER || ''
+            ).toLowerCase();
+            return provider.includes('anikoto');
         }
 
         function isVideoTimeBuffered(targetTime, edge = 0.15) {
@@ -6658,7 +6665,7 @@ function getProxiedUrl(url, referer = '') {
                 // On slow CDNs (acek-cdn for hdstream), stopLoad+startLoad aborts
                 // the in-flight download and restarts it — the CDN is too slow for
                 // the cycle to ever complete. Only avoid if a load is actively in flight.
-                if (isCurrentHdstreamStream() && Date.now() - lastFragLoadStartAt < 35000) return true;
+                if ((isCurrentHdstreamStream() || isCurrentAniKotoStream()) && Date.now() - lastFragLoadStartAt < 35000) return true;
                 return false;
             };
             const clearFatalRecoveryTimer = () => {
@@ -7133,7 +7140,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             // On slow CDNs (acek-cdn, 5-20s/segment) HLS is
                             // legitimately loading — the stall errors are noise.
                             // Skip counting while a fragment load is in flight.
-                            if (isCurrentHdstreamStream() && Date.now() - lastFragLoadStartAt < 35000) {
+                            if ((isCurrentHdstreamStream() || isCurrentAniKotoStream()) && Date.now() - lastFragLoadStartAt < 35000) {
                                 // Even though we skip recovery, show the buffering
                                 // overlay so the user sees activity instead of black.
                                 showBufferingOverlay();
@@ -7155,7 +7162,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                         // (stopLoad + startLoad) aborts the in-flight download
                                         // and restarts it — the cycle never completes. Only
                                         // nudge when the CDN is known-fast.
-                                        if (!isCurrentHdstreamStream()) {
+                                        if (!isCurrentHdstreamStream() && !isCurrentAniKotoStream()) {
                                             video.currentTime = Math.min(
                                                 (video.duration || Infinity) - 0.05,
                                                 (video.currentTime || 0) + (IS_MOBILE_CLIENT ? 0.1 : 0.2),
@@ -7166,7 +7173,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                     }
                                 } catch (_) { }
                             }
-                            const stallEscalationThreshold = isCurrentHdstreamStream() ? 20 : 4;
+                            const stallEscalationThreshold = (isCurrentHdstreamStream() || isCurrentAniKotoStream()) ? 20 : 4;
                             if (repeatedStallErrorCount >= stallEscalationThreshold && typeof onErrorFallback === 'function') {
                                 console.warn('[hls] Repeated buffer stall errors, escalating to source recovery');
                                 repeatedStallErrorCount = 0;
@@ -7378,7 +7385,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 // If HLS started loading a fragment recently, the CDN is working
                 // (just slow). Do not count stalls while fragment loads are in
                 // progress — the buffer will fill once the download completes.
-                if (isCurrentHdstreamStream() && Date.now() - lastFragLoadStartAt < 35000) {
+                if ((isCurrentHdstreamStream() || isCurrentAniKotoStream()) && Date.now() - lastFragLoadStartAt < 35000) {
                     watchdogStallCount = 0;
                     lastWatchdogTime = video ? video.currentTime : -1;
                     return;
