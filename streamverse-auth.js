@@ -86,15 +86,20 @@
         return /^https?:\/\//i.test(value) ? value : `https://image.tmdb.org/t/p/w342${value}`;
     }
 
-    function showSyncNotice(message) {
+    function showSyncNotice(message, tone = 'success') {
         let notice = document.getElementById('streamverse-sync-notice');
         if (!notice) {
             notice = document.createElement('div');
             notice.id = 'streamverse-sync-notice';
+            notice.className = 'sv-sync-notice';
             notice.style.cssText = 'position:fixed;top:24px;right:24px;z-index:11000;display:flex;align-items:center;gap:10px;padding:13px 17px;border:1px solid rgba(106,226,166,.4);border-radius:14px;background:rgba(10,11,15,.9);backdrop-filter:blur(18px);color:#b8f5d0;box-shadow:0 14px 35px rgba(0,0,0,.35);font:600 13px Segoe UI,system-ui,sans-serif;opacity:0;transform:translateY(-8px);transition:.25s ease;';
             document.body.appendChild(notice);
         }
-        notice.innerHTML = '<i class="fa-solid fa-circle-check"></i> ' + escapeHtml(message);
+        const isError = tone === 'error';
+        notice.style.borderColor = isError ? 'rgba(255,93,89,.58)' : 'rgba(106,226,166,.4)';
+        notice.style.background = isError ? 'rgba(65,18,23,.94)' : 'rgba(10,11,15,.9)';
+        notice.style.color = isError ? '#ffaaa5' : '#b8f5d0';
+        notice.innerHTML = `<i class="fa-solid ${isError ? 'fa-right-from-bracket' : 'fa-circle-check'}"></i> ${escapeHtml(message)}`;
         requestAnimationFrame(() => { notice.style.opacity = '1'; notice.style.transform = 'translateY(0)'; });
         clearTimeout(notice._hideTimer);
         notice._hideTimer = setTimeout(() => { notice.style.opacity = '0'; notice.style.transform = 'translateY(-8px)'; }, 3200);
@@ -151,6 +156,8 @@
           .sv-merge-actions button:hover { filter: brightness(1.12); }
           .sv-merge-retry-button { display: grid; width: 42px; height: 42px; margin-right: 8px; place-items: center; border: 1px solid rgba(255,93,89,.58); border-radius: 14px; background: rgba(255,54,61,.16); color: #ffaaa5; cursor: pointer; box-shadow: 0 8px 20px rgba(190,24,45,.18), inset 0 1px rgba(255,255,255,.14); transition: .25s ease; }
           .sv-merge-retry-button:hover { transform: translateY(-2px); border-color: #ff7771; background: rgba(255,70,76,.29); color: #fff; }
+          .sv-sync-notice { max-width: min(360px, calc(100vw - 32px)); }
+          @media (max-width: 600px) { .sv-sync-notice { top: 16px !important; right: 12px !important; left: 12px !important; justify-content: center; max-width: none; text-align: center; } }
           @media (max-width: 520px) { .sv-merge-copy { padding: 22px 20px 2px; } .sv-merge-copy h2 { font-size: 22px; } .sv-merge-scroll { padding-bottom: 82px; } .sv-merge-list { grid-template-columns: repeat(3, minmax(80px, 1fr)); gap: 12px 8px; padding: 18px 20px 24px; } .sv-merge-item { padding: 6px; border-radius: 12px; } .sv-merge-modal > .sv-merge-actions { right: 20px; bottom: 20px; } .sv-merge-actions button { flex: 1; padding: 0 10px; } }
         `;
         document.head.appendChild(style);
@@ -166,7 +173,7 @@
             backdrop.className = 'sv-merge-root';
             backdrop.innerHTML = `<section class="lg-17 sv-merge-backdrop" role="dialog" aria-modal="true" aria-label="Library sync">
               <div class="lg-17__mesh" aria-hidden="true"></div><form class="lg-17__card sv-merge-modal" novalidate>
-              <div class="sv-merge-scroll"><div class="sv-merge-copy"><div class="sv-merge-kicker">Library sync</div><h2>Keep your library in sync?</h2><p>We found ${items.length} saved title${items.length === 1 ? '' : 's'} on this device and in your StreamVerse account. Choose whether to combine them and keep everything together.</p></div>
+              <div class="sv-merge-scroll"><div class="sv-merge-copy"><div class="sv-merge-kicker">Library sync</div><h2>Keep your library in sync?</h2><p>We found ${items.length} saved title${items.length === 1 ? '' : 's'} on this device that ${items.length === 1 ? 'isn\'t' : 'aren\'t'} in your account yet. Choose whether to add ${items.length === 1 ? 'it' : 'them'}.</p></div>
               <div class="sv-merge-list">${items.map((item) => { const key = itemKey(item); const source = localKeys.has(key) && cloudKeys.has(key) ? 'On device + account' : localKeys.has(key) ? 'On this device' : 'In your account'; return `<article class="sv-merge-item"><img src="${escapeHtml(itemPoster(item))}" alt="" loading="lazy"><strong title="${escapeHtml(item.title || item.name || 'Untitled')}">${escapeHtml(item.title || item.name || 'Untitled')}</strong><span>${source}</span></article>`; }).join('')}</div></div>
               <div class="sv-merge-actions"><button type="button" data-merge-skip>Not now</button><button type="button" class="sv-merge-confirm" data-merge-confirm>Merge and keep all</button></div>
               </form></section>`;
@@ -190,15 +197,16 @@
         const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
         const localMap = new Map(local.map((item) => [itemKey(item), item]));
         const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
-        const hasDifferences = local.some((item) => {
+        const localOnly = local.filter((item) => !cloudMap.has(itemKey(item)));
+        const hasDifferences = localOnly.length > 0 || local.some((item) => {
             const cloudItem = cloudMap.get(itemKey(item));
-            return !cloudItem || itemFingerprint(item) !== itemFingerprint(cloudItem);
-        }) || cloud.some((item) => !localMap.has(itemKey(item)));
+            return cloudItem && itemFingerprint(item) !== itemFingerprint(cloudItem);
+        });
         const hasCompletedMerge = localStorage.getItem(completedKey()) === 'true';
-        const needsPrompt = !hasCompletedMerge && hasDifferences && localStorage.getItem(reviewedKey()) !== libraryFingerprint(local, cloud);
+        const needsPrompt = !hasCompletedMerge && localOnly.length > 0 && localStorage.getItem(reviewedKey()) !== libraryFingerprint(localOnly, []);
         let finalItems = cloud;
         if (needsPrompt && (local.length || cloud.length)) {
-            const shouldMerge = await showMergePrompt(local, cloud);
+            const shouldMerge = await showMergePrompt(localOnly, []);
             if (shouldMerge) {
                 finalItems = [...new Map([...cloud, ...local].map((item) => [itemKey(item), item])).values()]
                     .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item);
@@ -208,7 +216,7 @@
                 showSyncNotice('Library merged successfully');
             } else {
                 // Declining means this signed-in session should show no continue-watching data.
-                if (local.length) localStorage.setItem(pendingKey(), JSON.stringify(local));
+                if (localOnly.length) localStorage.setItem(pendingKey(), JSON.stringify(localOnly));
                 finalItems = [];
                 localStorage.removeItem(LOCAL_KEY);
             }
@@ -230,7 +238,7 @@
         if (!local.length || !ref) return;
         const snapshot = await ref.get();
         const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
-        const shouldMerge = await showMergePrompt(local, cloud);
+        const shouldMerge = await showMergePrompt(local, []);
         if (!shouldMerge) return;
         const localMap = new Map(local.map((item) => [itemKey(item), item]));
         const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
@@ -297,6 +305,7 @@
         signOut,
         saveItem,
         deleteItem,
+        notify: showSyncNotice,
         getUser: () => state.user,
         whenReady: () => state.reconcilePromise,
     };
@@ -352,7 +361,7 @@
             button.title = 'Sign out';
             button.onclick = () => { menu?.classList.toggle('open'); menu?.setAttribute('aria-hidden', String(!menu.classList.contains('open'))); };
             settings && (settings.onclick = () => { menu?.classList.remove('open'); location.href = '/settings.html'; });
-            logout && (logout.onclick = async () => { button.disabled = true; menu?.classList.remove('open'); await signOut(); updateAuthButton(); button.disabled = false; });
+            logout && (logout.onclick = async () => { button.disabled = true; menu?.classList.remove('open'); await signOut(); showSyncNotice('Logged out successfully', 'error'); updateAuthButton(); button.disabled = false; });
         } else {
             button.classList.remove('is-signed-in');
             button.innerHTML = '<i class="fa-regular fa-user"></i><span class="auth-label">Login / Signup</span>';

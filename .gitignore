@@ -3,6 +3,7 @@
 firebaseConfig.js
 public/
 node_modules/
+.vscode/settings.json
 *.png
 test-mobile-safari.js
 test.json

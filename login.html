@@ -997,7 +997,14 @@
             updateMode();
             return;
           }
-          if (firebase.auth().currentUser) location.href = "/";
+           if (mode === "login" || mode === "signup")
+             sessionStorage.setItem(
+               "streamverse_auth_notice",
+               mode === "signup"
+                 ? "Account created successfully."
+                 : "Signed in successfully.",
+             );
+           if (firebase.auth().currentUser) location.href = "/";
         } catch (error) {
           message.textContent = "The request could not be completed.";
           const friendly = {
@@ -1083,15 +1090,6 @@
       document
         .getElementById("email")
         .addEventListener("input", updatePasswordRules);
-      submit.addEventListener("click", () => {
-        if (mode === "login" || mode === "signup")
-          sessionStorage.setItem(
-            "streamverse_auth_notice",
-            mode === "signup"
-              ? "Account created successfully."
-              : "Signed in successfully.",
-          );
-      });
       updateMode();
       firebase.auth().onAuthStateChanged(async (user) => {
         if (user) {
