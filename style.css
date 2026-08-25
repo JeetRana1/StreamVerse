@@ -5169,6 +5169,28 @@ body.watch-party-home-open {
         justify-content: center;
     }
 
+    #streamverse-merge-retry-button {
+        width: 42px;
+        min-width: 42px;
+        height: 42px;
+        margin-right: 0;
+        padding: 0;
+    }
+
+    .auth-header-btn {
+        width: 42px;
+        min-width: 42px;
+        height: 42px;
+        justify-content: center;
+        gap: 0;
+        padding: 0;
+    }
+
+    .auth-header-btn .auth-label,
+    .auth-header-btn .auth-chevron {
+        display: none;
+    }
+
     .mobile-menu-btn { order: 5; }
     .account-menu-wrap { order: 6; margin-left: auto; }
 

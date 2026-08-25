@@ -1093,8 +1093,11 @@
           );
       });
       updateMode();
-      firebase.auth().onAuthStateChanged((user) => {
-        if (user) location.href = "/";
+      firebase.auth().onAuthStateChanged(async (user) => {
+        if (user) {
+          await window.StreamVerseAuth?.whenReady?.();
+          location.href = "/";
+        }
       });
       firebase
         .auth()
