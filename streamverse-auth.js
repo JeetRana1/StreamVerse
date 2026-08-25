@@ -3,6 +3,7 @@
 
     const LOCAL_KEY = 'sv_continue_watching';
     const PENDING_KEY_PREFIX = 'sv_pending_merge_local_';
+    const REVIEWED_KEY_PREFIX = 'sv_merge_reviewed_';
     const state = { user: null, ready: false, reconcilePromise: Promise.resolve() };
 
     function pendingKeyFor(uid) {
@@ -11,6 +12,10 @@
 
     function pendingKey() {
         return pendingKeyFor(state.user?.uid);
+    }
+
+    function reviewedKey() {
+        return `${REVIEWED_KEY_PREFIX}${state.user?.uid || 'guest'}`;
     }
 
     function readPendingItems() {
@@ -40,6 +45,12 @@
 
     function itemFingerprint(item) {
         return JSON.stringify(Object.keys(item || {}).sort().filter((key) => key !== 'updatedAt').map((key) => [key, item[key]]));
+    }
+
+    function libraryFingerprint(local, cloud) {
+        const localMap = new Map(local.map((item) => [itemKey(item), item]));
+        const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
+        return JSON.stringify([...new Set([...localMap.keys(), ...cloudMap.keys()])].sort().map((key) => [key, itemFingerprint(newestItem(localMap.get(key), cloudMap.get(key)))]));
     }
 
     function escapeHtml(value) {
@@ -142,10 +153,11 @@
         const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
         const localMap = new Map(local.map((item) => [itemKey(item), item]));
         const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
-        const needsPrompt = local.some((item) => {
+        const hasDifferences = local.some((item) => {
             const cloudItem = cloudMap.get(itemKey(item));
             return !cloudItem || itemFingerprint(item) !== itemFingerprint(cloudItem);
         }) || cloud.some((item) => !localMap.has(itemKey(item)));
+        const needsPrompt = hasDifferences && localStorage.getItem(reviewedKey()) !== libraryFingerprint(local, cloud);
         let finalItems = cloud;
         if (needsPrompt && (local.length || cloud.length)) {
             const shouldMerge = await showMergePrompt(local, cloud);
@@ -153,6 +165,7 @@
                 finalItems = [...new Map([...cloud, ...local].map((item) => [itemKey(item), item])).values()]
                     .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item);
                 await Promise.all(finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
+                localStorage.setItem(reviewedKey(), libraryFingerprint(finalItems, finalItems));
             } else {
                 // Declining means this signed-in session should show no continue-watching data.
                 if (local.length) localStorage.setItem(pendingKey(), JSON.stringify(local));
@@ -183,6 +196,7 @@
         await Promise.all(merged.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
         localStorage.setItem(LOCAL_KEY, JSON.stringify(merged));
         localStorage.removeItem(pendingKey());
+        localStorage.setItem(reviewedKey(), libraryFingerprint(merged, merged));
         updateAuthButton();
         window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: state.user, items: merged } }));
     }
