@@ -39,5 +39,13 @@ for (const entry of fs.readdirSync(__dirname)) {
         { recursive: true },
     );
 }
+const backgroundDir = path.join(__dirname, 'background');
+const backgroundFiles = fs.existsSync(backgroundDir)
+    ? fs.readdirSync(backgroundDir)
+        .filter((file) => /\.(?:jpg|jpeg|png|webp)$/i.test(file))
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+        .map((file) => ({ name: file, url: `/background/${encodeURIComponent(file)}` }))
+    : [];
+fs.writeFileSync(path.join(publicDir, 'backgrounds.json'), JSON.stringify(backgroundFiles), 'utf8');
 fs.writeFileSync(path.join(publicDir, 'firebaseConfig.js'), output, 'utf8');
 console.log('Generated public output and firebaseConfig.js from environment variables.');
