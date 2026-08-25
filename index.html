@@ -47,15 +47,11 @@
                     <li><a href="#trending" onclick="filterType('trending')">Trending</a></li>
                 </ul>
             </nav>
-            <div class="header-actions">
+                <div class="header-actions">
                 <div class="api-switcher">
                     <button id="api-prod" onclick="toggleApi('prod')" title="Production API">Prod</button>
                     <button id="api-local" onclick="toggleApi('local')" title="Local API">Local</button>
                 </div>
-                <button type="button" class="genre-filter-btn" id="genre-filter-btn" aria-expanded="false" aria-controls="genre-filter-panel" title="Filter by genre">
-                    <i class="fa-solid fa-sliders"></i>
-                    <span>Genre</span>
-                </button>
                 <button type="button" class="cache-clear-btn" id="cache-clear-btn" title="Clear old cache" aria-label="Clear old cache">
                     <i class="fa-solid fa-rotate-right"></i>
                     <span>Clear Cache</span>
@@ -74,6 +70,7 @@
                 <button class="mobile-menu-btn" id="mobile-menu-toggle">
                     <i class="fa-solid fa-bars"></i>
                 </button>
+                 <div class="account-menu-wrap"><button type="button" id="streamverse-auth-button" class="auth-header-btn"><i class="fa-regular fa-user"></i><span class="auth-label">Login / Signup</span></button><div id="account-menu" class="account-menu" aria-hidden="true"><button type="button" id="account-settings"><i class="fa-solid fa-gear"></i> Settings</button><button type="button" id="account-logout"><i class="fa-solid fa-right-from-bracket"></i> Log out</button></div></div>
             </div>
         </div>
 
@@ -193,8 +190,8 @@
             </section>
 
             <!-- All Movies / TV -->
-            <section class="row-section" id="all-media-section">
-                <h2 class="section-title">All Movies / TV</h2>
+             <section class="row-section" id="all-media-section">
+                 <div class="section-title-row category-title-row"><h2 class="section-title">All Movies / TV</h2><button type="button" class="genre-filter-btn" id="genre-filter-btn" aria-expanded="false" aria-controls="genre-filter-panel" title="Filter by genre"><i class="fa-solid fa-sliders"></i><span>Genre</span></button></div>
                 <div class="movie-grid" id="all-media-grid">
                     <div class="skeleton-card"></div>
                     <div class="skeleton-card"></div>
@@ -256,8 +253,13 @@
         </div>
     </div>
 
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="/firebaseConfig.js"></script>
+    <script src="/streamverse-auth.js"></script>
     <script src="/config.js"></script>
-    <script src="script.js?v=3.5"></script>
+    <script src="script.js?v=3.6"></script>
     
 </body>
 

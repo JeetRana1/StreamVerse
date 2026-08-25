@@ -1,0 +1,1260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Welcome back | StreamVerse</title>
+    <link rel="icon" href="logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+    <style>
+      :root {
+        color: #f8f7ff;
+        --muted: rgba(245, 244, 255, 0.68);
+        --line: rgba(255, 255, 255, 0.23);
+        --violet: #a98cff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 22px;
+        overflow: auto;
+        background: #101119;
+        color: #f8f7ff;
+        font-family: "DM Sans", system-ui, sans-serif;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(
+            700px 420px at -5% -8%,
+            rgba(120, 78, 255, 0.16),
+            transparent 62%
+          ),
+          radial-gradient(
+            650px 480px at 105% 110%,
+            rgba(255, 76, 76, 0.13),
+            transparent 60%
+          );
+      }
+      #tubes-canvas {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        overflow: hidden;
+        background: #11121a;
+      }
+      .ambient-particles {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        overflow: hidden;
+        pointer-events: none;
+        opacity: 0.6;
+      }
+      .ambient-particles span {
+        position: absolute;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #b7a7ff;
+        box-shadow:
+          0 0 10px 3px rgba(161, 140, 255, 0.72),
+          0 0 28px 8px rgba(121, 91, 255, 0.3);
+        animation: float 14s ease-in-out infinite;
+      }
+      .ambient-particles span:nth-child(1) {
+        left: 8%;
+        top: 20%;
+        animation-delay: -3s;
+      }
+      .ambient-particles span:nth-child(2) {
+        left: 18%;
+        top: 76%;
+        width: 3px;
+        height: 3px;
+        animation-delay: -8s;
+      }
+      .ambient-particles span:nth-child(3) {
+        left: 86%;
+        top: 16%;
+        background: #ff736b;
+        box-shadow:
+          0 0 12px 4px rgba(255, 115, 107, 0.8),
+          0 0 30px 9px rgba(255, 55, 45, 0.35);
+        animation-delay: -11s;
+      }
+      .ambient-particles span:nth-child(4) {
+        left: 78%;
+        top: 82%;
+        animation-delay: -5s;
+      }
+      .ambient-particles span:nth-child(5) {
+        left: 54%;
+        top: 10%;
+        width: 3px;
+        height: 3px;
+        animation-delay: -1s;
+      }
+      .ambient-particles span:nth-child(6) {
+        left: 38%;
+        top: 91%;
+        background: #ff736b;
+        animation-delay: -6s;
+      }
+      .ambient-particles span:nth-child(7) {
+        left: 31%;
+        top: 13%;
+        width: 3px;
+        height: 3px;
+        animation-delay: -9s;
+      }
+      .ambient-particles span:nth-child(8) {
+        left: 67%;
+        top: 31%;
+        width: 4px;
+        height: 4px;
+        animation-delay: -4s;
+      }
+      .ambient-particles span:nth-child(9) {
+        left: 93%;
+        top: 54%;
+        width: 3px;
+        height: 3px;
+        animation-delay: -12s;
+      }
+      .ambient-particles span:nth-child(10) {
+        left: 5%;
+        top: 52%;
+        width: 4px;
+        height: 4px;
+        background: #ff736b;
+        animation-delay: -7s;
+      }
+      .ambient-particles span:nth-child(11) {
+        left: 47%;
+        top: 84%;
+        width: 3px;
+        height: 3px;
+        animation-delay: -2s;
+      }
+      .ambient-particles span:nth-child(12) {
+        left: 72%;
+        top: 67%;
+        width: 4px;
+        height: 4px;
+        animation-delay: -10s;
+      }
+      @keyframes float {
+        50% {
+          transform: translate3d(18px, -24px, 0);
+          opacity: 0.35;
+        }
+      }
+      .grain {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        opacity: 0.045;
+        pointer-events: none;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+      }
+      .card {
+        position: relative;
+        z-index: 1;
+        width: min(100%, 535px);
+        padding: 48px 64px 38px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 25px;
+        background: rgba(10, 11, 15, 0.78);
+        box-shadow:
+          0 26px 80px rgba(0, 0, 0, 0.66),
+          inset 0 1px rgba(255, 255, 255, 0.14);
+        backdrop-filter: blur(24px);
+        animation: rise 0.65s ease both;
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(16px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .brand {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 18px;
+      }
+      .brand img {
+        width: 42px;
+        height: 42px;
+        object-fit: contain;
+        filter: drop-shadow(0 5px 12px rgba(255, 255, 255, 0.2));
+      }
+      h1 {
+        margin: 0;
+        text-align: center;
+        font-family: "Space Grotesk", sans-serif;
+        font-size: 43px;
+        font-weight: 500;
+        letter-spacing: -0.065em;
+      }
+      .intro {
+        max-width: 390px;
+        margin: 9px auto 31px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.5;
+        text-align: center;
+      }
+      .field {
+        position: relative;
+        margin: 18px 0;
+      }
+      .field label {
+        display: block;
+        margin-bottom: 7px;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 12px;
+      }
+      .field input {
+        display: block;
+        width: 100%;
+        height: 49px;
+        padding: 14px 45px 14px 15px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px;
+        outline: 0;
+        appearance: none;
+        -webkit-appearance: none;
+        background: rgba(255, 255, 255, 0.055);
+        color: #fff;
+        caret-color: #ff645d;
+        font: 14px inherit;
+        transition:
+          border-color 0.25s,
+          background 0.25s,
+          box-shadow 0.25s,
+          transform 0.25s;
+      }
+      .field input::placeholder {
+        color: rgba(255, 255, 255, 0.46);
+        transition: color 0.2s;
+      }
+      .field input:hover {
+        border-color: rgba(255, 255, 255, 0.34);
+        background: rgba(255, 255, 255, 0.075);
+      }
+      .field input:focus {
+        border-color: #ff645d;
+        box-shadow:
+          0 0 0 3px rgba(255, 77, 69, 0.14),
+          inset 0 1px rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.09);
+        transform: translateY(-1px);
+      }
+      .field input:focus::placeholder {
+        color: rgba(255, 255, 255, 0.7);
+      }
+      .password-toggle {
+        position: absolute;
+        right: 4px;
+        bottom: 3px;
+        width: 42px;
+        height: 43px;
+        border: 0;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.6);
+        cursor: pointer;
+      }
+      .password-toggle:hover {
+        color: #fff;
+      }
+      .options {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 5px 2px 23px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .remember {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+      }
+      .remember input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .checkmark {
+        position: relative;
+        display: grid;
+        width: 16px;
+        height: 16px;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.06);
+        transition: 0.2s;
+      }
+      .remember input:checked + .checkmark {
+        border-color: #ff4d58;
+        background: #ff4d58;
+        box-shadow: 0 3px 10px rgba(255,77,88,.35);
+      }
+      .remember input:checked + .checkmark::after {
+        content: "✓";
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .options a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .options a:hover {
+        color: #fff;
+      }
+      .primary,
+      .google {
+        width: 100%;
+        min-height: 49px;
+        border-radius: 14px;
+        cursor: pointer;
+        font: 600 14px inherit;
+        transition: 0.25s;
+      }
+      .primary {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(255, 93, 89, 0.58);
+        background: rgba(255, 54, 61, 0.16);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        color: #ffaaa5;
+        box-shadow:
+          0 10px 25px rgba(190, 24, 45, 0.2),
+          inset 0 1px rgba(255, 255, 255, 0.16);
+      }
+      .primary::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          rgba(255, 255, 255, 0.24),
+          transparent
+        );
+        transition: left 0.5s;
+      }
+      .primary:hover::before {
+        left: 100%;
+      }
+      .primary:hover {
+        background: rgba(255, 70, 76, 0.29);
+        color: #fff;
+        transform: translateY(-3px);
+        border-color: #ff7771;
+        filter: brightness(1.1);
+        box-shadow:
+          0 12px 30px rgba(214, 31, 54, 0.38),
+          inset 0 1px rgba(255, 255, 255, 0.24);
+      }
+      .primary.reset-action {
+        border-color: rgba(88, 166, 255, 0.7);
+        background: rgba(42, 125, 225, 0.18);
+        color: #a9d2ff;
+        box-shadow:
+          0 10px 25px rgba(38, 111, 205, 0.2),
+          inset 0 1px rgba(255, 255, 255, 0.16);
+      }
+      .primary.reset-action:hover {
+        background: rgba(55, 145, 245, 0.32);
+        border-color: #78b8ff;
+        box-shadow:
+          0 12px 30px rgba(38, 111, 205, 0.4),
+          inset 0 1px rgba(255, 255, 255, 0.24);
+      }
+      .divider {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 25px 0;
+        color: rgba(255, 255, 255, 0.62);
+        font-size: 12px;
+      }
+      .divider::before,
+      .divider::after {
+        content: "";
+        height: 1px;
+        flex: 1;
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .google {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(20px);
+        color: #fff;
+      }
+      .google:hover {
+        background: rgba(255, 255, 255, 0.1);
+        transform: translateY(-1px);
+      }
+      .google-logo {
+        display: inline-flex;
+        width: 18px;
+        height: 18px;
+        margin-right: 8px;
+        vertical-align: middle;
+      }
+      .google-logo svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .signup {
+        margin: 30px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+      }
+      .signup button {
+        border: 0;
+        background: transparent;
+        color: #fff;
+        cursor: pointer;
+        font: 600 12px inherit;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .back {
+        display: block;
+        margin-top: 24px;
+        color: rgba(255, 255, 255, 0.58);
+        font-size: 12px;
+        text-align: center;
+        text-decoration: none;
+      }
+      .back:hover {
+        color: #fff;
+      }
+      .message {
+        min-height: 18px;
+        margin: 14px 0 0;
+        color: #ffb0ad;
+        font-size: 12px;
+        text-align: center;
+      }
+      @media (max-width: 560px) {
+        .card {
+          width: 100%;
+          max-height: calc(100vh - 4px);
+          overflow-y: auto;
+          padding: 44px 22px 34px;
+          border-radius: 20px;
+        }
+        .brand {
+          margin-bottom: 14px;
+        }
+        .brand img {
+          width: 38px;
+          height: 38px;
+        }
+        h1 {
+          font-size: 34px;
+        }
+        .intro {
+          margin: 10px auto 25px;
+          font-size: 12px;
+        }
+        .field {
+          margin: 16px 0;
+        }
+        .field label {
+          margin-bottom: 6px;
+          font-size: 11px;
+        }
+        .field input {
+          height: 48px;
+          padding: 13px 40px 13px 13px;
+          font-size: 13px;
+        }
+        .password-toggle {
+          height: 43px;
+        }
+        .password-rules {
+          margin: 2px 0 17px;
+          padding: 11px 11px;
+          font-size: 10px;
+          line-height: 1.7;
+        }
+        .options {
+          margin: 8px 2px 20px;
+          font-size: 11px;
+        }
+        .primary,
+        .google {
+          min-height: 48px;
+          font-size: 12px;
+        }
+        .divider {
+          margin: 21px 0;
+          font-size: 11px;
+        }
+        .signup {
+          margin: 26px 0 0;
+        }
+        .back {
+          margin-top: 23px;
+        }
+      }
+      .auth-toast {
+        position: fixed;
+        top: 24px;
+        right: 24px;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        max-width: 360px;
+        padding: 14px 18px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 16px;
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.16),
+          rgba(255, 255, 255, 0.055)
+        );
+        backdrop-filter: blur(22px) saturate(150%);
+        -webkit-backdrop-filter: blur(22px) saturate(150%);
+        color: #ffe5e3;
+        box-shadow:
+          0 16px 40px rgba(0, 0, 0, 0.42),
+          inset 0 1px rgba(255, 255, 255, 0.2);
+        font-size: 13px;
+        line-height: 1.45;
+        opacity: 0;
+        transform: translateY(-10px);
+        pointer-events: none;
+        transition: 0.25s ease;
+      }
+      .auth-toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .auth-toast i {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        flex: 0 0 28px;
+        border-radius: 50%;
+        background: rgba(255, 81, 72, 0.22);
+        color: #ff8d87;
+        font-size: 13px;
+      }
+      .auth-toast.success {
+        border-color: rgba(89, 224, 145, 0.5);
+        color: #d9ffe6;
+      }
+      .auth-toast.success i {
+        background: rgba(66, 205, 127, 0.2);
+        color: #75e7a0;
+      }
+      .field input.input-error {
+        border-color: #ff5148;
+        box-shadow: 0 0 0 3px rgba(255, 81, 72, 0.14);
+      }
+      @media (max-height: 760px) and (min-width: 561px) {
+        body {
+          padding: 12px;
+        }
+        .card {
+          padding: 27px 54px 22px;
+        }
+        .brand {
+          margin-bottom: 10px;
+        }
+        .brand img {
+          width: 36px;
+          height: 36px;
+        }
+        h1 {
+          font-size: 36px;
+        }
+        .intro {
+          margin: 6px auto 18px;
+        }
+        .field {
+          margin: 11px 0;
+        }
+        .field input {
+          height: 44px;
+        }
+        .options {
+          margin-bottom: 16px;
+        }
+        .divider {
+          margin: 17px 0;
+        }
+        .signup {
+          margin-top: 20px;
+        }
+        .back {
+          margin-top: 15px;
+        }
+      }
+    </style>
+</head>
+  <body>
+    <style>
+      .login-toolbar { position: fixed; top: 18px; left: 50%; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: rgba(14,15,20,.84); box-shadow: 0 12px 35px rgba(0,0,0,.35); backdrop-filter: blur(18px); transform: translateX(-50%); }
+      .login-toolbar strong { margin: 0 5px 0 8px; font-size: 12px; white-space: nowrap; }
+      #login-background-options { display: flex; gap: 8px; }
+      .login-background-option { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+      .login-background-progress { width: 42px; height: 3px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.2); }
+      .login-background-progress-fill { width: 100%; height: 100%; border-radius: inherit; background: #55a9ff; box-shadow: 0 0 8px rgba(85,169,255,.8); transform: scaleX(0); transform-origin: left center; }
+      .login-background-progress-fill.is-progressing { animation: login-wallpaper-progress 10s linear forwards; }
+      @keyframes login-wallpaper-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+      .login-swatch { width: 42px; height: 28px; border: 1px solid rgba(255,255,255,.28); border-radius: 8px; cursor: pointer; background-position: center; background-size: cover; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+      .login-swatch.is-selected { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.72), 0 0 12px rgba(255,255,255,.55); }
+      .login-swatch:disabled { cursor: not-allowed; filter: grayscale(.65); opacity: .45; }
+      .login-wallpaper-lock { display: grid; width: 30px; height: 28px; margin-left: 2px; place-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 8px; background: rgba(255,255,255,.1); color: #fff; cursor: pointer; }
+      .login-wallpaper-lock.is-locked { border-color: rgba(255,105,105,.65); color: #ff8e8e; }
+      .login-wallpaper-lock svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+      .login-glass-control { display: flex; align-items: center; gap: 7px; margin-left: 4px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,.18); }
+      .login-glass-switch { position: relative; width: 64px; height: 30px; border-radius: 999px; cursor: pointer; touch-action: none; }
+      .login-glass-track { position: absolute; inset: 0; border-radius: inherit; background: rgba(120,120,130,.28); box-shadow: inset 0 1px 3px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.04); transition: background .4s ease; }
+      .login-glass-switch.is-on .login-glass-track { background: #34c759; }
+      .login-glass-knob { position: absolute; top: -1px; left: -1px; width: 38px; height: 32px; border-radius: 999px; transition: left .68s cubic-bezier(.34,1.56,.64,1); pointer-events: none; }
+      .login-glass-switch.is-on .login-glass-knob { left: 27px; }
+      .login-glass-switch.is-dragging .login-glass-knob { left: var(--login-knob-left,-1px); transition: none; }
+      .login-glass-knob::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.02) 40%,rgba(0,0,0,.12)); box-shadow: 0 4px 12px rgba(0,0,0,.5), inset 0 1px rgba(255,255,255,.4), inset 0 -3px 6px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.18); }
+      .login-glass-state { color: rgba(255,255,255,.72); font-size: 10px; min-width: 22px; }
+      @media (max-width: 640px) { .login-toolbar { top: 10px; max-width: calc(100vw - 20px); } .login-toolbar strong { display: none; } }
+      .field input:-webkit-autofill,
+      .field input:-webkit-autofill:hover,
+      .field input:-webkit-autofill:focus,
+      .field input:-webkit-autofill:active { -webkit-box-shadow: 0 0 0 1000px rgba(25,26,32,.94) inset !important; box-shadow: 0 0 0 1000px rgba(25,26,32,.94) inset !important; -webkit-text-fill-color: #f8f7ff !important; background-color: rgba(25,26,32,.94) !important; transition: background-color 99999s ease-out !important; }
+      body.liquid-glass-preview .field input,
+      body.liquid-glass-preview .google,
+      body.liquid-glass-preview #password-rules { border-color: rgba(255,255,255,.28) !important; background: transparent !important; box-shadow: inset 0 1px rgba(255,255,255,.13), 0 2px 8px rgba(0,0,0,.04) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+      body.liquid-glass-preview .card { border-color: rgba(255,255,255,.38) !important; background: linear-gradient(135deg,rgba(0,0,0,.54),rgba(0,0,0,.34)) !important; box-shadow: 0 28px 90px rgba(0,0,0,.3), inset 0 1px rgba(255,255,255,.42), inset 0 -1px rgba(255,255,255,.08) !important; backdrop-filter: blur(4px) saturate(125%) !important; -webkit-backdrop-filter: blur(4px) saturate(125%) !important; text-shadow: 0 1px 4px rgba(0,0,0,.9) !important; }
+      body.liquid-glass-preview .field input,
+      body.liquid-glass-preview .field input::placeholder,
+      body.liquid-glass-preview .field label,
+      body.liquid-glass-preview .options,
+      body.liquid-glass-preview .signup,
+      body.liquid-glass-preview .back,
+      body.liquid-glass-preview .divider { color: rgba(255,255,255,.92) !important; text-shadow: 0 1px 3px rgba(0,0,0,.95) !important; }
+      body.liquid-glass-preview .primary { background: rgba(255,91,91,.22) !important; }
+      body.liquid-glass-preview .divider::before,
+      body.liquid-glass-preview .divider::after { background: rgba(255,255,255,.34) !important; }
+      .login-background-transition { position: fixed; inset: 0; z-index: 0; pointer-events: none; background-position: center; background-size: cover; background-repeat: no-repeat; opacity: 0; transition: opacity 1.1s ease-in-out; will-change: opacity; }
+      body.background-preview::before { opacity: .18; }
+      body.liquid-glass-preview .field input:-webkit-autofill,
+      body.liquid-glass-preview .field input:-webkit-autofill:hover,
+      body.liquid-glass-preview .field input:-webkit-autofill:focus,
+      body.liquid-glass-preview .field input:-webkit-autofill:active { -webkit-box-shadow: 0 0 0 1000px rgba(25,26,32,.5) inset !important; box-shadow: 0 0 0 1000px rgba(25,26,32,.5) inset !important; -webkit-text-fill-color: rgba(255,255,255,.92) !important; background-color: rgba(25,26,32,.5) !important; transition: background-color 99999s ease-out !important; }
+      body.liquid-glass-preview .primary { background: rgba(255,91,91,.22) !important; }
+      body.liquid-glass-preview .primary.reset-action { border-color: rgba(88,166,255,.72) !important; background: rgba(42,125,225,.18) !important; color: #a9d2ff !important; box-shadow: 0 10px 25px rgba(38,111,205,.2), inset 0 1px rgba(255,255,255,.16) !important; }
+      body.liquid-glass-preview .primary.reset-action:hover { background: rgba(55,145,245,.32) !important; border-color: #78b8ff !important; }
+    </style>
+    <div class="login-toolbar" aria-label="Background controls">
+      <strong>Background</strong>
+      <div id="login-background-options"></div>
+      <button id="login-wallpaper-lock" class="login-wallpaper-lock" type="button" aria-label="Lock wallpaper" aria-pressed="false"></button>
+      <div class="login-glass-control">
+        <div id="login-glass-switch" class="login-glass-switch" role="switch" aria-checked="false" tabindex="0"><div class="login-glass-track"></div><div class="login-glass-knob"></div></div>
+        <span id="login-glass-state" class="login-glass-state">OFF</span>
+      </div>
+    </div>
+    <canvas id="tubes-canvas"></canvas>
+    <div class="ambient-particles">
+      <span></span><span></span><span></span><span></span><span></span
+      ><span></span><span></span><span></span><span></span><span></span
+      ><span></span><span></span>
+    </div>
+    <main class="card">
+      <div class="brand"><img src="logo.png" alt="StreamVerse" /></div>
+      <h1>Welcome back!</h1>
+      <p id="auth-message" class="intro">
+        Sign in to sync your watchlist, continue watching, and preferences
+        across devices.
+      </p>
+      <div class="field" id="name-wrap">
+        <label for="name">Name / Username</label
+        ><input
+          id="name"
+          type="text"
+          placeholder="Enter your name or username"
+          autocomplete="name"
+        />
+      </div>
+      <div class="field" id="email-wrap">
+        <label for="email">Email</label
+        ><input
+          id="email"
+          type="email"
+          placeholder="Enter your email"
+          autocomplete="email"
+        />
+      </div>
+      <div class="field">
+        <label for="password">Password</label
+        ><input
+          id="password"
+          type="password"
+          placeholder="Enter your password"
+          autocomplete="current-password"
+        /><button
+          id="password-toggle"
+          class="password-toggle"
+          type="button"
+          aria-label="Show password"
+        >
+          <i class="fa-regular fa-eye"></i>
+        </button>
+      </div>
+      <div class="field" id="confirm-password-wrap">
+        <label for="confirm-password">Retype password</label
+        ><input
+          id="confirm-password"
+          type="password"
+          placeholder="Retype your new password"
+          autocomplete="new-password"
+        />
+      </div>
+      <div
+        id="password-rules"
+        style="
+          display: none;
+          margin: -8px 0 16px;
+          padding: 12px 14px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.035);
+          text-align: left;
+          font-size: 11px;
+          line-height: 1.8;
+          color: #8e909e;
+        "
+      >
+        <div data-rule="length">○ At least 8 characters</div>
+        <div data-rule="upper">○ One uppercase letter</div>
+        <div data-rule="lower">○ One lowercase letter</div>
+        <div data-rule="number">○ One number</div>
+        <div data-rule="symbol">○ One symbol</div>
+        <div data-rule="different">○ Different from your email</div>
+      </div>
+      <div class="options">
+        <label class="remember"
+          ><input id="remember" type="checkbox" checked /><span
+            class="checkmark"
+          ></span
+          ><span>Remember me</span></label
+        ><a href="#" id="forgot">Forgot password?</a>
+      </div>
+      <button id="signin" class="primary" type="button">Log in</button>
+      <div class="divider">Or</div>
+      <button id="google" class="google" type="button">
+        <span class="google-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="presentation">
+            <path fill="#4285F4" d="M21.35 12.27c0-.79-.07-1.55-.23-2.27H12v4.3h5.24a4.48 4.48 0 0 1-1.94 2.94v2.45h3.14c1.84-1.7 2.91-4.2 2.91-7.42Z" />
+            <path fill="#34A853" d="M12 21.99c2.63 0 4.84-.87 6.45-2.35l-3.14-2.45c-.87.58-1.98.92-3.31.92-2.54 0-4.7-1.72-5.47-4.03H3.29v2.53A9.74 9.74 0 0 0 12 21.99Z" />
+            <path fill="#FBBC05" d="M6.53 14.08a5.85 5.85 0 0 1 0-3.76V7.79H3.29a9.98 9.98 0 0 0 0 8.82l3.24-2.53Z" />
+            <path fill="#EA4335" d="M12 6.29c1.43 0 2.72.49 3.73 1.45l2.8-2.8C16.84 3.38 14.63 2.5 12 2.5a9.74 9.74 0 0 0-8.71 5.29l3.24 2.53C7.3 8.01 9.46 6.29 12 6.29Z" />
+          </svg>
+        </span>
+        Sign in with Google
+      </button>
+      <p class="signup">
+        Don’t have an account?
+        <button id="signup" type="button">Sign up</button>
+      </p>
+      <p id="auth-error" class="message"></p>
+      <a class="back" href="/">← Back to StreamVerse</a>
+    </main>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="/firebaseConfig.js"></script>
+    <script src="/streamverse-auth.js"></script>
+    <script type="module" src="/tubes-background.js"></script>
+    <script>
+      const toast = document.createElement("div");
+      toast.className = "auth-toast";
+      toast.setAttribute("role", "alert");
+      document.body.appendChild(toast);
+      const message = document.getElementById("auth-message"),
+        errorBox = document.getElementById("auth-error"),
+        emailField = document.getElementById("email"),
+        title = document.querySelector("h1"),
+        submit = document.getElementById("signin"),
+        modeButton = document.getElementById("signup"),
+        forgot = document.getElementById("forgot"),
+        passwordField = document.getElementById("password"),
+        passwordWrap = passwordField.closest(".field"),
+        options = document.querySelector(".options"),
+        divider = document.querySelector(".divider"),
+        googleButton = document.getElementById("google"),
+        readEmail = () => emailField.value.trim(),
+        readPassword = () => passwordField.value;
+      const pageParams = new URLSearchParams(location.search),
+        emailWrap = document.getElementById("email-wrap"),
+        nameWrap = document.getElementById("name-wrap"),
+        nameField = document.getElementById("name"),
+        passwordLabel = document.querySelector('label[for="password"]'),
+        confirmPassword = document.getElementById("confirm-password"),
+        confirmPasswordWrap = document.getElementById("confirm-password-wrap"),
+        passwordRules = document.getElementById("password-rules");
+      let mode = pageParams.has("oobCode")
+        ? "reset-action"
+        : pageParams.get("mode") === "reset"
+          ? "reset"
+          : pageParams.get("mode") === "signup"
+            ? "signup"
+            : "login";
+      let resetCooldown = 0,
+        resetTimer;
+      function setPageMode(nextMode) {
+        const url = new URL(location.href);
+        if (nextMode === "login") url.searchParams.delete("mode");
+        else url.searchParams.set("mode", nextMode);
+        history.replaceState(null, "", url);
+        mode = nextMode;
+        updateMode();
+      }
+      function updateMode() {
+        const reset = mode === "reset",
+          action = mode === "reset-action",
+          signup = mode === "signup";
+        title.textContent =
+          reset || action
+            ? "Reset your password"
+            : signup
+              ? "Create your account"
+              : "Welcome back!";
+        message.textContent = action
+          ? "Choose a new password."
+          : reset
+            ? "Enter your email and we’ll send you a reset link."
+            : signup
+              ? "Create an account to sync your watchlist across devices."
+              : "Sign in to sync your watchlist, continue watching, and preferences across devices.";
+        submit.textContent = action
+          ? "Save new password"
+          : reset
+            ? "Send reset link"
+            : signup
+              ? "Create account"
+              : "Log in";
+        submit.classList.toggle("reset-action", reset || action);
+        modeButton.textContent =
+          reset || action || signup ? "Back to sign in" : "Sign up";
+        forgot.style.visibility =
+          reset || signup || action ? "hidden" : "visible";
+        emailWrap.style.display = action ? "none" : "";
+        nameWrap.style.display = signup ? "" : "none";
+        passwordWrap.style.display = reset ? "none" : "";
+        confirmPasswordWrap.style.display = action ? "" : "none";
+        passwordRules.style.display = signup || action ? "block" : "none";
+        if (passwordLabel)
+          passwordLabel.textContent = action ? "New password" : "Password";
+        options.style.display = reset || action ? "none" : "flex";
+        divider.style.display = reset || action ? "none" : "flex";
+        googleButton.style.display = reset || action ? "none" : "";
+        passwordField.setAttribute(
+          "autocomplete",
+          signup || action ? "new-password" : "current-password",
+        );
+        errorBox.textContent = "";
+        updatePasswordRules();
+      }
+      function passwordChecks() {
+        const value = readPassword(),
+          email = readEmail().toLowerCase();
+        return {
+          length: value.length >= 8,
+          upper: /[A-Z]/.test(value),
+          lower: /[a-z]/.test(value),
+          number: /\d/.test(value),
+          symbol: /[^A-Za-z0-9]/.test(value),
+          different: !!value && !email.includes(value.toLowerCase()),
+        };
+      }
+      function updatePasswordRules() {
+        const checks = passwordChecks();
+        Object.entries(checks).forEach(([key, valid]) => {
+          const rule = document.querySelector(`[data-rule="${key}"]`);
+          if (rule) {
+            rule.style.color = valid ? "#8ee6ad" : "#8e909e";
+            rule.textContent = `${valid ? "✓" : "○"} ${rule.textContent.slice(2)}`;
+          }
+        });
+      }
+      function validateStrongPassword() {
+        const checks = passwordChecks();
+        if (Object.values(checks).some((valid) => !valid))
+          throw new Error("Choose a password that meets all the requirements.");
+        if (mode === "reset-action" && readPassword() !== confirmPassword.value)
+          throw new Error("Passwords do not match.");
+      }
+      function startResetCooldown() {
+        clearInterval(resetTimer);
+        resetCooldown = 8;
+        submit.disabled = true;
+        const tick = () => {
+          submit.textContent = `Resend in ${resetCooldown}s`;
+          if (resetCooldown <= 0) {
+            clearInterval(resetTimer);
+            submit.disabled = false;
+            submit.textContent = "Send reset link";
+          }
+          resetCooldown--;
+        };
+        tick();
+        resetTimer = setInterval(tick, 1000);
+      }
+      let toastTimer;
+      function showToast(
+        text,
+        icon = "fa-circle-exclamation",
+        success = false,
+      ) {
+        clearTimeout(toastTimer);
+        toast.innerHTML = `<i class="fa-solid ${icon}"></i><span>${text}</span>`;
+        toast.classList.toggle("success", success);
+        toast.classList.add("visible");
+        toastTimer = setTimeout(() => toast.classList.remove("visible"), 6000);
+      }
+      async function run(action) {
+        try {
+          if (mode === "reset" && resetCooldown > 0)
+            throw new Error(
+              `Please wait ${resetCooldown} seconds before requesting another email.`,
+            );
+          errorBox.textContent = "";
+          emailField.classList.remove("input-error");
+          message.textContent =
+            mode === "reset"
+              ? "Sending reset link..."
+              : mode === "reset-action"
+                ? "Saving your new password..."
+                : "Signing you in...";
+          await action();
+          if (mode === "reset") {
+            message.textContent = "Check your email for the reset link.";
+            showToast(
+              "Check your email for the reset link.",
+              "fa-envelope-circle-check",
+              true,
+            );
+            startResetCooldown();
+            return;
+          }
+          if (mode === "reset-action") {
+            message.textContent = "Password updated. You can now sign in.";
+            showToast(
+              "Password updated. You can now sign in.",
+              "fa-circle-check",
+              true,
+            );
+            mode = "login";
+            updateMode();
+            return;
+          }
+          if (firebase.auth().currentUser) location.href = "/";
+        } catch (error) {
+          message.textContent = "The request could not be completed.";
+          const friendly = {
+            "auth/email-already-in-use": [
+              "This email is already used. Please sign in or use a different email.",
+              "fa-envelope-circle-check",
+            ],
+            "auth/invalid-email": [
+              "Please enter a valid email address.",
+              "fa-envelope",
+            ],
+            "auth/weak-password": [
+              "Choose a stronger password.",
+              "fa-shield-halved",
+            ],
+            "auth/wrong-password": ["Incorrect email or password.", "fa-lock"],
+            "auth/user-not-found": [
+              "Incorrect email or password.",
+              "fa-user-slash",
+            ],
+          };
+          const detail = friendly[error.code] || [
+            error.message || "Authentication failed.",
+            "fa-circle-exclamation",
+          ];
+          if (
+            error.code === "auth/email-already-in-use" ||
+            error.code === "auth/invalid-email"
+          )
+            emailField.classList.add("input-error");
+          showToast(detail[0], detail[1]);
+        }
+      }
+      document.getElementById("password-toggle").onclick = () => {
+        const field = document.getElementById("password"),
+          button = document.getElementById("password-toggle"),
+          visible = field.type === "text";
+        field.type = visible ? "password" : "text";
+        button.setAttribute(
+          "aria-label",
+          visible ? "Show password" : "Hide password",
+        );
+        button.innerHTML = `<i class="fa-regular fa-eye${visible ? "" : "-slash"}"></i>`;
+      };
+      document.getElementById("forgot").onclick = (event) => {
+        event.preventDefault();
+        setPageMode("reset");
+      };
+      document.getElementById("google").onclick = () =>
+        run(() => StreamVerseAuth.signInGoogle());
+      submit.onclick = () =>
+        run(
+          mode === "reset"
+            ? () => StreamVerseAuth.resetPassword(readEmail())
+            : mode === "reset-action"
+              ? () => {
+                  validateStrongPassword();
+                  return firebase
+                    .auth()
+                    .confirmPasswordReset(
+                      new URLSearchParams(location.search).get("oobCode"),
+                      readPassword(),
+                    );
+                }
+              : mode === "signup"
+                ? () => {
+                    validateStrongPassword();
+                    if (!nameField.value.trim())
+                      throw new Error("Enter your name or username.");
+                    return StreamVerseAuth.signUpEmail(
+                      readEmail(),
+                      readPassword(),
+                      nameField.value.trim(),
+                    );
+                  }
+                : () =>
+                    StreamVerseAuth.signInEmail(readEmail(), readPassword()),
+        );
+      modeButton.onclick = () =>
+        setPageMode(mode === "login" ? "signup" : "login");
+      passwordField.addEventListener("input", updatePasswordRules);
+      confirmPassword.addEventListener("input", updatePasswordRules);
+      document
+        .getElementById("email")
+        .addEventListener("input", updatePasswordRules);
+      submit.addEventListener("click", () => {
+        if (mode === "login" || mode === "signup")
+          sessionStorage.setItem(
+            "streamverse_auth_notice",
+            mode === "signup"
+              ? "Account created successfully."
+              : "Signed in successfully.",
+          );
+      });
+      updateMode();
+      firebase.auth().onAuthStateChanged((user) => {
+        if (user) location.href = "/";
+      });
+      firebase
+        .auth()
+        .getRedirectResult()
+        .catch((error) => {
+          errorBox.textContent = error.message || "Google sign-in failed.";
+        });
+    </script>
+    <script>
+      (() => {
+        const backgrounds = new Map();
+        const frameCanvas = document.getElementById('tubes-canvas');
+        const options = document.getElementById('login-background-options');
+        const lockButton = document.getElementById('login-wallpaper-lock');
+        const glassSwitch = document.getElementById('login-glass-switch');
+        const glassState = document.getElementById('login-glass-state');
+        const wallpaperKey = 'streamverse_preview_wallpaper';
+        const lockKey = 'streamverse_preview_wallpaper_locked';
+        const glassKey = 'streamverse_preview_glass_mode';
+        let selected = localStorage.getItem(wallpaperKey) || '';
+        let locked = localStorage.getItem(lockKey) === 'true';
+        let glassEnabled = localStorage.getItem(glassKey) === 'true';
+        let timer = null;
+        let progressTimer = null;
+        let drag = null;
+
+        const renderLock = () => {
+          lockButton.classList.toggle('is-locked', locked);
+          lockButton.setAttribute('aria-label', locked ? 'Unlock wallpaper' : 'Lock wallpaper');
+          lockButton.setAttribute('aria-pressed', String(locked));
+          lockButton.innerHTML = locked
+            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5zM12 14v3" /></svg>'
+            : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 9.7-1.6M5 10h14v11H5zM12 14v3" /></svg>';
+          document.querySelectorAll('.login-swatch').forEach((button) => { button.disabled = locked; });
+        };
+        const renderGlass = () => {
+          glassSwitch.classList.toggle('is-on', glassEnabled);
+          glassSwitch.setAttribute('aria-checked', String(glassEnabled));
+          glassState.textContent = glassEnabled ? 'ON' : 'OFF';
+          localStorage.setItem(glassKey, String(glassEnabled));
+          document.body.classList.toggle('liquid-glass-preview', glassEnabled);
+        };
+        const updateProgress = () => {
+          document.querySelectorAll('.login-background-option').forEach((option) => {
+            const fill = option.querySelector('.login-background-progress-fill');
+            if (!fill) return;
+            fill.classList.remove('is-progressing');
+            if (!locked && option.dataset.url === selected && timer) {
+              void fill.offsetWidth;
+              fill.classList.add('is-progressing');
+            }
+          });
+        };
+        const stopSlideshow = () => {
+          clearInterval(timer);
+          cancelAnimationFrame(progressTimer);
+          timer = null;
+          progressTimer = null;
+          updateProgress();
+        };
+        const selectBackground = (url, force = false) => {
+          if (locked && !force) return;
+          const previousUrl = document.body.dataset.previewBackground || '';
+          selected = url;
+          localStorage.setItem(wallpaperKey, url);
+          document.body.classList.add('background-preview');
+          const backgroundValue = `url("${url}") center / cover fixed no-repeat`;
+          const oldTransition = document.getElementById('login-background-transition');
+          if (oldTransition) oldTransition.remove();
+          if (previousUrl && previousUrl !== url) {
+            const transition = document.createElement('div');
+            transition.id = 'login-background-transition';
+            transition.className = 'login-background-transition';
+            transition.style.backgroundImage = `url("${url}")`;
+            document.body.appendChild(transition);
+            requestAnimationFrame(() => requestAnimationFrame(() => { transition.style.opacity = '1'; }));
+            setTimeout(() => { document.body.style.background = backgroundValue; transition.remove(); }, 1150);
+          } else {
+            document.body.style.background = backgroundValue;
+          }
+          document.body.dataset.previewBackground = url;
+          if (frameCanvas) { frameCanvas.style.opacity = '.72'; frameCanvas.style.background = 'transparent'; frameCanvas.style.mixBlendMode = 'screen'; }
+          document.querySelectorAll('.ambient-particles').forEach((element) => { element.style.display = 'none'; });
+          document.querySelectorAll('.login-swatch').forEach((button) => button.classList.toggle('is-selected', button.dataset.url === url));
+          updateProgress();
+        };
+        const startSlideshow = () => {
+          stopSlideshow();
+          if (locked || backgrounds.size < 2) return;
+          timer = setInterval(() => {
+            const urls = [...backgrounds.values()];
+            const next = urls[(urls.indexOf(selected) + 1 + urls.length) % urls.length];
+            selectBackground(next);
+          }, 10000);
+          updateProgress();
+        };
+        const setLocked = (value) => {
+          locked = value;
+          localStorage.setItem(lockKey, String(locked));
+          renderLock();
+          if (locked) stopSlideshow(); else startSlideshow();
+        };
+        const toggleGlass = () => {
+          glassEnabled = !glassEnabled;
+          renderGlass();
+        };
+        lockButton.addEventListener('click', () => setLocked(!locked));
+        glassSwitch.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleGlass(); }
+        });
+        glassSwitch.addEventListener('pointerdown', (event) => {
+          drag = { x: event.clientX, start: glassEnabled ? 27 : -1, moved: false };
+          glassSwitch.style.setProperty('--login-knob-left', `${drag.start}px`);
+          glassSwitch.classList.add('is-dragging');
+          glassSwitch.setPointerCapture(event.pointerId);
+          event.preventDefault();
+        });
+        glassSwitch.addEventListener('pointermove', (event) => {
+          if (!drag) return;
+          const delta = event.clientX - drag.x;
+          if (Math.abs(delta) > 3) drag.moved = true;
+          glassSwitch.style.setProperty('--login-knob-left', `${Math.max(-1, Math.min(27, drag.start + delta))}px`);
+        });
+        glassSwitch.addEventListener('pointerup', () => {
+          if (!drag) return;
+          const left = parseFloat(getComputedStyle(glassSwitch).getPropertyValue('--login-knob-left')) || drag.start;
+          const moved = drag.moved;
+          drag = null;
+          glassSwitch.classList.remove('is-dragging');
+          glassSwitch.style.removeProperty('--login-knob-left');
+          if (moved) { glassEnabled = left >= 13; renderGlass(); } else toggleGlass();
+        });
+        glassSwitch.addEventListener('pointercancel', () => { drag = null; glassSwitch.classList.remove('is-dragging'); glassSwitch.style.removeProperty('--login-knob-left'); });
+        renderLock();
+        renderGlass();
+        fetch('/backgrounds.json', { cache: 'no-store' }).then((response) => response.ok ? response.json() : []).then((files) => {
+          files.forEach(({ name, url }) => {
+            backgrounds.set(name, url);
+            const option = document.createElement('div');
+            option.className = 'login-background-option';
+            option.dataset.url = url;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'login-swatch';
+            button.title = name;
+            button.dataset.url = url;
+            button.style.backgroundImage = `url("${url}")`;
+            button.addEventListener('click', () => selectBackground(url));
+            const progress = document.createElement('div');
+            progress.className = 'login-background-progress';
+            progress.innerHTML = '<div class="login-background-progress-fill"></div>';
+            option.append(button, progress);
+            options.appendChild(option);
+          });
+          const preferred = selected || [...backgrounds.entries()].find(([name]) => /spiderman/i.test(name))?.[1] || [...backgrounds.values()][0];
+          if (preferred) selectBackground(preferred, true);
+          renderLock();
+          startSlideshow();
+        }).catch(() => {});
+      })();
+    </script>
+  </body>
+</html>

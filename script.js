@@ -174,6 +174,17 @@ function handleWatchlistToggle(id, type, provider) {
     saveWatchlist(list);
 }
 
+(() => {
+    let notice = '';
+    try { notice = sessionStorage.getItem('streamverse_auth_notice') || ''; sessionStorage.removeItem('streamverse_auth_notice'); } catch (_) { }
+    if (!notice) return;
+    const el = document.createElement('div');
+    el.innerHTML = `<i class="fa-solid fa-circle-check"></i><span>${notice}</span>`;
+    Object.assign(el.style, { position:'fixed', top:'42px', right:'24px', zIndex:'9999', display:'flex', gap:'10px', alignItems:'center', padding:'14px 18px', border:'1px solid rgba(89,224,145,.5)', borderRadius:'16px', background:'rgba(22,55,39,.94)', color:'#d9ffe6', boxShadow:'0 16px 40px rgba(0,0,0,.4)', font:'13px DM Sans, sans-serif' });
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 5000);
+})();
+
 let shareCopyTimer;
 async function copyMovieShareUrl() {
     const btn = document.getElementById('modal-share-btn');
@@ -479,6 +490,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initContinueWatchingControls();
     applyContinueGridLayout();
     loadContinueWatching();
+    window.addEventListener('streamverse-auth-ready', () => loadContinueWatching());
 
     const sharedMovieId = new URLSearchParams(window.location.search).get('movie');
     const sharedMovieType = new URLSearchParams(window.location.search).get('type') === 'tv' ? 'tv' : 'movie';
@@ -5215,13 +5227,33 @@ async function triggerSearch(immediate = false) {
         <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
 
     try {
-        let data;
-        // Use the centralized fetchJsonWithFallback which already handles prod/local routing
-        data = await fetchJsonWithFallback(`/${encodeURIComponent(q)}`, 9000);
+        const tmdbId = /^\d+$/.test(q) ? q : '';
+        if (tmdbId) {
+            const details = await Promise.allSettled([
+                fetchJsonWithFallback(`/info/${encodeURIComponent(tmdbId)}?type=movie`, 9000),
+                fetchJsonWithFallback(`/info/${encodeURIComponent(tmdbId)}?type=tv`, 9000)
+            ]);
+            if (version !== searchVersion) return;
+            const directResults = details
+                .filter((entry) => entry.status === 'fulfilled' && entry.value?.id)
+                .map((entry) => entry.value);
+            displaySearchResults(dedupeSearchResults(directResults), q);
+            return;
+        }
+
+        // TMDB paginates search results at 20 items per page. Fetch several pages
+        // so older titles are not hidden behind the first page.
+        const pages = await Promise.allSettled(
+            Array.from({ length: 5 }, (_, index) =>
+                fetchJsonWithFallback(`/${encodeURIComponent(q)}?page=${index + 1}`, 9000)
+            )
+        );
 
         if (version !== searchVersion) return; // Ignore stale results
 
-        const mergedResults = [...(data?.results || [])];
+        const mergedResults = pages.flatMap((entry) =>
+            entry.status === 'fulfilled' ? (entry.value?.results || []) : []
+        );
         if (shouldRescueSearchResults(mergedResults, q)) {
             const alternatives = buildAlternativeSearchQueries(q);
             for (const altQuery of alternatives) {

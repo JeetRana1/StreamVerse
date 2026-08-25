@@ -1,4 +1,5 @@
 {
+  "buildCommand": "node generate-firebase-config.js",
   "rewrites": [
     { "source": "/player", "destination": "/player.html" },
     { "source": "/manga", "destination": "/manga.html" }

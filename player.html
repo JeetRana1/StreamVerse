@@ -4635,6 +4635,11 @@
     <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.9.2/shaka-player.compiled.min.js"></script>
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="/firebaseConfig.js"></script>
+    <script src="/streamverse-auth.js"></script>
     <script src="/config.js"></script>
     <script>
         // -----------------------------------------------------------------------
@@ -11679,6 +11684,9 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     // Storage completely full Ã¢â‚¬â€ skip silently
                 }
             }
+            if (window.StreamVerseAuth?.getUser()) {
+                window.StreamVerseAuth.saveItem(item).catch((error) => console.warn('[auth] progress sync failed:', error));
+            }
         }
 
         function removeFromContinueWatching(id, type) {
@@ -11689,6 +11697,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 if (!Array.isArray(list)) return;
                 list = list.filter(i => !(i.id === id && i.type === type));
                 localStorage.setItem('sv_continue_watching', JSON.stringify(list));
+                const user = window.StreamVerseAuth?.getUser();
+                if (user && window.firebaseDb) {
+                    window.firebaseDb.collection('users').doc(user.uid).collection('continueWatching').doc(`${type || 'movie'}_${id}`).delete().catch(() => {});
+                }
             } catch (e) {}
         }
 
@@ -21889,6 +21901,34 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         isDub: false,
                         provider: 'archive.org',
                     },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/magadheera_202608/BaahubaliTE.eng.srt',
+                            provider: 'archive.org',
+                        },
+                    ],
+                },
+                '350312': {
+                    source: {
+                        label: 'Bāhubali 2: The Conclusion (Archive)',
+                        url: 'https://archive.org/download/magadheera_202608/Baahubali2-TC.mkv',
+                        isM3U8: false,
+                        isMP4: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [
+                        {
+                            label: 'English (Archive.org)',
+                            srclang: 'en',
+                            src: 'https://archive.org/download/magadheera_202608/Baahubali2-TC.eng.srt',
+                            provider: 'archive.org',
+                        },
+                    ],
                 },
                 '26247': {
                     source: {

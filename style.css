@@ -4485,6 +4485,40 @@ body.trailer-open {
 .watch-party-header-btn i {
     font-size: 14px;
 }
+.auth-header-btn {
+    position: relative;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 190px;
+    padding: 6px 13px 6px 7px;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.055));
+    box-shadow: 0 8px 22px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.16);
+    color: #f5f1eb;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+    white-space: nowrap;
+}
+.auth-header-btn:hover { transform: translateY(-2px); border-color: rgba(255,214,164,.55); filter: brightness(1.08); box-shadow: 0 12px 28px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.22); }
+.auth-header-btn:active { transform: translateY(0); }
+.auth-header-btn:focus-visible { outline: 2px solid #e6c18b; outline-offset: 3px; }
+.auth-header-btn > i:not(.auth-chevron) { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 50%; background: rgba(255,211,155,.14); color: #f3d09b; font-size: 12px; }
+.auth-header-btn.is-signed-in { border-color: rgba(106,226,166,.35); background: rgba(106,226,166,.08); box-shadow: none; }
+.auth-header-btn.is-signed-in:hover { box-shadow: 0 8px 22px rgba(106,226,166,.16); }
+.auth-avatar { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 50%; background: #ff5148; color: #fff; font-size: 10px; letter-spacing: .04em; }
+.auth-header-btn img.auth-avatar { object-fit: cover; }
+.auth-label { overflow: hidden; text-overflow: ellipsis; }
+.auth-chevron { margin-left: 2px; color: rgba(255,255,255,.7); font-size: 10px; }
+.account-menu-wrap { position: relative; }
+.account-menu { position: absolute; top: calc(100% + 10px); right: 0; z-index: 1005; display: grid; min-width: 155px; padding: 6px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: rgba(18,19,26,.92); box-shadow: 0 16px 35px rgba(0,0,0,.4); backdrop-filter: blur(20px); opacity: 0; transform: translateY(-6px) scale(.98); pointer-events: none; transition: .2s ease; }
+.account-menu.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+.account-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 11px; border: 0; border-radius: 9px; background: transparent; color: #f5f5f7; cursor: pointer; font: 600 12px inherit; text-align: left; }
+.account-menu button:hover { background: rgba(255,255,255,.1); }.account-menu button:last-child { color: #ffaaa5; }
 .watch-party-home-panel {
     position: fixed;
     inset: 0;
@@ -5134,6 +5168,9 @@ body.watch-party-home-open {
         padding: 0;
         justify-content: center;
     }
+
+    .mobile-menu-btn { order: 5; }
+    .account-menu-wrap { order: 6; margin-left: auto; }
 
     #main-header.mobile-search-open .container-header {
         justify-content: stretch;

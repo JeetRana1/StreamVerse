@@ -51,6 +51,26 @@ for (const [k, v] of Object.entries(envFromFile)) {
 }
 
 const apiEnvFromFile = parseDotEnv(API_ENV_PATH);
+
+function generateFirebaseConfig() {
+    const fields = [
+        ['apiKey', 'FIREBASE_API_KEY'],
+        ['authDomain', 'FIREBASE_AUTH_DOMAIN'],
+        ['projectId', 'FIREBASE_PROJECT_ID'],
+        ['storageBucket', 'FIREBASE_STORAGE_BUCKET'],
+        ['messagingSenderId', 'FIREBASE_MESSAGING_SENDER_ID'],
+        ['appId', 'FIREBASE_APP_ID'],
+    ];
+    const missing = fields.filter(([, envName]) => !String(process.env[envName] || '').trim());
+    if (missing.length) {
+        console.warn(`Firebase config not generated; missing: ${missing.map(([, envName]) => envName).join(', ')}`);
+        return;
+    }
+    const config = Object.fromEntries(fields.map(([key, envName]) => [key, process.env[envName].trim()]));
+    fs.writeFileSync(path.join(SITE_DIR, 'firebaseConfig.js'), `window.streamVerseFirebaseConfig = ${JSON.stringify(config, null, 4)};\n`, 'utf8');
+}
+
+generateFirebaseConfig();
 const API_PORT = Number(process.env.API_PORT || apiEnvFromFile.PORT || 3000);
 const detectedLanIp = detectLanIp();
 const configuredApiBase = process.env.SITE_API_BASE || `http://${detectedLanIp}:${API_PORT}`;
@@ -78,13 +98,19 @@ function asJsString(value) {
 }
 
 function buildClientConfigScript() {
+    const localApiExpression = START_LOCAL_API
+        ? `("http://" + window.location.hostname + ":${API_PORT}")`
+        : asJsString(SITE_API_BASE);
+    const localMetaApiExpression = START_LOCAL_API
+        ? `("http://" + window.location.hostname + ":${API_PORT}/meta/tmdb")`
+        : asJsString(SITE_META_API_BASE);
     return `window.__STREAMVERSE_CONFIG__ = {
-  API_BASE: ${asJsString(SITE_API_BASE)},
-  META_API_BASE: ${asJsString(SITE_META_API_BASE)},
-  LOCAL_API_BASE: ${asJsString(SITE_META_API_BASE)},
-  LOCAL_META_API_BASE: ${asJsString(SITE_META_API_BASE)},
+  API_BASE: ${localApiExpression},
+  META_API_BASE: ${localMetaApiExpression},
+  LOCAL_API_BASE: ${localMetaApiExpression},
+  LOCAL_META_API_BASE: ${localMetaApiExpression},
     STREAM_API_BASE: ${asJsString(SITE_STREAM_API_BASE)},
-  LOCAL_MEDIA_PROXY_BASE: ${asJsString(process.env.LOCAL_MEDIA_PROXY_BASE || SITE_API_BASE)},
+  LOCAL_MEDIA_PROXY_BASE: ${localApiExpression},
   SAME_ORIGIN_MEDIA_PROXY: true,
   MEDIA_PROXY_BASE: ${asJsString(SITE_MEDIA_PROXY_BASE)},
   WIREGUARD_ENDPOINT: ${asJsString(WIREGUARD_ENDPOINT)}
@@ -317,6 +343,24 @@ const server = http.createServer((req, res) => {
             'Cache-Control': 'no-store',
         });
         res.end(buildClientConfigScript(), 'utf-8');
+        return;
+    }
+
+    if (req.url.split('?')[0] === '/backgrounds.json') {
+        const backgroundDir = path.join(SITE_DIR, 'background');
+        fs.readdir(backgroundDir, (error, files = []) => {
+            if (error) {
+                res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+                res.end('[]');
+                return;
+            }
+            const backgrounds = files
+                .filter((file) => /\.(?:jpg|jpeg|png|webp)$/i.test(file))
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+                .map((file) => ({ name: file, url: `/background/${encodeURIComponent(file)}` }));
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+            res.end(JSON.stringify(backgrounds));
+        });
         return;
     }
 

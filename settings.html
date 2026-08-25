@@ -1,0 +1,583 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Settings | StreamVerse</title>
+    <link rel="icon" href="logo.png" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 24px;
+        background: #101119;
+        color: #fff;
+        font:
+          14px Arial,
+          sans-serif;
+      }
+      #tubes-canvas {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+      }
+      .shell {
+        width: min(900px, 100%);
+        margin: auto;
+      }
+      .glass {
+        border: 1px solid #ffffff33;
+        background: #0a0b0fcc;
+        backdrop-filter: blur(24px);
+        border-radius: 22px;
+        box-shadow:
+          0 26px 80px #000a,
+          inset 0 1px #ffffff22;
+      }
+      .hero {
+        text-align: center;
+        padding: 30px;
+        margin-bottom: 16px;
+      }
+      .hero h1 {
+        margin: 0;
+        font-size: 38px;
+      }
+      .hero p {
+        color: #aaa;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        gap: 16px;
+      }
+      .sidebar {
+        padding: 12px;
+        height: max-content;
+        display: grid;
+        gap: 8px;
+      }
+      .sidebar .tab,
+      .sidebar .home {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 11px;
+        width: 100%;
+        min-height: 44px;
+        padding: 11px 14px;
+        line-height: 1;
+        text-align: left;
+      }
+      .sidebar .tab i,
+      .sidebar .home i {
+        width: 18px;
+        flex: 0 0 18px;
+        color: #ffaaa5;
+        text-align: center;
+      }
+      .tab,
+      .home,
+      .save {
+        padding: 13px;
+        border: 1px solid #ffffff18;
+        border-radius: 11px;
+        background: #ffffff0b;
+        color: #fff;
+        cursor: pointer;
+        font-weight: bold;
+        text-decoration: none;
+      }
+      .tab.active,
+      .tab:hover,
+      .home:hover,
+      .save:hover {
+        background: #ff464c2b;
+        border-color: #ff777166;
+      }
+      .content {
+        padding: 20px;
+      }
+      .view h2 {
+        font-size: 26px;
+      }
+      .field {
+        margin: 14px 0;
+        padding: 12px;
+        border: 1px solid #ffffff18;
+        border-radius: 13px;
+        background: #ffffff09;
+      }
+      .field label {
+        display: block;
+        margin-bottom: 8px;
+        color: #bbb;
+        font-size: 12px;
+      }
+      .field input {
+        width: 100%;
+        height: 46px;
+        padding: 0 13px;
+        border: 1px solid #ffffff33;
+        border-radius: 12px;
+        background: #ffffff0d;
+        color: #fff;
+        outline: 0;
+      }
+      .field input:focus {
+        border-color: #ff645d;
+        box-shadow: 0 0 0 3px #ff4d4526;
+      }
+      .save {
+        width: 100%;
+        color: #ffaaa5;
+        border-color: #ff5d5994;
+      }
+      .message {
+        color: #8ee6ad;
+        font-size: 12px;
+      }
+      .error {
+        color: #ffaaa5;
+      }
+      .checklist {
+        padding: 12px;
+        border: 1px solid #ffffff22;
+        border-radius: 12px;
+        color: #999;
+        line-height: 1.9;
+      }
+      .check.valid {
+        color: #8ee6ad;
+      }
+      @media (max-width: 650px) {
+        body {
+          padding: 12px;
+        }
+        .hero {
+          padding: 24px 12px;
+        }
+        .hero h1 {
+          font-size: 29px;
+        }
+        .layout {
+          display: flex;
+          flex-direction: column;
+        }
+        .sidebar {
+          grid-template-columns: repeat(3, 1fr);
+        }
+        .tab,
+        .home {
+          padding: 10px 4px;
+          text-align: center;
+          font-size: 11px;
+        }
+        .sidebar .tab,
+        .sidebar .home {
+          justify-content: center;
+          gap: 7px;
+          padding: 11px 6px;
+        }
+        .sidebar .tab i,
+        .sidebar .home i {
+          width: auto;
+          flex-basis: auto;
+        }
+        .content {
+          padding: 16px;
+        }
+      }
+      .profile-preview {
+        display: none;
+        align-items: center;
+        gap: 12px;
+        margin-top: 12px;
+        padding: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .profile-preview.visible {
+        display: flex;
+      }
+      .profile-preview img {
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid rgba(255, 255, 255, 0.28);
+        background: #171820;
+      }
+      .profile-preview span {
+        color: #aaa;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="tubes-canvas"></canvas>
+    <main class="shell">
+      <header class="glass hero">
+        <h1>StreamVerse Settings</h1>
+        <p>Manage your profile and account preferences</p>
+      </header>
+      <div class="layout">
+        <nav class="glass sidebar">
+          <button id="profileTab" class="tab active">
+            <i class="fa-solid fa-user"></i> Profile</button
+          ><button id="passwordTab" class="tab">
+            <i class="fa-solid fa-lock"></i> Password</button
+          ><a class="home" href="/"><i class="fa-solid fa-house"></i> Home</a>
+        </nav>
+        <section class="glass content">
+          <div id="profileView">
+            <h2>Profile settings</h2>
+            <form id="profileForm">
+              <div class="field">
+                <label>Name / Username</label><input id="nameField" />
+              </div>
+              <div class="field">
+                <label>Profile picture URL</label
+                ><input id="photoField" type="url" />
+              </div>
+              <button class="save">Save changes</button>
+              <p id="profileMessage" class="message"></p>
+            </form>
+          </div>
+          <div id="passwordView" hidden>
+            <h2>Password settings</h2>
+            <form id="passwordForm">
+              <div class="field">
+                <label>Current password</label
+                ><input id="currentPassword" type="password" />
+              </div>
+              <div class="field">
+                <label>New password</label
+                ><input id="newPassword" type="password" />
+              </div>
+              <div class="checklist">
+                <div class="check" data-rule="length">
+                  ○ At least 8 characters
+                </div>
+                <div class="check" data-rule="upper">
+                  ○ One uppercase letter
+                </div>
+                <div class="check" data-rule="lower">
+                  ○ One lowercase letter
+                </div>
+                <div class="check" data-rule="number">○ One number</div>
+                <div class="check" data-rule="symbol">○ One symbol</div>
+              </div>
+              <div class="field">
+                <label>Retype new password</label
+                ><input id="retypePassword" type="password" />
+              </div>
+              <button class="save">Update password</button>
+              <p id="passwordMessage" class="message"></p>
+            </form>
+          </div>
+        </section>
+      </div>
+    </main>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="/firebaseConfig.js"></script>
+    <script src="/streamverse-auth.js"></script>
+    <script type="module" src="/tubes-background.js"></script>
+    <script>
+      const auth = window.firebaseAuth,
+        profileView = document.getElementById("profileView"),
+        passwordView = document.getElementById("passwordView"),
+        profileTab = document.getElementById("profileTab"),
+        passwordTab = document.getElementById("passwordTab"),
+        profileForm = document.getElementById("profileForm"),
+        passwordForm = document.getElementById("passwordForm"),
+        nameField = document.getElementById("nameField"),
+        photoField = document.getElementById("photoField"),
+        profileMessage = document.getElementById("profileMessage"),
+        currentPassword = document.getElementById("currentPassword"),
+        newPassword = document.getElementById("newPassword"),
+        retypePassword = document.getElementById("retypePassword"),
+        passwordMessage = document.getElementById("passwordMessage");
+      function showPassword(show) {
+        profileView.hidden = show;
+        passwordView.hidden = !show;
+        profileTab.classList.toggle("active", !show);
+        passwordTab.classList.toggle("active", show);
+      }
+      profileTab.onclick = () => showPassword(false);
+      passwordTab.onclick = () => showPassword(true);
+      auth.onAuthStateChanged((user) => {
+        if (!user) {
+          location.href = "/login.html";
+          return;
+        }
+        nameField.value = user.displayName || "";
+        photoField.value = user.photoURL || "";
+      });
+      profileForm.onsubmit = async (e) => {
+        e.preventDefault();
+        try {
+          await auth.currentUser.updateProfile({
+            displayName: nameField.value.trim(),
+            photoURL: photoField.value.trim() || null,
+          });
+          profileMessage.textContent = "Profile saved successfully.";
+        } catch (x) {
+          profileMessage.className = "message error";
+          profileMessage.textContent = x.message;
+        }
+      };
+      function rules() {
+        return {
+          length: newPassword.value.length >= 8,
+          upper: /[A-Z]/.test(newPassword.value),
+          lower: /[a-z]/.test(newPassword.value),
+          number: /\d/.test(newPassword.value),
+          symbol: /[^A-Za-z0-9]/.test(newPassword.value),
+        };
+      }
+      newPassword.oninput = () =>
+        Object.entries(rules()).forEach(([key, valid]) => {
+          const el = document.querySelector(`[data-rule="${key}"]`);
+          el.classList.toggle("valid", valid);
+          el.textContent = `${valid ? "✓" : "○"} ${el.textContent.slice(2)}`;
+        });
+      passwordForm.onsubmit = async (e) => {
+        e.preventDefault();
+        try {
+          if (Object.values(rules()).some((v) => !v))
+            throw Error("Choose a password that meets all requirements.");
+          if (newPassword.value !== retypePassword.value)
+            throw Error("Passwords do not match.");
+          const c = firebase.auth.EmailAuthProvider.credential(
+            auth.currentUser.email,
+            currentPassword.value,
+          );
+          await auth.currentUser.reauthenticateWithCredential(c);
+          await auth.currentUser.updatePassword(newPassword.value);
+          passwordMessage.textContent = "Password updated successfully.";
+          passwordForm.reset();
+        } catch (x) {
+          passwordMessage.className = "message error";
+          passwordMessage.textContent = x.message;
+        }
+      };
+    </script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+    <script>
+      const photoInput = document.getElementById("photoField");
+      const preview = document.createElement("div");
+      preview.className = "profile-preview";
+      preview.innerHTML =
+        '<img alt="Profile preview"><span>Profile picture preview</span>';
+      photoInput.parentElement.appendChild(preview);
+      const previewImage = preview.querySelector("img");
+      const updatePreview = (value) => {
+        const source = String(value || "").trim();
+        if (!source) {
+          preview.classList.remove("visible");
+          previewImage.removeAttribute("src");
+          return;
+        }
+        previewImage.src = source;
+        previewImage.onload = () => preview.classList.add("visible");
+        previewImage.onerror = () => preview.classList.remove("visible");
+      };
+      photoInput.addEventListener("input", () =>
+        updatePreview(photoInput.value),
+      );
+      updatePreview(photoInput.value);
+      const photoFile = document.createElement("input");
+      photoFile.type = "file";
+      photoFile.accept = "image/*";
+      photoFile.style.marginTop = "10px";
+      photoInput.parentElement.appendChild(photoFile);
+      const resetPhoto = document.createElement("button");
+      resetPhoto.type = "button";
+      resetPhoto.className = "save";
+      resetPhoto.style.marginTop = "10px";
+      resetPhoto.textContent = "Reset to Google profile picture";
+      photoInput.parentElement.appendChild(resetPhoto);
+      photoFile.onchange = () => {
+        const file = photoFile.files?.[0];
+        if (!file) return;
+        if (file.size > 1024 * 1024) {
+          alert("Please choose an image smaller than 1 MB.");
+          photoFile.value = "";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = String(reader.result || "");
+          photoInput.value = result;
+          updatePreview(result);
+        };
+        reader.readAsDataURL(file);
+      };
+      resetPhoto.onclick = () => {
+        photoInput.value = "";
+        photoFile.value = "";
+        updatePreview("");
+      };
+    </script>
+    <script>
+      const pictureUpload = document.querySelector('input[type="file"]');
+      const pictureReset = Array.from(document.querySelectorAll("button")).find(
+        (button) => button.textContent.includes("Reset to Google"),
+      );
+      if (pictureUpload && pictureReset) {
+        pictureUpload.style.display = "inline-block";
+        pictureUpload.style.width = "49%";
+        pictureUpload.style.marginRight = "1%";
+        pictureReset.style.display = "inline-block";
+        pictureReset.style.width = "49%";
+        pictureReset.style.marginTop = "10px";
+        pictureReset.style.verticalAlign = "top";
+        pictureReset.style.height = "46px";
+        pictureReset.innerHTML =
+          '<i class="fa-solid fa-rotate-left"></i> Reset Google photo';
+        pictureUpload.setAttribute("aria-label", "Choose profile picture");
+      }
+    </script>
+    <script>
+      const fileControl = document.querySelector('input[type="file"]');
+      const resetControl = Array.from(document.querySelectorAll("button")).find(
+        (button) => button.textContent.includes("Reset Google"),
+      );
+      if (fileControl && resetControl) {
+        fileControl.id = "profile-upload";
+        const chooseLabel = document.createElement("label");
+        chooseLabel.htmlFor = "profile-upload";
+        chooseLabel.className = "save";
+        chooseLabel.style.cssText =
+          "display:inline-flex;width:49%;height:46px;margin-top:10px;align-items:center;justify-content:center;cursor:pointer;color:#ffaaa5";
+        chooseLabel.innerHTML =
+          '<i class="fa-solid fa-upload"></i>&nbsp; Choose file';
+        fileControl.style.display = "none";
+        fileControl.parentElement.insertBefore(chooseLabel, fileControl);
+        resetControl.style.width = "49%";
+        resetControl.style.display = "inline-flex";
+        resetControl.style.alignItems = "center";
+        resetControl.style.justifyContent = "center";
+        resetControl.style.marginLeft = "1%";
+        resetControl.style.marginTop = "10px";
+        resetControl.innerHTML =
+          '<i class="fa-solid fa-rotate-left"></i>&nbsp; Reset Google photo';
+      }
+    </script>
+    <script>
+      profileForm.onsubmit = async (event) => {
+        event.preventDefault();
+        try {
+          const user = auth.currentUser;
+          let photoUrl = photoField.value.trim();
+          const file = document.querySelector('input[type="file"]')?.files?.[0];
+          if (file) {
+            const ref = firebase
+              .storage()
+              .ref(`users/${user.uid}/profile-picture`);
+            await ref.put(file, { contentType: file.type });
+            photoUrl = await ref.getDownloadURL();
+            photoField.value = photoUrl;
+          }
+          await user.updateProfile({
+            displayName: nameField.value.trim(),
+            photoURL: photoUrl || null,
+          });
+          profileMessage.className = "message";
+          profileMessage.textContent = "Profile saved successfully.";
+        } catch (error) {
+          profileMessage.className = "message error";
+          profileMessage.textContent =
+            error.message || "Could not save profile.";
+        }
+      };
+    </script>
+    <script>
+      const uploadControl = document.querySelector("label.save");
+      if (uploadControl) {
+        uploadControl.classList.remove("save");
+        uploadControl.style.background = "rgba(255,255,255,.08)";
+        uploadControl.style.border = "1px solid rgba(255,255,255,.25)";
+        uploadControl.style.color = "#ffaaa5";
+        uploadControl.style.borderRadius = "11px";
+      }
+      const profileSave = document.querySelector("#profileForm>button.save");
+      if (profileSave) {
+        profileSave.style.background = "rgba(52,130,246,.2)";
+        profileSave.style.borderColor = "rgba(93,166,255,.7)";
+        profileSave.style.color = "#a9d2ff";
+      }
+      const resetButton = Array.from(document.querySelectorAll("button")).find(
+        (button) => button.textContent.includes("Reset Google"),
+      );
+      if (resetButton) {
+        resetButton.style.background = "rgba(255,255,255,.08)";
+        resetButton.style.borderColor = "rgba(255,255,255,.25)";
+        resetButton.style.color = "#ffaaa5";
+        resetButton.onclick = async () => {
+          try {
+            const result = await auth.currentUser.reauthenticateWithPopup(
+              new firebase.auth.GoogleAuthProvider(),
+            );
+            photoField.value = result.user.photoURL || "";
+            localStorage.removeItem("streamverse_local_profile_photo");
+            const file = document.querySelector('input[type="file"]');
+            if (file) file.value = "";
+          } catch (error) {
+            profileMessage.className = "message error";
+            profileMessage.textContent =
+              "Google profile picture could not be refreshed.";
+          }
+        };
+      }
+      profileForm.onsubmit = async (event) => {
+        event.preventDefault();
+        try {
+          const file = document.querySelector('input[type="file"]')?.files?.[0];
+          if (file) {
+            if (file.size > 1024 * 1024)
+              throw Error("Please choose an image smaller than 1 MB.");
+            const data = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+            localStorage.setItem(
+              "streamverse_local_profile_photo",
+              String(data),
+            );
+            photoField.value = "";
+          }
+          await auth.currentUser.updateProfile({
+            displayName: nameField.value.trim(),
+            photoURL:
+              photoField.value.trim() || auth.currentUser.photoURL || null,
+          });
+          profileMessage.className = "message";
+          profileMessage.textContent = "Profile saved successfully.";
+          window.dispatchEvent(
+            new CustomEvent("streamverse-auth-changed", {
+              detail: { user: auth.currentUser },
+            }),
+          );
+        } catch (error) {
+          profileMessage.className = "message error";
+          profileMessage.textContent =
+            error.message || "Could not save profile.";
+        }
+      };
+    </script>
+  </body>
+</html>

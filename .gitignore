@@ -1,5 +1,6 @@
 .env
 .env.vercel
+firebaseConfig.js
 node_modules/
 *.png
 test-mobile-safari.js
@@ -28,3 +29,4 @@ test*.js
 *_test.js
 anime.html
 anime-script.js
+duppedlogin.html
