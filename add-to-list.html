@@ -91,6 +91,11 @@
         </div>
     </div>
 
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="/firebaseConfig.js"></script>
+    <script src="/streamverse-auth.js"></script>
     <script src="script.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -146,6 +151,7 @@
                 renderWatchlist();
             }
         });
+        window.addEventListener('streamverse-auth-ready', renderWatchlist);
     </script>
 </body>
 

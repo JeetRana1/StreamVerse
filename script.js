@@ -149,7 +149,9 @@ function handleWatchlistToggle(id, type, provider) {
     const btn = document.getElementById('modal-watchlist-btn');
 
     if (index > -1) {
+        const removedItem = list[index];
         list.splice(index, 1);
+        Promise.resolve(window.StreamVerseAuth?.deleteWatchlistItem?.(removedItem)).catch((error) => console.warn('[auth] watchlist delete failed:', error));
         if (btn) {
             btn.innerHTML = '<i class="fa-solid fa-plus"></i> Add to List';
             btn.classList.remove('btn-in-list');
@@ -165,6 +167,7 @@ function handleWatchlistToggle(id, type, provider) {
             addedAt: Date.now()
         };
         list.unshift(item); // Change push to unshift, to show newest first
+        Promise.resolve(window.StreamVerseAuth?.saveWatchlistItem?.(item)).catch((error) => console.warn('[auth] watchlist save failed:', error));
         if (btn) {
             btn.innerHTML = '<i class="fa-solid fa-check"></i> In Your List';
             btn.classList.add('btn-in-list');

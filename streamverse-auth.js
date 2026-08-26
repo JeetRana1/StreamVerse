@@ -2,7 +2,9 @@
     'use strict';
 
     const LOCAL_KEY = 'sv_continue_watching';
+    const WATCHLIST_KEY = 'streamverse_watchlist';
     const PENDING_KEY_PREFIX = 'sv_pending_merge_local_';
+    const PENDING_WATCHLIST_KEY_PREFIX = 'sv_pending_merge_watchlist_';
     const REVIEWED_KEY_PREFIX = 'sv_merge_reviewed_';
     const COMPLETED_KEY_PREFIX = 'sv_merge_completed_';
     const state = { user: null, ready: false, reconcilePromise: Promise.resolve(), stopRealtime: null };
@@ -13,6 +15,10 @@
 
     function pendingKey() {
         return pendingKeyFor(state.user?.uid);
+    }
+
+    function pendingWatchlistKey() {
+        return `${PENDING_WATCHLIST_KEY_PREFIX}${state.user?.uid || 'guest'}`;
     }
 
     function reviewedKey() {
@@ -29,9 +35,9 @@
         return Array.isArray(items) ? items.filter((item) => item?.id) : [];
     }
 
-    function collection() {
+    function collection(name = 'continueWatching') {
         if (!state.user || !window.firebaseDb) return null;
-        return window.firebaseDb.collection('users').doc(state.user.uid).collection('continueWatching');
+        return window.firebaseDb.collection('users').doc(state.user.uid).collection(name);
     }
 
     function dispatchCloudItems(items) {
@@ -45,17 +51,43 @@
         state.stopRealtime?.();
         const ref = collection();
         if (!ref) return;
-        state.stopRealtime = ref.onSnapshot((snapshot) => {
+        const stopContinueSync = ref.onSnapshot((snapshot) => {
             const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id)
                 .sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0));
             dispatchCloudItems(cloud);
         }, (error) => console.warn('[auth] realtime sync failed:', error));
+        const watchRef = collection('watchlist');
+        const stopWatchlistSync = watchRef?.onSnapshot((snapshot) => {
+            const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id)
+                .sort((a, b) => Number(b.addedAt || b.lastUpdated || 0) - Number(a.addedAt || a.lastUpdated || 0));
+            if (readPendingWatchlistItems().length && !readWatchlistItems().length) return;
+            if (cloud.length) localStorage.setItem(WATCHLIST_KEY, JSON.stringify(cloud));
+            else localStorage.removeItem(WATCHLIST_KEY);
+            window.dispatchEvent(new CustomEvent('streamverse-watchlist-ready', { detail: { user: state.user, items: cloud } }));
+            window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: state.user, items: readLocalItems() } }));
+        }, (error) => console.warn('[auth] watchlist realtime sync failed:', error));
+        state.stopRealtime = () => {
+            stopContinueSync?.();
+            stopWatchlistSync?.();
+        };
     }
 
     function readLocalItems() {
         let local = {};
         try { local = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); } catch (_) { }
         return Array.isArray(local) ? local.filter((item) => item?.id) : [];
+    }
+
+    function readWatchlistItems() {
+        let items = [];
+        try { items = JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]'); } catch (_) { }
+        return Array.isArray(items) ? items.filter((item) => item?.id) : [];
+    }
+
+    function readPendingWatchlistItems() {
+        let items = [];
+        try { items = JSON.parse(localStorage.getItem(pendingWatchlistKey()) || '[]'); } catch (_) { }
+        return Array.isArray(items) ? items.filter((item) => item?.id) : [];
     }
 
     function itemKey(item) {
@@ -141,7 +173,8 @@
           .sv-merge-kicker::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #7eb0ff; box-shadow: 0 0 14px #7eb0ff; }
           .sv-merge-header h2 { margin: 0 0 8px; font: 600 26px/1.2 "Space Grotesk", system-ui, sans-serif; letter-spacing: -.02em; }
           .sv-merge-header p { margin: 0; color: rgba(245,244,255,.68); font-size: 14px; line-height: 1.5; }
-          .sv-merge-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: max-content !important; align-content: start !important; flex: 0 0 auto !important; height: auto !important; min-height: 0 !important; gap: 18px 14px; overflow: visible; padding: 24px 30px 30px; }
+           .sv-merge-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: max-content !important; align-content: start !important; flex: 0 0 auto !important; height: auto !important; min-height: 0 !important; gap: 18px 14px; overflow: visible; padding: 24px 30px 30px; }
+           .sv-merge-section h3 { padding: 22px 30px 0; color: #fff; font-size: 15px; font-weight: 700; }
           .sv-merge-item { min-width: 0; padding: 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 16px; background: rgba(255,255,255,.055); transition: transform .2s ease, border-color .2s ease, background .2s ease; }
           .sv-merge-item:hover { transform: translateY(-3px); border-color: rgba(171,202,255,.38); background: rgba(255,255,255,.09); }
           .sv-merge-item img { display: block; width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 10px; background: #20222d; box-shadow: 0 8px 18px rgba(0,0,0,.3); }
@@ -163,18 +196,29 @@
         document.head.appendChild(style);
     }
 
-    function showMergePrompt(local, cloud) {
+    function showMergePrompt(local, cloud, watchlistLocal = [], watchlistCloud = []) {
         ensureMergeModalStyles();
-        const localKeys = new Set(local.map(itemKey));
-        const cloudKeys = new Set(cloud.map(itemKey));
-        const items = [...new Map([...local, ...cloud].map((item) => [itemKey(item), item])).values()];
+        const items = local;
+        const watchlistItems = watchlistLocal;
+        const renderItems = (rows, localRows, cloudRows) => {
+            const localSet = new Set(localRows.map(itemKey));
+            const cloudSet = new Set(cloudRows.map(itemKey));
+            return rows.map((item) => {
+                const key = itemKey(item);
+                const source = localSet.has(key) && cloudSet.has(key) ? 'On device + account' : localSet.has(key) ? 'On this device' : 'In your account';
+                return `<article class="sv-merge-item"><img src="${escapeHtml(itemPoster(item))}" alt="" loading="lazy"><strong title="${escapeHtml(item.title || item.name || 'Untitled')}">${escapeHtml(item.title || item.name || 'Untitled')}</strong><span>${source}</span></article>`;
+            }).join('');
+        };
+        const renderSection = (title, rows, localRows, cloudRows) => rows.length
+            ? `<div class="sv-merge-section"><h3>${escapeHtml(title)}</h3><div class="sv-merge-list">${renderItems(rows, localRows, cloudRows)}</div></div>`
+            : '';
         return new Promise((resolve) => {
             const backdrop = document.createElement('div');
             backdrop.className = 'sv-merge-root';
             backdrop.innerHTML = `<section class="lg-17 sv-merge-backdrop" role="dialog" aria-modal="true" aria-label="Library sync">
               <div class="lg-17__mesh" aria-hidden="true"></div><form class="lg-17__card sv-merge-modal" novalidate>
-              <div class="sv-merge-scroll"><div class="sv-merge-copy"><div class="sv-merge-kicker">Library sync</div><h2>Keep your library in sync?</h2><p>We found ${items.length} saved title${items.length === 1 ? '' : 's'} on this device that ${items.length === 1 ? 'isn\'t' : 'aren\'t'} in your account yet. Choose whether to add ${items.length === 1 ? 'it' : 'them'}.</p></div>
-              <div class="sv-merge-list">${items.map((item) => { const key = itemKey(item); const source = localKeys.has(key) && cloudKeys.has(key) ? 'On device + account' : localKeys.has(key) ? 'On this device' : 'In your account'; return `<article class="sv-merge-item"><img src="${escapeHtml(itemPoster(item))}" alt="" loading="lazy"><strong title="${escapeHtml(item.title || item.name || 'Untitled')}">${escapeHtml(item.title || item.name || 'Untitled')}</strong><span>${source}</span></article>`; }).join('')}</div></div>
+              <div class="sv-merge-scroll"><div class="sv-merge-copy"><div class="sv-merge-kicker">Library sync</div><h2>Keep your library in sync?</h2><p>We found saved titles on this device that are not in your account yet. Choose whether to add them.</p></div>
+              ${renderSection('Continue Watching', items, items, [])}${renderSection('My List', watchlistItems, watchlistItems, [])}</div>
               <div class="sv-merge-actions"><button type="button" data-merge-skip>Not now</button><button type="button" class="sv-merge-confirm" data-merge-confirm>Merge and keep all</button></div>
               </form></section>`;
             const finish = (merge) => { backdrop.remove(); resolve(merge); };
@@ -188,66 +232,112 @@
         const ref = collection();
         if (!ref) return;
         const local = readLocalItems();
+        const localWatchlist = readWatchlistItems();
         if (!local.length && readPendingItems().length) {
             updateAuthButton();
             window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: state.user, items: [] } }));
             return;
         }
-        const snapshot = await ref.get();
+        const watchRef = collection('watchlist');
+        const [snapshot, watchSnapshot] = await Promise.all([ref.get(), watchRef?.get() || Promise.resolve({ docs: [] })]);
         const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
+        const cloudWatchlist = watchSnapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
         const localMap = new Map(local.map((item) => [itemKey(item), item]));
         const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
+        const localWatchlistMap = new Map(localWatchlist.map((item) => [itemKey(item), item]));
+        const cloudWatchlistMap = new Map(cloudWatchlist.map((item) => [itemKey(item), item]));
         const localOnly = local.filter((item) => !cloudMap.has(itemKey(item)));
+        const localWatchlistOnly = localWatchlist.filter((item) => !cloudWatchlistMap.has(itemKey(item)));
         const hasDifferences = localOnly.length > 0 || local.some((item) => {
             const cloudItem = cloudMap.get(itemKey(item));
             return cloudItem && itemFingerprint(item) !== itemFingerprint(cloudItem);
         });
+        const hasWatchlistDifferences = localWatchlistOnly.length > 0 || localWatchlist.some((item) => {
+            const cloudItem = cloudWatchlistMap.get(itemKey(item));
+            return cloudItem && itemFingerprint(item) !== itemFingerprint(cloudItem);
+        });
         const hasCompletedMerge = localStorage.getItem(completedKey()) === 'true';
-        const needsPrompt = !hasCompletedMerge && localOnly.length > 0 && localStorage.getItem(reviewedKey()) !== libraryFingerprint(localOnly, []);
+        const needsPrompt = (localOnly.length > 0 || localWatchlistOnly.length > 0) && localStorage.getItem(reviewedKey()) !== libraryFingerprint([...localOnly, ...localWatchlistOnly], []);
         let finalItems = cloud;
-        if (needsPrompt && (local.length || cloud.length)) {
-            const shouldMerge = await showMergePrompt(localOnly, []);
+        let finalWatchlist = cloudWatchlist;
+        if (needsPrompt && (local.length || cloud.length || localWatchlist.length || cloudWatchlist.length)) {
+            const shouldMerge = await showMergePrompt(localOnly, cloud, localWatchlistOnly, cloudWatchlist);
             if (shouldMerge) {
                 finalItems = [...new Map([...cloud, ...local].map((item) => [itemKey(item), item])).values()]
                     .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item);
-                await Promise.all(finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
+                finalWatchlist = [...new Map([...cloudWatchlist, ...localWatchlist].map((item) => [itemKey(item), item])).values()]
+                    .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item);
+                await Promise.all([
+                    ...finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
+                    ...finalWatchlist.map((item) => watchRef.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
+                ]);
                 localStorage.setItem(reviewedKey(), libraryFingerprint(finalItems, finalItems));
                 localStorage.setItem(completedKey(), 'true');
                 showSyncNotice('Library merged successfully');
             } else {
                 // Declining means this signed-in session should show no continue-watching data.
                 if (localOnly.length) localStorage.setItem(pendingKey(), JSON.stringify(localOnly));
+                if (localWatchlistOnly.length) localStorage.setItem(pendingWatchlistKey(), JSON.stringify(localWatchlistOnly));
                 finalItems = [];
                 localStorage.removeItem(LOCAL_KEY);
             }
-        } else if (hasCompletedMerge && hasDifferences) {
+        } else if (hasCompletedMerge && (hasDifferences || hasWatchlistDifferences)) {
             finalItems = [...new Map([...cloud, ...local].map((item) => [itemKey(item), item])).values()]
                 .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item);
-            await Promise.all(finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
+            finalWatchlist = [...new Map([...cloudWatchlist, ...localWatchlist].map((item) => [itemKey(item), item])).values()]
+                .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item);
+            await Promise.all([
+                ...finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
+                ...finalWatchlist.map((item) => watchRef.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
+            ]);
+        } else if (!needsPrompt && localWatchlist.length) {
+            // A watchlist item can be added before Firebase finishes restoring
+            // the session. Re-upload the local list after sign-in so it never
+            // remains local-only because the click happened during auth startup.
+            finalWatchlist = [...new Map([...cloudWatchlist, ...localWatchlist].map((item) => [itemKey(item), item])).values()]
+                .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item);
+            await Promise.all(finalWatchlist.map((item) => watchRef.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
         }
         finalItems = finalItems.sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0));
         if (finalItems.length) localStorage.setItem(LOCAL_KEY, JSON.stringify(finalItems));
         else if (needsPrompt) localStorage.removeItem(LOCAL_KEY);
+        if (finalWatchlist.length) localStorage.setItem(WATCHLIST_KEY, JSON.stringify(finalWatchlist));
+        else if (needsPrompt) localStorage.removeItem(WATCHLIST_KEY);
         updateAuthButton();
         window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: state.user, items: finalItems } }));
     }
 
     async function reopenMergePrompt() {
         const local = readPendingItems();
+        let pendingWatchlist = [];
+        try { pendingWatchlist = JSON.parse(localStorage.getItem(pendingWatchlistKey()) || '[]'); } catch (_) { }
+        if (!Array.isArray(pendingWatchlist)) pendingWatchlist = [];
         const ref = collection();
-        if (!local.length || !ref) return;
-        const snapshot = await ref.get();
+        const watchRef = collection('watchlist');
+        if ((!local.length && !pendingWatchlist.length) || !ref) return;
+        const [snapshot, watchSnapshot] = await Promise.all([ref.get(), watchRef?.get() || Promise.resolve({ docs: [] })]);
         const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
-        const shouldMerge = await showMergePrompt(local, []);
+        const cloudWatchlist = watchSnapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
+        const shouldMerge = await showMergePrompt(local, cloud, pendingWatchlist, cloudWatchlist);
         if (!shouldMerge) return;
         const localMap = new Map(local.map((item) => [itemKey(item), item]));
         const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
+        const localWatchlistMap = new Map(pendingWatchlist.map((item) => [itemKey(item), item]));
+        const cloudWatchlistMap = new Map(cloudWatchlist.map((item) => [itemKey(item), item]));
         const merged = [...new Map([...cloud, ...local].map((item) => [itemKey(item), item])).values()]
             .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item)
             .sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0));
-        await Promise.all(merged.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
+        const mergedWatchlist = [...new Map([...cloudWatchlist, ...pendingWatchlist].map((item) => [itemKey(item), item])).values()]
+            .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item)
+            .sort((a, b) => Number(b.addedAt || 0) - Number(a.addedAt || 0));
+        await Promise.all([
+            ...merged.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
+            ...mergedWatchlist.map((item) => watchRef.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
+        ]);
         localStorage.setItem(LOCAL_KEY, JSON.stringify(merged));
+        localStorage.setItem(WATCHLIST_KEY, JSON.stringify(mergedWatchlist));
         localStorage.removeItem(pendingKey());
+        localStorage.removeItem(pendingWatchlistKey());
         localStorage.setItem(reviewedKey(), libraryFingerprint(merged, merged));
         localStorage.setItem(completedKey(), 'true');
         showSyncNotice('Library merged successfully');
@@ -290,6 +380,18 @@
         await ref.doc(`${item.type || 'movie'}_${item.id}`).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
     }
 
+    async function saveWatchlistItem(item) {
+        const ref = collection('watchlist');
+        if (!ref || !item?.id) return;
+        await ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    }
+
+    async function deleteWatchlistItem(item) {
+        const ref = collection('watchlist');
+        if (!ref || !item?.id) return;
+        await ref.doc(itemKey(item)).delete();
+    }
+
     async function deleteItem(item) {
         const ref = collection();
         if (!ref || !item?.id) return;
@@ -305,6 +407,8 @@
         signOut,
         saveItem,
         deleteItem,
+        saveWatchlistItem,
+        deleteWatchlistItem,
         notify: showSyncNotice,
         getUser: () => state.user,
         whenReady: () => state.reconcilePromise,
@@ -320,7 +424,7 @@
         const wrap = button.closest('.account-menu-wrap');
         let retryButton = document.getElementById('streamverse-merge-retry-button');
         const headerActions = document.querySelector('.header-actions');
-        if (activeUser && readPendingItems().length && headerActions) {
+        if (activeUser && (readPendingItems().length || (() => { try { return JSON.parse(localStorage.getItem(pendingWatchlistKey()) || '[]').length; } catch (_) { return 0; } })()) && headerActions) {
             ensureMergeModalStyles();
             if (!retryButton) {
                 retryButton = document.createElement('button');
