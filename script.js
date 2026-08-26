@@ -152,6 +152,7 @@ function handleWatchlistToggle(id, type, provider) {
         const removedItem = list[index];
         list.splice(index, 1);
         Promise.resolve(window.StreamVerseAuth?.deleteWatchlistItem?.(removedItem)).catch((error) => console.warn('[auth] watchlist delete failed:', error));
+        window.StreamVerseAuth?.notify?.(`${removedItem.title || 'Title'} removed from your library`);
         if (btn) {
             btn.innerHTML = '<i class="fa-solid fa-plus"></i> Add to List';
             btn.classList.remove('btn-in-list');
@@ -168,6 +169,7 @@ function handleWatchlistToggle(id, type, provider) {
         };
         list.unshift(item); // Change push to unshift, to show newest first
         Promise.resolve(window.StreamVerseAuth?.saveWatchlistItem?.(item)).catch((error) => console.warn('[auth] watchlist save failed:', error));
+        window.StreamVerseAuth?.notify?.(`${item.title || 'Title'} added to your library`);
         if (btn) {
             btn.innerHTML = '<i class="fa-solid fa-check"></i> In Your List';
             btn.classList.add('btn-in-list');
