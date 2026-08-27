@@ -6089,7 +6089,7 @@ function getProxiedUrl(url, referer = '') {
                 maxBufferLength: maxBufferLength,
                 maxMaxBufferLength: maxMaxBufferLength,
                 maxBufferSize: isHdstream && !isThumbnail ? 90 * 1000 * 1000 : maxBufferSize,
-                startLevel: isHdstream && !isThumbnail ? 0 : undefined,
+                startLevel: (isHdstream || isAniKoto) && !isThumbnail ? 0 : undefined,
                 audioCodec: undefined,
                 // Only fetch quality levels the player can actually display. This
                 // stops hls.js from probing/downloading the highest-res variant
@@ -6720,11 +6720,11 @@ function getProxiedUrl(url, referer = '') {
                 updateAudioTracks();
                 hideBufferingOverlaySoon(40);
                 clearFatalRecoveryTimer();
-                 // Start at highest quality for providers that do not use the
-                 // HDStream low-quality startup path above.
-                 if (!parsedProvider.includes('hdstream') && Array.isArray(hls.levels) && hls.levels.length > 1) {
-                     hls.nextLevel = hls.levels.length - 1;
-                 }
+                  // Start AniKoto at the lowest rendition; its CDN is often
+                  // slower than the browser's initial bandwidth estimate.
+                  if (!parsedProvider.includes('hdstream') && !parsedProvider.includes('anikoto') && Array.isArray(hls.levels) && hls.levels.length > 1) {
+                      hls.nextLevel = hls.levels.length - 1;
+                  }
             });
 
             hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
