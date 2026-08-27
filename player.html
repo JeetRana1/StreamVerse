@@ -4895,6 +4895,7 @@ function getProxiedUrl(url, referer = '') {
             const headerReferer = src?.headers?.Referer || src?.headers?.referer || src?.referer || fallbackReferer || '';
             const isVidkingStream = serverName.includes('vidking') || /goldweather\.net|vidking\.net/i.test(rawUrl);
             if (isVidkingStream) return 'https://www.vidking.net/';
+            if (/hubstream\.(?:art|pw|cc|ink|foo|boo)/i.test(rawUrl)) return 'https://hubstream.art/';
             const isFlixhqStream = providerName === 'flixhq' || /sb\d|mooncarpet|hydrogen|nightspeedster/i.test(rawUrl);
             if (isFlixhqStream) return 'https://flixhq.one/';
             return headerReferer || '';
@@ -8604,6 +8605,9 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 return sources.filter((src) => {
                     const url = String(src?.url || '').trim();
                     if (!url) return false;
+                    // AniKoto HLS URLs contain short-lived CDN tokens; a
+                    // 15-minute browser cache can turn them into dead manifests.
+                    if (String(provider || '').toLowerCase() === 'anikoto' && /\.m3u8(?:[?#]|$)/i.test(url)) return false;
                     return !isBrokenEmbedUrl(url) && !isLikelyPlaceholderSource(url);
                 });
             } catch (_) {
@@ -21959,10 +21963,11 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 },
                 '26247': {
                     source: {
-                        label: 'Bombay (Archive)',
-                        url: 'https://ia600809.us.archive.org/25/items/magadheera_202608/Bombay-1995.mp4',
+                        label: 'Bombay (Archive MKV)',
+                        url: 'https://ia600809.us.archive.org/25/items/magadheera_202608/Bombay-1995%20-%20Copy.mkv',
                         isM3U8: false,
                         isEmbed: false,
+                        preferMkv: true,
                         referer: null,
                         isDub: false,
                         provider: 'archive.org',
@@ -23879,7 +23884,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             if (IS_IOS && sourceProvider === 'archive.org' && selectedSource?.iosUrl) {
                 url = String(selectedSource.iosUrl).trim();
                 console.log('[ios] Using Archive iOS source:', url);
-            } else if (IS_IOS && sourceProvider === 'archive.org' && /\.mkv(?:\?|$)/i.test(originalStreamUrl)) {
+            } else if (IS_IOS && !selectedSource?.preferMkv && sourceProvider === 'archive.org' && /\.mkv(?:\?|$)/i.test(originalStreamUrl)) {
                 url = originalStreamUrl.replace(/\.mkv(?=\?|$)/i, '.mp4');
                 console.log('[ios] Using Archive H.264 derivative:', url);
             }
