@@ -24660,7 +24660,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     recoverSameSource(reason);
                 };
 
-                // Startup watchdog: if this source remains stuck in waiting state, try next source.
+                 // Startup watchdog: AniKoto may need extra time to fetch the
+                 // resumed segment after the manifest has already loaded.
                 let hlsStartupHasProgress = false;
                 const markHlsProgress = () => {
                     if (!video) return;
@@ -24693,8 +24694,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                             if (!altSwitched) recoverSameSourceWithDirectFallback('hls_startup_timeout');
                         });
                     }
-                 }, String(FORCED_PROVIDER || '').toLowerCase() === 'anikoto'
-                     ? 4000
+                 }, String(FORCED_PROVIDER || currentStreamProvider || '').toLowerCase().includes('anikoto')
+                     ? 30000
                      : (String(currentStreamProvider || '').toLowerCase().includes('hdstream') ? 60000 : 18000));
                 const clearHlsStartupWatchdog = () => {
                     clearTimeout(hlsStartupWatchdog);
