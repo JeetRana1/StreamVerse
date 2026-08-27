@@ -6046,6 +6046,7 @@ function getProxiedUrl(url, referer = '') {
         // Stall-based adaptive quality
         let stallAdaptiveLowest = false;
         let stallRecoveryTimer = null;
+        let hdstreamManualQualityLevel = -1;
 
         function estimateNetworkQuality() {
             // Simple heuristic: if bandwidth is consistently low, flag as constrained
@@ -6062,6 +6063,9 @@ function getProxiedUrl(url, referer = '') {
             const isAniKoto = String(provider || '').toLowerCase().includes('anikoto');
             const isVega = String(provider || '').toLowerCase().includes('vegamovies');
             const isHdstream = String(provider || '').toLowerCase().includes('hdstream');
+            const hdstreamStartPosition = isHdstream && Number(startTime || 0) > 0
+                ? Math.ceil((Number(startTime) - 0.01) / 10) * 10 + 0.2
+                : startTime;
 
             // Dynamic buffer sizing Ã¢â‚¬â€ keep buffers modest to avoid bufferFullError cascades
             // (oversized buffers fill up, HLS.js panics Ã¢â€ â€™ stall loop)
@@ -6078,7 +6082,7 @@ function getProxiedUrl(url, referer = '') {
                 // Long VOD seeks are more reliable after the playlist has established
                 // a media buffer. Starting directly at a distant timestamp frequently
                 // causes CDN segment stalls on HDStream and AniKoto.
-                startPosition: !isThumbnail && !isHdstream && Number(startTime || 0) > 30 ? 0 : startTime,
+                 startPosition: !isThumbnail && !isHdstream && Number(startTime || 0) > 30 ? 0 : hdstreamStartPosition,
                  // HDStream can ignore startPosition when auto-starting and
                  // fetch fragment 1 before applying a resume position. Start
                  // it explicitly after MANIFEST_PARSED instead.
@@ -6088,8 +6092,9 @@ function getProxiedUrl(url, referer = '') {
                 backBufferLength: backBufferLength,
                 maxBufferLength: maxBufferLength,
                 maxMaxBufferLength: maxMaxBufferLength,
-                maxBufferSize: isHdstream && !isThumbnail ? 90 * 1000 * 1000 : maxBufferSize,
-                startLevel: (isHdstream || isAniKoto) && !isThumbnail ? 0 : undefined,
+                 maxBufferSize: isHdstream && !isThumbnail ? 90 * 1000 * 1000 : maxBufferSize,
+                 startLevel: (isHdstream || isAniKoto) && !isThumbnail ? 0 : undefined,
+                 autoLevelCapping: isHdstream && !isThumbnail ? 0 : undefined,
                 audioCodec: undefined,
                 // Only fetch quality levels the player can actually display. This
                 // stops hls.js from probing/downloading the highest-res variant
@@ -6305,6 +6310,14 @@ function getProxiedUrl(url, referer = '') {
             return provider.includes('anikoto');
         }
 
+        function normalizeHdstreamSeekTarget(targetTime) {
+            const target = Math.max(0, Number(targetTime || 0));
+            if (!isCurrentHdstreamStream() || !Number.isFinite(target)) return target;
+            const nextBoundary = Math.ceil((target - 0.01) / 10) * 10;
+                if (nextBoundary <= target || nextBoundary - target > 1.5) return target;
+            return Math.min(Number(video?.duration || nextBoundary), nextBoundary + 0.2);
+        }
+
         function isVideoTimeBuffered(targetTime, edge = 0.15) {
             if (!video || !Number.isFinite(targetTime)) return false;
             try {
@@ -6371,7 +6384,8 @@ function getProxiedUrl(url, referer = '') {
         function applyGuardedJump(targetTime, reason = 'seek') {
             if (!video || !Number.isFinite(targetTime)) return;
 
-            const clampedTarget = Math.max(0, Number(targetTime));
+            const requestedTarget = Math.max(0, Number(targetTime));
+            const clampedTarget = normalizeHdstreamSeekTarget(requestedTarget);
             const now = Date.now();
             const requestVersion = ++jumpRequestVersion;
             const jumpDistance = Math.abs(clampedTarget - Number(video.currentTime || 0));
@@ -6659,7 +6673,7 @@ function getProxiedUrl(url, referer = '') {
                     console.warn('[hls] Ignoring out-of-range resume time:', requested, 'duration:', duration);
                     return 0;
                 }
-                return requested;
+                return normalizeHdstreamSeekTarget(requested);
             };
             const watchdogAvoidStopLoad = () => {
                 if (typeof isCurrentFlixHqStream === 'function' && isCurrentFlixHqStream()) return true;
@@ -6710,7 +6724,7 @@ function getProxiedUrl(url, referer = '') {
                          hls.nextLevel = 0;
                          hls.loadLevel = 0;
                          const initialLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
-                         hls.startLoad(initialLoadTarget > 0 ? initialLoadTarget + 0.75 : 0);
+                          hls.startLoad(initialLoadTarget > 0 ? initialLoadTarget : 0);
                      } catch (_) { }
                  }
                  setTimeout(() => {
@@ -6807,6 +6821,11 @@ function getProxiedUrl(url, referer = '') {
             const applyAdaptiveLevelCap = () => {
                 if (!hls || !Array.isArray(hls.levels) || hls.levels.length < 2) return;
                 const levelsCount = hls.levels.length;
+                if (isHdstream && !isThumbnail) {
+                    if (hdstreamManualQualityLevel >= 0) return;
+                    if (hls.autoLevelCapping !== 0) hls.autoLevelCapping = 0;
+                    return;
+                }
                 const lowestSafeCap = Math.max(0, levelsCount - 2);
                 if (isBandwidthConstrained) {
                     if (hls.autoLevelCapping !== lowestSafeCap) {
@@ -6823,6 +6842,10 @@ function getProxiedUrl(url, referer = '') {
             hls.on(Hls.Events.FRAG_LOADING, (_, data) => {
                 lastFragLoadStartAt = Date.now();
                 lastFragLoadPerfTime = performance.now();
+                if (isHdstream && !isThumbnail && hdstreamManualQualityLevel < 0) {
+                    hls.autoLevelCapping = 0;
+                    hls.nextLevel = 0;
+                }
                 if (isCurrentHdstreamStream() && data?.frag) {
                     const fragSn = data.frag.sn;
                     const fragStart = data.frag.start;
@@ -6865,15 +6888,17 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
                 if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsStartupSampleDone && hls.levels.length > 1) {
                     hlsStartupSampleDone = true;
+                    // HDStream's CDN cannot sustain higher renditions reliably;
+                    // keep the default stream capped to the lowest rendition.
                     setTimeout(() => {
                         if (hls === hlsInst && hls.levels.length > 1) {
-                            hls.startLevel = -1;
-                            hls.nextLevel = -1;
-                            hls.loadLevel = -1;
-                            hls.autoLevelCapping = -1;
-                            console.log('[hls] HDStream startup sample complete; adaptive quality enabled');
+                            hls.startLevel = 0;
+                            hls.nextLevel = 0;
+                            hls.loadLevel = 0;
+                            hls.autoLevelCapping = 0;
+                            console.log('[hls] HDStream startup sample complete; keeping lowest quality for stability');
                         }
-                    }, 500);
+                    }, 15000);
                 }
                 const bw = Number(data?.stats?.bwEstimate || 0);
                 if (!Number.isFinite(bw) || bw <= 0) return;
@@ -15720,6 +15745,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         }
                     }
                     if (seekTo > 0 && video) {
+                        seekTo = normalizeHdstreamSeekTarget(seekTo);
                         console.log('[video] Initial/Resume seek to:', seekTo);
                         // canplay may fire before the first post-seek fragment is buffered.
                         // Let HLS establish the target position, then apply the seek once
@@ -21294,9 +21320,9 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 } catch (_) { }
             }
 
-            // Pre-buffer the target area before executing the skip
+            // Let the current HDStream fragment finish before making a long
+            // intro jump; aborting it leaves the player with no startup buffer.
             const jumpDistance = Math.abs(target - (video.currentTime || 0));
-            const prebufferTime = Math.max(0, target - (jumpDistance > 30 ? 5 : 1.5));
 
             // Use gentler quality tuning for the skip operation
             tuneHlsForJump(target, jumpDistance, 'skip');
@@ -21312,8 +21338,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 return;
             }
 
-            // Wait briefly for pre-buffering before seeking (gives HLS time to prepare chunks)
-            setTimeout(() => {
+            const applySkip = () => {
                 // Force the media element to settle on the skip target even if the stream briefly resists seeks.
                 applyGuardedJump(target, 'skip');
 
@@ -21344,7 +21369,23 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         } catch (_) { }
                     }
                 }, 300);
-            }, skipApplyDelay); // HDStream is already anchored by tuneHlsForJump
+            };
+
+            const waitForHdstreamBuffer = (deadline) => {
+                if (!isCurrentHdstreamStream() || jumpDistance <= 30 || getBufferedAheadSeconds() >= 8 || Date.now() >= deadline) {
+                    applySkip();
+                    return;
+                }
+                setTimeout(() => waitForHdstreamBuffer(deadline), 500);
+            };
+
+            // Wait for roughly one complete fragment, but never block the
+            // control indefinitely if the CDN is unavailable.
+            if (isCurrentHdstreamStream() && jumpDistance > 30 && getBufferedAheadSeconds() < 8) {
+                waitForHdstreamBuffer(Date.now() + 12000);
+            } else {
+                setTimeout(applySkip, skipApplyDelay);
+            }
         }
 
         function _tickSkipCountdown() {
@@ -23167,6 +23208,13 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
 
                     if (providerSources.length > 0) {
                         if (isHdstreamProvider) {
+                            // The direct CDN can deliver near playback speed; prefer the
+                            // alternate host, which serves the same HLS at a lower bitrate.
+                            providerSources.sort((a, b) => {
+                                const aAlternate = /morencius\.com/i.test(String(a?.url || '')) ? 1 : 0;
+                                const bAlternate = /morencius\.com/i.test(String(b?.url || '')) ? 1 : 0;
+                                return bAlternate - aAlternate;
+                            });
                             const elapsedMs = Math.round(performance.now() - extractionStartedAt);
                             console.timeEnd('[hdstream4u] total extraction');
                             console.log('[hdstream4u] extraction complete', {
@@ -25372,7 +25420,11 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
 
         function changeQuality(q) {
             if (!hlsInst) return;
-            hlsInst.nextLevel = q === 0 ? -1 : hlsInst.levels.findIndex(l => l.height === q);
+            if (isCurrentHdstreamStream()) {
+                hdstreamManualQualityLevel = q === 0 ? -1 : hlsInst.levels.findIndex(l => l.height === q);
+                hlsInst.autoLevelCapping = q === 0 ? 0 : -1;
+            }
+            hlsInst.nextLevel = q === 0 ? -1 : hdstreamManualQualityLevel;
         }
 
         // -----------------------------------------------------------------------
