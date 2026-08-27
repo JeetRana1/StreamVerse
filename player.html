@@ -21320,13 +21320,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 } catch (_) { }
             }
 
-            // Let the current HDStream fragment finish before making a long
-            // intro jump; aborting it leaves the player with no startup buffer.
             const jumpDistance = Math.abs(target - (video.currentTime || 0));
 
             // Use gentler quality tuning for the skip operation
             tuneHlsForJump(target, jumpDistance, 'skip');
-            const skipApplyDelay = isCurrentHdstreamStream() ? 0 : 500;
 
             if (hlsInst && hlsSessionIsFragile) {
                 console.log(`[Skip] HLS session is fragile, hot-reloading stream for ${type} skip.`);
@@ -21340,6 +21337,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
 
             const applySkip = () => {
                 // Force the media element to settle on the skip target even if the stream briefly resists seeks.
+                initialSeekDone = true;
                 applyGuardedJump(target, 'skip');
 
                 if (!video.paused) {
@@ -21371,21 +21369,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }, 300);
             };
 
-            const waitForHdstreamBuffer = (deadline) => {
-                if (!isCurrentHdstreamStream() || jumpDistance <= 30 || getBufferedAheadSeconds() >= 8 || Date.now() >= deadline) {
-                    applySkip();
-                    return;
-                }
-                setTimeout(() => waitForHdstreamBuffer(deadline), 500);
-            };
-
-            // Wait for roughly one complete fragment, but never block the
-            // control indefinitely if the CDN is unavailable.
-            if (isCurrentHdstreamStream() && jumpDistance > 30 && getBufferedAheadSeconds() < 8) {
-                waitForHdstreamBuffer(Date.now() + 12000);
-            } else {
-                setTimeout(applySkip, skipApplyDelay);
-            }
+            applySkip();
         }
 
         function _tickSkipCountdown() {
