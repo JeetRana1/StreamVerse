@@ -6540,6 +6540,7 @@ function getProxiedUrl(url, referer = '') {
         // Keep audio track changes lightweight. Aggressive SourceBuffer removals can corrupt decoding.
         function flushAudioBufferForTrackSwitch(hls) {
             if (!hls || !video) return;
+            if (isCurrentHdstreamStream()) return;
             try {
                 const currentTime = video.currentTime;
                 setTimeout(() => {
@@ -6668,7 +6669,10 @@ function getProxiedUrl(url, referer = '') {
                 const requested = Number(startTime || 0);
                 const duration = Number(video?.duration);
                 if (!Number.isFinite(requested) || requested <= 0) return 0;
-                if (!Number.isFinite(duration) || duration <= 0) return 0;
+                // Manifest parsing can happen before MediaSource exposes the
+                // duration. Keep the requested resume point so HLS loads its
+                // target fragment instead of starting from fragment 1.
+                if (!Number.isFinite(duration) || duration <= 0) return normalizeHdstreamSeekTarget(requested);
                 if (requested >= duration) {
                     console.warn('[hls] Ignoring out-of-range resume time:', requested, 'duration:', duration);
                     return 0;
@@ -15754,6 +15758,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         const seekHls = hlsInst;
                         setTimeout(() => {
                             if (video !== seekVideo || !seekVideo || hlsInst !== seekHls) return;
+                            const currentSeekTime = Number(seekVideo.currentTime || 0);
+                            if (currentSeekTime >= seekTo - 0.5 && currentSeekTime <= seekTo + 15) return;
                             try {
                                 seekHls?.startLoad(seekTo);
                                 seekVideo.currentTime = seekTo;
