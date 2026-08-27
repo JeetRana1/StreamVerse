@@ -363,20 +363,12 @@
         return result;
     }
     async function resetPassword(email) {
-        const host = window.location.hostname || 'localhost';
-        const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-        const configuredApi = String(window.__STREAMVERSE_CONFIG__?.API_BASE || '').trim()
-            .replace(/\/meta\/tmdb\/?$/i, '')
-            .replace(/\/$/, '');
-        const apiBase = isLocal
-            ? `${window.location.protocol}//${host}:3000`
-            : (configuredApi || `${window.location.protocol}//${host}`);
-        const response = await fetch(`${apiBase}/auth/password-reset`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+        const auth = window.firebaseAuth || firebase.auth();
+        const continueUrl = `${window.location.origin}/login.html`;
+        return auth.sendPasswordResetEmail(email, {
+            url: continueUrl,
+            handleCodeInApp: false,
         });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.error || 'Unable to send password reset email');
-        return result;
     }
     async function signOut() { return window.firebaseAuth.signOut(); }
 
