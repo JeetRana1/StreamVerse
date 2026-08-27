@@ -22432,6 +22432,13 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         const provider = String(s?.provider || '').toLowerCase();
                         const label = sourceText(s);
                         let score = s.isEmbed ? 100 : 0;
+                        if (provider === 'anikoto') {
+                            const url = String(s?.url || '').toLowerCase();
+                            // Kryntal is currently rejected by the production proxy;
+                            // prefer the Akirax mirror when both sources are present.
+                            if (/cdn\.kryntal\.top\//.test(url)) score += 30;
+                            else if (/\.akirax\.buzz\//.test(url)) score -= 10;
+                        }
                         return score;
                     };
                     const r = rank(a) - rank(b);
