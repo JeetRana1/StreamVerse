@@ -6723,10 +6723,11 @@ function getProxiedUrl(url, referer = '') {
                      // a resume/episode target is known. This removes the
                      // wasted sn=1 request seen on resume startup.
                      try {
-                         hls.startLevel = 0;
-                         hls.autoLevelCapping = 0;
-                         hls.nextLevel = 0;
-                         hls.loadLevel = 0;
+                         const highestLevel = Math.max(0, hls.levels.length - 1);
+                         hls.startLevel = highestLevel;
+                         hls.autoLevelCapping = -1;
+                         hls.nextLevel = highestLevel;
+                         hls.loadLevel = highestLevel;
                          const initialLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
                           hls.startLoad(initialLoadTarget > 0 ? initialLoadTarget : 0);
                      } catch (_) { }
@@ -6827,7 +6828,7 @@ function getProxiedUrl(url, referer = '') {
                 const levelsCount = hls.levels.length;
                 if (isHdstream && !isThumbnail) {
                     if (hdstreamManualQualityLevel >= 0) return;
-                    if (hls.autoLevelCapping !== 0) hls.autoLevelCapping = 0;
+                    if (hls.autoLevelCapping !== -1) hls.autoLevelCapping = -1;
                     return;
                 }
                 const lowestSafeCap = Math.max(0, levelsCount - 2);
@@ -6847,8 +6848,8 @@ function getProxiedUrl(url, referer = '') {
                 lastFragLoadStartAt = Date.now();
                 lastFragLoadPerfTime = performance.now();
                 if (isHdstream && !isThumbnail && hdstreamManualQualityLevel < 0) {
-                    hls.autoLevelCapping = 0;
-                    hls.nextLevel = 0;
+                    hls.autoLevelCapping = -1;
+                    hls.nextLevel = hls.levels.length - 1;
                 }
                 if (isCurrentHdstreamStream() && data?.frag) {
                     const fragSn = data.frag.sn;
@@ -6892,15 +6893,15 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
                 if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsStartupSampleDone && hls.levels.length > 1) {
                     hlsStartupSampleDone = true;
-                    // HDStream's CDN cannot sustain higher renditions reliably;
-                    // keep the default stream capped to the lowest rendition.
+                    // Keep HDStream on the highest available rendition.
                     setTimeout(() => {
                         if (hls === hlsInst && hls.levels.length > 1) {
-                            hls.startLevel = 0;
-                            hls.nextLevel = 0;
-                            hls.loadLevel = 0;
-                            hls.autoLevelCapping = 0;
-                            console.log('[hls] HDStream startup sample complete; keeping lowest quality for stability');
+                            const highestLevel = hls.levels.length - 1;
+                            hls.startLevel = highestLevel;
+                            hls.nextLevel = highestLevel;
+                            hls.loadLevel = highestLevel;
+                            hls.autoLevelCapping = -1;
+                            console.log('[hls] HDStream startup sample complete; using highest quality');
                         }
                     }, 15000);
                 }
@@ -21931,6 +21932,23 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             provider: 'archive.org',
                         },
                     ],
+                 },
+                '1744462': {
+                    source: {
+                        label: 'Grand Theft Auto VI: An Extended Look (Archive)',
+                        url: 'https://archive.org/download/magadheera_202608/G.A.E.L%28v2%29.mkv',
+                        isM3U8: false,
+                        isEmbed: false,
+                        referer: null,
+                        isDub: false,
+                        provider: 'archive.org',
+                    },
+                    subtitles: [{
+                        label: 'English (Archive)',
+                        srclang: 'en',
+                        src: 'https://archive.org/download/magadheera_202608/G.T.A.A.E.L.srt',
+                        provider: 'archive.org',
+                    }],
                 },
                 '256040': {
                     source: {

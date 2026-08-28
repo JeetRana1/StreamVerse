@@ -42,18 +42,6 @@ StreamVerse is a premium, high-performance web application designed for streamin
    python -m http.server 8000
    ```
 
-## ⚙️ Configuration
-
-The application can be configured via `config.js`. You can set your primary and fallback API endpoints here:
-
-```javascript
-window.__STREAMVERSE_CONFIG__ = {
-    PROD_META_API_BASE: 'https://yourdomain.com/meta/tmdb',
-    FALLBACK_API_BASE: 'https://yourdomain.com/meta/tmdb',
-    // ... other settings
-};
-```
-
 ## 🛡️ Resilience & Fallback Logic
 
 StreamVerse is built to be "unbreakable." If the primary metadata API (yourdomain.com) returns an error or times out, the system automatically:
