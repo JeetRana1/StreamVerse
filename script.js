@@ -410,6 +410,24 @@ let heroProgressPausedAt = 0;
 let heroProgressElapsedBeforePause = 0;
 const detailsMemoryCache = new Map();
 const detailsInFlight = new Map();
+const hdstreamQualityCache = new Map();
+const hdstreamQualityCheckedAt = new Map();
+const getHdstreamQuality = (key) => {
+    if (hdstreamQualityCache.has(key)) return hdstreamQualityCache.get(key);
+    try {
+        const saved = sessionStorage.getItem(`sv_hdstream_quality:${key}`);
+        if (saved === 'HD' || saved === 'Cam') {
+            hdstreamQualityCache.set(key, saved);
+            return saved;
+        }
+    } catch (_) { }
+    return '';
+};
+const setHdstreamQuality = (key, quality) => {
+    hdstreamQualityCache.set(key, quality);
+    try { sessionStorage.setItem(`sv_hdstream_quality:${key}`, quality); } catch (_) { }
+};
+const hdstreamQualityInFlight = new WeakSet();
 const similarMemoryCache = new Map();
 const SIMILAR_CACHE_TTL_MS = 10 * 60 * 1000;
 let activeModalRequestId = 0;
@@ -4800,7 +4818,11 @@ async function fetchDramas() {
 }
 
 async function hydrateGridCard(item, card) {
+    if (hdstreamQualityInFlight.has(card)) return;
+    hdstreamQualityInFlight.add(card);
     try {
+        const perfStart = performance.now();
+        const perfTitle = getTitle(item);
         const img = card.querySelector('img');
         const isBad = (s) => !s || s.includes('placehold.co') || s.includes('No+Image') || s.includes('dramaool.png');
         const normalizeIdentity = (value) => String(value || '')
@@ -4827,11 +4849,55 @@ async function hydrateGridCard(item, card) {
 
         // Fetch provider details and the TMDB fallback together when the card
         // has no usable poster, instead of making the fallback wait in line.
-        const detailsPromise = fetchDetails(item.id, itemType, itemProvider);
+        const needsTmdbDetails = isBad(getPoster(item)) ||
+            !getTitle(item) || getTitle(item) === 'Unknown' ||
+            !getYear(item) || getYear(item) === 'N/A' ||
+            !getRating(item) || getRating(item) === '0.0';
+        const tmdbStart = performance.now();
+        const detailsPromise = needsTmdbDetails
+            ? fetchDetails(item.id, itemType, itemProvider).finally(() => console.info('[homepage-perf] TMDB details', { title: getTitle(item), ms: Math.round(performance.now() - tmdbStart) }))
+            : Promise.resolve(null);
+        const hdstreamStart = performance.now();
+        const hdstreamDetailsPromise = (async () => {
+            const qualityKey = `${itemType}:${item.id}`;
+            const lastChecked = hdstreamQualityCheckedAt.get(qualityKey) || 0;
+            if (Date.now() - lastChecked < 8 * 1000) return null;
+            hdstreamQualityCheckedAt.set(qualityKey, Date.now());
+            try {
+                const base = BASE_URL.replace('/meta/tmdb', '/movies/hdstream4u');
+                const query = encodeURIComponent(getTitle(item));
+                const search = await fetchJsonWithFallback(`${base}/search?query=${query}&page=1`, 8000);
+                const results = Array.isArray(search?.results) ? search.results : [];
+                const wanted = normalizeIdentity(getTitle(item));
+                const wantedType = itemType === 'tv' ? 'tv' : 'movie';
+                const typedResults = results.filter((row) => {
+                    const rowType = String(row?.type || row?.media_type || '').toLowerCase();
+                    return !rowType || rowType === wantedType || (wantedType === 'tv' && rowType === 'series');
+                });
+                const candidate = typedResults.find((row) => {
+                    const candidateTitle = normalizeIdentity(row?.title || row?.name || '');
+                    return candidateTitle === wanted || candidateTitle.startsWith(`${wanted} `) || candidateTitle.includes(` ${wanted} `);
+                }) || null;
+                if (!candidate?.id) return null;
+                return await fetchJsonWithFallback(`${base}/info?id=${encodeURIComponent(candidate.id)}&type=${itemType}`, 10000);
+            } catch (_) {
+                return null;
+            } finally {
+                console.info('[homepage-perf] HDStream lookup', { title: getTitle(item), ms: Math.round(performance.now() - hdstreamStart) });
+            }
+        })();
         const tmdbPromise = isBad(getPoster(item))
             ? fetchJsonWithFallback(`/${encodeURIComponent(getTitle(item))}`, 5000).catch(() => null)
             : Promise.resolve(null);
-        const [details, tmdbResults] = await Promise.all([detailsPromise, tmdbPromise]);
+        const promisesStart = performance.now();
+        const [details, tmdbResults, hdstreamDetails] = await Promise.all([detailsPromise, tmdbPromise, hdstreamDetailsPromise]);
+        console.info('[homepage-perf] card loaded', {
+            title: perfTitle,
+            tmdbDetailsRequested: needsTmdbDetails,
+            parallelWaitMs: Math.round(performance.now() - promisesStart),
+            totalMs: Math.round(performance.now() - perfStart),
+            hdstreamFound: Boolean(hdstreamDetails),
+        });
         const detailsYear = details ? toYearNum(getYear(details)) : 0;
         const detailsIdentityMatches = !!details && isLikelySameTitle(item, details) && (!seedYear || !detailsYear || Math.abs(seedYear - detailsYear) <= 2);
         let poster = details ? getPoster(details) : '';
@@ -4862,6 +4928,21 @@ async function hydrateGridCard(item, card) {
         }
 
         // Hydrate other metadata
+        // Only HDStream metadata may update this badge. TMDB titles do not
+        // contain the provider's quality markers and would cause flicker.
+        if (hdstreamDetails) {
+            const providerTitle = String(
+                hdstreamDetails.sourceTitle || hdstreamDetails.providerTitle || hdstreamDetails.title || hdstreamDetails.name || '',
+            );
+            const qualityBadge = card.querySelector('[data-quality-badge]');
+            if (qualityBadge) {
+                const quality = /\b(?:4k|web[\s-]*dl)\b/i.test(providerTitle) ? 'HD' : 'Cam';
+                qualityBadge.textContent = quality;
+                setHdstreamQuality(`${itemType}:${item.id}`, quality);
+            }
+        } else {
+            setHdstreamQuality(`${itemType}:${item.id}`, 'Cam');
+        }
         if (details && detailsIdentityMatches) {
             const ratingVal = getRating(details);
             if (ratingVal !== '0.0') {
@@ -4893,7 +4974,26 @@ async function hydrateGridCard(item, card) {
             }
         }
     } catch (e) { }
+    finally { hdstreamQualityInFlight.delete(card); }
 }
+
+// Recheck provider titles periodically so new HDStream uploads and quality
+// changes appear on cards without reloading the page.
+setInterval(() => {
+    const cards = [...document.querySelectorAll('.movie-card')];
+    let index = 0;
+    const refreshBatch = () => {
+        cards.slice(index, index + 3).forEach((card) => {
+            try {
+                const item = JSON.parse(card.dataset.item || '{}');
+                if (item && item.id) hydrateGridCard(item, card);
+            } catch (_) { }
+        });
+        index += 3;
+        if (index < cards.length) setTimeout(refreshBatch, 700);
+    };
+    refreshBatch();
+}, 10 * 1000);
 
 // ------------------ HERO ---------------------------------------------------
 function displayHero(item) {
@@ -5166,7 +5266,7 @@ function displayGrid(items, container, forcedType = null, options = {}) {
         card.innerHTML = `
             <img src="${poster}" alt="${title}" loading="lazy"
                  onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Image'">
-            <span class="quality-badge">HD</span>
+            <span class="quality-badge" data-quality-badge>${getHdstreamQuality(`${type}:${normalizedItem.id}`) || 'Cam'}</span>
             <div class="card-rating-ring" style="--rating-progress:${ratingProgress}">
                 <span class="card-rating-ring-value"><i class="fa-solid fa-star"></i> ${rating}</span>
             </div>
