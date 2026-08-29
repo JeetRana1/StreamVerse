@@ -21243,6 +21243,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             // A newer user seek supersedes delayed retries from an older seek.
             if (pendingJumpTarget && Math.abs(Number(pendingJumpTarget.time) - clampedTarget) > 0.75) return;
             const seekDistance = Math.abs(clampedTarget - Number(video.currentTime || 0));
+            const isArchiveSeek = String(allSources?.[currentIdx]?.provider || '').toLowerCase() === 'archive.org'
+                || /archive\.org/i.test(String(video.currentSrc || ''));
             const inRapidSeekMode = Date.now() < rapidSeekModeUntil || seekBurstCount >= 6;
             const lockedHlsAudioTrack = (hlsInst && Number.isInteger(hlsInst.audioTrack) && hlsInst.audioTrack >= 0)
                 ? hlsInst.audioTrack
@@ -21282,7 +21284,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
 
                 const reachedTarget = Math.abs((video.currentTime || 0) - clampedTarget) <= 0.75;
-                if (reachedTarget || attempt >= 2 || isSourceSwitching) return;
+                // Archive MP4 seeks use HTTP range requests and can take a
+                // moment; repeated retries abort the first request and make
+                // buffering worse.
+                if (reachedTarget || isArchiveSeek || attempt >= 2 || isSourceSwitching) return;
 
                 setTimeout(() => {
                     if (!video) return;
@@ -21949,6 +21954,25 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         src: 'https://archive.org/download/magadheera_202608/G.T.A.A.E.L.srt',
                         provider: 'archive.org',
                     }],
+                 },
+                '1398': {
+                    title: 'The Sopranos (1999)',
+                    episodes: {
+                        1: 'https://ia600800.us.archive.org/35/items/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E1.mkv',
+                        2: 'https://ia600800.us.archive.org/35/items/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E2.mkv',
+                        3: 'https://ia600800.us.archive.org/35/items/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E3.mkv',
+                        4: 'https://ia600800.us.archive.org/35/items/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E4.mkv',
+                        5: 'https://ia600800.us.archive.org/35/items/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E5.mkv',
+                        6: 'https://ia600800.us.archive.org/35/items/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E6.mkv',
+                    },
+                    subtitles: {
+                        1: 'https://archive.org/download/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E1.eng.srt',
+                        2: 'https://archive.org/download/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E2.eng.srt',
+                        3: 'https://archive.org/download/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E3.eng.srt',
+                        4: 'https://archive.org/download/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E4.eng.srt',
+                        5: 'https://archive.org/download/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E5.eng.srt',
+                        6: 'https://archive.org/download/t.-s-1999-s-1-e-1/T.S-%281999%29-S1E6.eng.srt',
+                    },
                 },
                 '256040': {
                     source: {
