@@ -5034,11 +5034,10 @@ function getProxiedUrl(url, referer = '') {
         // Provider pools - automatically selected based on anime detection
         // ANIME_PROVIDERS: Specialized anime providers (used exclusively for anime content)
         const ANIME_PROVIDERS = ['anikoto'];
-        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['anikoto'];
+        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['animesalt'];
         const REMOVED_PROVIDER_MAP = {
             satoru: 'anikoto',
             justanime: 'anikoto',
-            animesalt: 'anikoto',
             flixhq: 'hdstream4u'
         };
         
@@ -5374,7 +5373,7 @@ function getProxiedUrl(url, referer = '') {
         const HDSTREAM_FALLBACK_INTRO_SECONDS = 60; // hdstream movies: first ~1 min is the studio intro
         let lastSuccessfulProvider = '';
         let satoruAudioSources = []; // background-fetched satoru sources used as virtual audio tracks
-        let currentAudioSource = 'anikoto'; // active stream provider for virtual/audio switching
+        let currentAudioSource = 'animesalt'; // active stream provider for virtual/audio switching
         let activeSatoruTrackIndex = -1; // -1 means none, or index in satoruAudioSources
         const ANIME_PROVIDER_INFO_CACHE_TTL_MS = 30 * 60 * 1000;
         const animeProviderInfoCache = new Map();
@@ -5420,6 +5419,7 @@ function getProxiedUrl(url, referer = '') {
         const ANIME_WATCH_TIMEOUT_MS = 25000;
         const ANIME_INFO_TIMEOUT_MS = 20000;
         const PROVIDER_TIMEOUT_OVERRIDES = {
+            animesalt: { animeSearch: 12000, animeInfo: 18000, watch: 45000 },
             anikoto: { animeSearch: 12000, animeInfo: 18000, watch: 45000 },
             satoru: { animeSearch: 8000, animeInfo: 12000, watch: 35000, watchRetry: 45000 },
             justanime: { subtitleFallback: 8000 },
@@ -7683,7 +7683,21 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
             }
 
-            if (!useResumePosition && currentParams.get('seasonKey') && !ignoreSpecialHintForNumberedSeason && !(currentIsLikelyAnime && activeProviders.includes('animekai'))) {
+            // The episode ID is authoritative. Older shared URLs can contain a
+            // stale seasonKey from a different related AniKoto title.
+            if (!useResumePosition && currentParams.get('episodeId')) {
+                const wantedEpisodeId = String(currentParams.get('episodeId')).trim().toLowerCase();
+                const episodeSeasonIndex = safeSeasons.findIndex((season) =>
+                    (Array.isArray(season?.episodes) ? season.episodes : []).some((episode) =>
+                        String(episode?.id || episode?.providerEpisodeId || '').trim().toLowerCase() === wantedEpisodeId
+                    )
+                );
+                if (episodeSeasonIndex >= 0) {
+                    si = episodeSeasonIndex;
+                    matchedExplicitSeasonRef = true;
+                }
+            }
+            if (!useResumePosition && currentParams.get('seasonKey') && !matchedExplicitSeasonRef && !ignoreSpecialHintForNumberedSeason && !(currentIsLikelyAnime && activeProviders.includes('animekai'))) {
                 const sKey = String(currentParams.get('seasonKey')).trim().toLowerCase();
                 const bySeasonKey = safeSeasons.findIndex((s) =>
                     String(s?.providerAnimeId || '').trim().toLowerCase() === sKey
@@ -8931,8 +8945,45 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
 
                 if (!bestResult?.id) {
-                    console.warn('[animesalt] Could not find slug for:', normTitle, isMovieContext ? '(movie)' : '(series)');
-                    return null;
+                    // AnimeSalt search often only surfaces movies for a title even when a
+                    // series exists (e.g. Doraemon). Fall back to the deterministic
+                    // title-derived slug and validate it against the info endpoint before
+                    // accepting, so we reuse the known slug instead of failing resolution.
+                    if (!isMovieContext) {
+                        const candidateSlug = normalizeAnimeSearchQuery(normTitle)
+                            .toLowerCase()
+                            .replace(/[^a-z0-9]+/g, '-')
+                            .replace(/^-+|-+$/g, '');
+                        if (candidateSlug && candidateSlug.length > 2) {
+                            try {
+                                const { res: infoRes } = await fetchJsonWithApiFallback(
+                                    buildAnimeInfoUrl('animesalt', candidateSlug),
+                                    { signal: AbortSignal.timeout(timeoutMs) },
+                                );
+                                if (infoRes.ok) {
+                                    let infoPayload = await infoRes.json();
+                                    if (infoPayload?.data) infoPayload = infoPayload.data;
+                                    const infoTitle = String(infoPayload?.title || infoPayload?.name || '').trim();
+                                    const candidate = {
+                                        id: candidateSlug,
+                                        title: infoTitle || candidateSlug,
+                                        ...(Number.isFinite(Number(infoPayload?.releaseYear)) ? { year: Number(infoPayload.releaseYear) } : {}),
+                                    };
+                                    const infoTitleMatch = infoTitle
+                                        ? getTitleMatchQuality(infoTitle, normTitle)
+                                        : { strong: false };
+                                    if (infoTitle && infoTitleMatch.strong) {
+                                        bestResult = candidate;
+                                        console.log('[animesalt] resolved slug via deterministic info fallback:', candidateSlug);
+                                    }
+                                }
+                            } catch (_) { }
+                        }
+                    }
+                    if (!bestResult?.id) {
+                        console.warn('[animesalt] Could not find slug for:', normTitle, isMovieContext ? '(movie)' : '(series)');
+                        return null;
+                    }
                 }
 
                 seriesSlug = String(bestResult.id || '').trim();
@@ -8971,12 +9022,19 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     if (info?.data) info = info.data;
                     const infoTitle = String(info?.title || info?.name || '').trim();
                     const infoYear = getProviderResultYear(info);
+                    const deterministicSlug = normalizeAnimeSearchQuery(normTitle)
+                        .replace(/\s*\(?\d{4}\)?\s*$/i, '')
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/^-+|-+$/g, '');
+                    const isValidatedDeterministicSlug = deterministicSlug &&
+                        deterministicSlug === String(seriesSlug || '').toLowerCase();
                     if (isAmbiguousSingleTokenTitle(normTitle) && preferredYear) {
                         const infoTitleQuality = getTitleMatchQuality(infoTitle || seriesSlug, normTitle);
                         const yearOk = Number.isFinite(infoYear)
                             ? Math.abs(Number(infoYear) - Number(preferredYear)) <= 1
                             : /(^|-)the-series-the-beginning($|-)/i.test(seriesSlug);
-                        if (!yearOk || !infoTitleQuality.strong) {
+                        if ((!yearOk && !isValidatedDeterministicSlug) || !infoTitleQuality.strong) {
                             console.warn('[animesalt] rejected slug after info validation:', seriesSlug, 'title=', infoTitle, 'year=', infoYear, 'wanted=', normTitle, preferredYear);
                             return null;
                         }
@@ -9719,7 +9777,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     title.split(/\s+/).slice(-1).join(' ').trim(),
                 ].filter(Boolean)),
             );
-            const terms = provider === 'flixhq' ? allTerms.slice(0, 3) : allTerms;
+            // The exact title and its two closest variants cover normal HDStream
+            // searches. Trying every fallback term serially made each episode wait
+            // through several avoidable upstream requests before reaching watch.
+            const terms = allTerms.slice(0, 3);
             const wanted = normalizeLoose(title);
             const yearHint = Number(getPreferredMediaYear() || 0);
             const wantedType = String(mediaType || '').toLowerCase() === 'tv' ? 'tv' : 'movie';
@@ -9753,7 +9814,9 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         payload = await legacyRes.json();
                     }
                 } else {
-                    const searchUrl = `${movieProviderBase}/${encodeURIComponent(term)}?page=1`;
+                    const searchUrl = provider === 'hdstream4u'
+                        ? `${movieProviderBase}/search?query=${encodeURIComponent(term)}&page=1`
+                        : `${movieProviderBase}/${encodeURIComponent(term)}?page=1`;
                     const { res: sRes } = await fetchJsonWithApiFallback(searchUrl, {
                         signal: AbortSignal.timeout(getProviderTimeout(provider, 'animeSearch', 8000)),
                     });
@@ -16211,6 +16274,16 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
             const renderProviderAudioSources = (providerName, providerSources) => {
                 if (!Array.isArray(providerSources) || !providerSources.length) return;
                 providerSources.forEach((src) => {
+                    // Skip sources that carry no real audio identity. Without this,
+                    // a bare stream with no audio label rendered a misleading
+                    // auto-selected "Default" entry alongside the real HLS track.
+                    const hasAudioIdentity =
+                        Boolean(String(src.audioLabel || src.audio || src.lang || src.language || '').trim()) ||
+                        Boolean(src.isDub) ||
+                        Boolean(src.isSub) ||
+                        /(dub|sub|hindi|english|japanese|tamil|telugu|multi)/i.test(String(src.quality || src.label || ''));
+                    if (!hasAudioIdentity) return;
+
                     const activeSourceUrl = String(activePlaybackSourceUrl || video?.currentSrc || video?.src || '').trim();
                     const currentIndexMatches = String(allSources?.[currentIdx]?.url || '').trim() === String(src.url || '').trim();
                     const isCurrent = currentIndexMatches || activeSourceUrl === String(src.url || '').trim();
@@ -16221,6 +16294,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         .replace(/\s+auto\b/i, '')
                         .replace(/\s*\((?:sub|dub)bed\)\s*$/i, '')
                         .trim() || (src.isDub ? 'Dubbed' : (src.isSub ? 'Subbed' : 'Default'));
+                    // A provider source labelled only "Default"/"Auto" is not a
+                    // selectable audio track. The real active HLS track is rendered
+                    // separately, so showing this source would highlight two rows.
+                    if (/^(default|auto|und)$/i.test(cleanLabel) && !src.isDub && !src.isSub) return;
                     const displayLabel = useProviderPrefixedAudioLabels
                         ? `${providerLabel(providerName)} - ${cleanLabel}`
                         : (providerName === 'animekai'
@@ -18267,7 +18344,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v55';
+                    const seasonCacheVersion = 'v58';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -18447,7 +18524,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                     });
                             }
 
-                            if (bestResult?.id && providerName !== 'animekai') {
+                            if (bestResult?.id && providerName !== 'animekai' && providerName !== 'anikoto') {
                                 break;
                             }
                         }
@@ -18549,7 +18626,10 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         ];
                         const anikotoCandidates = new Map();
                         if (bestResult?.id) anikotoCandidates.set(String(bestResult.id), bestResult);
-                        for (const term of (ANIME_MODE && bestResult?.id ? [] : anikotoTerms)) {
+                         // Always search the related title variants. AniKoto exposes
+                         // seasons and specials as separate catalog entries, even
+                         // when the base title was already matched above.
+                         for (const term of anikotoTerms) {
                             const { res: searchRes } = await fetchJsonWithApiFallback(
                                 `${API_BASE.replace('/meta/tmdb', '/anime/anikoto')}/${encodeURIComponent(term)}`,
                                 { signal: AbortSignal.timeout(Math.max(timeoutMs, 12000)) },
@@ -18559,6 +18639,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             const results = getAnimeSearchResults(searchData);
                             results.forEach((result) => {
                                 const resultTitle = String(result?.title || result?.name || '');
+                                const resultType = String(result?.type || result?.format || '').toLowerCase();
+                                if (resultType.includes('movie') || resultType === 'film') return;
                                 const baseTitle = normalizeTitleForMatch(animeSeriesTitle);
                                 const candidateTitle = normalizeTitleForMatch(resultTitle);
                                 const isExactTitleFamily = !!baseTitle && (
@@ -18627,7 +18709,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                 if (info?.data) info = info.data;
                                 const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
                                 if (!episodes.length) return [];
-                                const candidateType = String(info?.type || candidate?.type || '').toLowerCase();
+                                 const candidateType = String(info?.type || candidate?.type || '').toLowerCase();
+                                 if (candidateType.includes('movie') || candidateType === 'film') return [];
                                 const providerTitle = String(info?.title || '').trim();
                                 const searchTitle = String(candidate?.title || candidate?.name || '').trim();
                                 // Search results carry the useful variant suffixes. The
@@ -18657,7 +18740,11 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                     ).trim(),
                                     // If the provider title has no explicit season/part,
                                     // keep that title instead of inventing Season 1/Part N.
-                                    seasonNo: isExtra ? 0 : (isBaseTitle ? 1 : (!hasExplicitOrder ? 0 : (Number(season?.seasonNo || order.seasonNo) || order.seasonNo))),
+                                     // AniKoto uses separate TV IDs for releases such
+                                     // as Arc, Separation, Conflict, and Calamity,
+                                     // even when their titles do not say "Season N".
+                                     // Keep each related TV title as its own menu entry.
+                                     seasonNo: isExtra ? 0 : (isBaseTitle ? 1 : (!hasExplicitOrder ? index + 2 : (Number(season?.seasonNo || order.seasonNo) || order.seasonNo))),
                                     seasonPartNo: isExtra || !hasExplicitOrder ? 0 : order.partNo,
                                     name: matchedTitle || (isExtra ? 'Extras' : `Season ${order.seasonNo}`),
                                 }));
@@ -22672,6 +22759,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     const isNetMirrorProvider = ['flixhq', 'viewvault', 'netmirror'].some(v => String(provider || '').toLowerCase().includes(v));
 
                     if (isAnimeProvider) {
+                        console.time(`[${provider}] episode resolution`);
                         const canonicalAnimeInfo = currentAnimeCanonicalInfo || await getCanonicalAnimeInfo();
                         const canonicalAnimeId = String(canonicalAnimeInfo?.id || currentMediaInfo?.anilistId || '').trim();
                         const rawTitle = (currentIsLikelyAnime && URL_TITLE && provider === 'anikoto')
@@ -22732,7 +22820,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                     provEpisodeId = resolved.episodeId;
                                 }
                             }
-                            if (provider === 'animesalt') {
+                             if (provider === 'animesalt') {
                                 // Best-case path: AnimeSalt ids include explicit season/episode (slug-SxE).
                                 // If the clicked row already has this id, use it directly to prevent cross-season drift.
                                 if (selectedEpisodeId && /-\d+x\d+$/i.test(selectedEpisodeId)) {
@@ -22757,7 +22845,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                         console.warn('[animesalt] rejected stale/provider-scoped episode id for current title:', selectedEpisodeId, 'wanted:', resContext.mediaTitle);
                                     }
                                 }
-                            }
+                             }
+                            if (provider === 'animesalt') console.timeEnd('[animesalt] episode resolution');
                             if (!provEpisodeId && provider === 'animesalt') {
                                 provEpisodeId = await resolveAnimesaltEpisodeId(
                                     {
@@ -23110,6 +23199,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     };
                     for (const watchUrl of watchCandidates) {
                         try {
+                            const watchStartedAt = performance.now();
+                            console.log(`[${provider}] watch request started`, watchUrl);
                             const { res: watchRes } = await fetchJsonWithApiFallback(watchUrl, {
                                 signal: AbortSignal.timeout(
                                     isAnimeProvider
@@ -23118,10 +23209,19 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                 ),
                             });
                             if (!watchRes.ok) {
+                                console.warn(`[${provider}] watch request failed`, {
+                                    status: watchRes.status,
+                                    elapsedMs: Math.round(performance.now() - watchStartedAt),
+                                });
                                 lastWatchErr = new Error(`HTTP ${watchRes.status}`);
                                 continue;
                             }
                             data = await watchRes.json();
+                            console.log(`[${provider}] watch request completed`, {
+                                elapsedMs: Math.round(performance.now() - watchStartedAt),
+                                sourceCount: getWatchSources(data).length,
+                                subtitleCount: Array.isArray(data?.subtitles) ? data.subtitles.length : 0,
+                            });
                             if (getWatchSources(data).length) break;
                             lastWatchErr = new Error('No sources');
                         } catch (watchErr) {
@@ -23203,8 +23303,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             low.includes('.mp4') ||
                             low.includes('.mpd');
                         const isAllowedFlixhqEmbed = false;
-                         const isAllowedAnimeSaltEmbed = provider === 'animesalt' && (src?.isEmbed || src?.isIframe);
-                         if (!isAllowedFlixhqEmbed && !isAllowedAnimeSaltEmbed && (src?.isEmbed || src?.isIframe || low.includes('/embed') || low.includes('/iframe') || !isDirectPlayable)) {
+                         if (!isAllowedFlixhqEmbed && (src?.isEmbed || src?.isIframe || low.includes('/embed') || low.includes('/iframe') || !isDirectPlayable)) {
                             return false;
                         }
                         if (provider === 'vegamovies') {
@@ -23280,7 +23379,13 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                             ? normalizeSubtitleEntries(animekaiDubData.data || animekaiDubData, provider, animekaiDubData?.headers?.Referer || null)
                             : [];
                         const subs = mergeSubtitleTrackLists(primarySubs, dubSubs);
-                        if (subs.length) setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, subs));
+                         if (subs.length) {
+                             setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, subs));
+                             // AnimeSalt supplies subtitles separately from the HLS
+                             // manifest, so attach them as soon as the watch response
+                             // arrives instead of waiting for a later player refresh.
+                             if (video) await applyExternalSubtitlesToVideo(video);
+                         }
 
                         // Trigger UI update
                         updateSourceList();
@@ -23365,6 +23470,13 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         orderedProviders.push(p);
                         providerResults[p] = [];
                     });
+                    if (animeFallbacks.length) {
+                        activeProviders = [...new Set([...activeProviders, ...animeFallbacks])];
+                        buildChips();
+                        chipState('hdstream4u', 'failed');
+                        animeFallbacks.forEach((p) => chipState(p, 'trying'));
+                        setLoader('Trying anime providers...', 'HDStream4u failed; searching AnimeSalt');
+                    }
                     await Promise.all(animeFallbacks.map((p) => processProvider(p)));
                 }
             } else {
@@ -23379,6 +23491,13 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     orderedProviders.push(p);
                     providerResults[p] = [];
                 });
+                if (animeFallbacks.length) {
+                    activeProviders = [...new Set([...activeProviders, ...animeFallbacks])];
+                    buildChips();
+                    chipState('hdstream4u', 'failed');
+                    animeFallbacks.forEach((p) => chipState(p, 'trying'));
+                    setLoader('Trying anime providers...', 'All standard providers failed; searching AnimeSalt');
+                }
                 await Promise.all(animeFallbacks.map((p) => processProvider(p)));
             }
             
@@ -23978,6 +24097,11 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             setTimeout(() => updateAudioTracks(), 0);
             const selectedSource = allSources?.[srcIdx] || {};
             const sourceProvider = String(selectedSource?.provider || '').toLowerCase();
+            if (sourceProvider === 'animesalt' && isEmbed) {
+                console.warn('[animesalt] Ignoring iframe source; native playback only.');
+                showError('Direct Stream Unavailable', 'AnimeSalt did not provide a playable direct stream.');
+                return;
+            }
             if (video) video.preload = sourceProvider === 'archive.org' && !isEmbed ? 'auto' : 'metadata';
             const isIOSArchiveLoad = IS_IOS && sourceProvider === 'archive.org' && !isEmbed;
             iosArchiveLoaderHold = isIOSArchiveLoad;
