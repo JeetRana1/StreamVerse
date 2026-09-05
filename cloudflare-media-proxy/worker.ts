@@ -56,7 +56,7 @@ async function isValidMediaProxyToken(token: string, secret: string): Promise<bo
 // Hosts that reject the provider-site referer but accept the Megaplay origin
 // (AniKoto subtitle/CDN hosts). Mirrors the VM proxy behaviour.
 const MEGAPLAY_REFERER_DOMAINS =
-  /(?:shiora|mikora)\.(?:top|site|club|net)|lostproject\.club|(?:megap|vidtub)\.(?:shiora\.(?:top|site)|akirax\.buzz)|megap\.(?:mikora|norami|akirax)\.(?:top|buzz)|cdn\.mewstream\.|livedns\./i;
+  /(?:shiora|mikora)\.(?:top|site|club|net)|lostproject\.club|(?:megap|vidtub)\.(?:shiora\.(?:top|site)|akirax\.buzz)|megap\.(?:mikora|norami|akirax)\.(?:top|buzz)|cdn\.mewstream\.|livedns\.|(?:^|\.)imgnex\.top$/i;
 
 const MEGAPLAY_REFERER = 'https://megaplay.buzz/';
 
