@@ -29,6 +29,4 @@ dump-*.mjs
 test*.html
 test*.js
 *_test.js
-anime.html
-anime-script.js
 duppedlogin.html

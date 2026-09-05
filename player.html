@@ -6718,16 +6718,18 @@ function getProxiedUrl(url, referer = '') {
                 nonFatalLevelErrorCount = 0;
                  const initialSeekTime = getValidInitialSeekTime();
                  if (initialSeekTime > 0 && video) video.currentTime = initialSeekTime;
-                 if (parsedProvider.includes('hdstream')) {
+if (parsedProvider.includes('hdstream')) {
                      // Avoid downloading the beginning of a long movie before
                      // a resume/episode target is known. This removes the
                      // wasted sn=1 request seen on resume startup.
                      try {
-                         const highestLevel = Math.max(0, hls.levels.length - 1);
-                         hls.startLevel = highestLevel;
+                         // Start at the lowest rendition: hubstream-style CDNs
+                         // throttle to ~1-2 Mbps, so forcing the top bitrate at
+                         // parse time stalls playback before the bandwidth
+                         // estimate can adapt. ABR will climb levels once the
+                         // estimate proves there is headroom.
+                         hls.startLevel = 0;
                          hls.autoLevelCapping = -1;
-                         hls.nextLevel = highestLevel;
-                         hls.loadLevel = highestLevel;
                          const initialLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
                           hls.startLoad(initialLoadTarget > 0 ? initialLoadTarget : 0);
                      } catch (_) { }
@@ -6847,9 +6849,16 @@ function getProxiedUrl(url, referer = '') {
             hls.on(Hls.Events.FRAG_LOADING, (_, data) => {
                 lastFragLoadStartAt = Date.now();
                 lastFragLoadPerfTime = performance.now();
-                if (isHdstream && !isThumbnail && hdstreamManualQualityLevel < 0) {
-                    hls.autoLevelCapping = -1;
-                    hls.nextLevel = hls.levels.length - 1;
+if (isHdstream && !isThumbnail && hdstreamManualQualityLevel < 0) {
+                    // Honor the adaptive level cap; only push toward the top
+                    // rendition when measured bandwidth has real headroom above
+                    // it. Forcing the highest level unconditionally stalls
+                    // playback on connections that can't keep up with the top
+                    // bitrate (e.g. hubstream CDNs throttling to ~1-2 Mbps).
+                    const topBitrate = Number(hls.levels?.[hls.levels.length - 1]?.bitrate || 0);
+                    if (!isBandwidthConstrained && topBitrate > 0 && lastEstimatedBandwidth > topBitrate * 1.25) {
+                        hls.nextLevel = hls.levels.length - 1;
+                    }
                 }
                 if (isCurrentHdstreamStream() && data?.frag) {
                     const fragSn = data.frag.sn;
@@ -6891,17 +6900,27 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         stallMs: bufferDebugStall ? Date.now() - bufferDebugStall.startedAt : 0,
                     });
                 }
-                if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsStartupSampleDone && hls.levels.length > 1) {
+if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsStartupSampleDone && hls.levels.length > 1) {
                     hlsStartupSampleDone = true;
-                    // Keep HDStream on the highest available rendition.
+                    // Only pin HDStream to the highest rendition when measured
+                    // bandwidth proves it can sustain it (1.25x headroom). On
+                    // bandwidth-constrained connections leave ABR + the cap to
+                    // pick a level that the pipe can actually feed.
                     setTimeout(() => {
                         if (hls === hlsInst && hls.levels.length > 1) {
                             const highestLevel = hls.levels.length - 1;
-                            hls.startLevel = highestLevel;
-                            hls.nextLevel = highestLevel;
-                            hls.loadLevel = highestLevel;
-                            hls.autoLevelCapping = -1;
-                            console.log('[hls] HDStream startup sample complete; using highest quality');
+                            const topBitrate = Number(hls.levels[highestLevel]?.bitrate || 0);
+                            const provenHeadroom =
+                                topBitrate > 0 && lastEstimatedBandwidth > topBitrate * 1.25;
+                            if (!isBandwidthConstrained && provenHeadroom) {
+                                hls.startLevel = highestLevel;
+                                hls.nextLevel = highestLevel;
+                                hls.loadLevel = highestLevel;
+                            }
+                            hls.autoLevelCapping = isBandwidthConstrained
+                                ? Math.max(0, hls.levels.length - 2)
+                                : -1;
+                            console.log('[hls] HDStream startup sample complete; target=' + ((provenHeadroom && !isBandwidthConstrained) ? 'highest' : 'auto/adaptive'));
                         }
                     }, 15000);
                 }
@@ -15780,8 +15799,11 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                     hlsInst.loadLevel = 0;
                 }
             });
-            video.addEventListener('canplay', () => {
+video.addEventListener('canplay', () => {
                 setPlaybackStatus('Ready to play', 'Video data loaded');
+                if (window.__animeWatchFetchStartAt) {
+                    console.log('[player] first frame ready (canplay) after', Math.round(performance.now() - window.__animeWatchFetchStartAt) + 'ms', 'from anime watch fetch start');
+                }
                 // canplay means the browser has a decodable frame. Do not keep
                 // the full-screen loader waiting for autoplay/playing, which
                 // may be delayed or blocked even though the stream is ready.
@@ -23197,6 +23219,7 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                         if (Array.isArray(payload?.data?.dub?.sources)) return payload.data.dub.sources;
                         return [];
                     };
+window.__animeWatchFetchStartAt = performance.now();
                     for (const watchUrl of watchCandidates) {
                         try {
                             const watchStartedAt = performance.now();
@@ -23217,10 +23240,12 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                                 continue;
                             }
                             data = await watchRes.json();
-                            console.log(`[${provider}] watch request completed`, {
+console.log(`[${provider}] watch request completed`, {
                                 elapsedMs: Math.round(performance.now() - watchStartedAt),
                                 sourceCount: getWatchSources(data).length,
-                                subtitleCount: Array.isArray(data?.subtitles) ? data.subtitles.length : 0,
+                                subtitleCount: Array.isArray(data?.subtitles) ? data.subtitles.length
+                                    : Array.isArray(data?.sub?.subtitles) ? data.sub.subtitles.length
+                                    : Array.isArray(data?.dub?.subtitles) ? data.dub.subtitles.length : 0,
                             });
                             if (getWatchSources(data).length) break;
                             lastWatchErr = new Error('No sources');

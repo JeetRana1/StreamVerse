@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Anime on StreamVerse | Trending Series and Favorites</title>
+    <meta name="description"
+        content="Discover trending anime, fan favorites, and genre collections on StreamVerse.">
+  <link rel="stylesheet" href="style.css?v=2.4">
+  <style>
+    .anime-page { background: #08090d; }
+    .anime-page main { overflow: hidden; }
+    .anime-hero { position: relative; min-height: 560px; padding: 150px 0 74px; isolation: isolate; }
+    .anime-hero::before { content: ''; position: absolute; inset: 0; z-index: -3; background: radial-gradient(circle at 76% 22%, rgba(238, 79, 93, .2), transparent 29%), radial-gradient(circle at 18% 72%, rgba(121, 55, 255, .13), transparent 32%), linear-gradient(180deg, #101117 0%, #08090d 88%); }
+    .anime-hero::after { content: ''; position: absolute; inset: 0; z-index: -2; opacity: .18; background-image: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px); background-size: 58px 58px; mask-image: linear-gradient(to bottom, #000, transparent 92%); }
+    .anime-hero-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); align-items: end; gap: clamp(40px, 7vw, 110px); }
+    .anime-kicker { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 20px; color: #ff818b; font-size: .76rem; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }
+    .anime-kicker::before { content: ''; width: 34px; height: 2px; border-radius: 2px; background: #e50914; box-shadow: 0 0 16px rgba(229,9,20,.75); }
+    .anime-hero h1 { max-width: 760px; margin: 0; font-family: 'Outfit', sans-serif; font-size: clamp(3.2rem, 7vw, 6.8rem); font-weight: 800; line-height: .91; letter-spacing: -.055em; }
+    .anime-hero h1 span { color: transparent; -webkit-text-stroke: 1px rgba(255,255,255,.6); }
+    .anime-hero-copy { max-width: 620px; margin: 28px 0 0; color: rgba(255,255,255,.64); font-size: clamp(.98rem, 1.5vw, 1.12rem); line-height: 1.75; }
+    .anime-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 30px; }
+    .anime-primary-action, .anime-search-action { min-height: 48px; padding: 0 20px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; font: inherit; font-weight: 800; cursor: pointer; transition: transform .2s ease, background .2s ease, border-color .2s ease; }
+    .anime-primary-action { background: #e50914; color: #fff; box-shadow: 0 14px 36px rgba(229,9,20,.28); }
+    .anime-search-action { border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.06); color: #fff; }
+    .anime-primary-action:hover, .anime-search-action:hover { transform: translateY(-2px); }
+    .anime-search-action:hover { background: rgba(255,255,255,.11); border-color: rgba(255,255,255,.28); }
+    .anime-queue { border: 1px solid rgba(255,255,255,.12); border-radius: 26px; padding: 12px; background: rgba(13,14,20,.7); box-shadow: 0 28px 80px rgba(0,0,0,.42); backdrop-filter: blur(18px); transform: rotate(1.5deg); }
+    .anime-queue-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 16px; color: rgba(255,255,255,.56); font-size: .72rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .anime-queue-head i { color: #ff5965; }
+    .anime-queue-item { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 12px; padding: 16px 14px; border-top: 1px solid rgba(255,255,255,.08); }
+    .anime-queue-number { color: rgba(255,255,255,.24); font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 800; }
+    .anime-queue-item strong { display: block; margin-bottom: 3px; font-size: .92rem; }
+    .anime-queue-item small { color: rgba(255,255,255,.48); }
+    .anime-queue-item > i { color: #ff5965; font-size: .75rem; }
+    .anime-category-list { display: flex; gap: 9px; margin-top: 38px; padding-bottom: 4px; overflow-x: auto; scrollbar-width: none; }
+    .anime-category-list::-webkit-scrollbar { display: none; }
+    .anime-category-list button { flex: 0 0 auto; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 9px 14px; background: rgba(255,255,255,.045); color: rgba(255,255,255,.68); font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer; transition: .2s ease; }
+    .anime-category-list button:hover, .anime-category-list button.active { border-color: rgba(255,89,101,.65); background: rgba(229,9,20,.14); color: #fff; }
+    .anime-catalog { padding-bottom: 40px; }
+    .anime-section { margin: 0 0 clamp(58px, 7vw, 90px); }
+    .anime-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+    .anime-section-heading h2 { margin: 0; font-family: 'Outfit', sans-serif; font-size: clamp(1.65rem, 3vw, 2.35rem); letter-spacing: -.025em; }
+    .anime-section-heading p { margin: 7px 0 0; color: rgba(255,255,255,.48); font-size: .9rem; }
+    .anime-section-count { flex: 0 0 auto; color: rgba(255,255,255,.4); font-size: .76rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    #trending-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 30px 16px; align-items: start; }
+    .anime-category-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(164px, 15vw); gap: 14px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: inline proximity; scrollbar-width: thin; scrollbar-color: rgba(229,9,20,.55) transparent; padding: 2px 2px 16px; }
+    .anime-category-grid .anime-card { scroll-snap-align: start; }
+    .anime-card { min-width: 0; }
+    .anime-card-link { display: block; color: inherit; text-decoration: none; outline: none; }
+    .anime-poster { position: relative; aspect-ratio: 2 / 3; overflow: hidden; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; background: linear-gradient(145deg, #20212b, #111218); box-shadow: 0 15px 34px rgba(0,0,0,.28); isolation: isolate; transition: transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .28s ease, border-color .28s ease; }
+    .anime-poster::before { content: 'SV'; position: absolute; inset: 0; z-index: -1; display: grid; place-items: center; color: rgba(255,255,255,.08); font-family: 'Outfit', sans-serif; font-size: 2rem; font-weight: 800; }
+    .anime-poster::after { content: ''; position: absolute; inset: 35% 0 0; background: linear-gradient(to top, rgba(5,6,9,.92), transparent); opacity: .55; transition: opacity .25s ease; }
+    .anime-poster img { width: 100%; height: 100%; display: block; object-fit: cover; transition: transform .45s cubic-bezier(.2,.8,.2,1), filter .25s ease; }
+    .anime-card:hover .anime-poster, .anime-card-link:focus-visible .anime-poster { transform: translateY(-7px); border-color: rgba(255,89,101,.62); box-shadow: 0 24px 48px rgba(0,0,0,.45), 0 0 0 3px rgba(229,9,20,.08); }
+    .anime-card:hover .anime-poster img { transform: scale(1.055); filter: saturate(1.08); }
+    .anime-card:hover .anime-poster::after { opacity: .85; }
+    .anime-badge-row { position: absolute; inset: 10px 10px auto; z-index: 2; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .anime-badge { min-height: 24px; padding: 0 8px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; background: rgba(8,9,13,.7); color: #fff; backdrop-filter: blur(10px); font-size: .66rem; font-weight: 800; text-transform: uppercase; }
+    .anime-rating { color: #ffd166; }
+    .anime-play-cue { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 3; display: flex; align-items: center; justify-content: space-between; color: #fff; opacity: 0; transform: translateY(8px); transition: .24s ease; }
+    .anime-play-cue span { font-size: .74rem; font-weight: 800; }
+    .anime-play-cue i { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #e50914; box-shadow: 0 8px 18px rgba(229,9,20,.35); }
+    .anime-card:hover .anime-play-cue, .anime-card-link:focus-visible .anime-play-cue { opacity: 1; transform: translateY(0); }
+    .anime-card-info { min-height: 76px; padding: 11px 4px 0; }
+    .anime-card-title { margin: 0; display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: rgba(255,255,255,.94); font-size: .93rem; font-weight: 750; line-height: 1.32; }
+    .anime-card-meta { display: flex; align-items: center; gap: 7px; margin-top: 7px; color: rgba(255,255,255,.43); font-size: .72rem; font-weight: 650; }
+    .anime-card-meta span + span::before { content: ''; width: 3px; height: 3px; margin-right: 7px; border-radius: 50%; display: inline-block; vertical-align: middle; background: #e50914; }
+    .anime-skeleton { min-height: 320px; border-radius: 18px; background: linear-gradient(100deg, #13141b 20%, #20212a 40%, #13141b 60%); background-size: 220% 100%; animation: anime-shimmer 1.25s ease infinite; }
+    @keyframes anime-shimmer { to { background-position-x: -220%; } }
+    .anime-status { grid-column: 1 / -1; min-height: 180px; display: grid; place-items: center; border: 1px dashed rgba(255,255,255,.11); border-radius: 20px; color: rgba(255,255,255,.52); text-align: center; }
+    .anime-status-inner i { display: block; margin-bottom: 12px; color: #ff5965; font-size: 1.5rem; }
+    .anime-load-more-wrap { display: flex; justify-content: center; padding: 36px 0 0; }
+    #anime-load-more { min-width: 190px; min-height: 48px; border: 1px solid rgba(255,255,255,.13); border-radius: 999px; padding: 0 22px; background: rgba(255,255,255,.055); color: #fff; font: inherit; font-weight: 800; cursor: pointer; transition: .2s ease; }
+    #anime-load-more:hover { border-color: rgba(255,89,101,.55); background: rgba(229,9,20,.14); transform: translateY(-2px); }
+    #anime-load-more:disabled { opacity: .55; cursor: wait; transform: none; }
+    .anime-categories-section { content-visibility: auto; contain-intrinsic-size: 420px; }
+    .anime-search-mode .anime-categories-section { display: none; }
+    @media (hover: none) { .anime-play-cue { opacity: 1; transform: none; } }
+    @media (max-width: 820px) { .anime-hero { min-height: auto; padding-top: 126px; } .anime-hero-layout { grid-template-columns: 1fr; } .anime-queue { display: none; } .anime-hero h1 { max-width: 620px; } }
+    @media (max-width: 600px) { .anime-hero { padding: 112px 0 52px; } .anime-hero h1 { font-size: clamp(3rem, 16vw, 4.5rem); } .anime-hero-copy { margin-top: 20px; font-size: .94rem; } .anime-category-list { margin-top: 28px; } .anime-section-heading { align-items: start; } .anime-section-count { display: none; } #trending-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; } .anime-category-grid { grid-auto-columns: minmax(146px, 43vw); } .anime-poster { border-radius: 14px; } .anime-card-title { font-size: .86rem; } .anime-play-cue span { display: none; } .anime-skeleton { min-height: 260px; } }
+  </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="dns-prefetch" href="//image.tmdb.org">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="logo.png">
+    <!-- PWA manifest — gives iOS the signal to run without browser chrome in standalone mode -->
+    <link rel="manifest" href="manifest.json">
+    <!-- Standard PWA meta (non-Apple) -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <!-- Apple-specific PWA tags. Required for iOS standalone (no browser chrome) mode. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="StreamVerse">
+    <link rel="apple-touch-icon" href="logo.png">
+</head>
+
+<body class="anime-page">
+    
+    <header id="main-header">
+        <div class="container container-header">
+            <div class="logo">
+                <a href="/">
+                    <span class="logo-accent">Stream</span>Verse
+                </a>
+            </div>
+            <nav class="desktop-nav">
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="#movies" onclick="filterType('movie')">Movies</a></li>
+                    <li><a href="#tv" onclick="filterType('tv')">TV Shows</a></li>
+                    <li><a href="anime.html" class="active" aria-current="page">Anime</a></li>
+                    <li><a href="manga.html">Manga</a></li>
+                    <li><a href="add-to-list.html">My List</a></li>
+                    <li><a href="#trending" onclick="filterType('trending')">Trending</a></li>
+                </ul>
+            </nav>
+            <div class="header-actions">
+                <div class="api-switcher">
+                    <button id="api-prod" onclick="toggleApi('prod')" title="Production API">Prod</button>
+                    <button id="api-local" onclick="toggleApi('local')" title="Local API">Local</button>
+                </div>
+                <button type="button" class="genre-filter-btn" id="genre-filter-btn" aria-expanded="false" aria-controls="genre-filter-panel" title="Filter by genre">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Genre</span>
+                </button>
+                <button type="button" class="cache-clear-btn" id="cache-clear-btn" title="Clear old cache" aria-label="Clear old cache">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>Clear Cache</span>
+                </button>
+                <button type="button" class="watch-party-header-btn" id="homeWatchPartyBtn" title="Watch Together" aria-label="Watch Together">
+                    <i class="fa-solid fa-user-group"></i>
+                    <span>Watch Together</span>
+                </button>
+                <div class="search-bar" id="search-container">
+                    <input type="text" id="search-input" placeholder="Search anime...">
+                    <button id="search-btn" type="button"><i class="fa-solid fa-magnifying-glass"></i></button>
+                    <button type="button" id="search-close-btn" class="search-close-btn" aria-label="Close search">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <button class="mobile-menu-btn" id="mobile-menu-toggle">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="genre-filter-panel" id="genre-filter-panel" aria-hidden="true"></div>
+
+        <div class="mobile-dropdown" id="mobile-dropdown-menu">
+            <ul>
+                <li><a href="/"><i class="fa-solid fa-house"></i> Home</a></li>
+                <li><a href="#movies" onclick="filterType('movie')"><i class="fa-solid fa-film"></i> Movies</a></li>
+                <li><a href="#tv" onclick="filterType('tv')"><i class="fa-solid fa-tv"></i> TV Shows</a></li>
+                <li><a href="anime.html" class="active" aria-current="page"><i class="fa-solid fa-clapperboard"></i> Anime</a></li>
+                <li><a href="manga.html"><i class="fa-solid fa-book-open"></i> Manga</a></li>
+                <li><a href="add-to-list.html"><i class="fa-solid fa-bookmark"></i> My List</a></li>
+                <li><a href="#trending" onclick="filterType('trending')"><i class="fa-solid fa-fire"></i> Trending</a></li>
+            </ul>
+        </div>
+
+        <nav class="mobile-tabs-nav">
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="#movies" onclick="filterType('movie')">Movies</a></li>
+                <li><a href="#tv" onclick="filterType('tv')">TV Shows</a></li>
+                <li><a href="anime.html" class="active" aria-current="page">Anime</a></li>
+                <li><a href="manga.html">Manga</a></li>
+                <li><a href="add-to-list.html">My List</a></li>
+                <li><a href="#trending" onclick="filterType('trending')">Trending</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <section class="anime-hero" aria-labelledby="anime-hero-title">
+            <div class="container anime-hero-layout">
+                <div>
+                    <div class="anime-kicker">Curated anime</div>
+                    <h1 id="anime-hero-title">Stories that <span>hit harder.</span></h1>
+                    <p class="anime-hero-copy">Jump into current favorites, iconic worlds, and the series everyone is talking about. Pick a title and start watching without the catalog getting in your way.</p>
+                    <div class="anime-hero-actions">
+                        <a class="anime-primary-action" href="#trending-section"><i class="fa-solid fa-fire"></i> Explore trending</a>
+                        <button class="anime-search-action" id="anime-hero-search" type="button"><i class="fa-solid fa-magnifying-glass"></i> Find a title</button>
+                    </div>
+                    <div class="anime-category-list" id="anime-categories" aria-label="Browse anime genres"></div>
+                </div>
+                <aside class="anime-queue" aria-label="Catalog highlights">
+                    <div class="anime-queue-head"><span>Tonight's queue</span><i class="fa-solid fa-sparkles"></i></div>
+                    <div class="anime-queue-item"><span class="anime-queue-number">01</span><div><strong>Trending now</strong><small>What viewers are starting today</small></div><i class="fa-solid fa-chevron-right"></i></div>
+                    <div class="anime-queue-item"><span class="anime-queue-number">02</span><div><strong>Fan favorites</strong><small>Series worth another episode</small></div><i class="fa-solid fa-chevron-right"></i></div>
+                    <div class="anime-queue-item"><span class="anime-queue-number">03</span><div><strong>Genre dives</strong><small>Action, fantasy, romance and more</small></div><i class="fa-solid fa-chevron-right"></i></div>
+                </aside>
+            </div>
+        </section>
+
+        <div id="content-rows" class="container anime-catalog">
+            <section class="anime-section" id="trending-section">
+                <div class="anime-section-heading">
+                    <div><h2 id="catalog-title">Trending now</h2><p id="catalog-subtitle">Fresh picks from across the anime world.</p></div>
+                    <span class="anime-section-count" id="anime-result-count">Updating catalog</span>
+                </div>
+                <div id="trending-grid" aria-live="polite"></div>
+                <div class="anime-load-more-wrap"><button type="button" id="anime-load-more">Load more anime</button></div>
+            </section>
+
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Action essentials</h2><p>High stakes, sharp fights, no quiet episodes.</p></div></div><div class="anime-category-grid" data-category-grid="Action"></div></section>
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Adventure calls</h2><p>New worlds and long journeys.</p></div></div><div class="anime-category-grid" data-category-grid="Adventure"></div></section>
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Comedy break</h2><p>Smart chaos and easy rewatches.</p></div></div><div class="anime-category-grid" data-category-grid="Comedy"></div></section>
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Fantasy realms</h2><p>Magic, myths, and impossible worlds.</p></div></div><div class="anime-category-grid" data-category-grid="Fantasy"></div></section>
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Romance picks</h2><p>Slow burns, first loves, and complicated hearts.</p></div></div><div class="anime-category-grid" data-category-grid="Romance"></div></section>
+        </div>
+    </main>
+
+    <!-- Movie Modal / Detail View Overlay -->
+    <div id="movie-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal"><i class="fa-solid fa-xmark"></i></span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Mobile Navigation Overlay Removed -->
+
+    <footer>
+        <div class="container footer-content">
+            <div class="footer-logo">
+                <span class="logo-accent">Stream</span>Verse
+            </div>
+            <p class="footer-text">StreamVerse does not store any files on our server, we only provide links to the
+                media which is hosted on 3rd party services.</p>
+            <div class="footer-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="#">Contact</a>
+            </div>
+            <p class="copyright">&copy; 2026 StreamVerse. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <!-- Watch Together Panel -->
+    <div id="homeWatchPartyPanel" class="watch-party-home-panel" style="display:none;">
+        <div class="watch-party-home-backdrop"></div>
+        <div class="watch-party-home-card">
+            <div class="watch-party-home-head">
+                <div>
+                    <h3 class="watch-party-home-title"><i class="fa-solid fa-user-group"></i> Watch Together</h3>
+                    <div class="watch-party-home-subtitle">Sync playback with friends in real-time</div>
+                </div>
+                <div class="watch-party-home-head-actions">
+                    <button class="watch-party-home-settings" id="homeWatchPartySettings" aria-label="Settings"><i class="fa-solid fa-gear"></i></button>
+                    <button class="watch-party-home-collapse" id="homeWatchPartyCollapse" aria-label="Minimize"><i class="fa-solid fa-minus"></i></button>
+                    <button class="watch-party-home-close" id="homeWatchPartyClose" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+            <div class="watch-party-home-divider"></div>
+            <div class="watch-party-home-stage" id="homeWatchPartyStage"></div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="/firebaseConfig.js"></script>
+    <script src="/streamverse-auth.js"></script>
+    <script src="/config.js"></script>
+    <script src="anime-script.js?v=1"></script>
+    
+</body>
+
+</html>
