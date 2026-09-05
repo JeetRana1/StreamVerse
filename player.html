@@ -7273,9 +7273,38 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 if (!d.fatal && (isFragLoad || isLevelLoad)) {
                     nonFatalLevelErrorCount += 1;
                     if (nonFatalLevelErrorCount >= 4 && typeof onErrorFallback === 'function') {
-                        console.warn('[hls] repeated non-fatal level/frag load timeouts, escalating fallback');
-                        nonFatalLevelErrorCount = 0;
-                        onErrorFallback('level_timeout_repeated');
+                        // Some CDNs (e.g. imgnex/akirax) expose a master with a mix of
+                        // live and dead variants: the low-resolution "new" levels can
+                        // 404 on segments while the highest-res variant still streams.
+                        // capLevelToPlayerSize locks us onto a dead capped level, so
+                        // clear the cap and force the highest-quality variant before
+                        // giving up on in-place recovery.
+                        let forceTriedBestLevel = false;
+                        try {
+                            if (hls && Array.isArray(hls.levels) && hls.levels.length > 1) {
+                                let bestIdx = -1;
+                                let bestHeight = -1;
+                                hls.levels.forEach((lvl, i) => {
+                                    const height = Number(lvl?.height || 0);
+                                    if (height > bestHeight && i !== hls.currentLevel) {
+                                        bestHeight = height;
+                                        bestIdx = i;
+                                    }
+                                });
+                                if (bestIdx > -1) {
+                                    hls.autoLevelCapping = -1;
+                                    hls.nextLevel = bestIdx;
+                                    forceTriedBestLevel = true;
+                                    console.warn(`[hls] repeated timeouts on capped level; forcing highest-quality level ${bestIdx} (${bestHeight}p) retry before fallback`);
+                                    hls.startLoad();
+                                }
+                            }
+                        } catch (_) { }
+                        if (!forceTriedBestLevel) {
+                            console.warn('[hls] repeated non-fatal level/frag load timeouts, escalating fallback');
+                            nonFatalLevelErrorCount = 0;
+                            onErrorFallback('level_timeout_repeated');
+                        }
                         return;
                     }
                     // Non-fatal: let HLS.js retry itself, just kick loading
