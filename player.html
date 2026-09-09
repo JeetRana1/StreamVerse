@@ -4909,6 +4909,46 @@ function getProxiedUrl(url, referer = '') {
             }));
         }
         const ANIME_AUDIO_PREF_KEY = 'streamverse_anime_audio_mode';
+        function getAnikotoAudioMode(source) {
+            if (source?.isDub || source?.dub) return 'dubbed';
+            if (source?.isSub) return 'subbed';
+            const label = String(source?.audioLabel || source?.audio || source?.label || source?.quality || '');
+            if (/\bdub(?:bed)?\b/i.test(label)) return 'dubbed';
+            if (/\bsub(?:bed)?\b/i.test(label)) return 'subbed';
+            return '';
+        }
+
+        function getAnikotoSourceIdentity(source) {
+            return JSON.stringify([
+                String(source?.provider || '').toLowerCase(), String(source?.url || '').trim(),
+                getAnikotoAudioMode(source), source?.referer || '', source?.origin || '', source?.cookieHeader || '',
+            ]);
+        }
+
+        function getAnikotoWatchSources(payload) {
+            const rows = [];
+            for (const root of [payload, payload?.data]) {
+                if (!root) continue;
+                for (const [group, mode] of [[root, ''], [root.sub, 'subbed'], [root.dub, 'dubbed']]) {
+                    for (const source of group?.sources || []) {
+                        const headers = {};
+                        for (const values of [payload?.headers, root.headers, group.headers, source.headers]) {
+                            for (const [key, value] of Object.entries(values || {})) headers[key.toLowerCase()] = value;
+                        }
+                        rows.push({
+                            ...source,
+                            ...(mode ? { isDub: mode === 'dubbed', isSub: mode === 'subbed' } : {}),
+                            headers,
+                            referer: source.referer || headers.referer || '',
+                            origin: source.origin || headers.origin || '',
+                            cookieHeader: source.cookieHeader || headers.cookie || '',
+                        });
+                    }
+                }
+            }
+            return rows;
+        }
+        const failedAnikotoSources = new Set();
         const readSavedAnimeAudioMode = () => {
             try {
                 const value = String(localStorage.getItem(ANIME_AUDIO_PREF_KEY) || '').trim().toLowerCase();
@@ -5328,7 +5368,7 @@ function getProxiedUrl(url, referer = '') {
         let activeMenuProvider = '';
         let pendingEpisodeSelectionHint = null;
         let activeEpisodeSelectionHint = null;
-        let inAppEpisodeNavigation = false; // true after auto-next / next-episode button advances without a page reload
+        let inAppEpisodeNavigation = false; // true after an explicit episode selection without a page reload
         let epPanelUserScrollUntil = 0;
         let epPanelAllowNextAutoScroll = false;
         let curSeason = 0;
@@ -5957,16 +5997,37 @@ function getProxiedUrl(url, referer = '') {
             syncUrlState();
         }
 
+        function getCatalogEpisodeSelectionHint() {
+            // Resolve the ID before copying labels or positions from a stale route/menu hint.
+            const hint = activeEpisodeSelectionHint || null;
+            const currentEpisode = tvSeasons?.[curSeason]?.episodes?.[curEpisode];
+            const position = findEpisodePositionById(tvSeasons, hint?.episodeId || currentEpisode?.id || currentEpisode?.providerEpisodeId);
+            if (!position) return hint;
+            const season = tvSeasons[position.seasonIndex];
+            const episode = season.episodes[position.episodeIndex];
+            return {
+                ...hint,
+                episodeId: episode.id || episode.providerEpisodeId,
+                seasonTitle: season.name,
+                seasonNo: season.seasonNo,
+                episodeNo: episode.episode || episode.number || episode.episodeNum || position.episodeIndex + 1,
+                providerAnimeId: season.providerAnimeId || null,
+                seasonIndex: position.seasonIndex,
+                seasonPartNo: Number(season.seasonPartNo || season.part || season.partNo || 0),
+            };
+        }
+
         function syncUrlState(options = {}) {
             const { preserveTime = true } = options;
             const u = new URL(location.href);
             if (MEDIA_TYPE === 'tv') {
-                const hint = activeEpisodeSelectionHint || null;
+                const hint = getCatalogEpisodeSelectionHint();
                 const seasonRef = tvSeasons?.[Number(curSeason || 0)];
                 const hintSeasonNo = Number(hint?.seasonNo || 0);
                 const seasonNoRaw = Number(seasonRef?.seasonNo);
                 const liveSeasonTitle = String(u.searchParams.get('seasonTitle') || '').trim();
-                const isBonusSelection = u.searchParams.get('season') === '0' || /bonus/i.test(String(hint?.seasonTitle || liveSeasonTitle || URL_SEASON_TITLE || seasonRef?.name || ''));
+                const isBonusSelection = hint?.seasonIndex != null ? Number(hint.seasonNo) === 0
+                    : u.searchParams.get('season') === '0' || /bonus/i.test(String(hint?.seasonTitle || liveSeasonTitle || URL_SEASON_TITLE || seasonRef?.name || ''));
                 const seasonNo = isBonusSelection
                     ? 0
                     : Number.isFinite(hintSeasonNo) && hintSeasonNo > 0
@@ -5980,7 +6041,11 @@ function getProxiedUrl(url, referer = '') {
                     : (Number.isFinite(epNoRaw) && epNoRaw > 0 ? epNoRaw : (curEpisode + 1));
                 u.searchParams.set('season', String(seasonNo));
                 u.searchParams.set('episode', String(epNo));
-                let seasonTitle = isBonusSelection ? 'Bonus' : String(hint?.seasonTitle || seasonRef?.name || '').trim();
+                let seasonTitle = String(hint?.seasonTitle || seasonRef?.name || '').trim();
+                if (hint?.seasonIndex != null) {
+                    u.searchParams.set('seasonIndex', String(hint.seasonIndex));
+                    u.searchParams.set('seasonPart', String(hint.seasonPartNo));
+                }
                 if (seasonNo > 0 && /^(specials?|ovas?|extras?|recaps?)$/i.test(seasonTitle)) {
                     seasonTitle = `Season ${seasonNo}`;
                 }
@@ -6585,11 +6650,22 @@ function getProxiedUrl(url, referer = '') {
             let searchToken = (preferredAudioToken || '').toLowerCase();
             // Strip common suffixes that might pollute the token
             searchToken = searchToken.replace(/\s*\(.*?\)\s*/g, '').trim();
+            const anikotoMode = activeSourceProvider === 'anikoto'
+                ? getAnikotoAudioMode({ audioLabel: searchToken || getAnikotoAudioMode(allSources?.[currentIdx]) }) : '';
+            if (anikotoMode) searchToken = anikotoMode === 'dubbed' ? 'english' : 'japanese';
             const normPref = normalizeAudioToken(searchToken);
 
             let targetIdx = -1;
 
-            if (normPref && !shouldForceOriginalTrack) {
+            if (anikotoMode) {
+                const language = anikotoMode === 'dubbed' ? /^(en|eng)(-|$)|english/i : /^(ja|jpn)(-|$)|japanese|nihongo/i;
+                targetIdx = tracks.findIndex(t => getTrackAudioTokens(t).some(token => language.test(token)));
+                // An unlabelled single-track mirror may still carry the requested mode.
+                // Never force Japanese/default over a missing requested multi-audio track.
+                if (targetIdx < 0) return;
+            }
+
+            if (targetIdx < 0 && normPref && !shouldForceOriginalTrack) {
                 // 1. Try exact normalized match
                 targetIdx = tracks.findIndex(t => {
                     return getTrackAudioTokens(t).some(tok => normalizeAudioToken(tok) === normPref);
@@ -6611,6 +6687,8 @@ function getProxiedUrl(url, referer = '') {
                 const n = String(t?.name || t?.label || '').toLowerCase();
                 return l === 'en' || l === 'eng' || n === 'en' || n.startsWith('en-') || n.includes('english');
             });
+
+            if (activeSourceProvider === 'anikoto' && normPref && targetIdx === -1) return;
 
             // 3. Fallback: English (hdstream4u multi-audio streams often ship with a non-English default track)
             if (targetIdx === -1 && (activeSourceProvider === 'hdstream4u' || String(currentStreamProvider || '').toLowerCase() === 'hdstream4u')) {
@@ -6660,6 +6738,8 @@ function getProxiedUrl(url, referer = '') {
         }
 
         function svAttachHlsListeners(hls, startTime, onParsedAction, onErrorFallback, isThumbnail = false) {
+            const isHdstream = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase().includes('hdstream');
+            const anikotoLevelFailures = new Map();
             let fatalRecoveryTimer = null;
             let fragParseBurstCount = 0;
             let fragParseBurstStartAt = 0;
@@ -6988,6 +7068,31 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 const isFragLoad = detailText.includes('fragloaderror') || d?.details === Hls.ErrorDetails.FRAG_LOAD_ERROR;
                 const isLevelLoad = detailText.includes('levelloadtimeout') || detailText.includes('levelloadererror') || d?.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR || d?.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT;
                 const isManifestParsing = detailText.includes('manifestparsingerror') || d?.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
+                // Some AniKoto masters advertise renditions whose segments were deleted.
+                // Try each remaining video rendition before abandoning the language/server.
+                if (!isThumbnail && isCurrentAniKotoStream() && isFragLoad && d.frag?.type === 'main' && Number(d.response?.code) >= 400) {
+                    const level = d.frag.level;
+                    if (Number.isInteger(level) && hls.levels?.[level]) {
+                        const failures = (anikotoLevelFailures.get(level) || 0) + 1;
+                        anikotoLevelFailures.set(level, failures);
+                        if (d.fatal || failures >= 2) {
+                            anikotoLevelFailures.set(level, Infinity);
+                            const nextLevel = hls.levels.findIndex((_, index) => anikotoLevelFailures.get(index) !== Infinity);
+                            if (nextLevel >= 0) {
+                                const resumeAt = Math.max(0, Number(pendingJumpTarget?.time ?? video?.currentTime ?? startTime) || 0);
+                                console.warn(`[anikoto] Rendition ${level} unavailable; trying ${nextLevel}`);
+                                hls.stopLoad();
+                                hls.currentLevel = nextLevel;
+                                hls.startLoad(resumeAt);
+                                return;
+                            }
+                            if (typeof onErrorFallback === 'function') {
+                                onErrorFallback('renditions_exhausted');
+                                return;
+                            }
+                        }
+                    }
+                }
                 const isFlixHqStream = isCurrentFlixHqStream();
                 const isAudioPipelineIssue =
                     detailText.includes('audio') ||
@@ -7617,10 +7722,25 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             syncUrlState({ preserveTime });
         }
 
+        function findEpisodePositionById(seasons, episodeId) {
+            const wantedId = String(episodeId || '').trim().toLowerCase();
+            if (!wantedId) return null;
+            for (let si = 0; si < (seasons || []).length; si += 1) {
+                const ei = (seasons[si]?.episodes || []).findIndex((episode) =>
+                    [episode?.id, episode?.providerEpisodeId].some((id) =>
+                        String(id || '').trim().toLowerCase() === wantedId));
+                if (ei >= 0) return { seasonIndex: si, episodeIndex: ei };
+            }
+            return null;
+        }
+
         function getInitialTvPositionFromUrl(seasons) {
             const safeSeasons = Array.isArray(seasons) ? seasons : [];
             const currentParams = new URLSearchParams(location.search);
             const useResumePosition = shouldUseContinueWatchingPositionOnBoot();
+            const exactPosition = findEpisodePositionById(safeSeasons,
+                useResumePosition ? CONTINUE_ENTRY?.episodeId : currentParams.get('episodeId'));
+            if (exactPosition) return exactPosition;
             const urlSeason = Number(currentParams.get('season') || 0);
             const urlEpisode = Number(currentParams.get('episode') || currentParams.get('ep') || 0);
             console.log('[getInitialTvPositionFromUrl] urlSeason=' + urlSeason + ' urlEpisode=' + urlEpisode + ' seasonsLen=' + safeSeasons.length + ' epCount=' + (safeSeasons[0]?.episodes?.length || 0));
@@ -7726,7 +7846,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     matchedExplicitSeasonRef = true;
                 }
             }
-            if (!useResumePosition && currentParams.get('seasonPart')) {
+            if (!useResumePosition && currentParams.get('seasonPart') && !matchedExplicitSeasonRef) {
                 const wantedPart = Number(currentParams.get('seasonPart') || 0);
                 const bySeasonPart = safeSeasons.findIndex((s) =>
                     Number(s?.seasonNo || 0) === urlSeason &&
@@ -11854,16 +11974,15 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             const t = Math.floor(Math.max(Number(video.currentTime || 0), Number(lastKnownPlaybackTime || 0)));
             const u = new URL(location.href);
             if (MEDIA_TYPE === 'tv') {
-                const hint = activeEpisodeSelectionHint || null;
+                const hint = getCatalogEpisodeSelectionHint();
                 const seasonRef = tvSeasons?.[Number(curSeason || 0)] || null;
                 const episodeRef = seasonRef?.episodes?.[Number(curEpisode || 0)] || null;
                 const seasonNoRaw = Number(seasonRef?.seasonNo);
                 const episodeNoRaw = Number(episodeRef?.episode || episodeRef?.number || episodeRef?.episodeNum);
-                // Bonus/Specials episodes live in season-zero seasons. Keep the URL's
-                // season=0 (and "Bonus" title) for them instead of synthesizing a +1
-                // numbered season that would boot into the wrong season on reload.
+                // Extras share season zero, but retain their distinct catalog names.
                 const hintSeasonNo = Number(hint?.seasonNo || 0);
-                const isBonusSelection = /bonus/i.test(String(hint?.seasonTitle || URL_SEASON_TITLE || seasonRef?.name || ''));
+                const isBonusSelection = hint?.seasonIndex != null ? Number(hint.seasonNo) === 0
+                    : /bonus|netflix[\s\-]*special/i.test(String(hint?.seasonTitle || URL_SEASON_TITLE || seasonRef?.name || '')) || (Number.isFinite(seasonNoRaw) && seasonNoRaw <= 0);
                 const seasonNo = isBonusSelection
                     ? 0
                     : (Number.isFinite(hintSeasonNo) && hintSeasonNo > 0
@@ -11875,7 +11994,11 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 u.searchParams.set('season', String(seasonNo));
                 u.searchParams.set('episode', String(episodeNo));
 
-                let seasonTitle = isBonusSelection ? 'Bonus' : String(hint?.seasonTitle || seasonRef?.name || '').trim();
+                let seasonTitle = String(hint?.seasonTitle || seasonRef?.name || '').trim();
+                if (hint?.seasonIndex != null) {
+                    u.searchParams.set('seasonIndex', String(hint.seasonIndex));
+                    u.searchParams.set('seasonPart', String(hint.seasonPartNo));
+                }
                 if (seasonNo > 0 && /^(specials?|ovas?|extras?|recaps?)$/i.test(seasonTitle)) {
                     seasonTitle = `Season ${seasonNo}`;
                 }
@@ -16018,7 +16141,7 @@ video.addEventListener('canplay', () => {
             const hasHlsTracks = hlsTracks.length > 1;
 
             // Only show "no tracks" message if we're sure there are none
-            if (!hasHlsTracks && !hasSatoruSources && !hasAnimesaltAudioSources && !hasArchiveAudioSources) {
+            if (!hasHlsTracks && !hasSatoruSources && !hasAnimesaltAudioSources && !hasAnimekaiAudioSources && !hasArchiveAudioSources && !allSources.some((source) => source.provider === 'anikoto')) {
                 // Check if satoru sources might be loading in background
                 const satoruLoading = activeProviders.includes('satoru') && currentIsLikelyAnime;
                 if (!satoruLoading) {
@@ -16169,6 +16292,7 @@ video.addEventListener('canplay', () => {
             if (!audioPanel || !audioBtn) return;
 
             const hlsTracks = (hlsInst && Array.isArray(hlsInst.audioTracks)) ? hlsInst.audioTracks : [];
+            const anikotoAudioSources = allSources.filter((source) => source.provider === 'anikoto' && !source.isEmbed);
             const hasSatoruSources = satoruAudioSources.length > 0;
             const animesaltAudioSources = Array.isArray(allSources)
                 ? allSources.filter((s) => String(s?.provider || '').toLowerCase() === 'animesalt' && !s?.isEmbed)
@@ -16190,7 +16314,7 @@ video.addEventListener('canplay', () => {
                 ? Array.from(video.audioTracks)
                 : [];
 
-            const hasAnyTracks = hlsTracks.length > 0 || hasSatoruSources || hasAnimesaltAudioSources || hasAnimekaiAudioSources || hasArchiveAudioSources || iosNativeTracks.length > 0;
+            const hasAnyTracks = hlsTracks.length > 0 || anikotoAudioSources.length > 0 || hasSatoruSources || hasAnimesaltAudioSources || hasAnimekaiAudioSources || hasArchiveAudioSources || iosNativeTracks.length > 0;
 
             audioBtn.style.display = 'flex';
 
@@ -16214,7 +16338,8 @@ video.addEventListener('canplay', () => {
                 const item = document.createElement('div');
                 item.className = 'audio-item' + (isActive ? ' active' : '');
                 item.dataset.watchPartyAudio = JSON.stringify({ label, ...syncMeta });
-                item.innerHTML = `<span class="src-dot"></span>${label}`;
+                item.innerHTML = '<span class="src-dot"></span>';
+                item.appendChild(document.createTextNode(String(label)));
                 item.onclick = () => {
                     if (watchPartyRole === 'guest' && !watchPartyApplyingControl) return watchPartyToast('Only the host can control audio');
                     onClick();
@@ -16308,7 +16433,12 @@ video.addEventListener('canplay', () => {
 
                     const activeSourceUrl = String(activePlaybackSourceUrl || video?.currentSrc || video?.src || '').trim();
                     const currentIndexMatches = String(allSources?.[currentIdx]?.url || '').trim() === String(src.url || '').trim();
-                    const isCurrent = currentIndexMatches || activeSourceUrl === String(src.url || '').trim();
+                    const isCurrent = providerName === 'anikoto'
+                        ? getAnikotoSourceIdentity(allSources?.[currentIdx]) === getAnikotoSourceIdentity(src)
+                        : currentIndexMatches || activeSourceUrl === String(src.url || '').trim();
+                    const sourceIndex = allSources.findIndex((row) => providerName === 'anikoto'
+                        ? getAnikotoSourceIdentity(row) === getAnikotoSourceIdentity(src)
+                        : String(row?.url || '') === String(src.url || ''));
                     const cleanLabel = String(src.audioLabel || src.audio || src.lang || src.language || src.quality || src.label || '')
                         .replace(new RegExp(`^${providerLabel(providerName)}\\s*-\\s*`, 'i'), '')
                         .replace(new RegExp(`^${providerName}\\s*-\\s*`, 'i'), '')
@@ -16327,7 +16457,7 @@ video.addEventListener('canplay', () => {
                             : cleanLabel);
                     addItem(displayLabel, isCurrent, () => {
                         if (isCurrent) return;
-                        const idx = allSources.findIndex((row) => String(row?.url || '') === String(src.url || ''));
+                        const idx = sourceIndex;
                         if (idx < 0) return;
                         const resumeAt = Math.max(
                             0,
@@ -16347,12 +16477,13 @@ video.addEventListener('canplay', () => {
                             syncUrlState();
                             loadStream(src.url, !!src.isM3U8, !!src.isEmbed, src.referer, idx, resumeAt, src.cookieHeader || '');
                         }
-                    }, { kind: 'source', provider: providerName, sourceUrl: src.url, sourceIndex: allSources.findIndex((row) => String(row?.url || '') === String(src.url || '')), audioToken: cleanLabel.toLowerCase(), isDub: !!src.isDub, isSub: !!src.isSub });
+                    }, { kind: 'source', provider: providerName, sourceUrl: src.url, sourceIndex, audioToken: cleanLabel.toLowerCase(), isDub: !!src.isDub, isSub: !!src.isSub });
                 });
             };
 
             renderProviderAudioSources('animesalt', animesaltAudioSources);
             renderProviderAudioSources('animekai', animekaiAudioSources);
+            renderProviderAudioSources('anikoto', anikotoAudioSources);
             renderProviderAudioSources('archive.org', archiveAudioSources);
             // Virtual source-backed tracks (used for multi-language variants)
             const showVirtualSatoruTracks = hasSatoruSources;
@@ -18366,7 +18497,7 @@ video.addEventListener('canplay', () => {
                 };
                 const hydrateAnimeProviderSeasons = async (provider) => {
                     const providerName = String(provider || '').toLowerCase();
-                    const seasonCacheVersion = 'v58';
+                    const seasonCacheVersion = providerName === 'anikoto' ? 'v59' : 'v58';
                     const cacheKey = `anime_provider_seasons_${seasonCacheVersion}_${providerName}_${animeSeriesTitle}_${preferredYear}`;
                     const cached = localStorage.getItem(cacheKey);
                     if (cached) {
@@ -18651,12 +18782,17 @@ video.addEventListener('canplay', () => {
                          // Always search the related title variants. AniKoto exposes
                          // seasons and specials as separate catalog entries, even
                          // when the base title was already matched above.
-                         for (const term of anikotoTerms) {
+                         let anikotoCatalogIncomplete = false;
+                         const uniqueAnikotoTerms = [...new Set(anikotoTerms.map((term) => String(term).trim()).filter(Boolean))];
+                         // One failed variant must not discard already-discovered seasons.
+                         for (let offset = 0; offset < uniqueAnikotoTerms.length; offset += 3) {
+                         await Promise.all(uniqueAnikotoTerms.slice(offset, offset + 3).map(async (term) => {
+                           try {
                             const { res: searchRes } = await fetchJsonWithApiFallback(
                                 `${API_BASE.replace('/meta/tmdb', '/anime/anikoto')}/${encodeURIComponent(term)}`,
                                 { signal: AbortSignal.timeout(Math.max(timeoutMs, 12000)) },
                             );
-                            if (!searchRes.ok) continue;
+                             if (!searchRes.ok) { anikotoCatalogIncomplete = true; return; }
                             const searchData = await searchRes.json();
                             const results = getAnimeSearchResults(searchData);
                             results.forEach((result) => {
@@ -18674,8 +18810,10 @@ video.addEventListener('canplay', () => {
                                 if (!result?.id || (!isStandaloneMatch && !isExactTitleFamily)) return;
                                 anikotoCandidates.set(String(result.id), result);
                             });
-                        }
-                        if (!anikotoCandidates.size) return [];
+                           } catch (_) { anikotoCatalogIncomplete = true; }
+                         }));
+                         }
+                         if (!anikotoCandidates.size) return [];
                         const parseAniKotoOrder = (title, fallbackIndex) => {
                             const text = String(title || '').toLowerCase();
                             const roman = (value) => {
@@ -18726,11 +18864,11 @@ video.addEventListener('canplay', () => {
                                     buildAnimeInfoUrl(providerName, candidate.id),
                                     { signal: AbortSignal.timeout(Math.max(timeoutMs, 18000)) },
                                 );
-                                if (!infoRes.ok) return [];
+                                 if (!infoRes.ok) { anikotoCatalogIncomplete = true; return []; }
                                 let info = await infoRes.json();
                                 if (info?.data) info = info.data;
                                 const episodes = Array.isArray(info?.episodes) ? info.episodes : [];
-                                if (!episodes.length) return [];
+                                 if (!episodes.length) { anikotoCatalogIncomplete = true; return []; }
                                  const candidateType = String(info?.type || candidate?.type || '').toLowerCase();
                                  if (candidateType.includes('movie') || candidateType === 'film') return [];
                                 const providerTitle = String(info?.title || '').trim();
@@ -18770,11 +18908,12 @@ video.addEventListener('canplay', () => {
                                     seasonPartNo: isExtra || !hasExplicitOrder ? 0 : order.partNo,
                                     name: matchedTitle || (isExtra ? 'Extras' : `Season ${order.seasonNo}`),
                                 }));
-                            } catch (_) {
-                                return [];
-                            }
-                        }));
-                        const uniqueResultMap = new Map();
+                             } catch (_) {
+                                 anikotoCatalogIncomplete = true;
+                                 return [];
+                             }
+                         }));
+                         const uniqueResultMap = new Map();
                         seasonResults.flat().forEach((season) => {
                             const titleKey = normalizeTitleForMatch(season?.name || season?.providerTitle || '');
                             const key = titleKey || `untitled-${uniqueResultMap.size}`;
@@ -18832,9 +18971,11 @@ video.addEventListener('canplay', () => {
                                     : (String(season?.name || '').trim() || `Season ${seasonNo}`),
                             };
                         });
-                        if (result.length) {
-                            localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: result }));
-                            return result;
+                         if (result.length) {
+                             if (!anikotoCatalogIncomplete) {
+                                 localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: result }));
+                             }
+                             return result;
                         }
                         return [];
                     }
@@ -19092,7 +19233,7 @@ video.addEventListener('canplay', () => {
                         const hdProviderBase = API_BASE.replace('/meta/tmdb', '/movies/hdstream4u');
                         const hdProviderTitle = String(info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || '').trim();
                         if (!hdProviderTitle) return;
-                        const hdCacheKey = `streamverse:hds4u:tv:${String(TMDB_ID || '')}:${normalizeTitleForMatch(hdProviderTitle)}`;
+                        const hdCacheKey = `streamverse:v2:hds4u:tv:${String(TMDB_ID || '')}:${normalizeTitleForMatch(hdProviderTitle)}`;
                         let hdCache = null;
                         try {
                             const hdRaw = localStorage.getItem(hdCacheKey);
@@ -19159,51 +19300,56 @@ video.addEventListener('canplay', () => {
                         if (!specialsTarget) tvSeasons.push(targetSeason);
                         targetSeason.name = 'Bonus';
                         targetSeason.episodes = [];
+                        const isNetflixSpecialEpisode = (episode) => {
+                            const category = String(episode?.category || '').toLowerCase();
+                            const seasonName = String(episode?.seasonName || '').toLowerCase();
+                            const title = String(episode?.title || episode?.name || episode?.episodeName || '');
+                            return /netflix[\s\-]*special/.test(category) || /netflix[\s\-]*special/.test(seasonName) || /netflix[\s\-]*special/i.test(title);
+                        };
+                        let netflixSpecialSeason = null;
                         let appended = false;
-                        hdCache.forEach((bonusEpisode, bonusIndex) => {
-                            const bonusId = String(bonusEpisode?.episodeId || bonusEpisode?.url || bonusEpisode?.id || '').trim();
-                            if (!bonusId) return;
-                            if (targetSeason.episodes.some((episode) =>
+                        let netflixAppended = false;
+                        const pushEpisodeToSeason = (season, sourceEpisode, titleOverride) => {
+                            const bonusId = String(sourceEpisode?.episodeId || sourceEpisode?.url || sourceEpisode?.id || '').trim();
+                            if (!bonusId) return false;
+                            if (season.episodes.some((episode) =>
                                 String(episode?.id || '').trim().toLowerCase() === bonusId.toLowerCase(),
-                            )) return;
-                            const bonusNo = bonusIndex + 1;
-                            let bonusTitle = String(bonusEpisode?.title || bonusEpisode?.name || `Bonus EP ${bonusIndex + 1}`).trim();
+                            )) return false;
+                            const nextNo = season.episodes.length + 1;
+                            season.episodes.push({
+                                id: bonusId,
+                                url: String(sourceEpisode?.url || sourceEpisode?.episodeId || '').trim() || bonusId,
+                                episode: nextNo,
+                                number: nextNo,
+                                episodeNum: nextNo,
+                                title: titleOverride || String(sourceEpisode?.title || sourceEpisode?.name || '').trim() || `Bonus EP ${nextNo}`,
+                            });
+                            return true;
+                        };
+                        hdCache.forEach((bonusEpisode) => {
+                            if (isNetflixSpecialEpisode(bonusEpisode)) {
+                                if (!netflixSpecialSeason) {
+                                    netflixSpecialSeason = { seasonNo: 0, name: 'Netflix Special', episodes: [] };
+                                    tvSeasons.push(netflixSpecialSeason);
+                                }
+                                if (pushEpisodeToSeason(netflixSpecialSeason, bonusEpisode)) netflixAppended = true;
+                                return;
+                            }
+                            let bonusTitle = String(bonusEpisode?.title || bonusEpisode?.name || '').trim() || `Bonus EP ${targetSeason.episodes.length + 1}`;
                             if (String(TMDB_ID) === '262838') {
                                 const customBonusTitles = {
                                     1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
                                     2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
                                 };
-                                bonusTitle = customBonusTitles[bonusNo] || bonusTitle;
+                                bonusTitle = customBonusTitles[targetSeason.episodes.length + 1] || bonusTitle;
                             }
-                            targetSeason.episodes.push({
-                                id: bonusId,
-                                url: String(bonusEpisode?.url || bonusEpisode?.episodeId || '').trim() || bonusId,
-                                episode: bonusNo,
-                                number: bonusNo,
-                                episodeNum: bonusNo,
-                                title: bonusTitle,
-                            });
-                            appended = true;
+                            if (pushEpisodeToSeason(targetSeason, bonusEpisode, bonusTitle)) appended = true;
                         });
-                        if (!appended) return;
+                        if (!appended && !netflixAppended) return;
                         targetSeason.episodes.sort((a, b) => Number(a?.episode || 0) - Number(b?.episode || 0));
-                        // Bonus episodes are fetched after the initial TV position is
-                        // resolved. Re-match an explicit continue-watching episodeId
-                        // now that the provider bonus catalog exists, instead of
-                        // leaving playback/menu state on Season 1 Episode 1.
-                        const requestedBonusId = String(new URLSearchParams(location.search).get('episodeId') || '').trim().toLowerCase();
-                        const requestedBonusSeason = new URLSearchParams(location.search).get('season') === '0' || /bonus/i.test(String(new URLSearchParams(location.search).get('seasonTitle') || ''));
-                        const requestedBonusIndex = requestedBonusSeason
-                            ? targetSeason.episodes.findIndex((episode) => String(episode?.id || '').trim().toLowerCase() === requestedBonusId)
-                            : -1;
-                        if (requestedBonusIndex >= 0) {
-                            const targetSeasonIndex = tvSeasons.indexOf(targetSeason);
-                            if (targetSeasonIndex >= 0 && (curSeason !== targetSeasonIndex || curEpisode !== requestedBonusIndex)) {
-                                curSeason = targetSeasonIndex;
-                                curEpisode = requestedBonusIndex;
-                                await playTvEp(curSeason, curEpisode);
-                            }
-                        }
+                        if (netflixSpecialSeason) netflixSpecialSeason.episodes.sort((a, b) => Number(a?.episode || 0) - Number(b?.episode || 0));
+                        // This merge is awaited: resolve the exact episode ID and
+                        // start playback only after the menu is ready below.
                         // Refresh the menu in case it was already rendered.
                         if (document.querySelector('.ep-item')) {
                             const previousScrollTop = getEpisodePanelScrollTop();
@@ -19256,7 +19402,7 @@ video.addEventListener('canplay', () => {
                 episodeIndex: initialPos.episodeIndex,
                 seasonNo: tvSeasons?.[initialPos.seasonIndex]?.seasonNo || null,
             });
-            await playTvEp(initialPos.seasonIndex, initialPos.episodeIndex, null);
+            await playTvEp(initialPos.seasonIndex, initialPos.episodeIndex, null, { initial: true });
         }
 
         function getActiveEpisodeMenuProvider() {
@@ -19463,7 +19609,12 @@ video.addEventListener('canplay', () => {
                     const hasSeasonMarker = /\b(?:season|series|cour|part)\s*\d+|\b\d+(?:st|nd|rd|th)\s+season\b/i.test(label);
                     // A non-base provider title with one episode is normally a
                     // movie, OVA, recap, or standalone extra rather than a TV season.
-                    if (episodes.length <= 1 && !isBaseTitle && !hasSeasonMarker) return false;
+                    const seasonLabelCheck = normalizeTitleForMatch(season?.name || season?.providerTitle || '');
+                    // Bonus / Netflix Special / OVA / recap / extras rows are extras
+                    // tabs, not movies, even when they carry a single episode.
+                    const isExtrasRow = Number(season?.seasonNo || 0) <= 0 ||
+                        /^(specials?|ovas?|extras?|recaps?|bonus|netflix[\s\-]*special)$/i.test(seasonLabelCheck);
+                    if (episodes.length <= 1 && !isBaseTitle && !hasSeasonMarker && !isExtrasRow) return false;
                     return true;
                 });
             };
@@ -19495,7 +19646,7 @@ video.addEventListener('canplay', () => {
                 const seasonName = String(season?.name || '').trim();
                 const isSpecialsRow = /^(specials?|special)$/i.test(seasonName);
                 if (isSpecialsRow && (hasHdstreamProvider || !currentIsLikelyAnime)) return false;
-                if (hasHdstreamProvider && Number(season?.seasonNo || 0) <= 0 && !/bonus/i.test(seasonName)) return false;
+                if (hasHdstreamProvider && Number(season?.seasonNo || 0) <= 0 && !/bonus|netflix[\s\-]*special/i.test(seasonName)) return false;
                 return true;
             });
             return cloneAndSortMenuSeasons(hideIndiaGotLatentSeasonOne(menuSeasons));
@@ -20340,6 +20491,8 @@ video.addEventListener('canplay', () => {
         }
 
         function resolveGlobalEpisodeIndices(menuSeason, menuEpisode, fallbackSeasonIndex, fallbackEpisodeIndex, allowProviderEpisodeInjection = false) {
+            const exactPosition = findEpisodePositionById(tvSeasons, menuEpisode?.id || menuEpisode?.providerEpisodeId);
+            if (exactPosition) return exactPosition;
             const getSeasonPart = (row) => {
                 const raw = Number(row?.seasonPartNo || row?.part || row?.partNo || 0);
                 return Number.isFinite(raw) && raw > 0 ? raw : 0;
@@ -20721,9 +20874,9 @@ video.addEventListener('canplay', () => {
                         ? (buildTmdbImageUrl(providerThumbRaw, 'w342') || providerThumbRaw)
                         : getEpisodeThumbnailUrl(ep, tmdbEpisode);
                     const isBonusMenuEpisode = Number(s?.seasonNo || 0) <= 0 || /bonus/i.test(String(s?.name || ''));
-                    if (String(TMDB_ID) === '262838' && isBonusMenuEpisode && epNo === 1) {
+                    if (String(TMDB_ID) === '262838' && isBonusSeason && epNo === 1) {
                         epThumb = 'https://media.themoviedb.org/t/p/w160_and_h90_face/wC7frShPQxJoZ8QwuhpXC1kRkgg.jpg';
-                    } else if (String(TMDB_ID) === '262838' && isBonusMenuEpisode && epNo === 2) {
+                    } else if (String(TMDB_ID) === '262838' && isBonusSeason && epNo === 2) {
                         epThumb = 'https://i.ytimg.com/vi/otawyZaOxvs/maxresdefault.jpg';
                     }
                     const progressKeys = getWatchedKeysForEpisodeIdentity({
@@ -20788,11 +20941,11 @@ video.addEventListener('canplay', () => {
                     item.dataset.episodeNo = String(epNo);
                     item.dataset.absoluteEpisodeNo = String(absoluteEpisodeNo || epNo);
                     item.dataset.providerAnimeId = String(s?.providerAnimeId || '').trim().toLowerCase();
-                    if (URL_EPISODE > 0
+                    if (URL_EPISODE_ID ? item.dataset.episodeId === String(URL_EPISODE_ID).trim().toLowerCase() : (URL_EPISODE > 0
                         && (URL_SEASON > 0
                             ? Number(item.dataset.seasonNo) === URL_SEASON
                             : Number(item.dataset.seasonNo) <= 0)
-                        && Number(item.dataset.episodeNo) === URL_EPISODE) {
+                        && Number(item.dataset.episodeNo) === URL_EPISODE)) {
                         item.classList.add('active');
                     }
                     item.querySelector('.ep-mark-seen-btn')?.addEventListener('click', (event) => {
@@ -20972,16 +21125,18 @@ video.addEventListener('canplay', () => {
                 : (Number(curSeason || 0) + 1);
             const currentMenuPartNo = Number(currentMenuSeason?.seasonPartNo || currentMenuSeason?.part || currentMenuSeason?.partNo || String(currentMenuSeason?.name || '').match(/\bpart\s*(\d+)/i)?.[1] || 0);
             const currentMenuSeasonName = String(currentMenuSeason?.name || '').trim();
-            let rememberedSeason = -1;
+            const currentMenuEpisodeId = currentMenuSeason?.episodes?.[curEpisode]?.id || currentMenuSeason?.episodes?.[curEpisode]?.providerEpisodeId;
+            const exactMenuPosition = findEpisodePositionById(menuSeasons, currentMenuEpisodeId || URL_EPISODE_ID);
+            let rememberedSeason = exactMenuPosition?.seasonIndex ?? -1;
             const routeParams = new URLSearchParams(location.search);
             const routeSeason = Number(routeParams.get('season') || 0);
             const routeSeasonTitle = String(routeParams.get('seasonTitle') || '').trim();
             const routeRequestsBonus = routeSeason === 0 || /bonus/i.test(routeSeasonTitle);
-            if (routeRequestsBonus) {
+            if (rememberedSeason < 0 && routeRequestsBonus) {
                 rememberedSeason = menuSeasons.findIndex((season) =>
                     Number(season?.seasonNo || 0) <= 0 || /bonus/i.test(String(season?.name || '')),
                 );
-            } else if (routeSeason > 0) {
+            } else if (rememberedSeason < 0 && routeSeason > 0) {
                 rememberedSeason = menuSeasons.findIndex((season) => Number(season?.seasonNo || 0) === routeSeason);
             }
             if (rememberedSeason < 0 && currentMenuSeason) {
@@ -21022,6 +21177,10 @@ video.addEventListener('canplay', () => {
             const hintAbsoluteEpisodeNo = Number(hint?.absoluteEpisodeNo || 0);
             const activeSeason = tvSeasons?.[Number(si || 0)] || null;
             const activeEpisode = activeSeason?.episodes?.[Number(ei || 0)] || null;
+            const currentEpisodeId = String(activeEpisode?.id || activeEpisode?.providerEpisodeId || hintEpisodeId || bootEpisodeId).trim().toLowerCase();
+            const episodeRows = Array.from(epPanel.querySelectorAll('.ep-item'));
+            // Select an exact ID before numeric fallbacks can claim a duplicate season-zero row.
+            const exactRow = currentEpisodeId && episodeRows.find((el) => String(el.dataset.episodeId || '').trim().toLowerCase() === currentEpisodeId);
             const activeSeasonNoRaw = Number(activeSeason?.seasonNo || activeSeason?.season || activeSeason?.number || 0);
             const activeEpisodeNoRaw = Number(activeEpisode?.episode || activeEpisode?.number || activeEpisode?.episodeNum || 0);
             const activeSeasonNo = Number.isFinite(activeSeasonNoRaw) && activeSeasonNoRaw > 0
@@ -21043,7 +21202,7 @@ video.addEventListener('canplay', () => {
                 ? Number(el.dataset.seasonNo || 0) <= 0
                 : (activeSeasonNo > 0 && Number(el.dataset.seasonNo || 0) === activeSeasonNo);
             const hasCurrentMatch = Array.from(epPanel.querySelectorAll('.ep-item')).some((el) => {
-                const mappedMatch = (+el.dataset.menuSeasonIndex === si && +el.dataset.menuEpisodeIndex === ei) &&
+                const mappedMatch = (+el.dataset.si === si && +el.dataset.ei === ei) &&
                     !(activeSeasonIsExtras && Number(el.dataset.seasonNo || 0) > 0);
                 const numberMatch =
                     activeEpisodeNo > 0 &&
@@ -21071,7 +21230,7 @@ video.addEventListener('canplay', () => {
             // they still point at the originally loaded episode. Never let them
             // re-highlight that old row when a current-episode match exists.
             epPanel.querySelectorAll('.ep-item').forEach(el => {
-                const mappedMatch = (+el.dataset.menuSeasonIndex === si && +el.dataset.menuEpisodeIndex === ei) &&
+                const mappedMatch = (+el.dataset.si === si && +el.dataset.ei === ei) &&
                     !(activeSeasonIsExtras && Number(el.dataset.seasonNo || 0) > 0);
                 const numberMatch =
                     activeEpisodeNo > 0 &&
@@ -21101,7 +21260,10 @@ video.addEventListener('canplay', () => {
                 const hasUsableProviderHint = hint && hintProvider === 'animekai'
                     ? (/\$ep=\d+/i.test(hintEpisodeId) || /-\d+x\d+$/i.test(hintEpisodeId))
                     : Boolean(hint);
-                const isMatch = providerMatch || bootProviderMatch || mappedMatch || bootNumberMatch || (!hasUsableProviderHint && numberMatch);
+                const rowEpisodeId = String(el.dataset.episodeId || '').trim().toLowerCase();
+                const isMatch = exactRow ? el === exactRow
+                    : !(currentEpisodeId && rowEpisodeId && currentEpisodeId !== rowEpisodeId) &&
+                        (providerMatch || bootProviderMatch || mappedMatch || bootNumberMatch || (!hasUsableProviderHint && numberMatch));
                 el.classList.toggle('active', isMatch);
                 if (isMatch) {
                     matches.push(el);
@@ -21609,14 +21771,14 @@ video.addEventListener('canplay', () => {
                 activeEpisodeSelectionHint = null;
             }
             setLoader('Loading next episode...', 'Please wait');
-            inAppEpisodeNavigation = true;
             await playTvEp(next.seasonIndex, next.episodeIndex, 0);
         }
 
-        async function playTvEp(si, ei, startTime = null) {
+        async function playTvEp(si, ei, startTime = null, { initial = false } = {}) {
             console.log('[playTvEp] si=' + si + ' ei=' + ei + ' season=' + (tvSeasons?.[si]?.seasonNo) + ' episode=' + (tvSeasons?.[si]?.episodes?.[ei]?.episode) + ' curEpIdx=' + curEpisode + ' loadingFrom=' + (fetchSourcesRunning ? 'yes' : 'no'));
             console.log('[playTvEp] stack:', new Error().stack?.split('\n').slice(2,6).join(' -> '));
             saveCurrentEpisodeProgress(true);
+            if (!initial) inAppEpisodeNavigation = true;
             curSeason = si; curEpisode = ei;
             pendingEpisodeStartTime = Number.isFinite(startTime) ? Number(startTime) : null;
             if (!pendingEpisodeSelectionHint) activeEpisodeSelectionHint = null;
@@ -21694,7 +21856,7 @@ video.addEventListener('canplay', () => {
                 String(FORCED_PROVIDER || '').trim().toLowerCase() === 'flixhq' ||
                 /^episode[-/]/i.test(bootEpisodeId || continueEpisodeId);
             // Only synthesize a hint from the boot URL on the initial page load.
-            // After in-app navigation (auto-next / next button) those URL consts
+            // After in-app episode selection those URL consts
             // still describe the originally loaded episode, so the current episode
             // in tvSeasons is the only trustworthy source of identity.
             if (!inAppEpisodeNavigation && !pendingEpisodeSelectionHint && shouldCreateProviderSelectionHint && (bootEpisodeId || bootAbsoluteEpisodeNo > 0 || bootSeasonKey || continueEpisodeId || continueAbsoluteEpisodeNo > 0 || continueSeasonKey)) {
@@ -21721,10 +21883,10 @@ video.addEventListener('canplay', () => {
                 activeEpisodeSelectionHint = { ...pendingEpisodeSelectionHint };
             }
             const selectedSeasonNoRaw = Number(selectedSeason?.seasonNo);
-            let selectedSeasonNo = Number.isFinite(selectedSeasonNoRaw) && selectedSeasonNoRaw > 0
+            let selectedSeasonNo = Number.isFinite(selectedSeasonNoRaw) && (selectedSeasonNoRaw > 0 || (!currentIsLikelyAnime && selectedSeasonNoRaw === 0))
                 ? selectedSeasonNoRaw
                 : (curSeason + 1);
-            let selectionHint = pendingEpisodeSelectionHint;
+            let selectionHint = pendingEpisodeSelectionHint || (inAppEpisodeNavigation ? activeEpisodeSelectionHint : null);
             pendingEpisodeSelectionHint = null;
             const selectedEpisodeNoRaw = Number(
                 selectedEpisode?.episode || selectedEpisode?.number || selectedEpisode?.episodeNum,
@@ -21746,8 +21908,10 @@ video.addEventListener('canplay', () => {
             }
             if (currentIsLikelyAnime && effectiveForcedProvider && providerSeasonCatalog.has(effectiveForcedProvider)) {
                 const forcedSeasons = providerSeasonCatalog.get(effectiveForcedProvider) || [];
-                const requestedAniKotoEpisodeId = effectiveForcedProvider === 'anikoto' && URL_EPISODE_ID
-                    ? String(URL_EPISODE_ID).trim().toLowerCase()
+                const requestedAniKotoEpisodeId = effectiveForcedProvider === 'anikoto'
+                    ? String(inAppEpisodeNavigation
+                        ? (selectionHint?.episodeId || selectedEpisode?.id || selectedEpisode?.providerEpisodeId || '')
+                        : URL_EPISODE_ID).trim().toLowerCase()
                     : '';
                 const forcedSeasonByEpisodeId = requestedAniKotoEpisodeId
                     ? forcedSeasons.find((season) => (Array.isArray(season?.episodes) ? season.episodes : []).some((episode) =>
@@ -21808,13 +21972,13 @@ video.addEventListener('canplay', () => {
                 if (Number.isFinite(hintSeasonNo) && hintSeasonNo > 0) selectedSeasonNo = hintSeasonNo;
                 if (Number.isFinite(hintEpisodeNo) && hintEpisodeNo > 0) selectedEpisodeNo = hintEpisodeNo;
             }
-            const isBonusSelection = /bonus/i.test(String(selectionHint?.seasonTitle || URL_SEASON_TITLE || ''));
+            const isBonusSelection = /bonus|netflix[\s\-]*special/i.test(String(selectionHint?.seasonTitle || URL_SEASON_TITLE || ''));
             // After in-app navigation the boot URL consts are stale; the current
             // episode in tvSeasons is the source of truth for the provider id.
             let selectedEpisodeId = String(
                 selectionHint?.episodeId ||
-                (inAppEpisodeNavigation ? (selectedEpisode?.id || bootEpisodeId) : bootEpisodeId) ||
-                (isBonusSelection ? URL_EPISODE_ID : '') ||
+                (inAppEpisodeNavigation ? (selectedEpisode?.id || selectedEpisode?.providerEpisodeId) : bootEpisodeId) ||
+                (!inAppEpisodeNavigation && isBonusSelection ? URL_EPISODE_ID : '') ||
                 selectedEpisode?.id ||
                 ''
             ).trim();
@@ -22471,13 +22635,23 @@ video.addEventListener('canplay', () => {
                     const urlSeasonTitle = String(URL_SEASON_TITLE || '').trim();
                     let seasonParam = '';
                     try { seasonParam = String(new URLSearchParams(location.search).get('season') || '').trim(); } catch (_) {}
+                    const isNetflixSpecialContext =
+                        /netflix[\s\-]*special/i.test(urlSeasonTitle) ||
+                        /netflix[\s\-]*special/i.test(rawSeasonName) ||
+                        /netflix[\s\-]*special/i.test(String(URL_EPISODE_ID || ''));
                     const isBonusContext =
+                        (!isNetflixSpecialContext) && (
                         /^0$/.test(seasonParam) ||
                         /bonus/i.test(urlSeasonTitle) ||
                         /^season\s*0$/i.test(urlSeasonTitle) ||
                         /^(specials?|ovas?|extras?|recaps?)$/i.test(urlSeasonTitle) ||
                         /bonus/i.test(rawSeasonName) ||
-                        (/^(specials?|ovas?|extras?|recaps?)$/i.test(rawSeasonName) && Number(seasonRef?.seasonNo || 0) <= 0);
+                        (/^(specials?|ovas?|extras?|recaps?)$/i.test(rawSeasonName) && Number(seasonRef?.seasonNo || 0) <= 0));
+                    if (isNetflixSpecialContext) {
+                        // The Netflix-only special has no archive version - don't
+                        // map it to a bonus/season episode row.
+                        return null;
+                    }
                     if (isBonusContext) {
                         // Prefer the URL-requested episode number in an explicit
                         // season-0 context so a dead provider merge (which may leave
@@ -22512,7 +22686,7 @@ video.addEventListener('canplay', () => {
                 const seasonEpisodes = seasonNo === 2 && fallback.season2Episodes
                     ? fallback.season2Episodes
                     : fallback.episodes;
-                const episodeUrl = seasonEpisodes[episodeNo];
+                const episodeUrl = seasonEpisodes?.[episodeNo];
                 if (!episodeUrl) return null;
                 const normalizedEpisodeUrl = seasonNo === 1 && /Punisher/i.test(String(fallback.title || ''))
                     ? episodeUrl.replace(
@@ -22577,12 +22751,13 @@ video.addEventListener('canplay', () => {
             };
             const failReasons = [];
             providerResults = {};
-            const providersToRun = effectiveForcedProvider
+            const applicableArchiveSource = getArchiveFallbackSource(currentArchiveFallback);
+            const providersToRun = (effectiveForcedProvider
                 ? [effectiveForcedProvider]
-                : activeProviders;
+                : activeProviders).filter((provider) => String(provider).toLowerCase() !== 'archive.org' || applicableArchiveSource);
             const archiveExplicitlyRequested = effectiveForcedProvider === 'archive.org';
-            let orderedProviders = currentArchiveFallback && (!effectiveForcedProvider || archiveExplicitlyRequested) && !currentIsLikelyAnime
-                ? [...providersToRun, 'archive.org']
+            let orderedProviders = applicableArchiveSource && (!effectiveForcedProvider || archiveExplicitlyRequested) && !currentIsLikelyAnime
+                ? [...new Set([...providersToRun, 'archive.org'])]
                 : providersToRun;
             providersToRun.forEach(p => providerResults[p] = []);
 
@@ -22650,6 +22825,9 @@ video.addEventListener('canplay', () => {
                     if (currentStreamUrl || activeRawUrlBefore) {
                         const activePlaybackUrl = String(currentStreamUrl || '').trim();
                         const syncedIdx = allSources.findIndex((s) => {
+                            if (activeProviderBefore === 'anikoto') {
+                                return getAnikotoSourceIdentity(s) === getAnikotoSourceIdentity(activeSourceBefore);
+                            }
                             const rawUrl = String(s?.url || '').trim();
                             if (!rawUrl) return false;
                             if (activeRawUrlBefore && rawUrl === activeRawUrlBefore) return true;
@@ -22687,6 +22865,7 @@ video.addEventListener('canplay', () => {
                     showPlyrSourceBtn = true;
 
                     if (!isFirstLoaded) {
+                        if (allSources.some(source => source.provider === 'anikoto')) failedAnikotoSources.clear();
                         isFirstLoaded = true;
                         const requestedArchiveAudio = String(URL_AUDIO || preferredAudioToken || '').toLowerCase();
                         const initialArchiveIndex = requestedArchiveAudio && currentArchiveFallback?.audioSources
@@ -22761,6 +22940,11 @@ video.addEventListener('canplay', () => {
 
             const processProvider = async (provider) => {
                 const normalizedProvider = String(provider || '').toLowerCase();
+                // Archive is a static fallback, not a searchable extraction API.
+                if (normalizedProvider === 'archive.org') {
+                    if (applicableArchiveSource) addArchiveFallbackForCurrentMovie();
+                    return;
+                }
                 const extractionStartedAt = performance.now();
                 const isHdstreamProvider = normalizedProvider === 'hdstream4u';
                 if (isHdstreamProvider) console.time('[hdstream4u] total extraction');
@@ -23176,13 +23360,13 @@ video.addEventListener('canplay', () => {
 
                         const hasDirectHdstreamMovieId = provider === 'hdstream4u' && effectiveMediaType === 'movie' && Boolean(provEpisodeId);
                         if ((provider !== 'flixhq' || (provider === 'flixhq' && effectiveMediaType === 'tv')) && !isVegamoviesProvider && !hasDirectHdstreamMovieId && !useDirectProviderWatch) {
-                        console.log('[hdstream4u] building TMDB watch URL: type=' + effectiveMediaType + ' season=' + (selectedSeasonNo || 1) + ' episode=' + (selectedEpisodeNo || 1) + ' curEpisode=' + curEpisode);
+                        console.log('[hdstream4u] building TMDB watch URL: type=' + effectiveMediaType + ' season=' + selectedSeasonNo + ' episode=' + (selectedEpisodeNo || 1) + ' curEpisode=' + curEpisode);
                             const tmdbWatchParams = new URLSearchParams();
                             tmdbWatchParams.set('id', String(TMDB_ID || ''));
                             tmdbWatchParams.set('type', String(effectiveMediaType || 'movie'));
                             tmdbWatchParams.set('provider', String(provider || ''));
                             if (effectiveMediaType === 'tv') {
-                                tmdbWatchParams.set('season', String(selectedSeasonNo || 1));
+                                tmdbWatchParams.set('season', String(selectedSeasonNo));
                                 tmdbWatchParams.set('episode', String(selectedEpisodeNo || 1));
                             }
                             if (provEpisodeId) tmdbWatchParams.set('episodeId', String(provEpisodeId));
@@ -23211,6 +23395,7 @@ video.addEventListener('canplay', () => {
                     let data = null;
                     let lastWatchErr = null;
                     const getWatchSources = (payload) => {
+                        if (provider === 'anikoto') return getAnikotoWatchSources(payload);
                         if (Array.isArray(payload?.sources)) return payload.sources;
                         if (Array.isArray(payload?.sub?.sources)) return payload.sub.sources;
                         if (Array.isArray(payload?.dub?.sources)) return payload.dub.sources;
@@ -23296,7 +23481,10 @@ console.log(`[${provider}] watch request completed`, {
                         : (Array.isArray(animekaiDubData?.sources)
                         ? animekaiDubData.sources
                         : (Array.isArray(animekaiDubData?.sub?.sources) ? animekaiDubData.sub.sources : []));
-                    const mergedWatchSources = [...primarySources, ...dubSourcesRaw];
+                    const mergedWatchSources = provider === 'anikoto' ? getAnikotoWatchSources(data) : [
+                        ...primarySources,
+                        ...dubSourcesRaw.map((source) => ({ ...source, isDub: true })),
+                    ];
                     const normalizedWatchSources = await normalizeProviderSources(provider, mergedWatchSources, data.headers?.Referer || null);
 
                     const providerSources = [...normalizedWatchSources]
@@ -23363,14 +23551,15 @@ console.log(`[${provider}] watch request completed`, {
                          const providerPrefix = provider === 'flixhq' && flixhqServer ? `${providerLabel(provider)} ${flixhqServer}` : providerLabel(provider);
                          return {
                              label: `${providerPrefix}${audioModeLabel ? ` - ${audioModeLabel}` : ''}${serverLabel ? ` - ${serverLabel}` : ''} - ${qualityLabel}${timingLabel}`,
-                            audioLabel: isDub ? 'Dubbed' : (/\bsub/i.test(String(qualityLabel || '')) ? 'Subbed' : qualityLabel),
+                            audioLabel: isAnimeAudioProvider ? (isDub ? 'Dubbed' : 'Subbed') : (isDub ? 'Dubbed' : (/\bsub/i.test(String(qualityLabel || '')) ? 'Subbed' : qualityLabel)),
                             url: src.url,
                             isM3U8,
                             isEmbed,
                             referer: normalizeStreamReferer(provider, src, data.headers?.Referer || null),
                             origin: src.origin || data.headers?.Origin || null,
                             cookieHeader: src.cookieHeader || data.headers?.Cookie || null,
-                            isDub,
+                             isDub,
+                             isSub: isAnimeAudioProvider && !isDub,
                             provider,
                             flixhqServer,
                         };
@@ -23528,7 +23717,11 @@ console.log(`[${provider}] watch request completed`, {
             
             if (wasForced && !ANIME_MODE && allSources.length === 0) {
                 console.log('Forced provider failed. Falling back to all providers.');
-                const fallbackProviders = activeProviders.filter(p => p !== effectiveForcedProvider);
+                const fallbackProviders = activeProviders.filter(p => p !== effectiveForcedProvider &&
+                    (String(p).toLowerCase() !== 'archive.org' || applicableArchiveSource));
+                fallbackProviders.forEach((provider) => {
+                    if (!orderedProviders.includes(provider)) orderedProviders.push(provider);
+                });
                 await Promise.all(fallbackProviders.map(p => processProvider(p)));
             }
 
@@ -23848,7 +24041,8 @@ console.log(`[${provider}] watch request completed`, {
             }
         }
 
-        function selectSource(idx, explicitStartTime = null) {
+        function selectSource(idx, explicitStartTime = null, automaticFallback = false) {
+            if (!automaticFallback) failedAnikotoSources.clear();
             const explicitTime = Number(explicitStartTime);
             const hasExplicitTime = Number.isFinite(explicitTime) && explicitTime >= 0;
             const liveVideoTime = Number(video?.currentTime || 0);
@@ -23874,10 +24068,10 @@ console.log(`[${provider}] watch request completed`, {
 
             // Remember if user prefers Dubbed or Subbed
             const label = String(src.label || '').toLowerCase();
-            if (label.includes('dubbed')) {
+            if (!automaticFallback && (src.isDub || label.includes('dubbed'))) {
                 preferredSourceLabelMatch = 'dubbed';
                 preferredAudioToken = 'dubbed';
-            } else if (label.includes('subbed')) {
+            } else if (!automaticFallback && (src.isSub || label.includes('subbed'))) {
                 preferredSourceLabelMatch = 'subbed';
                 preferredAudioToken = 'subbed';
             }
@@ -24163,10 +24357,13 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             pendingSourceSwitchTime = 0;
             const useWarmStartResume = sourceProvider === 'flixhq' && resumeTargetTime > 600;
             let nextSourceFallbackUsed = false;
+            const anikotoSource = sourceProvider === 'anikoto' ? allSources?.[srcIdx] : null;
+            const anikotoIdentity = anikotoSource ? getAnikotoSourceIdentity(anikotoSource) : '';
             let sourceContextActive = true;
             let cancelHlsStartupWatchdog = () => { };
             const isStaleSourceContext = () => {
                 if (!sourceContextActive) return true;
+                if (anikotoIdentity) return getAnikotoSourceIdentity(allSources?.[currentIdx]) !== anikotoIdentity;
                 if (currentIdx !== srcIdx) return true;
                 const activeUrl = String(allSources?.[srcIdx]?.url || '');
                 return !!activeUrl && activeUrl !== originalStreamUrl;
@@ -24197,6 +24394,15 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     sourceProvider === 'vegamovies' &&
                     (reasonText.includes('manifest') || reasonText.includes('direct_url_failed') || reasonText.includes('fatal'));
                 let nextIdx = -1;
+                if (sourceProvider === 'anikoto') {
+                    failedAnikotoSources.add(anikotoIdentity);
+                    nextIdx = allSources.findIndex(candidate =>
+                        candidate?.provider === 'anikoto' &&
+                        getAnikotoAudioMode(candidate) === getAnikotoAudioMode(anikotoSource) &&
+                        !failedAnikotoSources.has(getAnikotoSourceIdentity(candidate)) &&
+                        candidate.url && !isBrokenEmbedUrl(candidate.url) && !isLikelyPlaceholderSource(candidate));
+                    if (nextIdx < 0) return false;
+                }
                 if (Array.isArray(allSources) && sourceProvider === 'flixhq') {
                     const currentUrl = String(url || '');
                     const flixhqCandidates = allSources
@@ -24258,7 +24464,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 }
                 console.warn(`[stream-failover] Switching to next source idx=${nextIdx} reason=${reason}`);
                 try {
-                    selectSource(nextIdx, resumeAt);
+                    selectSource(nextIdx, resumeAt, true);
                     return true;
                 } catch (_) {
                     return false;
@@ -24384,7 +24590,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             if (previewVideo) previewVideo.muted = true;
 
             // Check if we can seek instead of reloading for the same source
-            if (hlsInst && url === currentStreamUrl && isM3U8 && Hls.isSupported() && video && isFinite(video.duration) && effectiveStartTime > 0 && effectiveStartTime < video.duration) {
+            if (sourceProvider !== 'anikoto' && hlsInst && url === currentStreamUrl && isM3U8 && Hls.isSupported() && video && isFinite(video.duration) && effectiveStartTime > 0 && effectiveStartTime < video.duration) {
                 console.log('Seamless seek: seeking to', effectiveStartTime, 'without reloading HLS');
                 isSourceSwitching = false;
                 video.currentTime = effectiveStartTime;
@@ -24646,7 +24852,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     sourceProvider === 'vegamovies' &&
                     (lowerReason.includes('manifest') || lowerReason.includes('network') || lowerReason.includes('startup_timeout'));
                 const isHdstreamSlowCdn = isCurrentHdstreamStream() && lowerReason === 'watchdog_stall';
-                const maxAttempts = isConfirmedManifestUnavailable
+                const maxAttempts = (isConfirmedManifestUnavailable || lowerReason === 'renditions_exhausted')
                     ? 0
                     : (isVegamoviesManifestFailure ? 2 : (reason === 'fatal_network_error' ? 1 : (isHdstreamSlowCdn ? 2 : 8)));
 
