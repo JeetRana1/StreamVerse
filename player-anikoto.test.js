@@ -131,6 +131,128 @@ test('AniKoto actual episode-row clicks reload with the selected identity, not t
 const identityFunctions = ['getAnikotoAudioMode', 'getAnikotoSourceIdentity'].map(playerFunction).join('\n');
 const source = (url, isDub = true, extra = {}) => ({ provider: 'anikoto', url, isDub, isSub: !isDub, ...extra });
 
+function skipHarness() {
+    const context = vm.createContext({
+        animeSkipGeneration: 0, hasProviderSkipSegments: false, aniSkipFetchStatus: 'none',
+        currentIsLikelyAnime: true, animeSkipSegments: {}, skippedSegments: {}, hasApiSkipSegments: false,
+        _lastSkipUiTime: 0, _skipBtnWasVisible: false, _clearSkipCountdown() {}, skipSegmentBtn: null,
+        updateSkipMarkers() {}, updateSkipSegmentButton() {}, getHdstreamFallbackIntro: () => null,
+        MEDIA_TYPE: 'tv', currentMediaInfo: { title: 'Spy x Family' }, curSeason: 0, curEpisode: 0,
+        tvSeasons: [{ name: 'Season 1', episodes: [{ episode: 1 }, { episode: 2 }] }],
+        allSources: [source('sub', false)], currentIdx: 0, video: { duration: 1400 },
+        animeSkipCache: new Map(), animeSkipDeferredKeys: new Set(), normalizeAnimeSearchQuery: s => s,
+        API_BASE: 'http://localhost:3000/meta/tmdb', AbortSignal, console: { log() {} },
+        pickAnimeResultByTitle: rows => rows[0], getProxiedUrl: u => u,
+        setTimeout: fn => { context.delayed.push(fn); }, delayed: [],
+    });
+    vm.runInContext(identityFunctions + '\n' + ['normalizeSegmentWindow', 'resetAnimeSkipState', 'applyApiSkipSegments',
+        'applySourceSkipSegments', 'parseAniSkipResults', 'getActiveSkipSegment'].map(playerFunction).join('\n') + '\n' +
+        snippet('        async function fetchAniSkipSegmentsForCurrentEpisode(', '\n        }') + '\n        }', context);
+    return context;
+}
+
+test('AniKoto actual normalization and playback hook preserve per-source timings', async () => {
+    const payload = { sub: { intro: { start: 0, end: 101 }, sources: [{ url: 'a.m3u8', outro: { start: 1295, end: 1385 } }] },
+        dub: { sources: [{ url: 'b.m3u8', intro: { start: 15, end: 105 } }] } };
+    const context = skipHarness();
+    Object.assign(context, { payload, provider: 'anikoto', data: payload, normalizeQualityLabel: s => s,
+        providerLabel: p => p, normalizeStreamReferer: () => '', isBrokenEmbedUrl: () => false,
+        isLikelyPlaceholderSource: () => false });
+    vm.runInContext(`${playerFunction('getAnikotoWatchSources')} const normalizedWatchSources = getAnikotoWatchSources(payload);
+        ${snippet('                    const providerSources = [...normalizedWatchSources]', '\n                    if (providerSources.length > 0)')}
+        allSources = providerSources;`, context);
+    let fallback = 0;
+    context.fetchAniSkipSegmentsForCurrentEpisode = () => fallback++;
+    const hook = snippet('            const selectedSource = allSources?.[srcIdx]', "            if (sourceProvider === 'animesalt' && isEmbed)");
+    for (const [idx, start, end] of [[0, 0, 101], [1, 15, 105], [0, 0, 101]]) {
+        context.srcIdx = idx;
+        vm.runInContext(`(() => { ${hook} })()`, context);
+        assert.equal(context.animeSkipSegments.intro.start, start);
+        assert.equal(context.animeSkipSegments.intro.end, end);
+        assert.equal(context.getActiveSkipSegment(start).type, 'intro');
+        assert.equal(context.getActiveSkipSegment(end), null);
+        assert.equal(context.hasProviderSkipSegments, true);
+    }
+    assert.equal(fallback, 0);
+    context.applySourceSkipSegments(source('next', false, { intro: { start: 0, end: 0 } }));
+    assert.equal(context.animeSkipSegments.intro, null);
+    assert.equal(context.animeSkipSegments.outro, null);
+    assert.equal(fallback, 1);
+    for (const value of [{ start: -1, end: 10 }, { start: 0, end: Infinity }, { start: NaN, end: 10 }, [0, 0], [10, 5], [null, 90], ['', 90], [false, 90]]) {
+        assert.equal(context.normalizeSegmentWindow(value), null);
+    }
+    assert.notEqual(context.getAnikotoSourceIdentity(source('same', false, { intro: { start: 0, end: 90 } })),
+        context.getAnikotoSourceIdentity(source('same', false, { intro: { start: 5, end: 95 } })));
+});
+
+test('late external metadata, success and failure cannot overwrite provider timing or a new episode', async () => {
+    for (const stage of ['metadata', 'success', 'failure', 'throw']) {
+        for (const providerTiming of [true, false]) {
+            const c = skipHarness();
+            let resolve, reject;
+            const pending = new Promise((yes, no) => { resolve = yes; reject = no; });
+            c.fetch = () => stage === 'metadata' ? pending : Promise.resolve({ ok: true, json: async () => ({ data: { Page: { media: [{ id: 1 }] } } }) });
+            const initial = c.fetchAniSkipSegmentsForCurrentEpisode();
+            let external;
+            if (stage !== 'metadata') {
+                await initial;
+                c.fetch = () => pending;
+                external = c.delayed.shift()();
+            }
+            c.resetAnimeSkipState();
+            c.curEpisode = 1;
+            if (providerTiming) {
+                c.hasProviderSkipSegments = c.applyApiSkipSegments({ intro: { start: 0, end: 90 } });
+            }
+            if (stage === 'throw') reject(new Error('late failure'));
+            else resolve({ ok: stage !== 'failure', status: stage === 'failure' ? 500 : 200,
+                json: async () => ({ results: [{ skipType: 'op', interval: { startTime: 10, endTime: 100 } }] }) });
+            await initial;
+            await external;
+            assert.equal(c.animeSkipSegments.intro?.end ?? null, providerTiming ? 90 : null, stage);
+            assert.equal(c.hasProviderSkipSegments, providerTiming);
+        }
+    }
+});
+
+test('AniSkip still supplies missing provider timings and is not requested for outro-only sources', async () => {
+    const c = skipHarness();
+    let requests = 0;
+    c.fetch = async url => {
+        requests++;
+        return { ok: true, json: async () => url.includes('/utils/anilist')
+            ? { data: { Page: { media: [{ id: 1 }] } } }
+            : { results: [{ skipType: 'op', interval: { startTime: 5, endTime: 95 } }] } };
+    };
+    await c.fetchAniSkipSegmentsForCurrentEpisode();
+    await c.delayed.shift()();
+    assert.equal(c.animeSkipSegments.intro.end, 95);
+    assert.equal(requests, 2);
+    c.applySourceSkipSegments(source('outro', false, { outro: { start: 1315, end: 1357 } }));
+    await c.fetchAniSkipSegmentsForCurrentEpisode();
+    assert.equal(requests, 2);
+    assert.equal(c.animeSkipSegments.intro, null);
+    assert.equal(c.getActiveSkipSegment(1315).type, 'outro');
+});
+
+test('deferred metadata and queued AniSkip work cannot start after a source change', async () => {
+    for (const metadata of [true, false]) {
+        const c = skipHarness();
+        let requests = 0;
+        c.fetch = async () => {
+            requests++;
+            return { ok: true, json: async () => ({ data: { Page: { media: [{ id: 1 }] } } }) };
+        };
+        if (metadata) c.video = { duration: 0, addEventListener: (_event, fn) => c.delayed.push(fn) };
+        await c.fetchAniSkipSegmentsForCurrentEpisode();
+        c.video.duration = 1400;
+        c.applySourceSkipSegments(source('provider', false, { intro: { start: 0, end: 101 } }));
+        for (const callback of c.delayed) await callback();
+        assert.equal(requests, metadata ? 0 : 1);
+        assert.equal(c.animeSkipSegments.intro.end, 101);
+    }
+});
+
 test('AniKoto generic modes select English/Japanese in HLS and native multi-audio without changing other providers', () => {
     const code = ['normalizeAudioToken', 'getTrackAudioTokens', 'svApplyPreferredAudioToHls'].map(playerFunction).join('\n');
     for (const native of [false, true]) {
@@ -276,16 +398,34 @@ test('AniKoto missing segments try remaining renditions without changing languag
         video: { currentTime: 0 }, startTime: 0, console: { warn() {} },
         onErrorFallback: reason => fallbacks.push(reason) });
     vm.runInContext(`function handle(d) { ${snippet('                // Some AniKoto masters advertise renditions', '                const isFlixHqStream =')} }`, context);
+    for (const code of [403, 429, 500, 502, 0]) {
+        context.error = { frag: { level: 0, type: 'main' }, response: { code }, fatal: false };
+        vm.runInContext('handle(error); handle(error)', context);
+    }
+    assert.deepEqual(selected, [], 'transient errors do not mark renditions missing');
+    assert.equal(context.anikotoLevelFailures.size, 0);
     for (const level of [0, 0, 1, 1, 2, 2]) {
-        context.error = { frag: { level, type: 'main' }, response: { code: 502 }, fatal: false };
+        context.error = { frag: { level, type: 'main' }, response: { code: level === 1 ? 410 : 404 }, fatal: false };
         vm.runInContext('handle(error)', context);
     }
     assert.deepEqual(selected, [1, 2]);
     assert.deepEqual(resumed, [200, 200]);
     assert.deepEqual(fallbacks, ['renditions_exhausted']);
-    context.error = { frag: { level: 0, type: 'audio' }, response: { code: 502 }, fatal: true };
+    context.error = { frag: { level: 0, type: 'audio' }, response: { code: 404 }, fatal: true };
     vm.runInContext('handle(error)', context);
     assert.equal(fallbacks.length, 1, 'audio-track errors must not change video rendition');
+    context.anikotoLevelFailures = new Map();
+    context.error = { frag: { level: 0, type: 'main' }, response: { code: 404 }, fatal: false };
+    context.isThumbnail = true;
+    vm.runInContext('handle(error)', context);
+    assert.equal(context.anikotoLevelFailures.size, 0);
+    context.isThumbnail = false;
+    context.isCurrentAniKotoStream = () => false;
+    vm.runInContext('handle(error)', context);
+    assert.equal(context.anikotoLevelFailures.size, 0, 'other providers are unaffected');
+    context.isCurrentAniKotoStream = () => true;
+    vm.runInContext('handle(error)', context);
+    assert.equal(selected.at(-1), 1, 'a new source has no inherited unavailable levels');
 });
 
 test('upstream audio labels are rendered as text, not HTML', () => {

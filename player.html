@@ -4923,6 +4923,7 @@ function getProxiedUrl(url, referer = '') {
             return JSON.stringify([
                 String(source?.provider || '').toLowerCase(), String(source?.url || '').trim(),
                 getAnikotoAudioMode(source), source?.referer || '', source?.origin || '', source?.cookieHeader || '',
+                source?.intro || null, source?.outro || null,
             ]);
         }
 
@@ -4938,6 +4939,8 @@ function getProxiedUrl(url, referer = '') {
                         }
                         rows.push({
                             ...source,
+                            intro: source.intro ?? group.intro,
+                            outro: source.outro ?? group.outro,
                             ...(mode ? { isDub: mode === 'dubbed', isSub: mode === 'subbed' } : {}),
                             headers,
                             referer: source.referer || headers.referer || '',
@@ -5578,6 +5581,21 @@ function getProxiedUrl(url, referer = '') {
         // -----------------------------------------------------------------------
         //  LOADER / ERROR HELPERS
         // -----------------------------------------------------------------------
+        let pendingEpisodeMedia = null;
+        let loaderRevision = 0;
+        function waitForEpisodeFrame(media) {
+            const pending = pendingEpisodeMedia;
+            if (!pending) return;
+            pending.media = media;
+            const ready = () => {
+                if (pendingEpisodeMedia !== pending || pending.media !== media || video !== media) return;
+                if (media.readyState < 2 || !media.videoWidth || media.seeking) return;
+                pendingEpisodeMedia = null;
+                isFirstLoad = false;
+                hideLoader();
+            };
+            for (const event of ['loadeddata', 'canplay', 'playing']) media.addEventListener(event, ready);
+        }
         function setLoader(title, sub) {
             document.getElementById('loader-title').textContent = title;
             document.getElementById('loader-sub').textContent = sub;
@@ -5590,15 +5608,19 @@ function getProxiedUrl(url, referer = '') {
             if (subEl) subEl.textContent = sub;
         }
         function showLoader() {
+            loaderRevision += 1;
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
         function hideLoader(force = false) {
+            if (pendingEpisodeMedia && !force) return;
             if (iosArchiveLoaderHold && !force) return;
+            const revision = loaderRevision;
             loader.style.opacity = '0';
-            setTimeout(() => loader.style.display = 'none', 0);
+            setTimeout(() => { if (revision === loaderRevision) loader.style.display = 'none'; }, 0);
         }
         function showError(title, msg) {
+            pendingEpisodeMedia = null;
             iosArchiveLoaderHold = false;
             hideLoader(true);
             document.getElementById('err-title').textContent = title;
@@ -6222,6 +6244,7 @@ function getProxiedUrl(url, referer = '') {
         }
 
         function showBufferingOverlay() {
+            if (pendingEpisodeMedia) return;
             if (isFirstLoad) return;
             if (isSourceSwitching) return;
             const overlay = document.getElementById('transition-overlay');
@@ -6351,12 +6374,13 @@ function getProxiedUrl(url, referer = '') {
                      // adaptive quality after it has had time to arrive.
                      if (isHdstreamJump && isLargeJump) {
                          setTemporaryRecoveryQuality(12000);
-                     } else if (!isHdstreamJump) {
+                     } else if (!isHdstreamJump && !isCurrentAniKotoStream()) {
                          hlsInst.currentLevel = 0;
                          hlsInst.loadLevel = 0;
                         
+                             const jumpHls = hlsInst;
                              setTimeout(() => {
-                            if (hlsInst) hlsInst.loadLevel = -1; // Resume auto
+                            if (hlsInst === jumpHls) jumpHls.loadLevel = -1; // Resume auto
                         }, 1500);
                     }
                 }
@@ -6426,6 +6450,9 @@ function getProxiedUrl(url, referer = '') {
 
         function setTemporaryRecoveryQuality(ms = 4500) {
             if (!hlsInst || !Array.isArray(hlsInst.levels) || hlsInst.levels.length === 0) return;
+            // AniKoto's error handler selects a surviving rendition. Keep that
+            // selection (including manual quality) across seeks and skips.
+            if (isCurrentAniKotoStream()) return;
             try {
                 hlsInst.autoLevelCapping = 0;
                 hlsInst.loadLevel = 0;
@@ -6433,8 +6460,9 @@ function getProxiedUrl(url, referer = '') {
             } catch (_) { }
 
             if (recoveryQualityTimer) clearTimeout(recoveryQualityTimer);
+            const recoveryHls = hlsInst;
             recoveryQualityTimer = setTimeout(() => {
-                if (!hlsInst) return;
+                if (hlsInst !== recoveryHls) return;
                 try {
                     hlsInst.nextLevel = -1;
                     hlsInst.autoLevelCapping = -1;
@@ -7088,12 +7116,10 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 const isManifestParsing = detailText.includes('manifestparsingerror') || d?.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
                 // Some AniKoto masters advertise renditions whose segments were deleted.
                 // Try each remaining video rendition before abandoning the language/server.
-                if (!isThumbnail && isCurrentAniKotoStream() && isFragLoad && d.frag?.type === 'main' && Number(d.response?.code) >= 400) {
+                if (!isThumbnail && isCurrentAniKotoStream() && isFragLoad && d.frag?.type === 'main' && [404, 410].includes(Number(d.response?.code))) {
                     const level = d.frag.level;
                     if (Number.isInteger(level) && hls.levels?.[level]) {
-                        const failures = (anikotoLevelFailures.get(level) || 0) + 1;
-                        anikotoLevelFailures.set(level, failures);
-                        if (d.fatal || failures >= 2) {
+                        if (anikotoLevelFailures.get(level) !== Infinity) {
                             anikotoLevelFailures.set(level, Infinity);
                             const nextLevel = hls.levels.findIndex((_, index) => anikotoLevelFailures.get(index) !== Infinity);
                             if (nextLevel >= 0) {
@@ -7148,7 +7174,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
                 if (isBufferAppend) {
                     consecutiveBufferErrors += 1;
-                    if (hls.levels && hls.levels.length > 1) {
+                    if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
                         try {
                             hls.autoLevelCapping = 0;
                             hls.nextLevel = 0;
@@ -7175,7 +7201,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                         console.warn('[hls] bufferFullError Ã¢â‚¬â€œ flushing back-buffer and reducing quality');
                         try {
                             // Drop to lowest quality so new fragments are tiny
-                            if (hls.levels && hls.levels.length > 1) {
+                            if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
                                 hls.autoLevelCapping = 0;
                                 hls.nextLevel = 0;
                                 hls.loadLevel = 0;
@@ -7589,7 +7615,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                             // up the next fragment load, but do NOT abort the current one.
                             console.warn('[hls-watchdog] Stall persists on slow CDN, dropping quality...');
                             try {
-                                if (hls.levels && hls.levels.length > 1) {
+                                if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
                                     hls.autoLevelCapping = 0; hls.nextLevel = 0;
                                     setTimeout(() => { try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { } }, 4000);
                                 }
@@ -7598,7 +7624,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                             // Second check: try quality drop + reload
                             console.warn('[hls-watchdog] Stall persists, dropping quality...');
                             try {
-                                if (hls.levels && hls.levels.length > 1) {
+                                if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
                                     hls.autoLevelCapping = 0; hls.nextLevel = 0;
                                     setTimeout(() => { try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { } }, 4000);
                                 }
@@ -12077,7 +12103,13 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
         });
         window.addEventListener('pagehide', watchPartySetBackNav);
 
+        let animeSkipGeneration = 0;
+        let hasProviderSkipSegments = false;
+
         function resetAnimeSkipState() {
+            animeSkipGeneration++;
+            hasProviderSkipSegments = false;
+            aniSkipFetchStatus = 'none';
             animeSkipSegments = { intro: null, outro: null };
             skippedSegments = { intro: false, outro: false };
             hasApiSkipSegments = false;
@@ -12096,13 +12128,21 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
         function normalizeSegmentWindow(segment) {
             if (!segment) return null;
-            const start =
-                Number(segment.start ?? segment.from ?? segment.begin ?? segment.startTime ?? segment[0]);
-            const end =
-                Number(segment.end ?? segment.to ?? segment.finish ?? segment.endTime ?? segment[1]);
+            const rawStart = segment.start ?? segment.from ?? segment.begin ?? segment.startTime ?? segment[0];
+            const rawEnd = segment.end ?? segment.to ?? segment.finish ?? segment.endTime ?? segment[1];
+            if (![rawStart, rawEnd].every(value => typeof value === 'number' || (typeof value === 'string' && value.trim()))) return null;
+            const start = Number(rawStart);
+            const end = Number(rawEnd);
             if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-            if (end <= start) return null;
-            return { start: Math.max(0, start), end: Math.max(0, end) };
+            if (start < 0 || end <= start) return null;
+            return { start, end };
+        }
+
+        function applySourceSkipSegments(source) {
+            resetAnimeSkipState();
+            hasProviderSkipSegments = source?.provider === 'anikoto' && applyApiSkipSegments(source);
+            updateSkipSegmentButton();
+            if (!hasProviderSkipSegments && currentIsLikelyAnime) fetchAniSkipSegmentsForCurrentEpisode();
         }
 
         function applyApiSkipSegments(payload) {
@@ -12211,7 +12251,9 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
         }
 
         async function fetchAniSkipSegmentsForCurrentEpisode() {
-            if (!currentIsLikelyAnime || MEDIA_TYPE !== 'tv') return false;
+            if (hasProviderSkipSegments || aniSkipFetchStatus === 'fetching' || !currentIsLikelyAnime || MEDIA_TYPE !== 'tv') return false;
+            const generation = animeSkipGeneration;
+            const isCurrent = () => generation === animeSkipGeneration && !hasProviderSkipSegments;
             const title = normalizeAnimeSearchQuery(currentMediaInfo?.title || currentMediaInfo?.name || '');
             const selectedSeason = tvSeasons?.[Number(curSeason || 0)];
             const seasonLabel = selectedSeason?.name || `Season ${Number(curSeason || 0) + 1}`;
@@ -12225,14 +12267,17 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 : Number(curEpisode || 0) + 1;
             if (!title || !Number.isFinite(episodeNum) || episodeNum <= 0) return false;
 
-            const cacheKey = `${title.toLowerCase()}::${seasonLabel.toLowerCase()}::${episodeNum}`;
+            const sourceKey = allSources?.[currentIdx]?.provider === 'anikoto'
+                ? getAnikotoSourceIdentity(allSources[currentIdx]) : '';
+            const cacheKey = `${title.toLowerCase()}::${seasonLabel.toLowerCase()}::${episodeNum}::${sourceKey}`;
             const episodeLength = Math.floor(Number(video?.duration || 0));
             if (!Number.isFinite(episodeLength) || episodeLength <= 30) {
-                if (video && !animeSkipDeferredKeys.has(cacheKey)) {
-                    animeSkipDeferredKeys.add(cacheKey);
+                const deferredKey = `${generation}::${cacheKey}`;
+                if (video && !animeSkipDeferredKeys.has(deferredKey)) {
+                    animeSkipDeferredKeys.add(deferredKey);
                     const retryAniSkipAfterMetadata = () => {
-                        animeSkipDeferredKeys.delete(cacheKey);
-                        fetchAniSkipSegmentsForCurrentEpisode();
+                        animeSkipDeferredKeys.delete(deferredKey);
+                        if (isCurrent()) fetchAniSkipSegmentsForCurrentEpisode();
                     };
                     video.addEventListener('loadedmetadata', retryAniSkipAfterMetadata, { once: true });
                     video.addEventListener('durationchange', retryAniSkipAfterMetadata, { once: true });
@@ -12271,12 +12316,14 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     body: JSON.stringify({ query: gqlQuery, variables: { search: title } }),
                     signal: AbortSignal.timeout(7000),
                 });
+                if (!isCurrent()) return false;
                 if (!aniRes.ok) {
-                    aniSkipFetchStatus = 'failed';
                     resetAnimeSkipState();
+                    aniSkipFetchStatus = 'failed';
                     return false;
                 }
                 const aniJson = await aniRes.json();
+                if (!isCurrent()) return false;
                 const mediaList = Array.isArray(aniJson?.data?.Page?.media) ? aniJson.data.Page.media : [];
                 
                 mediaList.forEach(m => {
@@ -12305,10 +12352,9 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     return false;
                 }
 
-                // Reserve this key before the asynchronous request starts so metadata/canplay
-                // callbacks cannot launch duplicate AniSkip requests for the same episode.
-                animeSkipCache.set(cacheKey, null);
+                // The generation guard also covers delayed requests and failed responses.
                 setTimeout(async () => {
+                    if (!isCurrent()) return;
                     let found = false;
                     for (const id of candidateIds) {
                         if (failedAny.has(id)) continue;
@@ -12322,6 +12368,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                                     headers: { 'Accept': 'application/json' },
                                     signal: AbortSignal.timeout(6000),
                                 });
+                                if (!isCurrent()) return;
                                 if (skipRes.status === 404) {
                                     failedAny.add(id);
                                     break;
@@ -12332,6 +12379,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                                 }
                                 if (!skipRes.ok) continue;
                                 const skipJson = await skipRes.json();
+                                if (!isCurrent()) return;
                                 const parsed = parseAniSkipResults(skipJson);
                                 if (parsed.intro || parsed.outro) {
                                     console.log(`[aniskip] Ã¢Å“â€ Found segments via ${url.includes('v1') ? 'v1' : 'v2'} API for ID ${id}`);
@@ -12342,22 +12390,24 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                                     return;
                                 }
                             } catch (_) { 
+                                if (!isCurrent()) return;
                                 // On network failure, might be a proxy issue, try next URL
                             }
                         }
                     }
                     if (!found) {
                         animeSkipCache.set(cacheKey, null);
-                        aniSkipFetchStatus = 'failed';
                         resetAnimeSkipState();
+                        aniSkipFetchStatus = 'failed';
                     }
                     animeSkipCache.set('__failedIds__', failedAny);
                 }, 100);
                 return false;
             } catch (_) {
+                if (!isCurrent()) return false;
                 animeSkipCache.set(cacheKey, null);
-                aniSkipFetchStatus = 'failed';
                 resetAnimeSkipState();
+                aniSkipFetchStatus = 'failed';
                 return false;
             }
         }
@@ -15776,7 +15826,8 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 if (enforceWatchPartyPauseHold()) return;
                 if (!_iosNativePlayerActive) silenceNativeTracks();
             });
-            video.addEventListener('playing', () => {
+            video.addEventListener('playing', (event) => {
+                if (event.currentTarget !== video) return;
                 if (bufferDebugStall) {
                     console.log('[buffer-debug] PLAYBACK_RECOVERED', {
                         stallMs: Date.now() - bufferDebugStall.startedAt,
@@ -15822,7 +15873,8 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 setPlayIcon(false);
                 watchPartyEmitHostState('pause');
             });
-            video.addEventListener('playing', () => {
+            video.addEventListener('playing', (event) => {
+                if (event.currentTarget !== video) return;
                 if (enforceWatchPartyPauseHold()) return;
                 setPlayIcon(true);
                 isSourceSwitching = false;
@@ -15920,7 +15972,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                             // already anchored; just surface the buffering state.
                             if (!isCurrentHdstreamStream() && !isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
                             // Drop to lowest quality on confirmed stall
-                            if (hlsInst && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
+                            if (!isCurrentAniKotoStream() && hlsInst && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
                                 stallAdaptiveLowest = true;
                                 hlsInst.nextLevel = 0;
                                 hlsInst.loadLevel = 0;
@@ -15937,13 +15989,14 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 showBufferingOverlay();
                 if (!isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
                 // Drop to lowest quality on stall
-                if (Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
+                if (!isCurrentAniKotoStream() && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
                     stallAdaptiveLowest = true;
                     hlsInst.nextLevel = 0;
                     hlsInst.loadLevel = 0;
                 }
             });
-video.addEventListener('canplay', () => {
+video.addEventListener('canplay', (event) => {
+                if (event.currentTarget !== video) return;
                 setPlaybackStatus('Ready to play', 'Video data loaded');
                 if (window.__animeWatchFetchStartAt) {
                     console.log('[player] first frame ready (canplay) after', Math.round(performance.now() - window.__animeWatchFetchStartAt) + 'ms', 'from anime watch fetch start');
@@ -16002,7 +16055,8 @@ video.addEventListener('canplay', () => {
                     initialSeekDone = true;
                 }
             });
-            video.addEventListener('loadeddata', () => {
+            video.addEventListener('loadeddata', (event) => {
+                if (event.currentTarget !== video) return;
                 // loadeddata is the earliest reliable signal that the first
                 // video frame has decoded; playing can be delayed by autoplay
                 // policy even when the stream is ready for the user.
@@ -23597,6 +23651,7 @@ console.log(`[${provider}] watch request completed`, {
                             url: src.url,
                             isM3U8,
                             isEmbed,
+                            ...(provider === 'anikoto' ? { intro: normalizeSegmentWindow(src.intro), outro: normalizeSegmentWindow(src.outro) } : {}),
                             referer: normalizeStreamReferer(provider, src, data.headers?.Referer || null),
                             origin: src.origin || data.headers?.Origin || null,
                             cookieHeader: src.cookieHeader || data.headers?.Cookie || null,
@@ -23629,7 +23684,7 @@ console.log(`[${provider}] watch request completed`, {
                         chipState(provider, 'success');
                         
                         // Background tasks
-                        if (currentIsLikelyAnime) fetchAniSkipSegmentsForCurrentEpisode();
+                        if (currentIsLikelyAnime && provider !== 'anikoto') fetchAniSkipSegmentsForCurrentEpisode();
                         const primarySubs = normalizeSubtitleEntries(data.data || data.sub || data, provider, data.headers?.Referer || null);
                         const dubSubs = animekaiDubData
                             ? normalizeSubtitleEntries(animekaiDubData.data || animekaiDubData, provider, animekaiDubData?.headers?.Referer || null)
@@ -24170,6 +24225,8 @@ console.log(`[${provider}] watch request completed`, {
         }
 
         function resetPlayerSurface() {
+            pendingEpisodeMedia = { media: null };
+            showLoader();
             stallAdaptiveLowest = false;
             if (stallRecoveryTimer) { clearTimeout(stallRecoveryTimer); stallRecoveryTimer = null; }
             if (hlsInst) { try { hlsInst.stopLoad(); hlsInst.detachMedia(); hlsInst.destroy(); } catch (_) { } hlsInst = null; }
@@ -24354,10 +24411,13 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
         }
 
         function loadStream(url, isM3U8, isEmbed, referer, srcIdx, startTime = 0, sourceCookieHeader = '') {
+            // Embedded players have no local video readiness events.
+            if (isEmbed) pendingEpisodeMedia = null;
             if (Number.isInteger(srcIdx) && srcIdx >= 0) currentIdx = srcIdx;
             setTimeout(() => updateAudioTracks(), 0);
             const selectedSource = allSources?.[srcIdx] || {};
             const sourceProvider = String(selectedSource?.provider || '').toLowerCase();
+            applySourceSkipSegments(selectedSource);
             if (sourceProvider === 'animesalt' && isEmbed) {
                 console.warn('[animesalt] Ignoring iframe source; native playback only.');
                 showError('Direct Stream Unavailable', 'AnimeSalt did not provide a playable direct stream.');
@@ -24663,7 +24723,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             // covering everything, so there's no black gap to bridge.
             if (isIOSArchiveLoad) {
                 setLoader('Loading Archive video...', selectedSource?.label || 'Waiting for the video to be ready');
-            } else if (!isFirstLoad) {
+            } else if (!isFirstLoad && !pendingEpisodeMedia) {
                 captureVideoFrameToOverlay();
             } else {
                 showLoader();
@@ -24718,6 +24778,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             }
             video = document.getElementById('player-video');
             if (video) {
+                waitForEpisodeFrame(video);
                 video.crossOrigin = 'anonymous';
             }
             if (video) { video.volume = savedVolume; video.muted = savedMuted; } // Restore volume across switches
@@ -24757,6 +24818,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             setVolumeBoost(volumeBoost);
 
             const initPlyr = () => {
+                const plyrVideo = video;
                 console.log('Initializing Plyr...');
                 // Keep iOS playback video-only; other platforms retain existing subtitles.
                 if (!IS_IOS) applyExternalSubtitlesToVideo(video);
@@ -24802,6 +24864,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
 
                 // Load subtitles after player is ready
                 plyr.on('ready', async () => {
+                    if (video !== plyrVideo) return;
                     enforceWatchPartyPauseHold();
                     // Archive MP4s can initialize Plyr long before iOS has media data.
                     if (!isIOSArchiveLoad && (!isFirstLoad || IS_IOS)) hideLoader();
@@ -24810,12 +24873,14 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 // Sync play icon in case video was already playing when Plyr initialized
                 if (video && !video.paused) setPlayIcon(true);
                 const hideIfReady = () => {
+                    if (video !== plyrVideo) return;
                     if (video && (video.readyState >= 3 || Number(video.currentTime || 0) >= 0.5)) {
                         hideLoader();
                     }
                 };
                 plyr.on('canplay', hideIfReady);
                 plyr.on('playing', () => {
+                    if (video !== plyrVideo) return;
                     if (enforceWatchPartyPauseHold()) return;
                     isFirstLoad = false;
                     hideLoader();
