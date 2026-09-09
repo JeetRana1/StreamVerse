@@ -30,7 +30,7 @@ function harness({ id = netflixId, cached = false, forced = '', archiveActive = 
         console: { log() {}, time() {}, timeEnd() {}, warn(...args) { warnings.push(args.join(' ')); } },
         location: { href: url.href, search: url.search }, window: {},
         MEDIA_TYPE: 'tv', effectiveMediaType: 'tv', currentIsLikelyAnime: false,
-        TMDB_ID: tmdb, API_BASE: 'https://api.test/meta/tmdb', FORCED_PROVIDER: forced,
+        TMDB_ID: tmdb, MEDIA_NAMESPACE: 'tmdb', API_BASE: 'https://api.test/meta/tmdb', FORCED_PROVIDER: forced,
         activeProviders: ['hdstream4u', ...(archiveActive ? ['archive.org'] : [])], ANIME_PROVIDERS: [],
         URL_SEASON: 0, URL_EPISODE: 1, URL_EPISODE_ID: id, URL_SEASON_TITLE: 'Bonus',
         URL_SEASON_KEY: '', URL_ABSOLUTE_EPISODE: 0, URL_AUDIO: '', URL_TIME: 245,

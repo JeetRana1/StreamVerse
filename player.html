@@ -4639,6 +4639,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <script src="/firebaseConfig.js"></script>
+    <script src="/streamverse-storage.js"></script>
     <script src="/streamverse-auth.js"></script>
     <script src="/config.js"></script>
     <script>
@@ -5090,7 +5091,8 @@ function getProxiedUrl(url, referer = '') {
         const TMDB_ID = params.get('id');
         const URL_TITLE = String(params.get('title') || '').trim();
         const URL_IMAGE = String(params.get('image') || '').trim();
-        const ANIME_MODE = params.get('anime') === '1';
+        const MEDIA_NAMESPACE = params.get('db') || (params.get('anime') === '1' ? 'anilist' : 'tmdb');
+        const ANIME_MODE = MEDIA_NAMESPACE === 'anilist' || params.get('anime') === '1';
         const rawType = (params.get('type') || 'movie').toLowerCase();
         const MEDIA_TYPE = (rawType === 'undefined' || !rawType) ? 'movie' : rawType;
         let effectiveMediaType = MEDIA_TYPE;
@@ -5105,7 +5107,7 @@ function getProxiedUrl(url, referer = '') {
         const DIRECT_ONLY = (params.get('directOnly') || 'true').toLowerCase() !== 'false';
         const URL_SEASON = Number(params.get('season') || 0);
         const RAW_URL_SEASON_TITLE = String(params.get('seasonTitle') || '').trim();
-        const URL_SEASON_KEY = String(params.get('seasonKey') || '').trim().toLowerCase();
+        const URL_SEASON_KEY = String(params.get('seasonKey') || '').trim();
         const URL_EPISODE = Number(params.get('episode') || params.get('ep') || 0);
         const RAW_URL_EPISODE_ID = String(params.get('episodeId') || '').trim();
         const isBootSpecialsTitle = /^(specials?|ovas?|extras?|recaps?)$/i.test(RAW_URL_SEASON_TITLE);
@@ -5155,9 +5157,9 @@ function getProxiedUrl(url, referer = '') {
                 if (!raw) return null;
                 const items = JSON.parse(raw);
                 if (!Array.isArray(items)) return null;
-                const found = items.find((row) =>
-                    String(row?.id || '') === String(id || '') &&
-                    String(row?.type || '').toLowerCase() === String(type || '').toLowerCase()
+                const found = window.StreamVerseStorage.mergeHistory(items).find((row) =>
+                    window.StreamVerseStorage.namespace(row) === MEDIA_NAMESPACE &&
+                    window.StreamVerseStorage.sameWork(row, { id, type, namespace: MEDIA_NAMESPACE })
                 );
                 return found || null;
             } catch (_) {
@@ -5165,6 +5167,18 @@ function getProxiedUrl(url, referer = '') {
             }
         }
 
+        const playbackOpenedAt = Date.now();
+        const playbackIdentity = { id: TMDB_ID, type: MEDIA_TYPE, namespace: MEDIA_NAMESPACE };
+        const playbackWasReset = () => window.StreamVerseStorage.resetSince(playbackIdentity, playbackOpenedAt);
+        function restartResetPlayback() {
+            if (!playbackWasReset()) return;
+            const url = new URL(location.href);
+            ['t', 'season', 'episode', 'ep', 'episodeId', 'seasonTitle', 'seasonKey', 'absoluteEpisode'].forEach((key) => url.searchParams.delete(key));
+            url.searchParams.set('resume', '0');
+            location.replace(url.toString());
+        }
+        window.addEventListener('streamverse-playback-reset', restartResetPlayback);
+        window.addEventListener('pageshow', restartResetPlayback);
         const CONTINUE_ENTRY = readContinueWatchingEntry(TMDB_ID, MEDIA_TYPE);
         const RESUME_TIME_FALLBACK = Number(CONTINUE_ENTRY?.currentTime || 0);
         const RESUME_SEASON_FALLBACK = Number(CONTINUE_ENTRY?.seasonNo || 0) ||
@@ -5374,8 +5388,9 @@ function getProxiedUrl(url, referer = '') {
         let curSeason = 0;
         let curEpisode = 0;
         let curEpisodeId = null;
-        const WATCHED_EPISODES_STORAGE_KEY = `sv_watched_episodes:${MEDIA_TYPE}:${TMDB_ID}`;
-        const EPISODE_PROGRESS_STORAGE_KEY = `sv_episode_progress:${MEDIA_TYPE}:${TMDB_ID}`;
+        const playbackBucket = `${MEDIA_TYPE}:${MEDIA_NAMESPACE === 'tmdb' ? '' : MEDIA_NAMESPACE + ':'}${TMDB_ID}`;
+        const WATCHED_EPISODES_STORAGE_KEY = `sv_watched_episodes:${playbackBucket}`;
+        const EPISODE_PROGRESS_STORAGE_KEY = `sv_episode_progress:${playbackBucket}`;
         let watchedEpisodeKeys = new Set();
         let episodeProgressMap = new Map();
         try {
@@ -5651,6 +5666,9 @@ function getProxiedUrl(url, referer = '') {
                 info.posterPath,
                 info.tmdbPoster,
                 info.tmdbPosterUrl,
+                info.coverImage?.extraLarge,
+                info.coverImage?.large,
+                info.coverImage?.medium,
                 info.poster,
                 info.posterUrl,
                 info.image,
@@ -8764,7 +8782,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
         function getMediaInfoCacheKey(includeProvider = true) {
             const providerPart = includeProvider ? (FORCED_PROVIDER || 'auto') : 'shared';
-            return `${MEDIA_INFO_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_TYPE}:${TMDB_ID}`;
+            return `${MEDIA_INFO_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_NAMESPACE}:${MEDIA_TYPE}:${TMDB_ID}`;
         }
 
         function getSourceCacheKey(provider = 'flixhq') {
@@ -8772,9 +8790,9 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             if (MEDIA_TYPE === 'tv') {
                 const seasonNo = Number(tvSeasons?.[curSeason]?.seasonNo || (curSeason + 1) || 1);
                 const episodeNo = Number(tvSeasons?.[curSeason]?.episodes?.[curEpisode]?.episode || (curEpisode + 1) || 1);
-                return `${STREAM_SOURCE_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_TYPE}:${TMDB_ID}:s${seasonNo}:e${episodeNo}`;
+                return `${STREAM_SOURCE_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_NAMESPACE}:${MEDIA_TYPE}:${TMDB_ID}:s${seasonNo}:e${episodeNo}`;
             }
-            return `${STREAM_SOURCE_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_TYPE}:${TMDB_ID}`;
+            return `${STREAM_SOURCE_CACHE_PREFIX}:${effectiveApiSource}:${providerPart}:${MEDIA_NAMESPACE}:${MEDIA_TYPE}:${TMDB_ID}`;
         }
 
         function readCachedProviderSources(provider = 'flixhq') {
@@ -9785,8 +9803,9 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             const mediaTitle = getAnimeTitleText(currentMediaInfo?.title || currentMediaInfo?.name || TMDB_ID || '');
             console.log('Canonical mediaTitle:', mediaTitle, 'from currentMediaInfo:', currentMediaInfo?.title);
             // Skip canonical resolution if TMDB failed and we only have a generic fallback title
-            if (mediaTitle === 'Unknown' || mediaTitle === 'Unknown Title') return null;
+            if (MEDIA_NAMESPACE !== 'anilist' && (mediaTitle === 'Unknown' || mediaTitle === 'Unknown Title')) return null;
             const requestKey = [
+                MEDIA_NAMESPACE,
                 String(currentMediaInfo?.anilistId || '').trim(),
                 mediaTitle.toLowerCase(),
                 String(TMDB_ID || '').trim(),
@@ -9818,7 +9837,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
             const anilistBase = API_BASE.replace('/meta/tmdb', '/meta/anilist');
             const title = normalizeAnimeSearchQuery(mediaTitle);
-            const cachedId = String(currentMediaInfo?.anilistId || '').trim();
+            const cachedId = String(MEDIA_NAMESPACE === 'anilist' ? TMDB_ID : currentMediaInfo?.anilistId || '').trim();
 
             currentAnimeCanonicalInfoPromise = (async () => {
                 try {
@@ -11857,6 +11876,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
         let _saveProgressLastAt = 0;
         function saveProgress(force = false) {
+            if (playbackWasReset()) return;
             if (!video || !currentMediaInfo || !initialSeekDone) return;
             const now = Date.now();
             // Throttle: only write to localStorage every 5 seconds
@@ -11880,7 +11900,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             const seasonRef = tvSeasons?.[Number(curSeason || 0)] || null;
             const episodeRef = seasonRef?.episodes?.[Number(curEpisode || 0)] || null;
             const seasonNoRaw = Number(seasonRef?.seasonNo);
-            const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw > 0
+            const seasonNo = Number.isFinite(seasonNoRaw) && seasonNoRaw >= 0
                 ? seasonNoRaw
                 : (Number(curSeason || 0) + 1);
             const episodeNoRaw = Number(episodeRef?.episode || episodeRef?.number || episodeRef?.episodeNum);
@@ -11888,7 +11908,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 ? episodeNoRaw
                 : (Number(curEpisode || 0) + 1);
             const hint = activeEpisodeSelectionHint ? activeEpisodeSelectionHint : null;
-            const continueSeasonNo = Number(hint?.seasonNo || 0) > 0 ? Number(hint.seasonNo) : seasonNo;
+            const continueSeasonNo = hint?.seasonNo != null && Number(hint.seasonNo) >= 0 ? Number(hint.seasonNo) : seasonNo;
             const continueEpisodeNo = Number(hint?.episodeNo || 0) > 0 ? Number(hint.episodeNo) : episodeNo;
             const continueAbsoluteEpisodeNo = Number(hint?.absoluteEpisodeNo || 0);
 
@@ -11899,6 +11919,9 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
             const item = {
                 id: TMDB_ID,
+                namespace: MEDIA_NAMESPACE,
+                anime: ANIME_MODE || currentIsLikelyAnime,
+                ...(playbackIdentity.workMapping ? { workMapping: playbackIdentity.workMapping } : {}),
                 type: MEDIA_TYPE,
                 title: document.getElementById('media-title').textContent,
                 poster: resolveMediaPosterUrl(currentMediaInfo || {}, currentCoverUrl || ''),
@@ -11927,10 +11950,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             if (!Array.isArray(list)) list = [];
 
             // Remove existing entry for this media
-            list = list.filter(i => !(i.id === item.id && i.type === item.type));
-
-            // Add to front
-            list.unshift(item);
+            list = window.StreamVerseStorage.mergeHistory([item, ...list]);
 
             // Keep only top 20
             if (list.length > 20) list = list.slice(0, 20);
@@ -11948,7 +11968,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 }
             }
             if (window.StreamVerseAuth?.getUser()) {
-                window.StreamVerseAuth.saveItem(item).catch((error) => console.warn('[auth] progress sync failed:', error));
+                window.StreamVerseAuth.saveItem(list[0]).catch((error) => console.warn('[auth] progress sync failed:', error));
             }
         }
 
@@ -11958,11 +11978,12 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 if (!raw) return;
                 let list = JSON.parse(raw);
                 if (!Array.isArray(list)) return;
-                list = list.filter(i => !(i.id === id && i.type === type));
+                const completed = { ...playbackIdentity, id, type };
+                list = list.filter(i => !window.StreamVerseStorage.sameWork(i, completed));
                 localStorage.setItem('sv_continue_watching', JSON.stringify(list));
                 const user = window.StreamVerseAuth?.getUser();
                 if (user && window.firebaseDb) {
-                    window.firebaseDb.collection('users').doc(user.uid).collection('continueWatching').doc(`${type || 'movie'}_${id}`).delete().catch(() => {});
+                    window.StreamVerseAuth.deleteItem(completed).catch(() => {});
                 }
             } catch (e) {}
         }
@@ -18026,6 +18047,13 @@ video.addEventListener('canplay', () => {
         // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
         async function init() {
             if (!TMDB_ID) { showError('Missing ID', 'No media ID was provided.'); return; }
+            if (!['tmdb', 'anilist'].includes(MEDIA_NAMESPACE)) {
+                showError('Unknown catalog', 'This older history entry has no recoverable catalog ID. Open the title from its catalog to resume safely.');
+                return;
+            }
+            window.StreamVerseStorage.enrichHistory([playbackIdentity]).then(([mapped]) => {
+                if (mapped?.workMapping) playbackIdentity.workMapping = mapped.workMapping;
+            }).catch(() => {});
 
             await ensureMediaProxyToken();
 
@@ -18042,7 +18070,9 @@ video.addEventListener('canplay', () => {
             try {
                 const isAnimeOnlyProvider = ['animesalt', 'animekai', 'anikoto', 'nineanime'].includes(String(FORCED_PROVIDER || '').toLowerCase());
                 const providerNeedsMetaInfo = false;
-                const buildInfoUrls = (type) => (FORCED_PROVIDER && !isAnimeOnlyProvider && !providerNeedsMetaInfo)
+                const buildInfoUrls = (type) => MEDIA_NAMESPACE === 'anilist'
+                    ? [`${API_BASE.replace('/meta/tmdb', '/meta/anilist')}/data/${encodeURIComponent(TMDB_ID)}`]
+                    : (FORCED_PROVIDER && !isAnimeOnlyProvider && !providerNeedsMetaInfo)
                     ? [
                         `${API_BASE.replace('/meta/tmdb', '/movies/' + FORCED_PROVIDER)}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(type)}`,
                     ]
@@ -18051,9 +18081,19 @@ video.addEventListener('canplay', () => {
                         `${API_BASE}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(type)}`,
                     ];
                 const infoUrls = buildInfoUrls(effectiveMediaType);
-
-                let info = ANIME_MODE
-                    ? { id: TMDB_ID, title: URL_TITLE || 'Anime', name: URL_TITLE || 'Anime', image: URL_IMAGE, type: 'tv', media_type: 'tv', genres: ['Animation'], original_language: 'ja' }
+                let animeInfo = null;
+                if (MEDIA_NAMESPACE === 'anilist') {
+                    try {
+                        const payload = await fetchJsonWithRetry(infoUrls[0], 10000, 15000);
+                        animeInfo = payload?.data || payload;
+                        if (String(animeInfo?.id) !== String(TMDB_ID)) animeInfo = null;
+                    } catch (_) { }
+                }
+                let info = MEDIA_NAMESPACE === 'anilist'
+                    ? { ...(animeInfo || {}), id: TMDB_ID, anilistId: TMDB_ID,
+                        title: URL_TITLE || getAnimeTitleText(animeInfo?.title) || 'Anime',
+                        name: URL_TITLE || getAnimeTitleText(animeInfo?.title) || 'Anime',
+                        image: URL_IMAGE || animeInfo?.image || '', type: MEDIA_TYPE, media_type: MEDIA_TYPE, genres: ['Animation'], original_language: 'ja' }
                     : readCachedMediaInfo();
                 if (info) {
                     // Verify cached info matches current TMDB_ID to prevent cross-contamination
@@ -18064,7 +18104,7 @@ video.addEventListener('canplay', () => {
                         info = null;
                     } else {
                         setLoader('Fetching media info...', 'Loaded from local cache');
-                        for (const infoUrl of infoUrls) {
+                        for (const infoUrl of MEDIA_NAMESPACE === 'anilist' ? [] : infoUrls) {
                             fetchJsonWithRetry(infoUrl, 10000, 15000)
                                 .then((fresh) => {
                                     const payload = fresh?.data || fresh;
@@ -18111,7 +18151,7 @@ video.addEventListener('canplay', () => {
                     }
                 }
 
-                const needsTmdbFallback = !ANIME_MODE && (
+                const needsTmdbFallback = MEDIA_NAMESPACE === 'tmdb' && (
                     !info ||
                     !String(info.title || info.name || '').trim() ||
                     String(info.title || info.name || '').toLowerCase() === 'unknown' ||
@@ -18201,7 +18241,7 @@ video.addEventListener('canplay', () => {
                     (info.type || '').toLowerCase().includes('tv') ||
                     (info.type || '').toLowerCase().includes('series');
 
-                const isLikelyAnime = await detectLikelyAnimeMedia(info) || (
+                const isLikelyAnime = ANIME_MODE || await detectLikelyAnimeMedia(info) || (
                     effectiveMediaType === 'movie' &&
                     Boolean(URL_EPISODE_ID) &&
                     /(?:anime|movie|ova|ona|special)/i.test(`${URL_EPISODE_ID} ${info?.title || info?.name || ''}`)
@@ -19843,6 +19883,7 @@ video.addEventListener('canplay', () => {
         }
 
         function persistWatchedEpisodeKeys() {
+            if (playbackWasReset()) return;
             try {
                 localStorage.setItem(WATCHED_EPISODES_STORAGE_KEY, JSON.stringify([...watchedEpisodeKeys].slice(-2000)));
             } catch (_) { }
@@ -19950,6 +19991,7 @@ video.addEventListener('canplay', () => {
         }
 
         function persistEpisodeProgress() {
+            if (playbackWasReset()) return;
             try {
                 localStorage.setItem(EPISODE_PROGRESS_STORAGE_KEY, JSON.stringify(Object.fromEntries(episodeProgressMap)));
             } catch (_) { }
@@ -20349,7 +20391,7 @@ video.addEventListener('canplay', () => {
         }
 
         async function hydrateTmdbSeasonEpisodeDetails(seasonNo) {
-            if (MEDIA_TYPE !== 'tv' || !TMDB_ID) return false;
+            if (MEDIA_NAMESPACE !== 'tmdb' || MEDIA_TYPE !== 'tv' || !TMDB_ID) return false;
             const safeSeasonNo = Number(seasonNo);
             if (!Number.isFinite(safeSeasonNo) || safeSeasonNo < 0) return false;
             const key = `${TMDB_ID}:s${safeSeasonNo}`;
@@ -21839,7 +21881,7 @@ video.addEventListener('canplay', () => {
             resetPlayerSurface();
             const selectedSeason = tvSeasons?.[curSeason];
             const selectedEpisode = selectedSeason?.episodes?.[curEpisode];
-            const continueSeasonKey = String(CONTINUE_ENTRY?.seasonKey || '').trim().toLowerCase();
+            const continueSeasonKey = String(CONTINUE_ENTRY?.seasonKey || '').trim();
             const continueEpisodeId = String(CONTINUE_ENTRY?.episodeId || '').trim();
             const continueAbsoluteEpisodeNo = Number(CONTINUE_ENTRY?.absoluteEpisodeNo || CONTINUE_ENTRY?.absoluteEpisode || 0);
             const useResumePosition = shouldUseContinueWatchingPositionOnBoot();
@@ -22608,7 +22650,7 @@ video.addEventListener('canplay', () => {
                     if (subtitle.label) subtitle.label = subtitle.label.replace('Archive.org', 'Archive');
                 });
             });
-            const currentArchiveFallback = archiveFallbackSources[String(TMDB_ID).trim()] || null;
+            const currentArchiveFallback = MEDIA_NAMESPACE === 'tmdb' ? archiveFallbackSources[String(TMDB_ID).trim()] || null : null;
             const getArchiveFallbackSource = (fallback) => {
                 if (fallback?.audioSources) {
                     const requestedAudio = String(URL_AUDIO || preferredAudioToken || '').toLowerCase();

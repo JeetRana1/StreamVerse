@@ -8,6 +8,19 @@
     const REVIEWED_KEY_PREFIX = 'sv_merge_reviewed_';
     const COMPLETED_KEY_PREFIX = 'sv_merge_completed_';
     const state = { user: null, ready: false, reconcilePromise: Promise.resolve(), stopRealtime: null };
+    const keepPlayback = (items) => window.StreamVerseStorage.mergeHistory(items.filter((item) => !window.StreamVerseStorage?.isDeleted(item)));
+    const historyKey = (item) => window.StreamVerseStorage.key(item);
+
+    async function flushPlaybackResets() {
+        const ref = collection();
+        if (!ref || !window.StreamVerseStorage?.resets().length) return;
+        const uid = state.user.uid;
+        const snapshot = await ref.get();
+        if (state.user?.uid !== uid) return;
+        await Promise.all(snapshot.docs.filter((doc) => window.StreamVerseStorage.isDeleted(doc.data()))
+            .map((doc) => doc.ref.delete()));
+    }
+    window.addEventListener('online', () => flushPlaybackResets().catch((error) => console.warn('[auth] reset retry failed:', error)));
 
     function pendingKeyFor(uid) {
         return `${PENDING_KEY_PREFIX}${uid || 'guest'}`;
@@ -32,7 +45,7 @@
     function readPendingItems() {
         let items = [];
         try { items = JSON.parse(localStorage.getItem(pendingKey()) || '[]'); } catch (_) { }
-        return Array.isArray(items) ? items.filter((item) => item?.id) : [];
+        return Array.isArray(items) ? keepPlayback(items.filter((item) => item?.id)) : [];
     }
 
     function collection(name = 'continueWatching') {
@@ -41,10 +54,12 @@
     }
 
     function dispatchCloudItems(items) {
+        items = keepPlayback(items);
         if (readPendingItems().length && !readLocalItems().length) return;
         if (items.length) localStorage.setItem(LOCAL_KEY, JSON.stringify(items));
         else localStorage.removeItem(LOCAL_KEY);
         window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: state.user, items } }));
+        window.StreamVerseStorage.refreshHistory().catch((error) => console.warn('[auth] history mapping pending:', error));
     }
 
     function startRealtimeSync() {
@@ -55,6 +70,13 @@
             const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id)
                 .sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0));
             dispatchCloudItems(cloud);
+            if (keepPlayback(cloud).length !== cloud.length) {
+                flushPlaybackResets().catch((error) => console.warn('[auth] reset sync failed:', error));
+                const live = cloud.filter((item) => !window.StreamVerseStorage.isDeleted(item));
+                if (keepPlayback(live).length < live.length) {
+                    Promise.all(keepPlayback(live).map(saveItem)).catch((error) => console.warn('[auth] history migration pending:', error));
+                }
+            }
         }, (error) => console.warn('[auth] realtime sync failed:', error));
         const watchRef = collection('watchlist');
         const stopWatchlistSync = watchRef?.onSnapshot((snapshot) => {
@@ -75,7 +97,7 @@
     function readLocalItems() {
         let local = {};
         try { local = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); } catch (_) { }
-        return Array.isArray(local) ? local.filter((item) => item?.id) : [];
+        return Array.isArray(local) ? keepPlayback(local.filter((item) => item?.id)) : [];
     }
 
     function readWatchlistItems() {
@@ -103,8 +125,8 @@
     }
 
     function libraryFingerprint(local, cloud) {
-        const localMap = new Map(local.map((item) => [itemKey(item), item]));
-        const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
+        const localMap = new Map(local.map((item) => [historyKey(item), item]));
+        const cloudMap = new Map(cloud.map((item) => [historyKey(item), item]));
         return JSON.stringify([...new Set([...localMap.keys(), ...cloudMap.keys()])].sort().map((key) => [key, itemFingerprint(newestItem(localMap.get(key), cloudMap.get(key)))]));
     }
 
@@ -231,6 +253,7 @@
     async function reconcileLocalAndCloud() {
         const ref = collection();
         if (!ref) return;
+        await flushPlaybackResets().catch((error) => console.warn('[auth] reset pending:', error));
         const local = readLocalItems();
         const localWatchlist = readWatchlistItems();
         if (!local.length && readPendingItems().length) {
@@ -240,16 +263,14 @@
         }
         const watchRef = collection('watchlist');
         const [snapshot, watchSnapshot] = await Promise.all([ref.get(), watchRef?.get() || Promise.resolve({ docs: [] })]);
-        const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
+        const cloud = keepPlayback(snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id));
         const cloudWatchlist = watchSnapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
-        const localMap = new Map(local.map((item) => [itemKey(item), item]));
-        const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
         const localWatchlistMap = new Map(localWatchlist.map((item) => [itemKey(item), item]));
         const cloudWatchlistMap = new Map(cloudWatchlist.map((item) => [itemKey(item), item]));
-        const localOnly = local.filter((item) => !cloudMap.has(itemKey(item)));
+        const localOnly = local.filter((item) => !cloud.some((row) => window.StreamVerseStorage.sameWork(row, item)));
         const localWatchlistOnly = localWatchlist.filter((item) => !cloudWatchlistMap.has(itemKey(item)));
         const hasDifferences = localOnly.length > 0 || local.some((item) => {
-            const cloudItem = cloudMap.get(itemKey(item));
+            const cloudItem = cloud.find((row) => window.StreamVerseStorage.sameWork(row, item));
             return cloudItem && itemFingerprint(item) !== itemFingerprint(cloudItem);
         });
         const hasWatchlistDifferences = localWatchlistOnly.length > 0 || localWatchlist.some((item) => {
@@ -263,12 +284,11 @@
         if (needsPrompt && (local.length || cloud.length || localWatchlist.length || cloudWatchlist.length)) {
             const shouldMerge = await showMergePrompt(localOnly, cloud, localWatchlistOnly, cloudWatchlist);
             if (shouldMerge) {
-                finalItems = [...new Map([...cloud, ...local].map((item) => [itemKey(item), item])).values()]
-                    .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item);
+                finalItems = keepPlayback([...cloud, ...local]);
                 finalWatchlist = [...new Map([...cloudWatchlist, ...localWatchlist].map((item) => [itemKey(item), item])).values()]
                     .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item);
                 await Promise.all([
-                    ...finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
+                    ...finalItems.map(saveItem),
                     ...finalWatchlist.map((item) => watchRef.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
                 ]);
                 localStorage.setItem(reviewedKey(), libraryFingerprint(finalItems, finalItems));
@@ -282,12 +302,11 @@
                 localStorage.removeItem(LOCAL_KEY);
             }
         } else if (hasCompletedMerge && (hasDifferences || hasWatchlistDifferences)) {
-            finalItems = [...new Map([...cloud, ...local].map((item) => [itemKey(item), item])).values()]
-                .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item);
+            finalItems = keepPlayback([...cloud, ...local]);
             finalWatchlist = [...new Map([...cloudWatchlist, ...localWatchlist].map((item) => [itemKey(item), item])).values()]
                 .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item);
             await Promise.all([
-                ...finalItems.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
+                ...finalItems.map(saveItem),
                 ...finalWatchlist.map((item) => watchRef.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
             ]);
         } else if (!needsPrompt && localWatchlist.length) {
@@ -298,7 +317,7 @@
                 .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item);
             await Promise.all(finalWatchlist.map((item) => watchRef.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })));
         }
-        finalItems = finalItems.sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0));
+        finalItems = keepPlayback(finalItems).sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0));
         if (finalItems.length) localStorage.setItem(LOCAL_KEY, JSON.stringify(finalItems));
         else if (needsPrompt) localStorage.removeItem(LOCAL_KEY);
         if (finalWatchlist.length) localStorage.setItem(WATCHLIST_KEY, JSON.stringify(finalWatchlist));
@@ -316,7 +335,7 @@
         const watchRef = collection('watchlist');
         if ((!local.length && !pendingWatchlist.length) || !ref) return;
         const [snapshot, watchSnapshot] = await Promise.all([ref.get(), watchRef?.get() || Promise.resolve({ docs: [] })]);
-        const cloud = snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
+        const cloud = keepPlayback(snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id));
         const cloudWatchlist = watchSnapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
         const shouldMerge = await showMergePrompt(local, cloud, pendingWatchlist, cloudWatchlist);
         if (!shouldMerge) return;
@@ -324,17 +343,15 @@
         const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
         const localWatchlistMap = new Map(pendingWatchlist.map((item) => [itemKey(item), item]));
         const cloudWatchlistMap = new Map(cloudWatchlist.map((item) => [itemKey(item), item]));
-        const merged = [...new Map([...cloud, ...local].map((item) => [itemKey(item), item])).values()]
-            .map((item) => newestItem(localMap.get(itemKey(item)), cloudMap.get(itemKey(item))) || item)
-            .sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0));
+        const merged = keepPlayback([...cloud, ...local]);
         const mergedWatchlist = [...new Map([...cloudWatchlist, ...pendingWatchlist].map((item) => [itemKey(item), item])).values()]
             .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item)
             .sort((a, b) => Number(b.addedAt || 0) - Number(a.addedAt || 0));
         await Promise.all([
-            ...merged.map((item) => ref.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
+            ...merged.map(saveItem),
             ...mergedWatchlist.map((item) => watchRef.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
         ]);
-        localStorage.setItem(LOCAL_KEY, JSON.stringify(merged));
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(keepPlayback(merged)));
         localStorage.setItem(WATCHLIST_KEY, JSON.stringify(mergedWatchlist));
         localStorage.removeItem(pendingKey());
         localStorage.removeItem(pendingWatchlistKey());
@@ -372,10 +389,28 @@
     }
     async function signOut() { return window.firebaseAuth.signOut(); }
 
-    async function saveItem(item) {
+    let playbackWrites = Promise.resolve();
+    function saveItem(item) {
+        const uid = state.user?.uid;
+        const write = playbackWrites.catch(() => {}).then(() => savePlaybackItem(item, uid));
+        playbackWrites = write;
+        return write;
+    }
+    async function savePlaybackItem(item, uid) {
         const ref = collection();
-        if (!ref || !item?.id) return;
-        await ref.doc(`${item.type || 'movie'}_${item.id}`).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        if (!ref || state.user?.uid !== uid || !item?.id || window.StreamVerseStorage.isDeleted(item)) return;
+        const snapshot = await ref.get();
+        if (state.user?.uid !== uid) return;
+        const docs = snapshot.docs.filter((doc) => window.StreamVerseStorage.sameWork(item, doc.data()));
+        item = keepPlayback([item, ...docs.map((doc) => doc.data())])[0];
+        if (!item || window.StreamVerseStorage.isDeleted(item)) return;
+        const id = window.StreamVerseStorage.namespace(item) === 'legacy' ? itemKey(item) : encodeURIComponent(historyKey(item));
+        // Write the winner before removing old type_id documents. Replace, rather
+        // than field-merge, so another episode's provider/counters cannot linger.
+        await ref.doc(id).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        if (state.user?.uid !== uid) return;
+        await Promise.all(docs.filter((doc) => doc.id !== id).map((doc) => doc.ref.delete()));
+        await flushPlaybackResets();
     }
 
     async function saveWatchlistItem(item) {
@@ -393,7 +428,10 @@
     async function deleteItem(item) {
         const ref = collection();
         if (!ref || !item?.id) return;
-        await ref.doc(itemKey(item)).delete();
+        const uid = state.user.uid;
+        const snapshot = await ref.get();
+        if (state.user?.uid !== uid) return;
+        await Promise.all(snapshot.docs.filter((doc) => window.StreamVerseStorage.sameWork(item, doc.data())).map((doc) => doc.ref.delete()));
     }
 
     window.StreamVerseAuth = {
@@ -405,6 +443,7 @@
         signOut,
         saveItem,
         deleteItem,
+        flushPlaybackResets,
         saveWatchlistItem,
         deleteWatchlistItem,
         notify: showSyncNotice,

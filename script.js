@@ -542,46 +542,13 @@ window.addEventListener('resize', () => {
 
 // ------------------ HELPERS -----------------------------------------------
 async function clearOldAppCache() {
-    const preserveKeys = new Set([
-        'streamverse_watchlist',
-        'sv_continue_watching',
-        'api_source',
-    ]);
-    const prefixes = [
-        CACHE_PREFIX,
-        'anime_provider_seasons_',
-        'anime_search_',
-        'anime_filler_',
-        'filler_',
-        'tmdb_detail_',
-    ];
-
-    let removed = 0;
+    let removed;
     try {
-        const keys = [];
-        for (let i = 0; i < localStorage.length; i += 1) {
-            const key = localStorage.key(i);
-            if (key) keys.push(key);
-        }
-        keys.forEach((key) => {
-            if (preserveKeys.has(key)) return;
-            if (!prefixes.some((prefix) => key.startsWith(prefix))) return;
-            localStorage.removeItem(key);
-            removed += 1;
-        });
+        removed = await window.StreamVerseStorage.clearCache();
     } catch (err) {
-        console.warn('Failed to clear local cache:', err);
-    }
-
-    try {
-        if (window.caches?.keys) {
-            const cacheNames = await window.caches.keys();
-            await Promise.all(cacheNames
-                .filter((name) => /streamverse|tmdb|anime|consumet/i.test(name))
-                .map((name) => window.caches.delete(name)));
-        }
-    } catch (err) {
-        console.warn('Failed to clear browser cache storage:', err);
+        console.warn('Failed to clear cache:', err);
+        window.StreamVerseAuth?.notify?.('Unable to clear all cache. Please retry.', 'error');
+        return;
     }
 
     if (cacheClearBtn) {
@@ -590,7 +557,7 @@ async function clearOldAppCache() {
         cacheClearBtn.innerHTML = '<i class="fa-solid fa-check"></i><span>Cleared</span>';
     }
 
-    setTimeout(() => window.location.reload(), 450);
+    window.location.reload();
 }
 
 function isTmdbImageUrl(value) {
@@ -605,7 +572,7 @@ function isTmdbImageUrl(value) {
 // Consumet returns full URLs for images already, but sometimes relative paths.
 function imgUrl(path, size = 'w500') {
     const raw = String(path || '').trim();
-    const isBad = !raw || raw.length < 5 ||
+    const isBad = !raw || raw.length < 5 || (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https?:\/\//i.test(raw)) ||
         raw.includes('placehold.co') || raw.includes('dramaool.png') ||
         raw.includes('no-image') || raw.includes('default-poster') ||
         raw.includes('originalnull') || raw.includes('originalundefined');
@@ -616,7 +583,7 @@ function imgUrl(path, size = 'w500') {
 
     if (raw.startsWith('http') || raw.startsWith('//')) {
         const url = raw.startsWith('//') ? 'https:' + raw : raw.replace('http:', 'https:');
-        return isTmdbImageUrl(url) ? url : 'https://placehold.co/300x450/1a1a2e/e50914?text=No+Image';
+        return (isTmdbImageUrl(url) || /^https:\/\/(?:[a-z0-9-]+\.)?anilist\.co\//i.test(url)) ? url : 'https://placehold.co/300x450/1a1a2e/e50914?text=No+Image';
     }
 
     // TMDB relative paths always start with /
@@ -849,6 +816,7 @@ function writeDetailCache(id, type, provider = '', data) {
 // ------------------ CONTINUE WATCHING -------------------------------------
 function loadContinueWatching() {
     if (!continueWatchingGrid || !continueWatchingSection) return;
+    window.StreamVerseStorage.refreshHistory().catch(() => {});
     applyContinueGridLayout();
 
     const raw = localStorage.getItem('sv_continue_watching');
@@ -859,7 +827,7 @@ function loadContinueWatching() {
     }
 
     try {
-        const items = JSON.parse(raw);
+        const items = window.StreamVerseStorage.mergeHistory(JSON.parse(raw));
         const validItems = Array.isArray(items)
             ? items.filter((item) => item && String(item.id || '').trim() && String(item.type || '').trim())
             : [];
@@ -896,7 +864,7 @@ function applyContinueGridLayout() {
 }
 
 function getContinueItemKey(item) {
-    return `${String(item?.type || '').toLowerCase()}:${String(item?.id || '')}`;
+    return window.StreamVerseStorage.key(item);
 }
 
 function getContinueWatchingItems() {
@@ -904,15 +872,10 @@ function getContinueWatchingItems() {
         const raw = localStorage.getItem('sv_continue_watching');
         if (!raw) return [];
         const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
+        return Array.isArray(parsed) ? window.StreamVerseStorage.mergeHistory(parsed) : [];
     } catch (_) {
         return [];
     }
-}
-
-function deleteContinueWatchingCloud(item) {
-    const promise = window.StreamVerseAuth?.deleteItem?.(item);
-    promise?.catch?.((error) => console.warn('[auth] continue item delete failed:', error));
 }
 
 function notifyContinueWatchingRemoved(items) {
@@ -925,16 +888,10 @@ function removeContinueWatchingEntry(id, type) {
     try {
         const items = getContinueWatchingItems();
         const removed = items.filter((row) => (
-            String(row?.id || '') === String(id || '') &&
-            String(row?.type || '').toLowerCase() === String(type || '').toLowerCase()
+            window.StreamVerseStorage.sameWork(row, { id, type, namespace: 'tmdb' })
         ));
-        removed.forEach(deleteContinueWatchingCloud);
+        window.StreamVerseStorage.removeTitles(removed);
         notifyContinueWatchingRemoved(removed);
-        const filtered = items.filter((row) => !(
-            String(row?.id || '') === String(id || '') &&
-            String(row?.type || '').toLowerCase() === String(type || '').toLowerCase()
-        ));
-        localStorage.setItem('sv_continue_watching', JSON.stringify(filtered));
     } catch (_) {
         // Ignore storage failures.
     }
@@ -959,10 +916,8 @@ function initContinueWatchingControls() {
         if (!continueSelectedKeys.size) return;
         const items = getContinueWatchingItems();
         const removed = items.filter((item) => continueSelectedKeys.has(getContinueItemKey(item)));
-        removed.forEach(deleteContinueWatchingCloud);
+        window.StreamVerseStorage.removeTitles(removed);
         notifyContinueWatchingRemoved(removed);
-        const filtered = items.filter((item) => !continueSelectedKeys.has(getContinueItemKey(item)));
-        localStorage.setItem('sv_continue_watching', JSON.stringify(filtered));
         continueSelectionMode = false;
         continueSelectedKeys = new Set();
         loadContinueWatching();
@@ -971,7 +926,7 @@ function initContinueWatchingControls() {
     if (continueClearAllBtn) {
         continueClearAllBtn.addEventListener('click', () => {
             const removed = getContinueWatchingItems();
-            removed.forEach(deleteContinueWatchingCloud);
+            window.StreamVerseStorage.removeTitles(removed);
             notifyContinueWatchingRemoved(removed);
             localStorage.removeItem('sv_continue_watching');
             continueSelectionMode = false;
@@ -1080,6 +1035,7 @@ function isLikelySameContinueTitle(seedTitle, candidateTitle) {
 }
 
 async function resolveContinueWatchingTmdbPoster(item) {
+    if (window.StreamVerseStorage.namespace(item) !== 'tmdb') return '';
     const type = String(item?.type || 'movie').toLowerCase() === 'tv' ? 'tv' : 'movie';
     const id = String(item?.id || '').trim();
     const cacheKey = `${type}:${id}`;
@@ -1273,7 +1229,7 @@ function createContinueWatchingCard(item) {
         }
         const seasonEpisodePart = item.type === 'tv' ? `&${extraTvParams.toString()}` : '';
         const apiSource = getCurrentApiSource();
-        const url = `/player?id=${encodeURIComponent(item.id)}&type=${item.type}${providerPart}${seasonEpisodePart}&t=${Math.floor(item.currentTime)}&audio=${encodeURIComponent(item.audio || '')}&apiSource=${encodeURIComponent(apiSource)}`;
+        const url = window.StreamVerseStorage.replayUrl(item, apiSource);
         window.location.href = url;
     };
 
@@ -3835,8 +3791,7 @@ function readModalContinueWatchingEntry(id, type) {
         const items = raw ? JSON.parse(raw) : [];
         if (!Array.isArray(items)) return null;
         return items.find((row) =>
-            String(row?.id || '') === String(id || '') &&
-            String(row?.type || '').toLowerCase() === String(type || '').toLowerCase()
+            window.StreamVerseStorage.sameWork(row, { id, type, namespace: 'tmdb' })
         ) || null;
     } catch (_) {
         return null;
@@ -4538,7 +4493,7 @@ function renderDetailsModal(movie, id, type, provider = '') {
                         try {
                             const continueWatchingItems = JSON.parse(continueWatchingRaw);
                             const watchedItem = continueWatchingItems.find(cw => 
-                                String(cw.id) === String(movieId) && cw.type === 'tv'
+                                window.StreamVerseStorage.sameWork(cw, { id: movieId, type: 'tv', namespace: 'tmdb' })
                             );
                             if (watchedItem) {
                                 const seasonNo = watchedItem.seasonNo || watchedItem.season || 1;
@@ -5237,7 +5192,7 @@ function displayGrid(items, container, forcedType = null, options = {}) {
                 try {
                     const continueWatchingItems = JSON.parse(continueWatchingRaw);
                     const watchedItem = continueWatchingItems.find(cw => 
-                        String(cw.id) === String(id) && cw.type === 'tv'
+                        window.StreamVerseStorage.sameWork(cw, { id, type: 'tv', namespace: 'tmdb' })
                     );
                     if (watchedItem) {
                         const seasonNo = watchedItem.seasonNo || watchedItem.season || 1;
@@ -5549,7 +5504,13 @@ async function restorePlaybackReturnState() {
 }
 
 window.addEventListener('pageshow', () => {
+    loadContinueWatching();
     restorePlaybackReturnState().catch(() => { });
+});
+window.addEventListener('streamverse-playback-reset', () => loadContinueWatching());
+window.addEventListener('streamverse-history-changed', () => loadContinueWatching());
+window.addEventListener('storage', (event) => {
+    if (event.key === 'sv_continue_watching') loadContinueWatching();
 });
 
 // ------------------ DETAILS MODAL HANDLERS --------------------------------
@@ -5807,7 +5768,7 @@ function closeTrailer() {
 
 async function watchNow(id, type, provider = '', animeLike = false) {
     const apiSource = getCurrentApiSource();
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ db: 'tmdb' });
     const canonicalId = normalizeTmdbId(id);
     params.set('id', String(canonicalId || ''));
     const safeType = (String(type || '').trim().toLowerCase() === 'tv') ? 'tv' : 'movie';
@@ -5833,8 +5794,7 @@ async function watchNow(id, type, provider = '', animeLike = false) {
             const rows = JSON.parse(raw);
             if (!Array.isArray(rows)) return null;
             return rows.find((row) =>
-                String(row?.id || '') === String(canonicalId) &&
-                String(row?.type || '').toLowerCase() === String(type).toLowerCase()
+                window.StreamVerseStorage.sameWork(row, { id: canonicalId, type, namespace: 'tmdb' })
             ) || null;
         } catch (_) {
             return null;
@@ -5873,7 +5833,7 @@ async function watchNow(id, type, provider = '', animeLike = false) {
             }
             if (continueEntry.audio) params.set('audio', String(continueEntry.audio));
             savePlaybackReturnState();
-            window.location.href = `/player?${params.toString()}`;
+            window.location.href = window.StreamVerseStorage.replayUrl(continueEntry, getCurrentApiSource());
             return;
         }
 

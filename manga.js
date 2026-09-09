@@ -1312,9 +1312,13 @@ window.addEventListener('resize', syncSearchUi);
 window.addEventListener('orientationchange', syncSearchUi);
 syncSearchUi();
 
-document.getElementById('cache-clear-btn')?.addEventListener('click', () => {
-  Object.keys(localStorage).filter((key) => key.startsWith('manga_')).forEach((key) => localStorage.removeItem(key));
-  loadDiscover();
+document.getElementById('cache-clear-btn')?.addEventListener('click', async () => {
+  try {
+    await window.StreamVerseStorage.clearCache();
+    window.location.reload();
+  } catch (error) {
+    console.warn('Unable to clear all cache:', error);
+  }
 });
 
 buildProviderToolbar();
