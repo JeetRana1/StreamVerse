@@ -3372,24 +3372,78 @@ header.scrolled {
         margin-right: -6px;
     }
 
-    .modal-episode-item {
-        grid-template-columns: 92px 1fr;
-        gap: 10px;
-        padding-right: 10px;
-        min-height: 82px;
+.modal-episode-item {
+        grid-template-columns: clamp(72px, 24vw, 108px) minmax(0, 1fr) auto;
+        gap: 12px;
+        padding-right: 12px;
+        min-height: 104px;
     }
 
     .modal-episode-thumb {
-        min-height: 82px;
+        min-height: 0;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .modal-episode-thumb.no-thumb span {
+        width: 30px;
+        height: 30px;
+        font-size: 0.92rem;
+    }
+
+    .modal-episode-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 4px 8px;
     }
 
     .modal-episode-row strong {
-        font-size: 0.88rem;
+        font-size: 0.9rem;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
-    .modal-episode-copy p,
+    .modal-episode-row .episode-rating {
+        position: relative;
+        top: auto;
+        right: auto;
+    }
+
+    .modal-episode-row .modal-episode-number,
+    .modal-episode-row .modal-episode-current,
+    .modal-episode-row .modal-episode-seen {
+        flex: 0 0 auto;
+        max-width: none;
+        white-space: nowrap;
+    }
+
+    .modal-episode-copy p {
+        display: block;
+        font-size: 0.72rem;
+    }
+
+    .modal-episode-copy {
+        overflow: hidden;
+    }
+
+    .modal-episode-row .modal-episode-current,
+    .modal-episode-row .modal-episode-seen {
+        flex: 0 1 auto;
+        grid-column: 1 / -1;
+        justify-self: start;
+        max-width: 100%;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     .modal-episode-play {
-        display: none;
+        align-self: center;
+        position: relative;
+        z-index: 2;
     }
 
     .btn-watch-now, .btn-list {
@@ -3412,12 +3466,37 @@ header.scrolled {
 }
 
 @media (max-width: 400px) {
+    .modal-episodes-section {
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+
+    .modal-episode-row {
+        column-gap: 4px;
+    }
     .modal-title {
         font-size: 1.6rem;
     }
     
     .modal-action-buttons {
         flex-direction: column;
+    }
+
+    .modal-episode-item {
+        grid-template-columns: 48px minmax(0, 1fr) auto;
+        gap: 8px;
+        padding-right: 8px;
+        min-height: 96px;
+    }
+
+    .modal-episode-copy p {
+        display: none;
+    }
+
+    .modal-episode-thumb.no-thumb span {
+        width: 24px;
+        height: 24px;
+        font-size: 0.8rem;
     }
 }
 

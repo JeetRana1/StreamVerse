@@ -7,6 +7,7 @@
     <title>Watching | StreamVerse</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+    <link rel="stylesheet" href="episode-rating.css?v=6">
     <link
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;500;600;700&display=swap"
         rel="stylesheet">
@@ -1179,7 +1180,7 @@
         }
 
         #ep-panel {
-            width: min(640px, calc(100vw - 32px));
+            width: min(700px, calc(100vw - 32px));
             max-height: min(74vh, 720px);
             padding: 20px;
             gap: 14px;
@@ -3901,16 +3902,16 @@
           }
 
           /* Final responsive episode-panel sizing across phones, tablets and desktop. */
-          #ep-panel {
-              box-sizing: border-box;
-              width: min(680px, calc(100vw - 32px));
-              max-width: calc(100vw - 32px);
-              max-height: min(78dvh, 720px);
-              min-height: 0;
-              overflow: hidden;
-              overscroll-behavior: contain;
-              transition: none;
-          }
+#ep-panel {
+               box-sizing: border-box;
+               width: min(720px, calc(100vw - 32px));
+               max-width: calc(100vw - 32px);
+               max-height: min(78dvh, 720px);
+               min-height: 0;
+               overflow: hidden;
+               overscroll-behavior: contain;
+               transition: none;
+           }
 
           #ep-panel .ep-panel-scroll {
               min-height: 0;
@@ -4012,7 +4013,7 @@
 
           @media (min-width: 721px) and (min-height: 700px) {
               #ep-panel {
-                  width: min(760px, calc(100vw - 40px));
+                  width: min(800px, calc(100vw - 40px));
                   max-width: calc(100vw - 40px);
                   max-height: min(78dvh, 760px);
               }
@@ -5184,10 +5185,14 @@ function getProxiedUrl(url, referer = '') {
         window.addEventListener('pageshow', restartResetPlayback);
         const CONTINUE_ENTRY = readContinueWatchingEntry(TMDB_ID, MEDIA_TYPE);
         const RESUME_TIME_FALLBACK = Number(CONTINUE_ENTRY?.currentTime || 0);
-        const RESUME_SEASON_FALLBACK = Number(CONTINUE_ENTRY?.seasonNo || 0) ||
-            (Number(CONTINUE_ENTRY?.seasonIndex) >= 0 ? Number(CONTINUE_ENTRY.seasonIndex) + 1 : 0);
-        const RESUME_EPISODE_FALLBACK = Number(CONTINUE_ENTRY?.episodeNo || 0) ||
-            (Number(CONTINUE_ENTRY?.episodeIndex) >= 0 ? Number(CONTINUE_ENTRY.episodeIndex) + 1 : 0);
+        const resumeSeasonNoRaw = Number(CONTINUE_ENTRY?.seasonNo);
+        const RESUME_SEASON_FALLBACK = (Number.isFinite(resumeSeasonNoRaw) && resumeSeasonNoRaw >= 0)
+            ? resumeSeasonNoRaw
+            : (Number(CONTINUE_ENTRY?.seasonIndex) >= 0 ? Number(CONTINUE_ENTRY.seasonIndex) + 1 : 0);
+        const resumeEpisodeNoRaw = Number(CONTINUE_ENTRY?.episodeNo);
+        const RESUME_EPISODE_FALLBACK = (Number.isFinite(resumeEpisodeNoRaw) && resumeEpisodeNoRaw > 0)
+            ? resumeEpisodeNoRaw
+            : (Number(CONTINUE_ENTRY?.episodeIndex) >= 0 ? Number(CONTINUE_ENTRY.episodeIndex) + 1 : 0);
         let pendingEpisodeStartTime = null;
 
         function shouldUseContinueWatchingPositionOnBoot() {
@@ -19254,21 +19259,27 @@ video.addEventListener('canplay', (event) => {
             // synthesize it so the player doesn't clamp back to Season 1.
             const urlParamsForInjection = new URLSearchParams(location.search);
             const useResumePositionForInjection = shouldUseContinueWatchingPositionOnBoot();
-            let injectionS = (
+            let injectionS = Number(
                 useResumePositionForInjection
                     ? RESUME_SEASON_FALLBACK
-                    : Number(urlParamsForInjection.get('season') || 0)
-            ) || RESUME_SEASON_FALLBACK;
-            let injectionE = (
+                    : urlParamsForInjection.get('season') || 0
+            );
+            let injectionE = Number(
                 useResumePositionForInjection
                     ? RESUME_EPISODE_FALLBACK
-                    : Number(urlParamsForInjection.get('episode') || urlParamsForInjection.get('ep') || 0)
-            ) || RESUME_EPISODE_FALLBACK;
-            // HDStream Bonus episodes are season-zero extras, not a numbered
-            // season. Do not synthesize a virtual numbered season on boot.
-            if (/bonus/i.test(String(urlParamsForInjection.get('seasonTitle') || ''))) {
+                    : urlParamsForInjection.get('episode') || urlParamsForInjection.get('ep') || 0
+            );
+            // HDStream Bonus / Netflix Special / any season-zero request is an
+            // extras tab, not a numbered season. Never synthesize a virtual
+            // numbered season on boot for them.
+            const injectedRequestTitle = String(urlParamsForInjection.get('seasonTitle') || '').trim();
+            const injectedRequestSeason = String(urlParamsForInjection.get('season') || '').trim();
+            if (injectedRequestSeason === '0' || /(?:bonus|netflix[\s\-]*special|specials?)$/i.test(injectedRequestTitle)) {
                 injectionS = 0;
+            } else if (!Number.isFinite(injectionS) || injectionS <= 0) {
+                injectionS = RESUME_SEASON_FALLBACK;
             }
+            if (!Number.isFinite(injectionE) || injectionE <= 0) injectionE = RESUME_EPISODE_FALLBACK;
             if (activeMenuProvider === 'anikoto' && currentIsLikelyAnime && injectionE > 50) {
                 injectionS = Math.floor((injectionE - 1) / 50) + 1;
                 injectionE = ((injectionE - 1) % 50) + 1;
@@ -20320,6 +20331,28 @@ video.addEventListener('canplay', (event) => {
             return '';
         }
 
+        function renderEpisodeRatingBadge(episode) {
+            const average = episode?.vote_average;
+            const count = episode?.vote_count;
+            if (typeof average !== 'number' || !Number.isFinite(average) || average < 0 || average > 10 ||
+                !Number.isSafeInteger(count) || count <= 0) return '';
+            const progress = Math.round(average * 10);
+            const score = (progress / 10).toFixed(1);
+            return `<span class="episode-rating" style="--rating-progress:${progress}" role="img" aria-label="TMDB episode rating: ${score}/10 from ${count} votes" title="TMDB episode rating: ${score}/10 from ${count} votes"><span class="episode-rating-value" aria-hidden="true"><i class="fa-solid fa-star"></i> ${score}</span></span>`;
+        }
+
+        function getVerifiedEpisodeRating(ep, seasonNo, episodeNo) {
+            if (MEDIA_NAMESPACE !== 'tmdb') return null;
+            const season = tmdbSeasonEpisodeDetailCache.get(`${TMDB_ID}:s${seasonNo}`);
+            if (String(season?.tmdb_id || '') !== String(TMDB_ID)) return null;
+            const row = season.episodes.find(row => String(row.show_id) === String(TMDB_ID) && row.season_number === seasonNo && row.episode_number === episodeNo);
+            if (!row) return null;
+            // Provider ordinals and title-based metadata matches are not TMDB identities.
+            const canonicalId = `${TMDB_ID}-s${seasonNo}e${episodeNo}`;
+            return String(ep?.id) === canonicalId ||
+                (ep?.id === row.id && ep?.season_number === seasonNo && ep?.episode_number === episodeNo) ? row : null;
+        }
+
         function mergeTmdbSeasonEpisodeDetails(payload, seasonNo) {
             const source = payload?.data || payload || {};
             const rawEpisodes = Array.isArray(source?.episodes)
@@ -20358,7 +20391,7 @@ video.addEventListener('canplay', (event) => {
                         const providerTitle = String(ep?.title || ep?.name || '').trim();
                         const richTitle = getEpisodeMetadataTitle(rich, epNo);
                         const title = richTitle && isGenericEpisodeTitle(providerTitle, epNo) ? richTitle : (providerTitle || richTitle);
-                        return { ...ep, ...rich, title, name: title };
+                        return { ...ep, ...rich, id: ep.id, title, name: title };
                     });
                 }
             }
@@ -20970,10 +21003,15 @@ video.addEventListener('canplay', (event) => {
                         ? (buildTmdbImageUrl(providerThumbRaw, 'w342') || providerThumbRaw)
                         : getEpisodeThumbnailUrl(ep, tmdbEpisode);
                     const isBonusMenuEpisode = Number(s?.seasonNo || 0) <= 0 || /bonus/i.test(String(s?.name || ''));
-                    if (String(TMDB_ID) === '262838' && isBonusSeason && epNo === 1) {
-                        epThumb = 'https://media.themoviedb.org/t/p/w160_and_h90_face/wC7frShPQxJoZ8QwuhpXC1kRkgg.jpg';
-                    } else if (String(TMDB_ID) === '262838' && isBonusSeason && epNo === 2) {
-                        epThumb = 'https://i.ytimg.com/vi/otawyZaOxvs/maxresdefault.jpg';
+                    if (String(TMDB_ID) === '262838') {
+                        const isNetflixSpecialMenuSeason = /netflix[\s\-]*special/i.test(String(s?.name || ''));
+                        if (isNetflixSpecialMenuSeason && epNo === 1) {
+                            epThumb = 'https://ia601909.us.archive.org/33/items/i.-g.-l-2-be-2/L-nfspvarun.jpg';
+                        } else if (isBonusSeason && epNo === 1) {
+                            epThumb = 'https://media.themoviedb.org/t/p/w160_and_h90_face/wC7frShPQxJoZ8QwuhpXC1kRkgg.jpg';
+                        } else if (isBonusSeason && epNo === 2) {
+                            epThumb = 'https://i.ytimg.com/vi/otawyZaOxvs/maxresdefault.jpg';
+                        }
                     }
                     const progressKeys = getWatchedKeysForEpisodeIdentity({
                         provider: String(getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase(),
@@ -21006,7 +21044,7 @@ video.addEventListener('canplay', (event) => {
                     item.classList.add('has-mark-seen');
                     if (isEpisodeSeen) item.classList.add('watched');
 
-                    item.innerHTML = `
+item.innerHTML = `
                         <div class="ep-item-info">
                             <span class="ep-item-thumb">${epThumb ? `<img src="${escapeHtml(epThumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : 'Episode<br>Image'}</span>
                             <span class="ep-item-num">${escapeHtml(displayEpNo)} -</span>
@@ -21019,10 +21057,14 @@ video.addEventListener('canplay', (event) => {
                                 </span>
                             </span>
                         </div>
-                         <button type="button" class="ep-mark-seen-btn${isEpisodeSeen ? ' seen' : ''}" aria-pressed="${isEpisodeSeen ? 'true' : 'false'}" aria-label="Mark episode ${escapeHtml(String(visibleEpisodeNo))} as seen">
-                            <i class="fa-solid fa-check"></i>
-                            <span>${isEpisodeSeen ? 'Seen' : 'Mark as seen'}</span>
-                        </button>
+                        <span class="ep-item-actions">
+                            ${renderEpisodeRatingBadge(getVerifiedEpisodeRating(ep, Number(s?.seasonNo), epNo))}
+                            <button type="button" class="ep-mark-seen-btn${isEpisodeSeen ? ' seen' : ''}" aria-pressed="${isEpisodeSeen ? 'true' : 'false'}" aria-label="Mark episode ${escapeHtml(String(visibleEpisodeNo))} as seen">
+                                <i class="fa-solid fa-check"></i>
+                                <span>${isEpisodeSeen ? 'Seen' : 'Mark as seen'}</span>
+                            </button>
+                        </span>
+                        <span class="ep-item-play-btn" aria-hidden="true"><i class="fa-solid fa-play"></i></span>
                         ${fillerBadge}
                     `;
 
@@ -21917,6 +21959,20 @@ video.addEventListener('canplay', (event) => {
                 return;
             }
             fetchSourcesRunning = true;
+            try {
+                await fetchSourcesForCurrentEpisode(forcedProviderOverride);
+            } finally {
+                // Archive playback returns early; errors can exit early too.
+                // Always release the guard so the next episode can be fetched.
+                fetchSourcesRunning = false;
+                if (fetchSourcesQueued) {
+                    fetchSourcesQueued = false;
+                    setTimeout(() => fetchSources(null), 0);
+                }
+            }
+        }
+
+        async function fetchSourcesForCurrentEpisode(forcedProviderOverride = null) {
             if (forcedProviderOverride !== null) FORCED_PROVIDER = forcedProviderOverride;
             
             // Use the anime detection status that was already determined in init()
@@ -22743,7 +22799,8 @@ video.addEventListener('canplay', (event) => {
                         /^(specials?|ovas?|extras?|recaps?)$/i.test(urlSeasonTitle) ||
                         /bonus/i.test(rawSeasonName) ||
                         (/^(specials?|ovas?|extras?|recaps?)$/i.test(rawSeasonName) && Number(seasonRef?.seasonNo || 0) <= 0));
-                    if (isNetflixSpecialContext) {
+                    const isLatentNetflixSpecialTrack = String(TMDB_ID || '').trim() === '262838';
+                    if (isNetflixSpecialContext && !isLatentNetflixSpecialTrack) {
                         // The Netflix-only special has no archive version - don't
                         // map it to a bonus/season episode row.
                         return null;
@@ -23829,11 +23886,6 @@ console.log(`[${provider}] watch request completed`, {
                         ? 'Sorry, this episode is not available right now.'
                         : `None of the providers could find a stream for this title.\n\nDetails:\n- ${failReasons.slice(0, 5).join('\n- ')}`,
                 );
-            }
-            fetchSourcesRunning = false;
-            if (fetchSourcesQueued) {
-                fetchSourcesQueued = false;
-                setTimeout(() => fetchSources(null), 0);
             }
         }
         // ----------------------------------------------------------------------------------------------------

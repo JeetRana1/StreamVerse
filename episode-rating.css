@@ -1,0 +1,164 @@
+.episode-rating {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: conic-gradient(rgba(245, 158, 11, 0.95) calc(var(--rating-progress) * 1%), rgba(245, 158, 11, 0.16) 0);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(251, 191, 36, 0.18);
+    vertical-align: middle;
+}
+
+.episode-rating::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    background: rgba(10, 10, 10, 0.88);
+    border: 1px solid rgba(251, 191, 36, 0.22);
+}
+
+.episode-rating-value {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    color: #fcd34d;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+    text-shadow: 0 0 6px rgba(245, 158, 11, 0.4), 0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+.episode-rating-value i {
+    color: #facc15;
+    font-size: 8px;
+}
+
+/* Player rows keep auto height so the ring and pill never clip. */
+#ep-panel .ep-item:has(.episode-rating) {
+    height: auto !important;
+    flex-shrink: 0;
+}
+
+.ep-item-play-btn {
+    display: none;
+}
+
+/* Player episode menu: the ring sits immediately left of the mark-as-seen pill,
+   both right-aligned in one cluster. */
+#ep-panel .ep-item-actions {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: calc(100% - 20px);
+}
+
+#ep-panel .ep-item-actions .episode-rating {
+    position: relative;
+}
+
+/* The pill keeps its own look; only its absolute anchoring moves into the cluster. */
+#ep-panel .ep-item-actions .ep-mark-seen-btn {
+    position: static;
+    min-height: 30px;
+}
+
+#ep-panel .ep-item:has(.episode-rating) .ep-item-info .ep-item-copy {
+    padding-right: clamp(224px, 34%, 300px) !important;
+}
+
+.modal-episode-item:has(.episode-rating) {
+    flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+    .episode-rating {
+        width: 36px;
+        height: 36px;
+    }
+
+    .episode-rating-value {
+        font-size: 9px;
+    }
+
+    .episode-rating-value i {
+        font-size: 7px;
+    }
+
+    #ep-panel .ep-item.has-mark-seen {
+        height: auto !important;
+        min-height: 132px !important;
+        flex-shrink: 0;
+    }
+
+    #ep-panel .ep-item.has-mark-seen .ep-item-info .ep-item-copy {
+        padding: 12px 60px 78px 0 !important;
+    }
+
+    /* Compact right-side cluster: the ring and pill share the bottom-right while
+       the play button stays vertically centered. */
+    #ep-panel .ep-item-actions {
+        top: auto;
+        bottom: 24px;
+        right: 8px;
+        left: auto;
+        gap: 8px;
+    }
+
+    #ep-panel .ep-item-actions .ep-mark-seen-btn {
+        max-width: calc(100vw - 120px);
+    }
+
+    .ep-item-play-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: rgba(229, 9, 20, 0.9);
+        color: #fff;
+        font-size: 14px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+        z-index: 2;
+    }
+
+    .modal-episode-play {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: auto;
+        height: auto;
+        padding: 0;
+        border-radius: 0;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 1.05rem;
+        box-shadow: none;
+    }
+
+    .modal-episode-item:hover .modal-episode-play {
+        color: var(--primary);
+        background: transparent;
+    }
+
+    #ep-panel .ep-item .filler-badge {
+        top: 48px;
+        right: 8px;
+        margin: 0;
+        position: absolute;
+    }
+}

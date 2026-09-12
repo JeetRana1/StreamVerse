@@ -84,7 +84,7 @@ function harness({ id = netflixId, cached = false, forced = '', archiveActive = 
         'updateEpUI', 'updateCurrentEpisodeHeaderText', 'setExternalSubtitleTracks', 'hideError', 'chipState',
         'writeCachedProviderSources', 'buildSourcePanel', 'buildPreferencesMenu', 'setEpisodePanelScrollTop']) context[name] = () => {};
     context.getEpisodePanelScrollTop = () => 0;
-    for (const name of ['findEpisodePositionById', 'getInitialTvPositionFromUrl', 'initTv', 'playTvEp', 'fetchSources']) {
+    for (const name of ['findEpisodePositionById', 'getInitialTvPositionFromUrl', 'initTv', 'playTvEp', 'fetchSources', 'fetchSourcesForCurrentEpisode']) {
         vm.runInContext(extract(name), context, { filename: `player.html:${name}` });
     }
     return { context, watch, catalog, extracting, events, warnings, requests, timers };
