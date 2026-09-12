@@ -7,6 +7,7 @@
     const PENDING_WATCHLIST_KEY_PREFIX = 'sv_pending_merge_watchlist_';
     const REVIEWED_KEY_PREFIX = 'sv_merge_reviewed_';
     const COMPLETED_KEY_PREFIX = 'sv_merge_completed_';
+    const CANCELLED_KEY_PREFIX = 'sv_merge_cancelled_';
     const state = { user: null, ready: false, reconcilePromise: Promise.resolve(), stopRealtime: null };
     const keepPlayback = (items) => window.StreamVerseStorage.mergeHistory(items.filter((item) => !window.StreamVerseStorage?.isDeleted(item)));
     const historyKey = (item) => window.StreamVerseStorage.key(item);
@@ -42,6 +43,10 @@
         return `${COMPLETED_KEY_PREFIX}${state.user?.uid || 'guest'}`;
     }
 
+    function cancelledKey() {
+        return `${CANCELLED_KEY_PREFIX}${state.user?.uid || 'guest'}`;
+    }
+
     function readPendingItems() {
         let items = [];
         try { items = JSON.parse(localStorage.getItem(pendingKey()) || '[]'); } catch (_) { }
@@ -57,7 +62,7 @@
         items = keepPlayback(items);
         if (readPendingItems().length && !readLocalItems().length) return;
         if (items.length) localStorage.setItem(LOCAL_KEY, JSON.stringify(items));
-        else localStorage.removeItem(LOCAL_KEY);
+        else if (localStorage.getItem(cancelledKey()) !== 'true') localStorage.removeItem(LOCAL_KEY);
         window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: state.user, items } }));
         window.StreamVerseStorage.refreshHistory().catch((error) => console.warn('[auth] history mapping pending:', error));
     }
@@ -203,12 +208,16 @@
           .sv-merge-item strong { display: block; overflow: hidden; margin: 9px 2px 0; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
           .sv-merge-item span { display: block; overflow: hidden; margin: 4px 2px 1px; color: #a9d2ff; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
           .sv-merge-modal > .sv-merge-actions { position: absolute !important; right: 34px; bottom: 30px; z-index: 4; display: flex !important; justify-content: flex-end; gap: 10px; width: auto !important; height: auto !important; padding: 0; border: 0; background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; transform: none !important; }
-          .sv-merge-actions button { min-height: 42px; padding: 0 18px; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; background: rgba(255,255,255,.08); color: #fff; cursor: pointer; font: 600 13px inherit; }
-          .sv-merge-actions .sv-merge-confirm { position: relative; overflow: hidden; padding: 11px 26px; border: 1px solid rgba(255,93,89,.58); border-radius: 14px; background: rgba(255,54,61,.16); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); color: #ffaaa5; font-size: .92rem; font-weight: 800; box-shadow: 0 10px 25px rgba(190,24,45,.2), inset 0 1px rgba(255,255,255,.16); transition: transform .25s ease, background .25s ease, color .25s ease, border-color .25s ease, box-shadow .25s ease, filter .25s ease; }
-          .sv-merge-actions .sv-merge-confirm::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.24), transparent); transition: left .5s; }
-          .sv-merge-actions .sv-merge-confirm:hover::before { left: 100%; }
-          .sv-merge-actions .sv-merge-confirm:hover { background: rgba(255,70,76,.29); color: #fff; transform: translateY(-3px); border-color: #ff7771; filter: brightness(1.1); box-shadow: 0 12px 30px rgba(214,31,54,.38), inset 0 1px rgba(255,255,255,.24); }
-          .sv-merge-actions button:hover { filter: brightness(1.12); }
+          .sv-merge-actions button { position: relative; overflow: hidden; min-height: 42px; padding: 0 18px; border: 1px solid rgba(229,9,20,.5); border-radius: 14px; background: linear-gradient(135deg, rgba(229,9,20,.2), rgba(255,77,77,.15)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); color: #ff6b6b; font-size: .9rem; font-weight: 800; display: inline-flex; align-items: center; gap: .5rem; cursor: pointer; box-shadow: 0 10px 25px rgba(229,9,20,.2), inset 0 1px 0 rgba(255,255,255,.1); transition: transform .25s ease, background .25s ease, color .25s ease, border-color .25s ease, box-shadow .25s ease, filter .25s ease; }
+          .sv-merge-actions button::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.2), transparent); transition: left .5s; }
+          .sv-merge-actions button:hover { filter: brightness(1.1); transform: translateY(-3px); }
+          .sv-merge-actions button:hover::before { left: 100%; }
+          .sv-merge-actions .sv-merge-cancel { border-color: rgba(96,165,250,.62); background: rgba(30,64,175,.24); color: #bfdbfe; box-shadow: 0 10px 25px rgba(37,99,235,.2), inset 0 1px 0 rgba(255,255,255,.1); }
+          .sv-merge-actions .sv-merge-cancel:hover { border-color: rgba(96,165,250,.95); background: rgba(37,99,235,.38); color: #fff; box-shadow: 0 12px 30px rgba(37,99,235,.4), inset 0 1px 0 rgba(255,255,255,.2); }
+          .sv-merge-actions .sv-merge-skip { border-color: rgba(245,158,11,.62); background: rgba(146,64,14,.28); color: #fed7aa; }
+          .sv-merge-actions .sv-merge-skip:hover { border-color: rgba(251,191,36,.9); background: rgba(180,83,9,.42); color: #fff; }
+          .sv-merge-actions .sv-merge-confirm { border-color: rgba(248,113,113,.68); background: rgba(127,29,29,.34); color: #fecaca; }
+          .sv-merge-actions .sv-merge-confirm:hover { border-color: rgba(248,113,113,.95); background: rgba(185,28,28,.48); color: #fff; }
           .sv-merge-retry-button { display: grid; width: 42px; height: 42px; margin-right: 8px; place-items: center; border: 1px solid rgba(255,93,89,.58); border-radius: 14px; background: rgba(255,54,61,.16); color: #ffaaa5; cursor: pointer; box-shadow: 0 8px 20px rgba(190,24,45,.18), inset 0 1px rgba(255,255,255,.14); transition: .25s ease; }
           .sv-merge-retry-button:hover { transform: translateY(-2px); border-color: #ff7771; background: rgba(255,70,76,.29); color: #fff; }
           .sv-sync-notice { max-width: min(360px, calc(100vw - 32px)); }
@@ -239,13 +248,14 @@
             backdrop.className = 'sv-merge-root';
             backdrop.innerHTML = `<section class="lg-17 sv-merge-backdrop" role="dialog" aria-modal="true" aria-label="Library sync">
               <div class="lg-17__mesh" aria-hidden="true"></div><form class="lg-17__card sv-merge-modal" novalidate>
-              <div class="sv-merge-scroll"><div class="sv-merge-copy"><div class="sv-merge-kicker">Library sync</div><h2>Keep your library in sync?</h2><p>We found saved titles on this device that are not in your account yet. Choose whether to add them.</p></div>
+              <div class="sv-merge-scroll"><div class="sv-merge-copy"><div class="sv-merge-kicker">Library sync</div><h2>Keep your library in sync?</h2><p>We found saved titles on this device that are not in your account yet. Merge to add them to your account, or cancel to keep everything on this device and skip the sync.</p></div>
               ${renderSection('Continue Watching', items, items, [])}${renderSection('My List', watchlistItems, watchlistItems, [])}</div>
-              <div class="sv-merge-actions"><button type="button" data-merge-skip>Not now</button><button type="button" class="sv-merge-confirm" data-merge-confirm>Merge and keep all</button></div>
+              <div class="sv-merge-actions"><button type="button" class="sv-merge-cancel" data-merge-cancel><i class="fa-solid fa-xmark" aria-hidden="true"></i>Cancel</button><button type="button" class="sv-merge-skip" data-merge-skip><i class="fa-regular fa-clock" aria-hidden="true"></i>Not now</button><button type="button" class="sv-merge-confirm" data-merge-confirm><i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>Merge and keep all</button></div>
               </form></section>`;
-            const finish = (merge) => { backdrop.remove(); resolve(merge); };
-            backdrop.querySelector('[data-merge-confirm]').addEventListener('click', () => finish(true));
-            backdrop.querySelector('[data-merge-skip]').addEventListener('click', () => finish(false));
+            const finish = (choice) => { backdrop.remove(); resolve(choice); };
+            backdrop.querySelector('[data-merge-confirm]').addEventListener('click', () => finish('merge'));
+            backdrop.querySelector('[data-merge-skip]').addEventListener('click', () => finish('skip'));
+            backdrop.querySelector('[data-merge-cancel]').addEventListener('click', () => finish('cancel'));
             document.body.appendChild(backdrop);
         });
     }
@@ -278,12 +288,13 @@
             return cloudItem && itemFingerprint(item) !== itemFingerprint(cloudItem);
         });
         const hasCompletedMerge = localStorage.getItem(completedKey()) === 'true';
-        const needsPrompt = (localOnly.length > 0 || localWatchlistOnly.length > 0) && localStorage.getItem(reviewedKey()) !== libraryFingerprint([...localOnly, ...localWatchlistOnly], []);
+        const hasCancelledMerge = localStorage.getItem(cancelledKey()) === 'true';
+        const needsPrompt = (localOnly.length > 0 || localWatchlistOnly.length > 0) && localStorage.getItem(reviewedKey()) !== libraryFingerprint([...localOnly, ...localWatchlistOnly], []) && !hasCancelledMerge;
         let finalItems = cloud;
         let finalWatchlist = cloudWatchlist;
         if (needsPrompt && (local.length || cloud.length || localWatchlist.length || cloudWatchlist.length)) {
-            const shouldMerge = await showMergePrompt(localOnly, cloud, localWatchlistOnly, cloudWatchlist);
-            if (shouldMerge) {
+            const choice = await showMergePrompt(localOnly, cloud, localWatchlistOnly, cloudWatchlist);
+            if (choice === 'merge') {
                 finalItems = keepPlayback([...cloud, ...local]);
                 finalWatchlist = [...new Map([...cloudWatchlist, ...localWatchlist].map((item) => [itemKey(item), item])).values()]
                     .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item);
@@ -294,6 +305,16 @@
                 localStorage.setItem(reviewedKey(), libraryFingerprint(finalItems, finalItems));
                 localStorage.setItem(completedKey(), 'true');
                 showSyncNotice('Library merged successfully');
+            } else if (choice === 'cancel') {
+                // Cancelling keeps everything on this device, writes nothing to the
+                // account and never shows the merge prompt again on this device.
+                finalItems = local;
+                finalWatchlist = localWatchlist;
+                localStorage.removeItem(pendingKey());
+                localStorage.removeItem(pendingWatchlistKey());
+                localStorage.setItem(cancelledKey(), 'true');
+                localStorage.setItem(reviewedKey(), libraryFingerprint([...localOnly, ...localWatchlistOnly], []));
+                showSyncNotice('Library sync cancelled; your on-device library was kept as-is');
             } else {
                 // Declining means this signed-in session should show no continue-watching data.
                 if (localOnly.length) localStorage.setItem(pendingKey(), JSON.stringify(localOnly));
@@ -309,7 +330,7 @@
                 ...finalItems.map(saveItem),
                 ...finalWatchlist.map((item) => watchRef.doc(itemKey(item)).set({ ...item, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })),
             ]);
-        } else if (!needsPrompt && localWatchlist.length) {
+        } else if (!needsPrompt && !hasCancelledMerge && localWatchlist.length) {
             // A watchlist item can be added before Firebase finishes restoring
             // the session. Re-upload the local list after sign-in so it never
             // remains local-only because the click happened during auth startup.
@@ -337,12 +358,29 @@
         const [snapshot, watchSnapshot] = await Promise.all([ref.get(), watchRef?.get() || Promise.resolve({ docs: [] })]);
         const cloud = keepPlayback(snapshot.docs.map((doc) => doc.data()).filter((item) => item?.id));
         const cloudWatchlist = watchSnapshot.docs.map((doc) => doc.data()).filter((item) => item?.id);
-        const shouldMerge = await showMergePrompt(local, cloud, pendingWatchlist, cloudWatchlist);
-        if (!shouldMerge) return;
+        const choice = await showMergePrompt(local, cloud, pendingWatchlist, cloudWatchlist);
+        if (choice === 'skip') return;
         const localMap = new Map(local.map((item) => [itemKey(item), item]));
         const cloudMap = new Map(cloud.map((item) => [itemKey(item), item]));
         const localWatchlistMap = new Map(pendingWatchlist.map((item) => [itemKey(item), item]));
         const cloudWatchlistMap = new Map(cloudWatchlist.map((item) => [itemKey(item), item]));
+        if (choice === 'cancel') {
+            // Restore the on-device view without writing anything to the account,
+            // and stop the merge prompt from appearing again on this device.
+            const restored = keepPlayback([...cloud, ...local]);
+            const restoredWatchlist = [...new Map([...cloudWatchlist, ...pendingWatchlist].map((item) => [itemKey(item), item])).values()]
+                .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item)
+                .sort((a, b) => Number(b.addedAt || 0) - Number(a.addedAt || 0));
+            localStorage.setItem(LOCAL_KEY, JSON.stringify(restored));
+            localStorage.setItem(WATCHLIST_KEY, JSON.stringify(restoredWatchlist));
+            localStorage.removeItem(pendingKey());
+            localStorage.removeItem(pendingWatchlistKey());
+            localStorage.setItem(cancelledKey(), 'true');
+            localStorage.setItem(reviewedKey(), libraryFingerprint([...local, ...pendingWatchlist], []));
+            updateAuthButton();
+            window.dispatchEvent(new CustomEvent('streamverse-auth-ready', { detail: { user: state.user, items: restored } }));
+            return;
+        }
         const merged = keepPlayback([...cloud, ...local]);
         const mergedWatchlist = [...new Map([...cloudWatchlist, ...pendingWatchlist].map((item) => [itemKey(item), item])).values()]
             .map((item) => newestItem(localWatchlistMap.get(itemKey(item)), cloudWatchlistMap.get(itemKey(item))) || item)
