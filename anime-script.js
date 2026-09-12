@@ -4037,7 +4037,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
     renderSeason(selectedSeasonNo);
 }
 
-function renderDetailsModal(movie, id, type, provider = '') {
+function renderDetailsModal(movie, id, type, provider = '', catalogOptions = null) {
     currentModalMovie = movie;
     const resolvedProvider = getDefaultPlaybackProvider(type, provider || getItemProvider(movie), isModalAnimeLike(movie));
     const isAdded = isInWatchlist(id);
@@ -4295,7 +4295,7 @@ function renderDetailsModal(movie, id, type, provider = '') {
                     </div>
                 </div>
 
-                ${buildModalTvEpisodesSection(movie, id, type, resolvedProvider)}
+                ${catalogOptions ? catalogOptions.episodesHtml : buildModalTvEpisodesSection(movie, id, type, resolvedProvider)}
 
                 <div class="modal-similar-section">
                     <h3 class="similar-title">Similar Finds</h3>
@@ -4334,6 +4334,10 @@ function renderDetailsModal(movie, id, type, provider = '') {
         }
     }, 100);
 
+    if (catalogOptions) {
+        catalogOptions.onRender();
+        return;
+    }
     initModalTvEpisodes(movie, id, type, resolvedProvider);
 
     // Load similar movies by shared genre with the clicked item.
@@ -6771,7 +6775,99 @@ if (location.pathname.endsWith('/anime.html')) {
             }
         };
         const skeletons = (count) => Array.from({ length: count }, () => '<div class="anime-skeleton" aria-hidden="true"></div>').join('');
+        const animeItems = new Map();
+        let animeModalRequest = 0;
+        const openAnimeDetails = async (seed) => {
+            const request = ++animeModalRequest;
+            const id = String(seed.id);
+            const modalUrl = new URL(location.href);
+            if (!movieModal.classList.contains('active')) {
+                const returnUrl = new URL(location.href);
+                returnUrl.searchParams.delete('animeDetail');
+                window.detailsReturnUrl = returnUrl.href;
+            }
+            modalUrl.searchParams.set('animeDetail', id);
+            history.replaceState(null, '', modalUrl);
+            window.storedScrollPosition = window.scrollY;
+            movieModal.classList.add('active');
+            document.body.classList.add('modal-open');
+            const render = (item) => {
+                if (request !== animeModalRequest || !movieModal.classList.contains('active')) return;
+                const url = playUrl(item);
+                const params = new URL(url, location.origin).searchParams;
+                const type = params.get('type');
+                const episodes = Array.isArray(item.episodes) ? item.episodes : [];
+                const movie = { ...item, title: escapeHtml(titleOf(item)), image: imageOf(item),
+                    cover: item.bannerImage || item.cover || imageOf(item),
+                    description: escapeHtml(String(item.description || item.overview || 'No overview available.').replace(/<[^>]*>/g, '')),
+                    genres: (Array.isArray(item.genres) ? item.genres : []).map(escapeHtml),
+                    totalEpisodes: item.totalEpisodes || episodes.length,
+                };
+                const episodesHtml = type === 'tv' && episodes.length ? `<div class="modal-episodes-section">
+                    <div class="modal-episodes-head"><h3 class="modal-episodes-title">Episodes</h3></div>
+                    <div class="modal-episodes-list">${episodes.map((ep, index) => {
+                        const episodeUrl = new URL(url, location.origin);
+                        episodeUrl.searchParams.set('episode', String(ep.number || ep.episode || index + 1));
+                        return `<button type="button" class="modal-episode-item" data-anime-watch="${escapeHtml(episodeUrl.pathname + episodeUrl.search)}">
+                            <div class="modal-episode-thumb"><img src="${escapeHtml(ep.image || imageOf(item))}" alt="" loading="lazy"></div>
+                            <div class="modal-episode-copy"><div class="modal-episode-row"><span class="modal-episode-number">E${escapeHtml(ep.number || ep.episode || index + 1)}</span><strong>${escapeHtml(ep.title || `Episode ${index + 1}`)}</strong></div></div>
+                            <i class="fa-solid fa-play modal-episode-play"></i></button>`;
+                    }).join('')}</div></div>` : '';
+                renderDetailsModal(movie, id, type, 'anikoto', { episodesHtml, onRender() {
+                    const watch = modalBody.querySelector('.btn-watch-now');
+                    watch.removeAttribute('onclick');
+                    watch.onclick = () => { location.href = url; };
+                    modalBody.querySelectorAll('[data-anime-watch]').forEach(button => {
+                        button.onclick = () => { location.href = button.dataset.animeWatch; };
+                    });
+                    const listButton = document.getElementById('modal-watchlist-btn');
+                    listButton.removeAttribute('onclick');
+                    const matches = row => String(row.id) === id && row.db === 'anilist';
+                    const updateListButton = () => {
+                        const added = getWatchlist().some(matches);
+                        listButton.classList.toggle('btn-in-list', added);
+                        listButton.classList.toggle('btn-add-list', !added);
+                        listButton.innerHTML = `<i class="fa-solid fa-${added ? 'check' : 'plus'}"></i> ${added ? 'In Your List' : 'Add to List'}`;
+                    };
+                    updateListButton();
+                    listButton.onclick = () => {
+                        const list = getWatchlist();
+                        const index = list.findIndex(matches);
+                        if (index >= 0) {
+                            const [removed] = list.splice(index, 1);
+                            Promise.resolve(window.StreamVerseAuth?.deleteWatchlistItem?.(removed)).catch(console.warn);
+                        } else {
+                            const saved = { id, db: 'anilist', anime: true, type, provider: 'anikoto', title: titleOf(item),
+                                poster: imageOf(item), image: imageOf(item), year: getYear(item), rating: getRating(item), addedAt: Date.now() };
+                            list.unshift(saved);
+                            Promise.resolve(window.StreamVerseAuth?.saveWatchlistItem?.(saved)).catch(console.warn);
+                        }
+                        saveWatchlist(list);
+                        updateListButton();
+                    };
+                    const similar = document.getElementById('similar-movies-grid');
+                    const recommendations = rowsOf(item.recommendations).filter(row => String(row.id) !== id);
+                    const related = recommendations.length ? recommendations : [...animeItems.values()].filter(row => String(row.id) !== id && (row.genres || []).some(genre => (item.genres || []).includes(genre)));
+                    similar.innerHTML = related.slice(0, 6).map(row => cardHtml(row)).join('') || '<div class="no-similar">No similar anime found</div>';
+                } });
+            };
+            render(seed);
+            modalBody.scrollTop = 0;
+            try {
+                const details = await fetchJson(`${apiBase}/meta/anilist/info/${encodeURIComponent(id)}`);
+                render({ ...seed, ...details, id });
+            } catch (_) { /* The catalog-backed popup remains usable offline. */ }
+        };
+        document.addEventListener('click', event => {
+            const link = event.target.closest('.anime-card-link[data-anime-id]');
+            if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+            const item = animeItems.get(link.dataset.animeId);
+            if (!item) return;
+            event.preventDefault();
+            openAnimeDetails(item);
+        });
         const cardHtml = (item, eager = false) => {
+            animeItems.set(String(item.id), item);
             const title = titleOf(item);
             const year = item.releaseDate || item.year || '';
             const episodes = Number(item.totalEpisodes || item.episodes || 0);
@@ -6780,11 +6876,11 @@ if (location.pathname.endsWith('/anime.html')) {
             const status = String(item.status || '').toLowerCase();
             const statusLabel = status.includes('ongoing') || status.includes('releasing') ? 'Airing' : type;
             return `<article class="anime-card">
-                <a class="anime-card-link" href="${escapeHtml(playUrl(item))}" aria-label="Watch ${escapeHtml(title)}">
+                <a class="anime-card-link" data-anime-id="${escapeHtml(item.id)}" href="?animeDetail=${encodeURIComponent(item.id)}" aria-label="Details for ${escapeHtml(title)}">
                     <div class="anime-poster">
                         <img src="${escapeHtml(imageOf(item))}" alt="${escapeHtml(title)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async"${eager ? ' fetchpriority="high"' : ''} onerror="this.style.display='none'">
                         <div class="anime-badge-row"><span class="anime-badge">${escapeHtml(statusLabel)}</span>${rating ? `<span class="anime-badge anime-rating"><i class="fa-solid fa-star"></i>${Math.round(rating) / 10}</span>` : ''}</div>
-                        <div class="anime-play-cue"><span>Start watching</span><i class="fa-solid fa-play"></i></div>
+                        <div class="anime-play-cue"><span>More info</span><i class="fa-solid fa-circle-info"></i></div>
                     </div>
                     <div class="anime-card-info"><h3 class="anime-card-title">${escapeHtml(title)}</h3><div class="anime-card-meta">${year ? `<span>${escapeHtml(year)}</span>` : ''}${episodes ? `<span>${episodes} eps</span>` : `<span>${escapeHtml(type)}</span>`}</div></div>
                 </a>
@@ -6947,6 +7043,10 @@ categoryList?.addEventListener('click', async (event) => {
 const initialUrlParams = new URLSearchParams(window.location.search);
         const initialSearchQuery = initialUrlParams.get('search')?.trim() || '';
         const initialGenre = initialUrlParams.get('genre')?.trim() || '';
+        const initialDetail = initialUrlParams.get('animeDetail')?.trim();
+        if (initialDetail && /^\d+$/.test(initialDetail)) {
+            openAnimeDetails({ id: initialDetail, title: 'Loading anime…', type: 'TV' });
+        }
         observeCategoryRows();
 
         if (initialSearchQuery.length >= 2) {
