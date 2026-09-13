@@ -33,3 +33,27 @@ test('fetch errors release the guard and queued navigation runs once for the lat
     assert.deepEqual(fetched,[4,6]);
     assert.equal(state.running(),false);
 });
+test('anikoto subtitle tracks use the Megaplay origin referer on CDN hosts',()=>{
+    function extractSubFn() {
+        const match = /        function normalizeSubtitleEntries\(/.exec(html);
+        assert.ok(match);
+        const end = html.indexOf('\n        }', match.index) + '\n        }'.length;
+        return html.slice(match.index, end);
+    }
+    const normalize = vm.runInNewContext(`(${extractSubFn()})`, {
+        MAX_EXTERNAL_SUBTITLE_TRACKS: 6,
+        URL,
+        location: { href: 'https://example.test/player.html' },
+    });
+    const track = { url: 'https://fetch.nexabloom.top/anime/abc/def/subtitles/eng-2.vtt', lang: 'English' };
+    const rows = normalize([track], 'anikoto', 'https://anikoto.cz');
+    assert.equal(rows[0].referer, 'https://megaplay.buzz/');
+    const passthrough = normalize([
+        { ...track, url: 'https://fetch.nexabloom.top/anime/abc/def/subtitles/eng-2.vtt', referer: 'https://megaplay.buzz/' },
+        { url: 'https://subs.example/x.vtt', lang: 'English' },
+    ], 'anikoto', 'https://anikoto.cz');
+    assert.equal(passthrough[0].referer, 'https://megaplay.buzz/');
+    assert.equal(passthrough[1].referer, 'https://anikoto.cz');
+    const other = normalize([{ url: 'https://subs.example/x.vtt', lang: 'English' }], 'tv', 'https://provider.test');
+    assert.equal(other[0].referer, 'https://provider.test');
+});

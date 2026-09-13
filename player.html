@@ -10608,12 +10608,26 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 else if (langLower === 'en' || langLower === 'eng' || langLower.includes('english')) srclang = 'en';
                 else if (/^[a-z]{2,3}$/i.test(rawLang)) srclang = rawLang.toLowerCase();
 
+                let subtitleReferer = item?.referer || referer;
+                // MegaPlay's CDN only serves AniKoto subtitle files with the
+                // embed origin root as Referer (e.g. https://megaplay.buzz/).
+                // Override the AniKoto page referer so cached/old watch payloads
+                // still resolve without waiting for the backend to be updated.
+                if (String(provider || '').toLowerCase() === 'anikoto' && !/megaplay\.buzz/i.test(String(subtitleReferer || ''))) {
+                    try {
+                        const subHost = new URL(src, location.href).hostname.toLowerCase();
+                        if (/(^|\.)(nexabloom|shiora|mikora|imgnex|mewstream)\.(top|site|club|net)$/i.test(subHost)) {
+                            subtitleReferer = 'https://megaplay.buzz/';
+                        }
+                    } catch (_) { /* keep the default referer */ }
+                }
+
                 out.push({
                     label: item?.label || item?.language || item?.name || item?.title || rawLang,
                     srclang,
                     src,
                     provider,
-                    referer: item?.referer || referer
+                    referer: subtitleReferer
                 });
             });
 
