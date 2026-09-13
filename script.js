@@ -3748,11 +3748,13 @@ async function fetchModalHdstreamBonusSeason(movie, id) {
     const bonusThumbnails = {
         1: 'https://media.themoviedb.org/t/p/w160_and_h90_face/wC7frShPQxJoZ8QwuhpXC1kRkgg.jpg',
         2: 'https://i.ytimg.com/vi/otawyZaOxvs/maxresdefault.jpg',
+        ...(isLatent ? { 3: 'https://i.ytimg.com/vi/fzyL44FH2fI/hq720.jpg?sqp=-oaymwErCNAFEJQDSFryq4qpAx0IARUAAIhCGAHYAQHiAQoIGBACGAY4AUABuALzGA==&rs=AOn4CLCpei64gNPdqewL4RIYymkLkUYSmQ' } : {}),
     };
     const customBonusTitles = tmdbId === '262838'
         ? {
             1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
             2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
+            3: 'Bonus EP 3 ft. Deepak Kalal, Ravi Gupta, Agu Stanley',
         }
         : {};
     const mapEpisodes = (episodes, useCustomTitles, imageOverrides = {}) => episodes.map((episode, index) => {

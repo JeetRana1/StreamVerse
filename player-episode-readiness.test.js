@@ -8,6 +8,39 @@ function extract(name) {
     assert.ok(start >= 0, name);
     return html.slice(start, html.indexOf('\n        }', start) + 10);
 }
+test('metadata hydration preserves Specials zero across bonus tabs and deduplicates requests', async () => {
+    const timers = [], requested = [];
+    const c = vm.createContext({
+        MEDIA_TYPE: 'tv', TMDB_ID: '262838', currentIsLikelyAnime: false, ANIME_MODE: false,
+        tmdbSeasonEpisodeDetailCache: new Map(), tmdbSeasonEpisodeDetailPromises: new Map(),
+        setTimeout: fn => timers.push(fn),
+        hydrateTmdbSeasonEpisodeDetails: async season => { requested.push(season); return false; },
+    });
+    vm.runInContext(extract('requestEpisodeMenuMetadataHydration'), c);
+    c.requestEpisodeMenuMetadataHydration([
+        { seasonNo: 0, name: 'Bonus' }, { seasonNo: 1 }, { seasonNo: 2 },
+        { seasonNo: 0, name: 'Netflix Special' }, { season: 0 }, { number: 0 },
+    ]);
+    timers.forEach(fn => fn());
+    await Promise.resolve();
+    assert.deepEqual(requested, [0, 1, 2]);
+});
+
+test('metadata hydration retains index fallback for unnumbered seasons and skips cached seasons', () => {
+    const timers = [], requested = [];
+    const c = vm.createContext({
+        MEDIA_TYPE: 'tv', TMDB_ID: '42', currentIsLikelyAnime: false, ANIME_MODE: false,
+        tmdbSeasonEpisodeDetailCache: new Map([['42:s0', {}]]),
+        tmdbSeasonEpisodeDetailPromises: new Map([['42:s2', Promise.resolve()]]),
+        setTimeout: fn => timers.push(fn),
+        hydrateTmdbSeasonEpisodeDetails: async season => { requested.push(season); return false; },
+    });
+    vm.runInContext(extract('requestEpisodeMenuMetadataHydration'), c);
+    c.requestEpisodeMenuMetadataHydration([{}, { seasonNo: 2 }, { seasonNo: 0 }, { seasonNo: -1 }]);
+    timers.forEach(fn => fn());
+    assert.deepEqual(requested, [1]);
+});
+
 test('episode readiness rejects stale media and hide timers, reveals decoded current frame, surfaces errors', () => {
     const timers = [];
     const elements = {};

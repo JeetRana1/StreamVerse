@@ -18462,6 +18462,7 @@ video.addEventListener('canplay', (event) => {
                             const bonusTitles = {
                                 1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
                                 2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
+                                3: 'Bonus EP 3 ft. Deepak Kalal, Ravi Gupta, Agu Stanley',
                             };
                             episodeTitle = bonusTitles[episodeNo] || episodeTitle;
                         }
@@ -19459,6 +19460,7 @@ video.addEventListener('canplay', (event) => {
                                 const customBonusTitles = {
                                     1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
                                     2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
+                                    3: 'Bonus EP 3 ft. Deepak Kalal, Ravi Gupta, Agu Stanley',
                                 };
                                 bonusTitle = customBonusTitles[targetSeason.episodes.length + 1] || bonusTitle;
                             }
@@ -20527,7 +20529,9 @@ video.addEventListener('canplay', (event) => {
 
         function requestEpisodeMenuMetadataHydration(seasons) {
             if (MEDIA_TYPE !== 'tv' || !Array.isArray(seasons) || !seasons.length) return;
-            const seasonNos = [...new Set(seasons.map((s, i) => Number(s?.seasonNo || s?.season || s?.number || i + 1)).filter((n) => Number.isFinite(n) && n >= 0))];
+            // Zero is TMDB's Specials season, including provider-specific bonus
+            // tabs. Do not turn it into a nonexistent season using the tab index.
+            const seasonNos = [...new Set(seasons.map((s, i) => Number(s?.seasonNo ?? s?.season ?? s?.number ?? i + 1)).filter((n) => Number.isInteger(n) && n >= 0))];
             if (currentIsLikelyAnime) {
                 const longSeason = getBestLongTmdbSeasonForAnime();
                 if (longSeason?.seasonNo && !seasonNos.includes(longSeason.seasonNo)) {
@@ -20966,6 +20970,7 @@ video.addEventListener('canplay', (event) => {
                          const bonusTitles = {
                              1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
                              2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
+                             3: 'Bonus EP 3 ft. Deepak Kalal, Ravi Gupta, Agu Stanley',
                          };
                          epTitle = bonusTitles[epNo] || epTitle;
                      }
@@ -21025,6 +21030,8 @@ video.addEventListener('canplay', (event) => {
                             epThumb = 'https://media.themoviedb.org/t/p/w160_and_h90_face/wC7frShPQxJoZ8QwuhpXC1kRkgg.jpg';
                         } else if (isBonusSeason && epNo === 2) {
                             epThumb = 'https://i.ytimg.com/vi/otawyZaOxvs/maxresdefault.jpg';
+                        } else if (isBonusSeason && epNo === 3) {
+                            epThumb = 'https://i.ytimg.com/vi/fzyL44FH2fI/hq720.jpg?sqp=-oaymwErCNAFEJQDSFryq4qpAx0IARUAAIhCGAHYAQHiAQoIGBACGAY4AUABuALzGA==&rs=AOn4CLCpei64gNPdqewL4RIYymkLkUYSmQ';
                         }
                     }
                     const progressKeys = getWatchedKeysForEpisodeIdentity({
