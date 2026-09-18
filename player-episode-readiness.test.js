@@ -8,6 +8,50 @@ function extract(name) {
     assert.ok(start >= 0, name);
     return html.slice(start, html.indexOf('\n        }', start) + 10);
 }
+test('AniKoto captions survive server reloads and remain selectable on other providers only for the same episode', () => {
+    const c = vm.createContext({
+        MEDIA_TYPE: 'tv', TMDB_ID: '269', curSeason: 0, curEpisode: 0,
+        sharedAnikotoSubtitleScope: '', sharedAnikotoSubtitles: [], externalSubtitleTracks: [], window: {},
+        currentStreamProvider: 'anikoto', allSources: [], currentIdx: 0,
+    });
+    for (const name of ['mergeSubtitleTrackLists', 'setExternalSubtitleTracks', 'getActiveExternalSubtitleTracks']) vm.runInContext(extract(name), c);
+    const sub = { src: 'https://example.com/ep1.vtt', srclang: 'en', provider: 'anikoto', referer: 'https://megaplay.buzz/' };
+    c.setExternalSubtitleTracks([sub]);
+    c.setExternalSubtitleTracks([]);
+    c.currentStreamProvider = 'other-server';
+    assert.equal(c.getActiveExternalSubtitleTracks()[0], sub);
+    c.setExternalSubtitleTracks([sub]);
+    assert.equal(c.getActiveExternalSubtitleTracks().length, 1);
+    c.curEpisode = 1;
+    c.setExternalSubtitleTracks([]);
+    assert.equal(c.getActiveExternalSubtitleTracks().length, 0);
+    c.setExternalSubtitleTracks([sub]);
+    c.TMDB_ID = 'another-title';
+    c.setExternalSubtitleTracks([]);
+    assert.equal(c.getActiveExternalSubtitleTracks().length, 0);
+});
+
+test('natural TV completion advances with early auto-next off, but movies, finales and guests stay', async () => {
+    const calls = [];
+    const c = vm.createContext({
+        MEDIA_TYPE: 'tv', tvSeasons: [{ episodes: [{}, {}] }, { episodes: [{}] }],
+        curSeason: 0, curEpisode: 0, getNextProviderEpisodeRef: () => null,
+        video: { ended: true }, watchPartyRole: '', autoEpisodeEnabled: false,
+        _clearNextEpCountdown: () => {}, goToNextEpisode: async () => calls.push(c.getNextEpisodeRef()), console,
+    });
+    vm.runInContext(extract('getNextEpisodeRef') + extract('advanceAfterPlaybackEnd'), c);
+    c.advanceAfterPlaybackEnd();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].episodeIndex, 1);
+    c.curEpisode = 1;
+    c.advanceAfterPlaybackEnd();
+    assert.equal(calls[1].seasonIndex, 1);
+    c.watchPartyRole = 'guest'; c.advanceAfterPlaybackEnd();
+    c.watchPartyRole = ''; c.MEDIA_TYPE = 'movie'; c.advanceAfterPlaybackEnd();
+    c.MEDIA_TYPE = 'tv'; c.curSeason = 1; c.curEpisode = 0; c.advanceAfterPlaybackEnd();
+    assert.equal(calls.length, 2);
+});
+
 test('metadata hydration preserves Specials zero across bonus tabs and deduplicates requests', async () => {
     const timers = [], requested = [];
     const c = vm.createContext({

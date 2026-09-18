@@ -6737,7 +6737,7 @@ if (location.pathname.endsWith('/anime.html')) {
         const categories = ['Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Sports', 'Supernatural', 'Thriller'];
         if (categoryList) categoryList.innerHTML = categories.map((category) => `<button type="button" data-category="${category}">${category}</button>`).join('');
 
-        const CACHE_PREFIX = 'sv_anime_catalog_v3:';
+        const CACHE_PREFIX = 'sv_anime_catalog_v4:';
         const CACHE_TTL = 15 * 60 * 1000;
         const CACHE_STALE_TTL = 7 * 24 * 60 * 60 * 1000;
         const readAnimeCache = (key, allowStale = true) => {
@@ -6891,29 +6891,183 @@ if (location.pathname.endsWith('/anime.html')) {
             if (append) grid.insertAdjacentHTML('beforeend', html);
             else grid.innerHTML = html || '<div class="anime-status"><div class="anime-status-inner"><i class="fa-regular fa-face-meh"></i>No anime found. Try another title.</div></div>';
             if (resultCount) resultCount.textContent = `${grid.querySelectorAll('.anime-card').length} titles`;
+};
+
+        // Auto spotlight: featured banner built from the current #1 trending title.
+        const spotlightSection = document.getElementById('anime-spotlight');
+        const spotlightLayout = document.getElementById('anime-spotlight-layout');
+        const spotlightDots = document.getElementById('anime-spotlight-dots');
+        const SPOTLIGHT_ROTATE_MS = 8000;
+        let spotlightItems = [];
+        let spotlightIndex = 0;
+        let spotlightTimer = null;
+        const spotlightBlurb = (item) => String(item.description || item.overview || '')
+            .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        const genreByPill = new Map(TMDB_GENRE_FILTERS.map((entry) => [String(entry.name).toLowerCase(), entry]));
+        const spotlightGenrePill = (genre) => {
+            const match = genreByPill.get(String(genre || '').toLowerCase());
+            const pillColor = match?.color || '#38bdf8';
+            const pillIcon = match?.icon || 'fa-tag';
+            return `<span class="meta-pill" style="border-color:${pillColor}3d"><i class="fa-solid ${pillIcon}" style="color:${pillColor}"></i> ${escapeHtml(genre)}</span>`;
+        };
+        const renderSpotlightRow = (index) => {
+            if (!spotlightSection || !spotlightLayout || !spotlightItems.length) return;
+            spotlightIndex = ((Math.trunc(index) % spotlightItems.length) + spotlightItems.length) % spotlightItems.length;
+            const item = spotlightItems[spotlightIndex];
+            const backdrop = item.cover || item.bannerImage || item.coverImage?.extraLarge || item.image || '';
+            const title = titleOf(item);
+            const year = String(item.releaseDate || item.startDate?.year || '').slice(0, 4);
+            const episodes = Number(item.totalEpisodes || item.episodes || 0);
+            const rating = Number(item.rating || item.score || 0);
+            const genres = Array.isArray(item.genres) ? item.genres.slice(0, 3) : [];
+            const play = playUrl(item);
+            const pills = [
+                year ? `<span class="meta-pill" style="border-color:#38bdf833"><i class="fa-solid fa-calendar-days" style="color:#38bdf8"></i> ${escapeHtml(year)}</span>` : '',
+                rating ? `<span class="meta-pill rating-pill"><i class="fa-solid fa-star"></i> ${(rating / 10).toFixed(1)}</span>` : '',
+                episodes ? `<span class="meta-pill" style="border-color:#4ade8033"><i class="fa-solid fa-list-ol" style="color:#4ade80"></i> ${episodes} eps</span>` : '',
+                ...genres.map(spotlightGenrePill),
+            ].filter(Boolean).join('');
+            spotlightLayout.innerHTML = `
+                <div class="anime-spotlight-copy">
+                    <span class="anime-spotlight-kicker"><i class="fa-solid fa-fire"></i>Trending now</span>
+                    <h2>${escapeHtml(title)}</h2>
+                    <div class="hero-meta">${pills}</div>
+                    <p>${escapeHtml(spotlightBlurb(item)).slice(0, 260) || 'A standout series everyone is watching right now.'}</p>
+                    <div class="hero-btns">
+                        <button type="button" class="btn btn-watch-now" data-spotlight-play><i class="fa-solid fa-play"></i> Watch Now</button>
+                        <button type="button" class="btn btn-more-info" data-spotlight-more><i class="fa-solid fa-circle-info"></i> More Info</button>
+                    </div>
+                </div>
+                <div class="anime-spotlight-poster"><img src="${escapeHtml(imageOf(item))}" alt="${escapeHtml(title)}" loading="lazy" onerror="this.style.display='none'"></div>`;
+            const bg = spotlightSection.querySelector('.anime-spotlight-bg');
+            if (bg) bg.style.backgroundImage = backdrop ? `url("${escapeHtml(backdrop)}")` : '';
+            spotlightDots.innerHTML = spotlightItems.map((_, dotIndex) =>
+                `<button type="button" class="anime-spotlight-dot${dotIndex === spotlightIndex ? ' active' : ''}" data-spotlight-dot="${dotIndex}" aria-label="Show featured slide ${dotIndex + 1}"></button>`
+            ).join('');
+            spotlightLayout.querySelector('[data-spotlight-play]')?.addEventListener('click', () => { window.location.href = play; });
+            spotlightLayout.querySelector('[data-spotlight-more]')?.addEventListener('click', () => openAnimeDetails(item));
+            spotlightDots.querySelectorAll('[data-spotlight-dot]').forEach((dot) => {
+                dot.addEventListener('click', () => {
+                    stopSpotlightRotation();
+                    renderSpotlightRow(Number(dot.dataset.spotlightDot));
+                    startSpotlightRotation();
+                });
+            });
+        };
+        const navigateSpotlight = (offset) => {
+            stopSpotlightRotation();
+            renderSpotlightRow(spotlightIndex + offset);
+            startSpotlightRotation();
+        };
+        document.getElementById('anime-spotlight-prev')?.addEventListener('click', () => navigateSpotlight(-1));
+        document.getElementById('anime-spotlight-next')?.addEventListener('click', () => navigateSpotlight(1));
+        const startSpotlightRotation = () => {
+            stopSpotlightRotation();
+            spotlightTimer = setInterval(() => {
+                if (document.hidden) return;
+                renderSpotlightRow(spotlightIndex + 1);
+            }, SPOTLIGHT_ROTATE_MS);
+        };
+        const stopSpotlightRotation = () => {
+            if (spotlightTimer) clearInterval(spotlightTimer);
+            spotlightTimer = null;
+        };
+        const loadSpotlight = async () => {
+            if (!spotlightSection || !spotlightLayout) return;
+            const cacheKey = 'spotlight:trending';
+            let rows = readAnimeCache(cacheKey);
+            try {
+                const payload = await fetchJson(`${apiBase}/meta/anilist/trending?page=1&perPage=6`);
+                rows = uniqueRows(rowsOf(payload));
+                writeAnimeCache(cacheKey, rows);
+            } catch (_) { /* The cached banner remains usable offline. */ }
+            if (!rows || !rows.length) {
+                spotlightSection.style.display = 'none';
+                return;
+            }
+            let candidates = rows.filter((row) => String(row.cover || row.bannerImage || '').trim());
+            if (!candidates.length) candidates = rows;
+            spotlightItems = candidates.slice(0, 3);
+            renderSpotlightRow(0);
+            startSpotlightRotation();
         };
 
-        const loadCategory = async (categoryGrid) => {
-            if (categoryGrid.dataset.loaded === '1') return;
-            categoryGrid.dataset.loaded = '1';
-            const genre = categoryGrid.dataset.categoryGrid;
+const categoryState = new Map();
+        const updateCategoryCount = (categoryGrid, count) => {
+            const genre = String(categoryGrid?.dataset?.categoryGrid || '');
+            if (!genre) return;
+            const countEl = document.querySelector(`[data-category-count="${CSS.escape(genre)}"]`);
+            if (countEl) countEl.textContent = `${count} titles`;
+        };
+        const loadCategory = async (categoryGrid, { append = false } = {}) => {
+            if (!categoryGrid) return;
+            const genre = String(categoryGrid.dataset.categoryGrid || '');
+            const moreButton = document.querySelector(`[data-category-load-more="${CSS.escape(genre)}"]`);
+            const state = categoryState.get(genre) || { page: 0, rows: [], done: false, loading: false };
+            categoryState.set(genre, state);
+            if (!append && categoryGrid.dataset.loaded === '1') return;
+            if (append && (state.done || state.loading)) return;
+            if (!append) categoryGrid.dataset.loaded = '1';
             const cacheKey = `genre:${genre}`;
             const cached = readAnimeCache(cacheKey);
-            categoryGrid.innerHTML = cached ? cached.map((item) => cardHtml(item)).join('') : skeletons(7);
+            if (!append) {
+                if (cached && cached.length) {
+                    state.rows = [...cached];
+                    state.page = 1;
+                    state.done = cached.length < 21;
+                    categoryGrid.innerHTML = state.rows.map((item) => cardHtml(item)).join('');
+                    updateCategoryCount(categoryGrid, state.rows.length);
+                    if (moreButton) moreButton.hidden = state.done;
+                } else {
+                    categoryGrid.innerHTML = skeletons(21);
+                }
+            } else if (moreButton) {
+                moreButton.disabled = true;
+                moreButton.textContent = 'Loading more...';
+            }
+            const nextPage = append ? state.page + 1 : 1;
+            state.loading = true;
             try {
-                const payload = await fetchJson(`${apiBase}/meta/anilist/advanced-search?genres=${encodeURIComponent(JSON.stringify([genre]))}&page=1&perPage=12`);
-                const rows = uniqueRows(rowsOf(payload)).slice(0, 12);
-                writeAnimeCache(cacheKey, rows);
-                categoryGrid.innerHTML = rows.map((item) => cardHtml(item)).join('');
+                const payload = await fetchJson(`${apiBase}/meta/anilist/advanced-search?genres=${encodeURIComponent(JSON.stringify([genre]))}&page=${nextPage}&perPage=21`);
+                const rows = uniqueRows(rowsOf(payload));
+                const fresh = append
+                    ? rows.filter((row) => !state.rows.some((existing) => String(existing.id) === String(row.id)))
+                    : rows;
+                if (append) {
+                    state.rows.push(...fresh);
+                } else {
+                    state.rows = [...fresh];
+                    writeAnimeCache(cacheKey, fresh);
+                }
+                state.page = nextPage;
+                state.done = rows.length < 21 || fresh.length === 0;
+                const html = fresh.map((item) => cardHtml(item)).join('');
+                if (append) categoryGrid.insertAdjacentHTML('beforeend', html);
+                else categoryGrid.innerHTML = html || '<div class="anime-status"><div class="anime-status-inner"><i class="fa-regular fa-face-meh"></i>No anime found in this category.</div></div>';
+                updateCategoryCount(categoryGrid, state.rows.length);
+                if (moreButton) moreButton.hidden = state.done;
             } catch (_) {
-                if (!cached) categoryGrid.innerHTML = '<div class="anime-status"><div class="anime-status-inner"><i class="fa-solid fa-cloud-arrow-down"></i>This shelf is unavailable right now.</div></div>';
+                if (!append && !cached && !categoryGrid.querySelector('.anime-card')) {
+                    categoryGrid.innerHTML = '<div class="anime-status"><div class="anime-status-inner"><i class="fa-solid fa-cloud-arrow-down"></i>This shelf is unavailable right now.</div></div>';
+                }
+            } finally {
+                state.loading = false;
+                if (moreButton) {
+                    moreButton.disabled = false;
+                    moreButton.textContent = 'Load more';
+                }
             }
         };
         const observeCategoryRows = () => {
             const rows = [...document.querySelectorAll('[data-category-grid]')];
-            rows.forEach((row) => { if (!row.innerHTML) row.innerHTML = skeletons(7); });
+            rows.forEach((row) => {
+                if (!row.innerHTML) row.innerHTML = skeletons(21);
+                const genre = String(row.dataset.categoryGrid || '');
+                const moreButton = document.querySelector(`[data-category-load-more="${CSS.escape(genre)}"]`);
+                if (moreButton) moreButton.addEventListener('click', () => loadCategory(row, { append: true }));
+            });
             if (!('IntersectionObserver' in window)) {
-                rows.forEach(loadCategory);
+                rows.forEach((row) => loadCategory(row));
                 return;
             }
             const observer = new IntersectionObserver((entries) => {
@@ -6973,7 +7127,7 @@ if (location.pathname.endsWith('/anime.html')) {
                 const cacheKey = `trending:${pageNumbers.join('-')}`;
                 const cached = readAnimeCache(cacheKey);
                 if (cached && !append) renderAnime(cached);
-                const pages = await Promise.all(pageNumbers.map((page) => fetchJson(`${apiBase}/meta/anilist/trending?page=${page}&perPage=18`, signal)));
+                const pages = await Promise.all(pageNumbers.map((page) => fetchJson(`${apiBase}/meta/anilist/trending?page=${page}&perPage=21`, signal)));
                 const rows = uniqueRows(pages.flatMap(rowsOf));
                 writeAnimeCache(cacheKey, rows);
                 catalogPage = nextPage;
@@ -7048,6 +7202,7 @@ const initialUrlParams = new URLSearchParams(window.location.search);
             openAnimeDetails({ id: initialDetail, title: 'Loading anime…', type: 'TV' });
         }
         observeCategoryRows();
+        loadSpotlight();
 
         if (initialSearchQuery.length >= 2) {
             if (searchInput) searchInput.value = initialSearchQuery;

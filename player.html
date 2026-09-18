@@ -740,8 +740,9 @@
             left: 0;
             right: 0;
             top: 50%;
-            height: 5px;
-            background: rgba(255, 255, 255, .15);
+            height: 6px;
+            background: rgba(20, 20, 24, .78);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .65);
             border-radius: 999px;
             pointer-events: none;
             transform: translateY(-50%);
@@ -752,7 +753,7 @@
             left: 0;
             right: 0;
             top: 50%;
-            height: 5px;
+            height: 6px;
             pointer-events: none;
             z-index: 1;
             transform: translateY(-50%);
@@ -822,6 +823,7 @@
             border-radius: 50%;
             background: var(--primary);
             border: none;
+            box-shadow: 0 0 0 2px rgba(20, 20, 24, .8);
         }
 
         .seek-bar::-moz-range-thumb {
@@ -830,6 +832,7 @@
             border-radius: 50%;
             background: var(--primary);
             border: none;
+            box-shadow: 0 0 0 2px rgba(20, 20, 24, .8);
         }
 
         .seek-preview {
@@ -3773,8 +3776,9 @@
         .bottom-shell .pause-media-card { display: none; }
         .bottom-shell .seek-shell { grid-area: seek; padding: 14px 18px; width: calc(100% - 48px); margin: 0 auto; }
         .bottom-shell .seek-shell { transform: translateY(17px); }
-        .bottom-shell .time-readout { grid-area: time; justify-self: stretch; background: transparent; border: 0; padding: 0 16px; }
-        .bottom-shell .time-readout { position: relative; left: 32px; width: 96px; min-width: 96px; padding: 0; font-size: 12px; transform: translateY(-3px); }
+        .bottom-shell .time-readout { grid-area: time; justify-self: stretch; background: rgba(20, 20, 24, .82); color: #fff; border: 0; border-radius: 4px; box-shadow: 0 0 0 4px rgba(20, 20, 24, .82), 0 2px 8px rgba(0, 0, 0, .45); padding: 0 16px; }
+        .bottom-shell .time-readout .time-divider { color: rgba(255, 255, 255, .8); }
+        .bottom-shell .time-readout { position: relative; left: 32px; width: 96px; min-width: 96px; padding: 0; font-size: 12px; transform: translateY(3px); justify-content: center; align-items: center; white-space: nowrap; }
         .bottom-shell .control-actions.action-row { grid-area: actions; display: flex; align-items: center; justify-content: flex-start; gap: 10px; flex-wrap: wrap; width: 100%; }
         .mobile-aux-right { display: flex; align-items: center; gap: 10px; margin-right: auto; padding: 4px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,.08); background: linear-gradient(180deg, rgba(18,18,22,.58), rgba(14,14,18,.44)); box-shadow: 0 12px 28px rgba(0,0,0,.22); backdrop-filter: blur(14px); pointer-events: none; }
         .mobile-aux-right > button { pointer-events: auto; }
@@ -3816,11 +3820,12 @@
         #watchPartyPanel .watch-party-card { min-height: min(410px, calc(100vh - 82px)) !important; }
         #watchPartyPanel .watch-party-public-list { max-height: min(34vh, 180px) !important; overflow-y: auto !important; overflow-x: hidden !important; }
         #watchPartyPanel .watch-party-members-list { max-height: min(24vh, 140px) !important; overflow-y: auto !important; overflow-x: hidden !important; }
-        .seek-wrapper .seek-bar { width: calc(100% + 36px); margin-left: -18px; height: 22px; background: radial-gradient(circle at center, rgba(18,18,22,.22), transparent 70%); }
+        /* Native thumbs travel within the input minus their 16px diameter. */
+        .seek-wrapper .seek-bar { position: absolute; left: -8px; width: calc(100% + 16px); max-width: none; padding: 0; border: 0; margin: 0; height: 22px; background: transparent; }
         .seek-wrapper { position: relative; }
-        .seek-wrapper .seek-track-fill { position: absolute; left: 0; top: 50%; width: min(100%, calc(var(--seek-percent, 0%) + 9px)); height: 5px; transform: translateY(-50%); border-radius: 999px; background: linear-gradient(90deg, rgba(229,9,20,.96), rgba(255,59,71,.92)); box-shadow: 0 0 10px rgba(229,9,20,.22); pointer-events: none; z-index: 1; transition: width .35s cubic-bezier(.22,.61,.36,1); }
+        .seek-wrapper .seek-track-fill { position: absolute; left: 0; top: 50%; width: var(--seek-percent, 0%); height: 6px; transform: translateY(-50%); border-radius: 999px; background: linear-gradient(90deg, #e50914, #ff3b47); box-shadow: 0 0 10px rgba(229,9,20,.22); pointer-events: none; z-index: 1; transition: width .35s cubic-bezier(.22,.61,.36,1); }
         .seek-wrapper .seek-bar { z-index: 2; }
-        @media (pointer: coarse) { .action-row { gap: 8px; justify-content: flex-start; } .action-row .mobile-aux-right { margin-right: auto; } .bottom-shell .seek-shell { transform: translateY(34px); padding: 14px 11px; width: calc(100% - 28px); } .bottom-shell .time-readout { left: 17px; width: 83px; min-width: 83px; transform: translateY(8px); } .mobile-aux-right { gap: 6px; } .action-row .ctrl-icon, .action-row .fs-back-btn, .action-row .ui-watchparty-btn, .action-row .ui-chat-btn, .action-row .ui-lock-btn { width: 46px; height: 46px; font-size: 16px; } }
+        @media (pointer: coarse) { .action-row { gap: 8px; justify-content: flex-start; } .action-row .mobile-aux-right { margin-right: auto; } .bottom-shell .seek-shell { transform: translateY(34px); padding: 14px 11px; width: calc(100% - 28px); } .bottom-shell .time-readout { left: 17px; width: 83px; min-width: 83px; transform: translateY(14px); } .mobile-aux-right { gap: 6px; } .action-row .ctrl-icon, .action-row .fs-back-btn, .action-row .ui-watchparty-btn, .action-row .ui-chat-btn, .action-row .ui-lock-btn { width: 46px; height: 46px; font-size: 16px; } }
         @media (pointer: coarse) and (orientation: portrait) { .mobile-aux-right .ui-watchparty-btn, .mobile-aux-right .ui-chat-btn, .mobile-aux-right .ui-lock-btn { display: none !important; } .center-play .ctrl-btn.skip-btn { margin: 0 clamp(44px, 15vw, 110px); } .action-row #customServerBtn, .action-row #custom-audio-btn, .action-row #captionsBtn, .action-row #qualityBtn, .action-row #playbackBtn, .action-row #preferencesBtn, .action-row #watchTogetherBtn, .action-row #fitBtn { display: none !important; } }
         @media (pointer: coarse) and (orientation: landscape) { #chatPanel, #watchPartyPanel { right: 40px !important; left: auto !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 50px) !important; } }
         @media (max-width: 600px) { #watchPartyPanel { right: 16px !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px) !important; width: calc(100vw - 32px) !important; } }
@@ -5119,7 +5124,7 @@ function getProxiedUrl(url, referer = '') {
         const URL_SEASON_TITLE = (URL_SEASON > 0 && isBootSpecialsTitle) ? `Season ${URL_SEASON}` : RAW_URL_SEASON_TITLE;
         const URL_EPISODE_ID = (URL_SEASON > 0 && isBootSeasonZeroEpisodeId) ? '' : RAW_URL_EPISODE_ID;
         const URL_ABSOLUTE_EPISODE = Number(params.get('absoluteEpisode') || 0);
-        const URL_TIME = Number(params.get('t') || 0);
+        let URL_TIME = Number(params.get('t') || 0);
         const URL_DISABLE_RESUME = String(params.get('resume') || '').trim() === '0';
         const URL_AUDIO = String(params.get('audio') || '').trim().toLowerCase();
 
@@ -5328,9 +5333,19 @@ function getProxiedUrl(url, referer = '') {
         let providerResults = {};
         let externalSubtitleTracks = []; // [{label, srclang, src, provider}]
         window.externalSubtitleTracks = externalSubtitleTracks;
+        let sharedAnikotoSubtitleScope = '';
+        let sharedAnikotoSubtitles = [];
 
         function setExternalSubtitleTracks(tracks) {
-            externalSubtitleTracks = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
+            const scope = `${MEDIA_TYPE}:${TMDB_ID}:${curSeason}:${curEpisode}`;
+            if (scope !== sharedAnikotoSubtitleScope) {
+                sharedAnikotoSubtitleScope = scope;
+                sharedAnikotoSubtitles = [];
+            }
+            const incoming = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
+            sharedAnikotoSubtitles = mergeSubtitleTrackLists(sharedAnikotoSubtitles,
+                incoming.filter(track => String(track?.provider || '').toLowerCase() === 'anikoto'));
+            externalSubtitleTracks = mergeSubtitleTrackLists(incoming, sharedAnikotoSubtitles);
             window.externalSubtitleTracks = externalSubtitleTracks;
             if (String(TMDB_ID || '') === '838209' && externalSubtitleTracks.length) {
                 const archiveSubtitle = externalSubtitleTracks.find((track) => /exhuma_eng\.srt/i.test(String(track?.src || '')));
@@ -5356,7 +5371,7 @@ function getProxiedUrl(url, referer = '') {
 
             const providerMatches = externalSubtitleTracks.filter((track) => {
                 const trackProvider = String(track?.provider || '').toLowerCase();
-                return !trackProvider || trackProvider === activeProvider;
+                return !trackProvider || trackProvider === activeProvider || trackProvider === 'anikoto';
             });
 
             return providerMatches.length ? providerMatches : externalSubtitleTracks.filter((track) => {
@@ -6859,10 +6874,18 @@ if (parsedProvider.includes('hdstream')) {
                          // parse time stalls playback before the bandwidth
                          // estimate can adapt. ABR will climb levels once the
                          // estimate proves there is headroom.
-                         hls.startLevel = 0;
-                         hls.autoLevelCapping = -1;
-                         const initialLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
-                          hls.startLoad(initialLoadTarget > 0 ? initialLoadTarget : 0);
+                          hls.startLevel = 0;
+                          // HDStream's CDN can report optimistic bandwidth on
+                          // the first manifest request and immediately jump to
+                          // a large rendition. Hold the lowest level briefly so
+                          // the requested/resume position gets a real buffer;
+                          // adaptive quality is released after startup.
+                          hls.autoLevelCapping = 0;
+                          const initialLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
+                           hls.startLoad(initialLoadTarget > 0 ? initialLoadTarget : 0);
+                          setTimeout(() => {
+                              if (hls === hlsInst && hls.levels?.length > 1) hls.autoLevelCapping = -1;
+                          }, 15000);
                      } catch (_) { }
                  }
                  setTimeout(() => {
@@ -7642,6 +7665,16 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                         // the CDN may just be very slow (20s+ per segment is normal).
                         console.warn('[hls-watchdog] Persistent stall, attempting same-source recovery...');
                         watchdogStallCount = 0;
+                        if (isCurrentAniKotoStream()) {
+                            // AniKoto streams can briefly stop advancing while their
+                            // current segment is still valid. Restart loading in place
+                            // instead of rebuilding the episode and appearing to reload.
+                            try {
+                                hls.startLoad(Math.max(0, Number(video.currentTime || 0) - 0.25));
+                                Promise.resolve(video.play()).catch(() => {});
+                            } catch (_) { }
+                            return;
+                        }
                         if (typeof onErrorFallback === 'function') onErrorFallback('watchdog_stall');
                     }
                 } else {
@@ -11887,11 +11920,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
         function updateSeekTrackFill(percent) {
             const fill = document.getElementById('seekTrackFill');
             if (!fill || !seekBar) return;
-            const track = fill.parentElement?.getBoundingClientRect();
-            const input = seekBar.getBoundingClientRect();
-            if (!track?.width || !input.width) return;
-            const thumbCenter = input.left + (Math.max(0, Math.min(100, percent)) / 100) * input.width;
-            fill.style.width = `${Math.max(0, thumbCenter - track.left)}px`;
+            fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
         }
 
         function syncTimeUI() {
@@ -11908,7 +11937,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             currentTimeEl.textContent = formatTime(video.currentTime);
             if (isFinite(video.duration) && video.duration > 0) {
                 // Update slider UI color fill percentage AND native thumb position
-                const p = (video.currentTime / video.duration) * 100;
+                const p = video.ended ? 100 : Math.max(0, Math.min(100, (video.currentTime / video.duration) * 100));
                 seekBar.value = String(p);
                 seekBar.style.setProperty('--seek-percent', p + '%');
                 updateSeekTrackFill(p);
@@ -16096,11 +16125,13 @@ video.addEventListener('canplay', (event) => {
                 hidePauseMediaCard();
             });
             video.addEventListener('ended', () => {
+                syncTimeUI();
                 saveCurrentEpisodeProgress(true);
                 markCurrentEpisodeWatched();
                 updateSkipSegmentButton();
                 updateNextEpisodeButton(true);
                 hidePauseMediaCard();
+                advanceAfterPlaybackEnd();
             });
         }
 
@@ -17130,7 +17161,7 @@ video.addEventListener('canplay', (event) => {
             });
 
             const getSeekPercentFromClientX = (clientX) => {
-                const rect = seekBar.getBoundingClientRect();
+                const rect = seekWrapper.getBoundingClientRect();
                 if (!rect.width) return parseFloat(seekBar.value || '0');
                 return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
             };
@@ -17446,7 +17477,7 @@ video.addEventListener('canplay', (event) => {
             function handleSeekPreview(e) {
                 if (!video || !isFinite(video.duration)) return;
 
-                const rect = seekBar.getBoundingClientRect();
+                const rect = seekWrapper.getBoundingClientRect();
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 const x = clientX - rect.left;
                 const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
@@ -19353,7 +19384,7 @@ video.addEventListener('canplay', (event) => {
                         const hdProviderBase = API_BASE.replace('/meta/tmdb', '/movies/hdstream4u');
                         const hdProviderTitle = String(info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || '').trim();
                         if (!hdProviderTitle) return;
-                        const hdCacheKey = `streamverse:v2:hds4u:tv:${String(TMDB_ID || '')}:${normalizeTitleForMatch(hdProviderTitle)}`;
+                        const hdCacheKey = `streamverse:v3:hds4u:tv:${String(TMDB_ID || '')}:${normalizeTitleForMatch(hdProviderTitle)}`;
                         let hdCache = null;
                         try {
                             const hdRaw = localStorage.getItem(hdCacheKey);
@@ -21916,21 +21947,47 @@ item.innerHTML = `
 
 
 
+        function advanceAfterPlaybackEnd() {
+            // The preference controls early countdowns; natural TV completion
+            // always advances. Watch-party guests follow their host's route.
+            _clearNextEpCountdown();
+            if (watchPartyRole === 'guest' || !video?.ended || !getNextEpisodeRef()) return;
+            goToNextEpisode().catch(error => console.error('[Next episode]', error));
+        }
+
+        let nextEpisodeTransitionPending = false;
         async function goToNextEpisode() {
+            if (nextEpisodeTransitionPending) return;
             const next = getNextEpisodeRef();
             if (!next) return;
-            if (next.selectionHint) {
-                pendingEpisodeSelectionHint = { ...next.selectionHint };
-                activeEpisodeSelectionHint = { ...next.selectionHint };
-            } else {
-                // No provider-specific next hint: drop the previous episode's
-                // hint so updateEpUI matches the next episode by number instead
-                // of re-highlighting the row we are leaving.
-                pendingEpisodeSelectionHint = null;
-                activeEpisodeSelectionHint = null;
+            nextEpisodeTransitionPending = true;
+            _clearNextEpCountdown();
+            try {
+                if (next.selectionHint) {
+                    pendingEpisodeSelectionHint = { ...next.selectionHint };
+                    activeEpisodeSelectionHint = { ...next.selectionHint };
+                } else {
+                    // Drop the previous hint so the new episode is highlighted.
+                    pendingEpisodeSelectionHint = null;
+                    activeEpisodeSelectionHint = null;
+                }
+                setLoader('Loading next episode...', 'Please wait');
+                const nextSeason = tvSeasons?.[next.seasonIndex];
+                const nextEpisode = nextSeason?.episodes?.[next.episodeIndex];
+                const nextHint = next.selectionHint || activeEpisodeSelectionHint || {};
+                const nextProgressKeys = getWatchedKeysForEpisodeIdentity({
+                    provider: String(nextHint.provider || getActiveEpisodeMenuProvider() || activeMenuProvider || '').trim().toLowerCase(),
+                    providerAnimeId: String(nextHint.providerAnimeId || nextSeason?.providerAnimeId || '').trim().toLowerCase(),
+                    episodeId: String(nextHint.episodeId || nextEpisode?.id || '').trim().toLowerCase(),
+                    seasonNo: Number(nextHint.seasonNo || nextSeason?.seasonNo || next.seasonIndex + 1),
+                    episodeNo: Number(nextHint.episodeNo || nextEpisode?.episode || next.episodeIndex + 1),
+                    absoluteEpisodeNo: Number(nextHint.absoluteEpisodeNo || nextEpisode?.absoluteEpisodeNo || 0),
+                });
+                const nextResumeTime = getResumeTimeFromEpisodeProgress(getEpisodeProgressForKeys(nextProgressKeys));
+                await playTvEp(next.seasonIndex, next.episodeIndex, nextResumeTime);
+            } finally {
+                nextEpisodeTransitionPending = false;
             }
-            setLoader('Loading next episode...', 'Please wait');
-            await playTvEp(next.seasonIndex, next.episodeIndex, 0);
         }
 
         async function playTvEp(si, ei, startTime = null, { initial = false } = {}) {
@@ -21940,6 +21997,7 @@ item.innerHTML = `
             if (!initial) inAppEpisodeNavigation = true;
             curSeason = si; curEpisode = ei;
             pendingEpisodeStartTime = Number.isFinite(startTime) ? Number(startTime) : null;
+            if (Number.isFinite(startTime)) URL_TIME = Math.max(0, Number(startTime));
             if (!pendingEpisodeSelectionHint) activeEpisodeSelectionHint = null;
             else activeEpisodeSelectionHint = { ...pendingEpisodeSelectionHint };
             
@@ -24911,8 +24969,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             const initPlyr = () => {
                 const plyrVideo = video;
                 console.log('Initializing Plyr...');
-                // Keep iOS playback video-only; other platforms retain existing subtitles.
-                if (!IS_IOS) applyExternalSubtitlesToVideo(video);
+                // Reattach episode-shared AniKoto captions after server/audio switches.
+                if (!IS_IOS || getActiveExternalSubtitleTracks().some(track => track.provider === 'anikoto')) applyExternalSubtitlesToVideo(video);
                 const qualities = hlsInst
                     ? [...new Set(hlsInst.levels.map(l => l.height).filter(Boolean))]
                     : [];
