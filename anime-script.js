@@ -447,7 +447,12 @@ header.classList.toggle('scrolled', window.scrollY > 50);
 // ------------------ INIT --------------------------------------------------
 document.addEventListener('DOMContentLoaded', async () => {
     cacheClearBtn?.addEventListener('click', clearOldAppCache);
-    if (location.pathname.endsWith('/anime.html')) return;
+    if (location.pathname.endsWith('/anime.html')) {
+        initContinueWatchingControls();
+        applyContinueGridLayout();
+        loadContinueWatching();
+        return;
+    }
     renderGenreFilterPanel();
     updateGenreFilterButtonState();
 
@@ -809,7 +814,10 @@ function loadContinueWatching() {
     try {
         const items = window.StreamVerseStorage.mergeHistory(JSON.parse(raw));
         const validItems = Array.isArray(items)
-            ? items.filter((item) => item && String(item.id || '').trim() && String(item.type || '').trim())
+            ? items.filter((item) => item && String(item.id || '').trim() && String(item.type || '').trim() && (
+                item.anime === true || String(item.db || '').toLowerCase() === 'anilist' ||
+                /^(anikoto|animesalt)$/i.test(String(item.provider || item.sourceProvider || ''))
+            ))
             : [];
 
         if (validItems.length === 0) {
@@ -6914,7 +6922,7 @@ if (location.pathname.endsWith('/anime.html')) {
             if (!spotlightSection || !spotlightLayout || !spotlightItems.length) return;
             spotlightIndex = ((Math.trunc(index) % spotlightItems.length) + spotlightItems.length) % spotlightItems.length;
             const item = spotlightItems[spotlightIndex];
-            const backdrop = item.cover || item.bannerImage || item.coverImage?.extraLarge || item.image || '';
+            const backdrop = item.bannerImage || item.coverImage?.extraLarge || item.cover || item.image || '';
             const title = titleOf(item);
             const year = String(item.releaseDate || item.startDate?.year || '').slice(0, 4);
             const episodes = Number(item.totalEpisodes || item.episodes || 0);
@@ -6987,7 +6995,7 @@ if (location.pathname.endsWith('/anime.html')) {
             }
             let candidates = rows.filter((row) => String(row.cover || row.bannerImage || '').trim());
             if (!candidates.length) candidates = rows;
-            spotlightItems = candidates.slice(0, 3);
+            spotlightItems = candidates.slice(0, 5);
             renderSpotlightRow(0);
             startSpotlightRotation();
         };

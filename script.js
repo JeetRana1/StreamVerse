@@ -377,7 +377,7 @@ const header = document.getElementById('main-header');
 const updatesHeaderBtn = document.getElementById('updates-header-btn');
 const updatesModal = document.getElementById('updates-modal');
 const updatesModalClose = document.getElementById('updates-modal-close');
-const UPDATES_VERSION = '1.5.0';
+const UPDATES_VERSION = '1.5.1';
 const openUpdates = () => { updatesModal?.classList.add('active'); updatesModal?.setAttribute('aria-hidden', 'false'); };
 const closeUpdates = () => { updatesModal?.classList.remove('active'); updatesModal?.setAttribute('aria-hidden', 'true'); localStorage.setItem('streamverse:updates-seen', UPDATES_VERSION); };
 updatesHeaderBtn?.addEventListener('click', openUpdates);
