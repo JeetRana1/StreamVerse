@@ -377,7 +377,7 @@ const header = document.getElementById('main-header');
 const updatesHeaderBtn = document.getElementById('updates-header-btn');
 const updatesModal = document.getElementById('updates-modal');
 const updatesModalClose = document.getElementById('updates-modal-close');
-const UPDATES_VERSION = '1.5.1';
+const UPDATES_VERSION = '1.5.6';
 const openUpdates = () => { updatesModal?.classList.add('active'); updatesModal?.setAttribute('aria-hidden', 'false'); };
 const closeUpdates = () => { updatesModal?.classList.remove('active'); updatesModal?.setAttribute('aria-hidden', 'true'); localStorage.setItem('streamverse:updates-seen', UPDATES_VERSION); };
 updatesHeaderBtn?.addEventListener('click', openUpdates);
@@ -446,6 +446,7 @@ let searchVersion = 0;
 let hydrationObserver = null;
 let continueSelectionMode = false;
 let continueSelectedKeys = new Set();
+let continueRenderSignature = '';
 const homepageFeaturedMediaKeys = new Set();
 let activeGenreFilterId = null;
 let activeGenreFilterIds = [];
@@ -842,6 +843,13 @@ function loadContinueWatching() {
         const validItems = Array.isArray(items)
             ? items.filter((item) => item && String(item.id || '').trim() && String(item.type || '').trim())
             : [];
+
+        const signature = JSON.stringify(validItems.map((item) => [getContinueItemKey(item), item.lastUpdated || item.updatedAt || 0]));
+        if (signature === continueRenderSignature && !continueSelectionMode) {
+            updateContinueWatchingControls(validItems.length);
+            return;
+        }
+        continueRenderSignature = signature;
 
         if (validItems.length === 0) {
             continueWatchingSection.style.display = 'none';

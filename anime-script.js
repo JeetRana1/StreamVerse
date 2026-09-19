@@ -417,6 +417,7 @@ let searchVersion = 0;
 let hydrationObserver = null;
 let continueSelectionMode = false;
 let continueSelectedKeys = new Set();
+let continueRenderSignature = '';
 const homepageFeaturedMediaKeys = new Set();
 let activeGenreFilterId = null;
 let activeGenreFilterIds = [];
@@ -801,7 +802,6 @@ function writeDetailCache(id, type, provider = '', data) {
 // ------------------ CONTINUE WATCHING -------------------------------------
 function loadContinueWatching() {
     if (!continueWatchingGrid || !continueWatchingSection) return;
-    window.StreamVerseStorage.refreshHistory().catch(() => {});
     applyContinueGridLayout();
 
     const raw = localStorage.getItem('sv_continue_watching');
@@ -819,6 +819,13 @@ function loadContinueWatching() {
                 /^(anikoto|animesalt)$/i.test(String(item.provider || item.sourceProvider || ''))
             ))
             : [];
+
+        const signature = JSON.stringify(validItems.map((item) => [getContinueItemKey(item), item.lastUpdated || item.updatedAt || 0]));
+        if (signature === continueRenderSignature && !continueSelectionMode) {
+            updateContinueWatchingControls(validItems.length);
+            return;
+        }
+        continueRenderSignature = signature;
 
         if (validItems.length === 0) {
             continueWatchingSection.style.display = 'none';

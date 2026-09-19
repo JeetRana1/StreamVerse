@@ -68,10 +68,15 @@
         }
         return identities(a).some((id) => identities(b).includes(id));
     }
+    function sameAnimeSeries(a, b) {
+        return namespace(a) === 'anilist' && namespace(b) === 'anilist' &&
+            String(a?.type || 'movie').toLowerCase() === String(b?.type || 'movie').toLowerCase() &&
+            String(a?.id || '') === String(b?.id || '');
+    }
     function mergeHistory(items) {
         const result = [];
         for (const item of (Array.isArray(items) ? items : []).filter(Boolean).map(normalize).sort((a, b) => Number(b.lastUpdated || 0) - Number(a.lastUpdated || 0))) {
-            const existing = result.find((row) => sameWork(row, item));
+            const existing = result.find((row) => sameWork(row, item) || sameAnimeSeries(row, item));
             if (!existing) result.push({ ...item });
             else if (!existing.workMapping && item.workMapping) existing.workMapping = item.workMapping;
         }
@@ -104,7 +109,6 @@
             if (JSON.stringify(current) !== JSON.stringify(merged)) {
                 localStorage.setItem(HISTORY, JSON.stringify(merged));
                 window.dispatchEvent(new CustomEvent('streamverse-history-changed'));
-                if (window.StreamVerseAuth?.getUser()) await Promise.all(merged.map(window.StreamVerseAuth.saveItem));
             }
         })().finally(() => { refreshPromise = null; });
         return refreshPromise;
