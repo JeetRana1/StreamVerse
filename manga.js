@@ -6,9 +6,8 @@ function getCurrentApiSource() {
   return localStorage.getItem('api_source') || 'prod';
 }
 
-const currentSource = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'local'
-  : getCurrentApiSource();
+const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const currentSource = isLocalHost ? 'local' : 'prod';
 const API_BASE = currentSource === 'local' ? LOCAL_API : PROD_API;
 const ROOT_API = API_BASE.replace(/\/meta\/tmdb\/?$/, ''); // Strip specific meta route for manga
 const API_MANGA_BASE = `${ROOT_API}/manga`;
