@@ -126,7 +126,10 @@ function renderMangaContinue() {
   rows.forEach((entry) => {
     const card = document.createElement('article');
     card.className = 'manga-card';
-    card.innerHTML = `<label class="manga-continue-check" style="display:${mangaClearMode ? 'block' : 'none'}"><input type="checkbox" data-continue-key="${escapeHtml(entry.key)}"><span></span></label><div class="manga-poster"><img src="${entry.image || 'https://placehold.co/300x450/1a1a2e/e50914?text=Manga'}" alt="${escapeHtml(entry.mangaTitle)}"><div class="manga-play-cue"><span>Page ${entry.page}</span><i class="fa-solid fa-book-open"></i></div></div><div class="manga-card-info"><h3 class="manga-card-title">${escapeHtml(entry.mangaTitle)}</h3><div class="manga-card-meta"><span>${escapeHtml(entry.chapterTitle)}</span><span>Page ${entry.page}</span></div></div>`;
+    const imageCandidates = buildImageCandidates(entry.image, 'mangak');
+    const fallbackImage = 'https://placehold.co/300x450/1a1a2e/e50914?text=Manga';
+    card.innerHTML = `<label class="manga-continue-check" style="display:${mangaClearMode ? 'block' : 'none'}"><input type="checkbox" data-continue-key="${escapeHtml(entry.key)}"><span></span></label><div class="manga-poster"><img src="${imageCandidates[0] || fallbackImage}" alt="${escapeHtml(entry.mangaTitle)}"><div class="manga-play-cue"><span>Page ${entry.page}</span><i class="fa-solid fa-book-open"></i></div></div><div class="manga-card-info"><h3 class="manga-card-title">${escapeHtml(entry.mangaTitle)}</h3><div class="manga-card-meta"><span>${escapeHtml(entry.chapterTitle)}</span><span>Page ${entry.page}</span></div></div>`;
+    attachImageFallback(card.querySelector('img'), imageCandidates, fallbackImage);
     card.querySelector('input').onclick = (event) => event.stopPropagation();
     card.onclick = () => openChapter({ ...entry, resumePage: entry.page });
     grid.appendChild(card);

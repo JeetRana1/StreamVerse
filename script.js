@@ -374,6 +374,17 @@ const movieModal = document.getElementById('movie-modal');
 const modalBody = document.getElementById('modal-body');
 const closeModal = document.querySelector('.close-modal');
 const header = document.getElementById('main-header');
+const updatesHeaderBtn = document.getElementById('updates-header-btn');
+const updatesModal = document.getElementById('updates-modal');
+const updatesModalClose = document.getElementById('updates-modal-close');
+const UPDATES_VERSION = '1.5.0';
+const openUpdates = () => { updatesModal?.classList.add('active'); updatesModal?.setAttribute('aria-hidden', 'false'); };
+const closeUpdates = () => { updatesModal?.classList.remove('active'); updatesModal?.setAttribute('aria-hidden', 'true'); localStorage.setItem('streamverse:updates-seen', UPDATES_VERSION); };
+updatesHeaderBtn?.addEventListener('click', openUpdates);
+updatesModalClose?.addEventListener('click', closeUpdates);
+updatesModal?.addEventListener('click', (event) => { if (event.target === updatesModal) closeUpdates(); });
+if (localStorage.getItem('streamverse:updates-seen') !== UPDATES_VERSION) openUpdates();
+
 const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
 const genreFilterBtn = document.getElementById('genre-filter-btn');
 const genreFilterPanel = document.getElementById('genre-filter-panel');

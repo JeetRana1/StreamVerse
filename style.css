@@ -1951,7 +1951,7 @@ header.scrolled {
 
 /* Styles consolidated below */
 
-.close-modal {
+.close-modal { 
     position: absolute;
     top: 24px;
     right: 24px;
@@ -4609,6 +4609,20 @@ body.trailer-open {
 .watch-party-header-btn i {
     font-size: 14px;
 }
+
+.updates-header-btn { width: 42px; height: 42px; border: 1px solid rgba(229,9,20,.45); border-radius: 50%; background: rgba(229,9,20,.12); color: #ff7180; cursor: pointer; }
+.updates-header-btn:hover { background: rgba(229,9,20,.28); transform: translateY(-1px); }
+.updates-modal { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.72); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+.updates-modal.active { opacity: 1; pointer-events: auto; }
+.updates-modal-card { position: relative; width: min(560px, 100%); padding: 38px 40px 34px; border: 1px solid #795536; border-radius: 18px; background: radial-gradient(circle at 50% 0, rgba(166,122,80,.18), transparent 38%), #211b17; box-shadow: 0 30px 90px rgba(0,0,0,.75), inset 0 0 0 7px rgba(121,85,54,.1); color: #f2e8d8; font-family: Georgia, 'Times New Roman', serif; }
+.updates-modal-close { position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border: 1px solid #9b7856; border-radius: 10px; background: #30251d; color: #f2e8d8; cursor: pointer; }
+.updates-kicker { color: #795536; font-size: .76rem; font-weight: 800; letter-spacing: .16em; }
+.updates-modal-card h2 { margin: 12px 0 5px; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.5rem, 4vw, 2rem); color: #f7eddf; }
+.updates-version { margin: 0 0 24px; color: #c3a888; font-size: .9rem; }
+.updates-meta { display: flex; gap: 10px; align-items: center; margin: 0 0 24px; color: #c3a888; font-size: .9rem; }
+.updates-meta span { padding: 4px 9px; border: 1px solid #8f6948; border-radius: 999px; color: #f0c38e; font-weight: 800; }
+.updates-modal-card ul { margin: 0; padding: 18px 20px 8px 30px; border-top: 1px solid rgba(121,85,54,.28); }
+.updates-modal-card li { margin: 13px 0; color: #e2d3c0; font-size: 1rem; line-height: 1.5; }
 .auth-header-btn {
     position: relative;
     overflow: hidden;

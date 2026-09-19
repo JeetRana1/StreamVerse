@@ -13,9 +13,14 @@
     <link rel="icon" href="logo.png">
     <style>
         .watchlist-container {
-            padding-top: 100px;
+            padding-top: 120px;
             min-height: 80vh;
         }
+        .watchlist-heading { display: flex; align-items: center; gap: 14px; }
+        .watchlist-heading .section-title { margin: 0; }
+        #watchlist-grid { margin-top: 28px; }
+        .watchlist-back-btn { border: 1px solid rgba(255,255,255,.18); border-radius: 10px; padding: 9px 12px; background: rgba(255,255,255,.07); color: #fff; cursor: pointer; font: inherit; }
+        .watchlist-back-btn:hover { border-color: rgba(229,9,20,.7); background: rgba(229,9,20,.16); }
         .empty-watchlist {
             text-align: center;
             padding: 100px 20px;
@@ -78,7 +83,7 @@
     </header>
 
     <main class="watchlist-container container">
-        <h1 class="section-title">My Watchlist</h1>
+        <div class="watchlist-heading"><button type="button" class="watchlist-back-btn" id="watchlist-back-btn" title="Go back"><i class="fa-solid fa-arrow-left"></i></button><h1 class="section-title">My Watchlist</h1></div>
         <div id="watchlist-grid" class="movie-grid">
             <!-- Watchlist items will be rendered here -->
         </div>
@@ -100,6 +105,10 @@
     <script src="script.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('watchlist-back-btn')?.addEventListener('click', () => {
+                if (window.history.length > 1) window.history.back();
+                else window.location.href = '/';
+            });
             renderWatchlist();
             
             // Search filter for watchlist
