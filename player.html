@@ -4676,14 +4676,50 @@
         ).replace(/\/$/, '');
         const MEDIA_PROXY_KEY = String(RUNTIME_CONFIG.MEDIA_PROXY_KEY || '').trim();
         let MEDIA_PROXY_TOKEN = '';
-        async function ensureMediaProxyToken() {
-            if (MEDIA_PROXY_TOKEN) return MEDIA_PROXY_TOKEN;
+        let MEDIA_PROXY_TOKEN_EXPIRES_AT = 0;
+        let mediaProxyTokenRefreshTimer = null;
+        // The VM issues a short-lived HMAC media-proxy token that the edge worker
+        // validates. Caching it forever makes every proxied HLS request 403 once
+        // the token expires (~10 min), which kills playback until the page is
+        // refreshed. Track the expiry, refresh in the background, and let the HLS
+        // loader inject the current token into each request.
+        const MEDIA_PROXY_TOKEN_REFRESH_MARGIN_MS = 90000;
+        async function ensureMediaProxyToken(force = false) {
+            const now = Date.now();
+            if (!force && MEDIA_PROXY_TOKEN && now < MEDIA_PROXY_TOKEN_EXPIRES_AT) return MEDIA_PROXY_TOKEN;
             const apiUrl = String(activeApiBase || API_BASE || '').replace(/\/meta\/tmdb\/?$/i, '') + '/media-proxy/token';
             try {
                 const response = await fetch(apiUrl, { credentials: 'omit' });
-                if (response.ok) MEDIA_PROXY_TOKEN = String((await response.json())?.token || '').trim();
+                if (response.ok) {
+                    const payload = await response.json().catch(() => ({}));
+                    const token = String(payload?.token || '').trim();
+                    if (token) {
+                        MEDIA_PROXY_TOKEN = token;
+                        const expiresIn = Number(payload?.expiresIn || 0);
+                        const ttlMs = (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 600) * 1000;
+                        MEDIA_PROXY_TOKEN_EXPIRES_AT = Date.now() + Math.max(30000, ttlMs - MEDIA_PROXY_TOKEN_REFRESH_MARGIN_MS);
+                        scheduleMediaProxyTokenRefresh();
+                    }
+                }
             } catch (_) {}
             return MEDIA_PROXY_TOKEN;
+        }
+        function scheduleMediaProxyTokenRefresh() {
+            if (mediaProxyTokenRefreshTimer) return;
+            mediaProxyTokenRefreshTimer = setInterval(() => {
+                ensureMediaProxyToken().catch(() => {});
+            }, 60000);
+        }
+        // Swap a stale `token=` value in an already-built proxy URL for the
+        // current token so long sessions survive token rotation seamlessly.
+        function applyCurrentMediaProxyToken(targetUrl) {
+            const raw = String(targetUrl || '');
+            if (!raw || !MEDIA_PROXY_TOKEN || !/[?&]token=/i.test(raw)) return raw;
+            try {
+                return raw.replace(/([?&]token=)[^&#]*/i, (_match, prefix) => `${prefix}${MEDIA_PROXY_TOKEN}`);
+            } catch (_) {
+                return raw;
+            }
         }
         const LOCAL_MEDIA_PROXY_BASE = String(
             RUNTIME_CONFIG.LOCAL_MEDIA_PROXY_BASE ||
@@ -6256,10 +6292,27 @@ function getProxiedUrl(url, referer = '') {
                  fragLoadingTimeOut: isThumbnail ? 10000 : (isHdstream || isAniKoto ? 45000 : 20000),
                   manifestLoadingTimeOut: isThumbnail ? 8000 : (isHdstream || isAniKoto ? 60000 : 15000),
                   levelLoadingTimeOut: isThumbnail ? 5000 : (isHdstream || isAniKoto ? 40000 : 8000),
+                // Media-proxy tokens rotate; inject the current one so manifest,
+                // level and fragment requests never carry an expired token.
+                // NB: with `progressive: true`, hls.js swaps XhrLoader for
+                // FetchLoader and never calls `xhrSetup`, so the URL rewrite must
+                // also happen in `fetchSetup` (returns a Request).
                 xhrSetup: (xhr, url) => {
+                    try {
+                        const retokened = applyCurrentMediaProxyToken(url);
+                        if (retokened && retokened !== url) xhr.open('GET', retokened, true);
+                    } catch (_) { }
                     xhr.timeout = isThumbnail
                         ? (isFlixHq ? 3500 : 5000)
                         : (isHdstream || isAniKoto ? 45000 : (isVega ? 30000 : (isAnimeKai ? 28000 : (isFlixHq ? 35000 : 25000))));
+                },
+                fetchSetup: (context, initParams) => {
+                    let url = context ? context.url : '';
+                    try {
+                        const retokened = applyCurrentMediaProxyToken(url);
+                        if (retokened) url = retokened;
+                    } catch (_) { }
+                    return new Request(url, initParams);
                 },
             });
         }
@@ -7110,6 +7163,13 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 // HLS instance has been destroyed. Never let that stale error
                 // trigger recovery on the newly selected source.
                 if (hls !== hlsInst) return;
+                // A 403 here is almost always the edge media-proxy rejecting an
+                // expired token. Mint a fresh one now; xhrSetup injects it into the
+                // retried manifest/segment requests so playback self-heals.
+                if (Number(d?.response?.code) === 403 && MEDIA_PROXY_TOKEN) {
+                    console.warn('[hls] Media-proxy 403; refreshing media-proxy token');
+                    ensureMediaProxyToken(true).catch(() => { });
+                }
                 if (d?.url && currentStreamUrl) {
                     try {
                         if (new URL(d.url).host !== new URL(currentStreamUrl).host) return;
