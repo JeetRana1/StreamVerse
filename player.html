@@ -4710,11 +4710,22 @@
                 ensureMediaProxyToken().catch(() => {});
             }, 60000);
         }
+        function usesMediaProxyAuth(targetUrl) {
+            try {
+                const target = new URL(targetUrl, location.href);
+                const apiOrigin = new URL(getProxyGatewayOrigin(activeApiBase || API_BASE), location.href).origin;
+                // The API proxy forwards provider query parameters and does not
+                // validate edge-worker credentials. Its token belongs to the CDN.
+                return target.origin !== apiOrigin
+                    && target.origin === new URL(getMediaProxyOrigin(), location.href).origin
+                    && /^\/proxy(?:\/|$)/i.test(target.pathname);
+            } catch (_) { return false; }
+        }
         // Swap a stale `token=` value in an already-built proxy URL for the
         // current token so long sessions survive token rotation seamlessly.
         function applyCurrentMediaProxyToken(targetUrl) {
             const raw = String(targetUrl || '');
-            if (!raw || !MEDIA_PROXY_TOKEN || !/[?&]token=/i.test(raw)) return raw;
+            if (!raw || !MEDIA_PROXY_TOKEN || !usesMediaProxyAuth(raw) || !/[?&]token=/i.test(raw)) return raw;
             try {
                 return raw.replace(/([?&]token=)[^&#]*/i, (_match, prefix) => `${prefix}${MEDIA_PROXY_TOKEN}`);
             } catch (_) {
@@ -23892,6 +23903,7 @@ console.log(`[${provider}] watch request completed`, {
                             cookieHeader: src.cookieHeader || data.headers?.Cookie || null,
                              isDub,
                              isSub: isAnimeAudioProvider && !isDub,
+                             extractionTimeMs: src.extractionTimeMs,
                             provider,
                             flixhqServer,
                         };
@@ -23902,6 +23914,9 @@ console.log(`[${provider}] watch request completed`, {
                             // The direct CDN can deliver near playback speed; prefer the
                             // alternate host, which serves the same HLS at a lower bitrate.
                             providerSources.sort((a, b) => {
+                                if (Number.isFinite(a.extractionTimeMs) && Number.isFinite(b.extractionTimeMs)) {
+                                    return a.extractionTimeMs - b.extractionTimeMs;
+                                }
                                 const aAlternate = /morencius\.com/i.test(String(a?.url || '')) ? 1 : 0;
                                 const bAlternate = /morencius\.com/i.test(String(b?.url || '')) ? 1 : 0;
                                 return bAlternate - aAlternate;
@@ -24529,6 +24544,7 @@ console.log(`[${provider}] watch request completed`, {
             const animeSaltCdnUrl = /^https?:\/\/(?:as-cdn\d+|z\d+)\.(?:top|ac|pro|xyz|click|link|net|cc|org)\//i.test(rawUrl);
             // Append the shared auth key so the Cloudflare proxy authorizes this request.
             const withMediaProxyAuth = (targetUrl) => {
+                if (!usesMediaProxyAuth(targetUrl)) return targetUrl;
                 const authValue = MEDIA_PROXY_TOKEN || MEDIA_PROXY_KEY;
                 if (!authValue) return targetUrl;
                 const joined = (targetUrl || '').includes('?') ? '&' : '?';
@@ -24579,7 +24595,13 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     ) {
                          safeReferer = 'https://animesalt.cx/';
                     }
-                    const proxyPath = `${mediaProxyOrigin}/proxy/hls/${parsed.host}${parsed.pathname}${parsed.search}`;
+                    // Keep provider credentials inside the encoded upstream URL
+                    // when the edge worker also needs its own token/key parameter.
+                    const isolateProviderAuth = usesMediaProxyAuth(`${mediaProxyOrigin}/proxy`)
+                        && (parsed.searchParams.has('token') || parsed.searchParams.has('key'));
+                    const proxyPath = isolateProviderAuth
+                        ? `${mediaProxyOrigin}/proxy?url=${encodeURIComponent(rawUrl)}`
+                        : `${mediaProxyOrigin}/proxy/hls/${parsed.host}${parsed.pathname}${parsed.search}`;
                     const withReferer = safeReferer ? `${proxyPath}${proxyPath.includes('?') ? '&' : '?'}referer=${encodeURIComponent(safeReferer)}` : proxyPath;
                     const withCookie = cookieHeader ? `${withReferer}${withReferer.includes('?') ? '&' : '?'}cookie=${encodeURIComponent(String(cookieHeader))}` : withReferer;
                     const result = withMediaProxyAuth(withCookie);
@@ -25189,6 +25211,9 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     sourceProvider === 'vegamovies' &&
                     (lowerReason.includes('manifest') || lowerReason.includes('network') || lowerReason.includes('startup_timeout'));
                 const isHdstreamSlowCdn = isCurrentHdstreamStream() && lowerReason === 'watchdog_stall';
+                if (sourceProvider === 'hdstream4u' &&
+                    (isConfirmedManifestUnavailable || lowerReason.includes('startup_timeout') || lowerReason === 'fatal_network_error') &&
+                    failoverToNextSource(reason)) return;
                 const maxAttempts = (isConfirmedManifestUnavailable || lowerReason === 'renditions_exhausted')
                     ? 0
                     : (isVegamoviesManifestFailure ? 2 : (reason === 'fatal_network_error' ? 1 : (isHdstreamSlowCdn ? 2 : 8)));
