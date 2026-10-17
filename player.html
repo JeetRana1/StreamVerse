@@ -5578,6 +5578,7 @@ function getProxiedUrl(url, referer = '') {
         let volumeToggleEl = null;
         let volumeBoost = 100; // 100% to 200%
         let audioEnhancementEnabled = localStorage.getItem('pref_cinemaAudio') !== 'false';
+        let audioEnhancementProfile = localStorage.getItem('pref_audioProfile') || 'cinema';
         let audioCtx = null;
         let gainNode = null;
         let sourceNode = null;
@@ -6024,52 +6025,59 @@ function getProxiedUrl(url, referer = '') {
             }
 
             const enabled = Boolean(audioEnhancementEnabled);
+            const profiles = {
+                cinema: { highPass: 32, lowShelf: 5.2, bass: 2.6, presence: 1.6, air: 1.4, width: 0.17, delay: 0.016, compression: 2.8, output: 0.94 },
+                theater: { highPass: 25, lowShelf: 9.5, bass: 6.5, presence: 0.4, air: 3.8, width: 0.34, delay: 0.026, compression: 1.8, output: 1.08 },
+                immersive: { highPass: 38, lowShelf: 3.2, bass: 3.8, presence: 4.5, air: 6.0, width: 0.52, delay: 0.038, compression: 1.25, output: 0.98 },
+                night: { highPass: 70, lowShelf: -2.5, bass: -1.5, presence: 5.8, air: -1.5, width: 0.03, delay: 0.004, compression: 6.0, output: 0.96 },
+            };
+            const profile = profiles[audioEnhancementProfile] || profiles.cinema;
             const outputGain = Math.max(0, Math.min(2, volumeBoost / 100));
 
             try {
                 connectAudioEnhancementGraph(enabled);
                 if (audioHighPassNode) {
-                    audioHighPassNode.frequency.value = enabled ? 32 : 20;
+                    audioHighPassNode.frequency.value = enabled ? profile.highPass : 20;
                     audioHighPassNode.Q.value = enabled ? 0.55 : 0.1;
                 }
                 if (audioLowShelfNode) {
                     audioLowShelfNode.frequency.value = 92;
-                    audioLowShelfNode.gain.value = enabled ? 5.2 : 0;
+                    audioLowShelfNode.gain.value = enabled ? profile.lowShelf : 0;
                 }
                 if (audioBassPunchNode) {
                     audioBassPunchNode.frequency.value = 165;
                     audioBassPunchNode.Q.value = 0.9;
-                    audioBassPunchNode.gain.value = enabled ? 2.6 : 0;
+                    audioBassPunchNode.gain.value = enabled ? profile.bass : 0;
                 }
                 if (audioPresenceNode) {
                     audioPresenceNode.frequency.value = 2850;
                     audioPresenceNode.Q.value = 0.95;
-                    audioPresenceNode.gain.value = enabled ? 1.6 : 0;
+                    audioPresenceNode.gain.value = enabled ? profile.presence : 0;
                 }
                 if (audioAirShelfNode) {
                     audioAirShelfNode.frequency.value = 7600;
-                    audioAirShelfNode.gain.value = enabled ? 1.4 : 0;
+                    audioAirShelfNode.gain.value = enabled ? profile.air : 0;
                 }
                 if (audioCompressorNode) {
                     audioCompressorNode.threshold.value = enabled ? -22 : -24;
                     audioCompressorNode.knee.value = enabled ? 22 : 12;
-                    audioCompressorNode.ratio.value = enabled ? 2.8 : 2.0;
+                    audioCompressorNode.ratio.value = enabled ? profile.compression : 2.0;
                     audioCompressorNode.attack.value = enabled ? 0.006 : 0.01;
                     audioCompressorNode.release.value = enabled ? 0.18 : 0.25;
                 }
                 if (audioWidthDelayLeftNode) {
-                    audioWidthDelayLeftNode.delayTime.value = enabled ? 0.018 : 0;
+                    audioWidthDelayLeftNode.delayTime.value = enabled ? profile.delay : 0;
                 }
                 if (audioWidthDelayRightNode) {
-                    audioWidthDelayRightNode.delayTime.value = enabled ? 0.014 : 0;
+                    audioWidthDelayRightNode.delayTime.value = enabled ? profile.delay * 0.78 : 0;
                 }
                 if (audioWidthGainLeftNode) {
-                    audioWidthGainLeftNode.gain.value = enabled ? 0.18 : 0;
+                    audioWidthGainLeftNode.gain.value = enabled ? profile.width : 0;
                 }
                 if (audioWidthGainRightNode) {
-                    audioWidthGainRightNode.gain.value = enabled ? 0.16 : 0;
+                    audioWidthGainRightNode.gain.value = enabled ? profile.width * 0.9 : 0;
                 }
-                gainNode.gain.value = enabled ? Math.min(1.85, outputGain * 0.94) : outputGain;
+                    gainNode.gain.value = enabled ? Math.min(1.85, outputGain * profile.output) : outputGain;
             } catch (e) {
                 console.warn('Audio enhancement update failed:', e);
             }
@@ -6123,6 +6131,17 @@ function getProxiedUrl(url, referer = '') {
                 seasonIndex: position.seasonIndex,
                 seasonPartNo: Number(season.seasonPartNo || season.part || season.partNo || 0),
             };
+        }
+
+        function setAudioEnhancementProfile(profile) {
+            const allowed = ['cinema', 'theater', 'immersive', 'night'];
+            audioEnhancementProfile = allowed.includes(profile) ? profile : 'cinema';
+            localStorage.setItem('pref_audioProfile', audioEnhancementProfile);
+            audioEnhancementEnabled = true;
+            localStorage.setItem('pref_cinemaAudio', 'true');
+            ensureAudioContext();
+            updateAudioEnhancementChain();
+            buildPreferencesMenu();
         }
 
         function syncUrlState(options = {}) {
@@ -13000,6 +13019,52 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 ? 'Adds cinematic EQ and compression. Best with headphones or stereo speakers.'
                 : 'Unavailable for this source because the browser blocks WebAudio access.';
             preferencesMenu.appendChild(cinemaHint);
+
+            const audioProfileLabel = document.createElement('div');
+            audioProfileLabel.className = 'menu-section-label';
+            audioProfileLabel.textContent = 'Sound Profile';
+            preferencesMenu.appendChild(audioProfileLabel);
+
+            const audioProfileOptions = [
+                ['cinema', 'Cinema Audio'],
+                ['theater', 'Theater Surround'],
+                ['immersive', 'Immersive Wide'],
+                ['night', 'Night Dialogue'],
+            ];
+            const selectedProfile = audioProfileOptions.find(([value]) => value === audioEnhancementProfile) || audioProfileOptions[0];
+            const audioProfileWrap = document.createElement('div');
+            audioProfileWrap.style.cssText = 'position:relative;margin:4px 0 8px;';
+            const audioProfileButton = document.createElement('button');
+            audioProfileButton.type = 'button';
+            audioProfileButton.className = 'menu-item';
+            audioProfileButton.style.cssText = 'width:100%;justify-content:space-between;text-align:left;';
+            audioProfileButton.disabled = !cinemaCompatible;
+            audioProfileButton.innerHTML = `<span>${selectedProfile[1]}</span><span aria-hidden="true">v</span>`;
+            const audioProfileList = document.createElement('div');
+            audioProfileList.style.cssText = 'display:none;gap:5px;flex-direction:column;margin-top:5px;';
+            audioProfileOptions.forEach(([value, label]) => {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = `menu-item ${value === selectedProfile[0] ? 'selected' : ''}`;
+                option.style.width = '100%';
+                option.textContent = label;
+                option.addEventListener('click', () => {
+                    setAudioEnhancementProfile(value);
+                    audioProfileList.style.display = 'none';
+                });
+                audioProfileList.appendChild(option);
+            });
+            audioProfileButton.addEventListener('click', () => {
+                audioProfileList.style.display = audioProfileList.style.display === 'flex' ? 'none' : 'flex';
+            });
+            audioProfileWrap.appendChild(audioProfileButton);
+            audioProfileWrap.appendChild(audioProfileList);
+            preferencesMenu.appendChild(audioProfileWrap);
+
+            const audioProfileHint = document.createElement('div');
+            audioProfileHint.className = 'menu-section-hint';
+            audioProfileHint.textContent = 'Theater adds bass and width; Immersive expands the stereo field; Night emphasizes dialogue.';
+            preferencesMenu.appendChild(audioProfileHint);
 
             // Auto Episode toggle row
             const toggleRow = document.createElement('label');
@@ -20632,7 +20697,12 @@ video.addEventListener('canplay', (event) => {
             const promise = (async () => {
                 for (const url of seasonUrls) {
                     try {
-                        const parsed = await fetchJsonWithRetry(url, 8000, 12000);
+                        // Episode-menu hydration is auxiliary. Do not use the
+                        // global API fallback here: a transient 502 must not
+                        // switch a local player onto the production media proxy.
+                        const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        const parsed = await response.json();
                         if (mergeTmdbSeasonEpisodeDetails(parsed, safeSeasonNo)) {
                             return true;
                         }
