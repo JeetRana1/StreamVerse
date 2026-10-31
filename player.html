@@ -7287,15 +7287,29 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     }
                 }
                 const isFlixHqStream = isCurrentFlixHqStream();
-                const isAudioPipelineIssue =
-                    detailText.includes('audio') ||
+                 const isAudioPipelineIssue =
+                     detailText.includes('audio') ||
                     d?.details === Hls.ErrorDetails.AUDIO_TRACK_LOAD_ERROR ||
                     d?.details === Hls.ErrorDetails.AUDIO_TRACK_LOAD_TIMEOUT ||
                     d?.details === Hls.ErrorDetails.AUDIO_TRACK_PARSING_ERROR ||
-                    d?.details === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR;
-                const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000;
+                     d?.details === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR;
+                 const isSubtitleTrackIssue =
+                     detailText.includes('subtitletrackloaderror') ||
+                     detailText.includes('subtitletrackloadtimeout') ||
+                     detailText.includes('subtitletrackparsingerror') ||
+                     d?.details === Hls.ErrorDetails.SUBTITLE_TRACK_LOAD_ERROR ||
+                     d?.details === Hls.ErrorDetails.SUBTITLE_TRACK_LOAD_TIMEOUT ||
+                     d?.details === Hls.ErrorDetails.SUBTITLE_TRACK_PARSING_ERROR;
+                 const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000;
 
-                if (isAudioPipelineIssue) {
+                 if (isSubtitleTrackIssue) {
+                     console.warn('[hls] Subtitle track failed; keeping video playback alive.');
+                     try { hls.subtitleTrack = -1; } catch (_) { }
+                     updateCaptionsButtonVisibility();
+                     return;
+                 }
+
+                 if (isAudioPipelineIssue) {
                     if (isFlixHqStream && !inRapidSeekMode) {
                         const shouldEscalate = markFlixhqAudioGlitch(2);
                         if (shouldEscalate && typeof onErrorFallback === 'function') {
