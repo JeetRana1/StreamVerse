@@ -928,6 +928,7 @@ function initContinueWatchingControls() {
     continueClearCancelBtn.addEventListener('click', () => {
         continueSelectionMode = false;
         continueSelectedKeys = new Set();
+        continueRenderSignature = '';
         loadContinueWatching();
     });
 
