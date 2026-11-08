@@ -5423,7 +5423,14 @@ function getProxiedUrl(url, referer = '') {
                 return !trackProvider || trackProvider === activeProvider || trackProvider === 'anikoto';
             });
 
-            return providerMatches.length ? providerMatches : externalSubtitleTracks.filter((track) => {
+            if (providerMatches.length) return providerMatches;
+            // Keep Play4u captions after video-provider failover when they are
+            // the only subtitle tracks fetched for this episode.
+            const play4uTracks = externalSubtitleTracks.filter((track) =>
+                String(track?.provider || '').toLowerCase() === 'play4u'
+            );
+            if (play4uTracks.length) return play4uTracks;
+            return externalSubtitleTracks.filter((track) => {
                 const trackProvider = String(track?.provider || '').toLowerCase();
                 return !trackProvider || trackProvider === 'animesalt';
             });
@@ -5555,7 +5562,7 @@ function getProxiedUrl(url, referer = '') {
             // hdstream4u now uses the server-side fast path (~1s); 60s still covers the worst-case Playwright fallback race.
             hdstream4u: { watch: 60000, metaInfo: 12000 },
             // Do not let an unavailable Play4u mirror delay the HDStream fallback.
-            play4u: { watch: 5000, metaInfo: 2500, animeSearch: 2000, animeInfo: 2500 },
+            play4u: { watch: 30000, metaInfo: 30000, animeSearch: 30000, animeInfo: 15000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
@@ -6976,19 +6983,30 @@ if (parsedProvider.includes('hdstream')) {
                           }, 15000);
                      } catch (_) { }
                  }
-                  if (String(parsedProvider || '').toLowerCase() === 'play4u' && Array.isArray(hls.levels) && hls.levels.length > 1) {
-                      const highestLevel = hls.levels.reduce(
+                   if (String(parsedProvider || '').toLowerCase() === 'play4u' && Array.isArray(hls.levels) && hls.levels.length > 1) {
+                       const compatibleLevels = hls.levels
+                           .map((level, index) => ({ level, index }))
+                           .filter(({ level }) => !/\b(?:hev1|hvc1|vp9|av01)\b/i.test(String(level?.codecSet || level?.codecs || '')));
+                       const highestLevel = hls.levels.reduce(
                           (best, level, index) => Number(level?.height || 0) > Number(hls.levels[best]?.height || 0) ? index : best,
                           0,
                       );
                       // Warm up on the smallest rendition, then release hls.js
                       // back to ABR. Pinning currentLevel here disables the
                       // automatic climb and can leave playback at the startup level.
-                      hls.startLevel = 0;
-                      hls.autoLevelCapping = 0;
-                      setTimeout(() => {
+                       hls.startLevel = 0;
+                       hls.autoLevelCapping = 0;
+                       if (compatibleLevels.length) {
+                           hls.startLevel = compatibleLevels[0].index;
+                           hls.autoLevelCapping = compatibleLevels[compatibleLevels.length - 1].index;
+                       }
+                       const play4uLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
+                       hls.startLoad(play4uLoadTarget);
+                       setTimeout(() => {
                           if (hls !== hlsInst || !hls.levels?.length) return;
-                          hls.autoLevelCapping = -1;
+                           hls.autoLevelCapping = compatibleLevels.length
+                               ? compatibleLevels[compatibleLevels.length - 1].index
+                               : -1;
                           hls.nextLevel = -1;
                           console.log('[hls] Play4u released startup cap; ABR can climb to:', hls.levels[highestLevel]?.height || 'unknown');
                       }, 12000);
@@ -7397,7 +7415,13 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     }, 80);
                 }
 
-                if (isFragParsing && !d.fatal) {
+                    if (isFragParsing && !d.fatal) {
+                    if (String(currentStreamProvider || '').toLowerCase() === 'play4u') {
+                        // Play4u can emit recoverable parser noise while its
+                        // image-looking HLS segments are being transmuxed. Do
+                        // not turn that noise into an artificial timeline jump.
+                        return;
+                    }
                     if (isFlixHqStream && !inRapidSeekMode && (Date.now() - lastUserSeekAt) > 2500) {
                         const shouldEscalate = markFlixhqAudioGlitch(1);
                         if (shouldEscalate && typeof onErrorFallback === 'function') {
@@ -7562,6 +7586,13 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 // (This is the main cause of black-screen Ã¢â‚¬â€ proxy refused = fatal frag load)
                 if (d.fatal && (isFragLoad || isLevelLoad)) {
                     const code = Number(d?.response?.code || 0);
+                    const currentProvider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
+                    const hasHdstreamFallback = allSources?.some((source) => String(source?.provider || '').toLowerCase() === 'hdstream4u');
+                    if (currentProvider === 'play4u' && hasHdstreamFallback && typeof onErrorFallback === 'function') {
+                        console.warn('[hls] Play4u playlist failed; switching to the available HDStream source.');
+                        onErrorFallback('fatal_network_error');
+                        return;
+                    }
                     if (isFlixHqStream && typeof onErrorFallback === 'function' && (code === 403 || code === 404 || code >= 500 || isLevelLoad)) {
                         console.warn('[hls] FlixHQ HLS proxy/source failed, switching source immediately.');
                         onErrorFallback('fatal_network_error');
@@ -7618,6 +7649,13 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                         showBufferingOverlay();
                         setTimeout(() => { try { if (hls) hls.startLoad(); } catch (_) { } }, 300);
                     } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                        const currentProvider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
+                        const hasHdstreamFallback = allSources?.some((source) => String(source?.provider || '').toLowerCase() === 'hdstream4u');
+                        if (isFragParsing && currentProvider === 'play4u' && hasHdstreamFallback && typeof onErrorFallback === 'function') {
+                            console.warn('[hls] Play4u media codec is unsupported; switching to HDStream fallback.');
+                            onErrorFallback('fatal_media_error');
+                            return;
+                        }
                         mediaErrorCount++;
                         if (isFragParsing) hlsSessionIsFragile = true;
                         const recentlySeeked = (Date.now() - lastUserSeekAt) < 6000;
@@ -10127,6 +10165,24 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             }
 
             const movieProviderBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
+            if (provider === 'play4u' && TMDB_ID) {
+                const { res } = await fetchJsonWithApiFallback(`${movieProviderBase}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(mediaType)}`, {
+                    signal: AbortSignal.timeout(30000),
+                });
+                if (res.ok) {
+                    const info = await res.json();
+                    const imdbId = String(info.imdbId || '').match(/^tt\d+$/)?.[0];
+                    if (imdbId && String(info.tmdbId) === String(TMDB_ID)) {
+                        // Series landing pages show only the currently selected
+                        // season. Resolve the requested episode, never an array index.
+                        const episodeId = mediaType === 'tv'
+                            ? `https://play4u.org/series/${imdbId}/s-${String(safeNo(seasonNo)).padStart(2, '0')}/ep-${String(safeNo(episodeNo)).padStart(2, '0')}`
+                            : info.episodeId || info.id;
+                        providerEpisodeIdCache.set(cacheKey, { info, episodeId });
+                        return { info, episodeId };
+                    }
+                }
+            }
             const allTerms = Array.from(
                 new Set([
                     title,
@@ -10837,7 +10893,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             // HDStream/acek sources are already slow on their first segment.
             // A second preview HLS session competes with the main player and
             // can delay startup or trigger manifest timeout recovery.
-            if (provider.includes('hdstream') || /(?:acek-cdn|dramiyos-cdn)\.com/i.test(raw)) return false;
+            if (provider === 'play4u' || provider.includes('hdstream') || /(?:acek-cdn|dramiyos-cdn)\.com/i.test(raw)) return false;
             // Vegamovies often returns tokenized playlist .txt URLs that are not stable enough
             // for a second HLS session; keep preview in canvas-only mode to avoid extra failures.
             if (provider === 'vegamovies') return false;
@@ -11206,6 +11262,19 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     silenceNativeTracks();
                     updateCaptionsButtonVisibility();
                     buildCaptionsMenu();
+                    // A later provider response can replace the track list
+                    // after playback has already started. Re-select the loaded
+                    // track so captions do not require a page refresh.
+                    const loadedIndex = Array.from(videoEl.textTracks || []).findIndex((item) => item === track);
+                    const preferred = localStorage.getItem('preferredSubtitleLabel');
+                    const shouldActivate = loadedIndex >= 0 && (
+                        loadedIndex === activeSubtitleTrackIndex ||
+                        (preferred && preferred === track.label) ||
+                        (activeSubtitleTrackIndex < 0 && loadedIndex === getDefaultEnglishSubtitleIndex())
+                    );
+                    if (shouldActivate) {
+                        selectSubtitleTrack(loadedIndex);
+                    }
                     // If this was the intended active track, refresh
                     if (String(TMDB_ID || '') === '838209') {
                         const exhumaIndex = Array.from(videoEl.textTracks || []).findIndex((item) => item.label === track.label);
@@ -11502,6 +11571,21 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
         function bindSubtitleCueListeners() {
             if (!video || !video.textTracks) return;
+            if (!video.__subtitleTimeUpdateBound) {
+                video.addEventListener('timeupdate', () => {
+                    if (activeSubtitleTrackIndex >= 0 && video.textTracks[activeSubtitleTrackIndex]) {
+                        renderSubtitleOverlayFromTrack(video.textTracks[activeSubtitleTrackIndex]);
+                    }
+                });
+                video.__subtitleTimeUpdateBound = true;
+            }
+            if (!video.__subtitleRefreshTimer) {
+                video.__subtitleRefreshTimer = setInterval(() => {
+                    if (activeSubtitleTrackIndex >= 0 && video.textTracks[activeSubtitleTrackIndex]) {
+                        renderSubtitleOverlayFromTrack(video.textTracks[activeSubtitleTrackIndex]);
+                    }
+                }, 250);
+            }
             const tracks = Array.from(video.textTracks);
             tracks.forEach((track) => {
                 if (track.__overlayBound) return;
@@ -16445,7 +16529,7 @@ video.addEventListener('canplay', (event) => {
             closeAllPopups();
             if (willOpen) {
                 positionMenuAbove(epPanel, btn);
-                buildEpPanel();
+                buildEpPanel(true);
                 epPanel.classList.add('open');
                 // Reposition after the menu content is rendered so short
                 // seasons use their real height while keeping the bottom edge
@@ -19964,6 +20048,9 @@ video.addEventListener('canplay', (event) => {
             const hideIndiaGotLatentSeasonOne = (seasons) => String(TMDB_ID) === '262838'
                 ? (Array.isArray(seasons) ? seasons : []).filter((season) => Number(season?.seasonNo || 0) !== 1)
                 : seasons;
+            const limitBiggBossToSeason20 = (seasons) => String(TMDB_ID) === '11436'
+                ? (Array.isArray(seasons) ? seasons : []).filter((season) => Number(season?.seasonNo || 0) === 20)
+                : seasons;
             const removeMovieEntriesFromTvMenu = (seasons) => {
                 if (MEDIA_TYPE !== 'tv') return Array.isArray(seasons) ? seasons : [];
                 return (Array.isArray(seasons) ? seasons : []).filter((season) => {
@@ -19992,9 +20079,9 @@ video.addEventListener('canplay', (event) => {
                     let providerScoped = scopedProvider === 'animesalt'
                         ? mergeMenuSeasonsBySeasonNo(scoped)
                         : scoped;
-                    return cloneAndSortMenuSeasons(hideIndiaGotLatentSeasonOne(removeDuplicateExtrasMenuSeasons(removeMovieEntriesFromTvMenu(providerScoped), {
+                    return cloneAndSortMenuSeasons(limitBiggBossToSeason20(hideIndiaGotLatentSeasonOne(removeDuplicateExtrasMenuSeasons(removeMovieEntriesFromTvMenu(providerScoped), {
                         dropExtras: isFlixhqEpisodeMenuContext(scopedProvider),
-                    })));
+                    }))));
                 }
             }
             let menuSeasons = removeDuplicateExtrasMenuSeasons(removeMovieEntriesFromTvMenu(chooseExpandedEpisodeMenuSeasons(tvSeasons)), {
@@ -20016,7 +20103,7 @@ video.addEventListener('canplay', (event) => {
                 if (hasHdstreamProvider && Number(season?.seasonNo || 0) <= 0 && !/bonus|netflix[\s\-]*special/i.test(seasonName)) return false;
                 return true;
             });
-            return cloneAndSortMenuSeasons(hideIndiaGotLatentSeasonOne(menuSeasons));
+            return cloneAndSortMenuSeasons(limitBiggBossToSeason20(hideIndiaGotLatentSeasonOne(menuSeasons)));
         }
 
         function mergeMenuSeasonsBySeasonNo(seasons) {
@@ -21046,7 +21133,10 @@ video.addEventListener('canplay', (event) => {
             return { seasonIndex: fallbackSeason, episodeIndex: safeEpisodeIndex };
         }
 
-        function buildEpPanel() {
+        function buildEpPanel(force = false) {
+            // Hidden episode cards are not needed for playback. Build from
+            // current metadata when opened rather than blocking HLS startup.
+            if (!force && !epPanel.classList.contains('open')) return;
             epPanel.innerHTML = '';
             const scrollRoot = document.createElement('div');
             scrollRoot.className = 'ep-panel-scroll';
@@ -21156,7 +21246,11 @@ video.addEventListener('canplay', (event) => {
             episodeTabsWrap.addEventListener('pointerup', stopEpisodeTabsDrag);
             episodeTabsWrap.addEventListener('pointercancel', stopEpisodeTabsDrag);
             let menuOrder = 0;
-            menuSeasons.forEach((s, si) => {
+            const renderedMenuSeasons = new Set();
+            const renderMenuSeason = (si) => {
+                if (renderedMenuSeasons.has(si) || !menuSeasons[si]) return;
+                renderedMenuSeasons.add(si);
+                const s = menuSeasons[si];
                 const lbl = document.createElement('div');
                 lbl.className = 'ep-season';
                 lbl.dataset.seasonIndex = String(si);
@@ -21434,7 +21528,7 @@ item.innerHTML = `
                     };
                     scrollRoot.appendChild(item);
                 });
-            });
+            };
             const applyEpisodeRangeFilter = (seasonIndex, rangeStart = 1) => {
                 scrollRoot.querySelectorAll('.ep-item').forEach((node) => {
                     if (Number(node.dataset.seasonIndex) !== seasonIndex) return;
@@ -21469,6 +21563,7 @@ item.innerHTML = `
                 applyEpisodeRangeFilter(seasonIndex, 1);
             };
             const applySeasonFilter = (seasonIndex) => {
+                renderMenuSeason(seasonIndex);
                 const canAnimatePanel = epPanel && !IS_MOBILE_CLIENT && window.matchMedia('(min-width: 721px) and (pointer: fine)').matches;
                 const previousHeight = canAnimatePanel ? epPanel.getBoundingClientRect().height : 0;
                 if (canAnimatePanel && previousHeight > 0) {
@@ -24082,15 +24177,30 @@ console.log(`[${provider}] watch request completed`, {
                             : [];
                         const subs = mergeSubtitleTrackLists(primarySubs, dubSubs);
                          if (subs.length) {
-                             setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, subs));
-                             // AnimeSalt supplies subtitles separately from the HLS
-                             // manifest, so attach them as soon as the watch response
-                             // arrives instead of waiting for a later player refresh.
-                             if (video) await applyExternalSubtitlesToVideo(video);
+                             const activeProvider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
+                             const hasActivePlay4uSubtitles = externalSubtitleTracks.some((track) =>
+                                 String(track?.provider || '').toLowerCase() === 'play4u'
+                             );
+                             const isLateHdstreamFallback = provider === 'hdstream4u' &&
+                                 activeProvider === 'play4u' && hasActivePlay4uSubtitles;
+                             if (!isLateHdstreamFallback) {
+                                 setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, subs));
+                                 // AnimeSalt supplies subtitles separately from the HLS
+                                 // manifest, so attach them as soon as the watch response
+                                 // arrives instead of waiting for a later player refresh.
+                                 if (video) await applyExternalSubtitlesToVideo(video);
+                             }
                          }
 
-                        // Trigger UI update
-                        updateSourceList();
+                         // Trigger UI update
+                         updateSourceList();
+                         if (provider === 'hdstream4u' && String(currentStreamProvider || '').toLowerCase() === 'play4u' && video?.error) {
+                             const fallbackIndex = allSources.findIndex((source) => String(source?.provider || '').toLowerCase() === 'hdstream4u');
+                             if (fallbackIndex >= 0) {
+                                 console.warn('[hls] Play4u media failed before HDStream arrived; starting HDStream fallback.');
+                                 playSource(fallbackIndex, Math.max(0, Number(video.currentTime || 0)));
+                             }
+                         }
                     } else {
                         throw new Error('Unusable sources');
                     }
@@ -25701,19 +25811,12 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     }
                 if (!IS_IOS && !userPaused) {
                     video.play().catch(() => {
-                        video.muted = true;
-                        video.play()
-                            .then(() => {
-                                // Chrome may reject the first audible autoplay attempt.
-                                // Play4u should still honor the user's saved audio state
-                                // once the muted autoplay has successfully started.
-                                if (String(currentStreamProvider || '').toLowerCase() === 'play4u') {
-                                    restoreSavedAudioState(video);
-                                    if (!localStorage.getItem('streamverse:audio-state')) video.muted = false;
-                                }
-                                setPlayIcon(true);
-                            })
-                            .catch(() => hideLoader());
+                        // Autoplay rejection is not a request to mute. Muting
+                        // here also persisted through the volumechange handler.
+                        // Let the user start audible playback with the controls.
+                        hideLoader();
+                        setPlayIcon(false);
+                        showControlSurface();
                     }).then(() => {
                         if (video && !video.paused) setPlayIcon(true);
                     });

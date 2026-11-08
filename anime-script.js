@@ -3590,7 +3590,12 @@ function normalizeModalTvSeasons(movie, options = {}) {
         })
         .filter((season) => season && season.episodes.length);
 
-    if (normalized.length) return normalized.sort((a, b) => a.seasonNo - b.seasonNo);
+    const isBiggBoss = String(movie?.id || movie?.tmdb_id || movie?.tmdbId || '') === '11436' ||
+        /\bbigg\s*boss\b/i.test(String(movie?.title || movie?.name || ''));
+    const limited = isBiggBoss
+        ? normalized.filter((season) => season.seasonNo === 20)
+        : normalized;
+    if (limited.length) return limited.sort((a, b) => a.seasonNo - b.seasonNo);
 
     const flatEpisodes = Array.isArray(movie?.episodes) ? movie.episodes : [];
     if (flatEpisodes.length) {

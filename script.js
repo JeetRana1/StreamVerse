@@ -2954,9 +2954,16 @@ function getSearchRelevanceScore(item, query) {
 
     const tokens = buildSearchTokens(queryNorm);
     if (tokens.length) {
+        const titleTokens = titleNorm.split(' ').filter(Boolean);
+        if (tokens.length === titleTokens.length && tokens.every((token, index) => {
+            const candidate = titleTokens[index] || '';
+            return candidate === token || (candidate.startsWith(token) && candidate.length - token.length <= 1);
+        })) score += 320;
         let overlap = 0;
         for (const token of tokens) {
-            if (haystack.includes(token)) overlap += 1;
+            if (haystack.includes(token) || haystack.split(' ').some((candidate) =>
+                candidate.startsWith(token) && candidate.length - token.length <= 1
+            )) overlap += 1;
         }
         score += overlap * 24;
         if (overlap === tokens.length && tokens.length >= 2) score += 95;
@@ -2990,11 +2997,20 @@ function getSearchTitleMatchTier(item, query) {
     const titleNorm = normalizeSearchIdentityText(getTitle(item));
     if (!queryNorm || !titleNorm) return 0;
     if (titleNorm === queryNorm) return 4;
+    const queryTokens = buildSearchTokens(queryNorm);
+    const titleTokens = titleNorm.split(' ').filter(Boolean);
+    const equivalentTitle = queryTokens.length === titleTokens.length && queryTokens.every((token, index) => {
+        const candidate = titleTokens[index] || '';
+        return candidate === token || (candidate.startsWith(token) && candidate.length - token.length <= 1);
+    });
+    if (equivalentTitle) return 4;
     if (titleNorm.startsWith(queryNorm)) return 3;
     if (titleNorm.includes(queryNorm)) return 2;
 
     const tokens = buildSearchTokens(queryNorm);
-    return tokens.length && tokens.every((token) => titleNorm.includes(token)) ? 1 : 0;
+    return tokens.length && tokens.every((token) => titleNorm.includes(token) || titleNorm.split(' ').some((candidate) =>
+        candidate.startsWith(token) && candidate.length - token.length <= 1
+    )) ? 1 : 0;
 }
 
 function sortSearchResultsByQuery(items, query) {
@@ -3659,7 +3675,12 @@ function normalizeModalTvSeasons(movie, options = {}) {
         })
         .filter((season) => season && season.episodes.length);
 
-    if (normalized.length) return normalized.sort((a, b) => a.seasonNo - b.seasonNo);
+    const isBiggBoss = String(movie?.id || movie?.tmdb_id || movie?.tmdbId || '') === '11436' ||
+        /\bbigg\s*boss\b/i.test(String(movie?.title || movie?.name || ''));
+    const limited = isBiggBoss
+        ? normalized.filter((season) => season.seasonNo === 20)
+        : normalized;
+    if (limited.length) return limited.sort((a, b) => a.seasonNo - b.seasonNo);
 
     const flatEpisodes = Array.isArray(movie?.episodes) ? movie.episodes : [];
     if (flatEpisodes.length) {
@@ -3954,7 +3975,9 @@ function buildModalTvEpisodesSection(movie, id, type, provider = '') {
     const seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false })
         .filter((season) => !hideIndiaGotLatentSeasonOne || Number(season.seasonNo) !== 1);
     if (!seasons.length) return '';
-    const selectedSeason = seasons.find((season) => Number(season.seasonNo) === 1) || seasons[0];
+    const selectedSeason = (String(movie?.id || movie?.tmdb_id || movie?.tmdbId || '') === '11436' || /\bbigg\s*boss\b/i.test(String(movie?.title || movie?.name || ''))
+        ? seasons.find((season) => Number(season.seasonNo) === 20)
+        : null) || seasons.find((season) => Number(season.seasonNo) === 1) || seasons[0];
     const providerOptions = getModalEpisodeProviderOptions(movie, provider);
     const showProviderDropdown = providerOptions.length > 1 && isModalAnimeLike(movie);
 
@@ -4044,8 +4067,11 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
     const state = readModalEpisodeState(id, type);
     const continueEntry = readModalContinueWatchingEntry(id, type);
     const modalFallbackImage = getCover(movie) || getPoster(movie) || getModalEpisodeImage(movie);
-let selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo ?? seasons[0]?.seasonNo ?? 1);
-    let selectedSeasonUid = String(seasons.find((season) => Number(season.seasonNo) === 1)?._uid || seasons[0]?._uid || '');
+    const defaultSeason = (String(movie?.id || movie?.tmdb_id || movie?.tmdbId || '') === '11436' || /\bbigg\s*boss\b/i.test(String(movie?.title || movie?.name || ''))
+        ? seasons.find((season) => Number(season.seasonNo) === 20)
+        : null) || seasons.find((season) => Number(season.seasonNo) === 1) || seasons[0];
+    let selectedSeasonNo = Number(defaultSeason?.seasonNo ?? 1);
+    let selectedSeasonUid = String(defaultSeason?._uid || '');
 
     const findModalSeason = (uid, seasonNo) => {
         const uidKey = String(uid || '');
@@ -4126,14 +4152,15 @@ let selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) =
         providerSelect.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     };
 
-const renderSeason = (seasonNoValue, uid) => {
+const renderSeason = (seasonNoValue, uid, visibleCount = 50) => {
         const seasonNo = Number(seasonNoValue ?? 1);
         const season = findModalSeason(uid, seasonNo);
         if (!season) return;
         syncDropdownSelection(season);
 
         const modalAnimeLike = isModalAnimeLike(movie);
-        list.innerHTML = season.episodes.map((ep, idx) => {
+        const episodesToRender = season.episodes.slice(0, Math.max(1, visibleCount));
+        list.innerHTML = episodesToRender.map((ep, idx) => {
             const episodeNo = Number(ep.episodeNo || idx + 1);
             const episodeId = String(ep.id || ep.episodeId || '').trim();
             const absoluteEpisodeNo = getModalEpisodeAbsoluteNo(seasons, season.seasonNo, episodeNo);
@@ -5020,6 +5047,15 @@ async function hydrateGridCard(item, card) {
             totalMs: Math.round(performance.now() - perfStart),
             hdstreamFound: Boolean(hdstreamDetails),
         });
+
+        if (episodesToRender.length < season.episodes.length) {
+            const more = document.createElement('button');
+            more.type = 'button';
+            more.className = 'modal-episode-load-more';
+            more.textContent = `Load more episodes (${season.episodes.length - episodesToRender.length} remaining)`;
+            more.addEventListener('click', () => renderSeason(season.seasonNo, season._uid || uid || '', episodesToRender.length + 50));
+            list.appendChild(more);
+        }
         const detailsYear = details ? toYearNum(getYear(details)) : 0;
         const detailsIdentityMatches = !!details && isLikelySameTitle(item, details) && (!seedYear || !detailsYear || Math.abs(seedYear - detailsYear) <= 2);
         let poster = details ? getPoster(details) : '';
@@ -5297,8 +5333,26 @@ function resetHeroProgress() {
 }
 
 // ------------------ GRID ---------------------------------------------------
+const cardHydrationQueue = [];
+let activeCardHydrations = 0;
+function queueCardHydration(item, card) {
+    cardHydrationQueue.push({ item, card });
+    drainCardHydrationQueue();
+}
+function drainCardHydrationQueue() {
+    while (activeCardHydrations < 3 && cardHydrationQueue.length) {
+        const { item, card } = cardHydrationQueue.shift();
+        if (!card.isConnected) continue;
+        activeCardHydrations += 1;
+        Promise.resolve().then(() => hydrateGridCard(item, card)).catch(console.warn).finally(() => {
+            activeCardHydrations -= 1;
+            setTimeout(drainCardHydrationQueue, 0);
+        });
+    }
+}
 function displayGrid(items, container, forcedType = null, options = {}) {
     if (!container) return;
+    container.querySelectorAll('.movie-card').forEach(card => hydrationObserver?.unobserve(card));
     container.innerHTML = '';
     const includeUnrated = !!options.includeUnrated;
     const shouldRememberFeaturedKey = [
@@ -5323,7 +5377,7 @@ function displayGrid(items, container, forcedType = null, options = {}) {
 
                     if (card.dataset.hydrated !== 'true') {
                         card.dataset.hydrated = 'true';
-                        hydrateGridCard(itemData, card);
+                        queueCardHydration(itemData, card);
                     }
                     hydrationObserver.unobserve(card);
                 }
@@ -6019,7 +6073,9 @@ async function watchNow(id, type, provider = '', animeLike = false) {
             const response = await fetch(`${BASE_URL}/info/${encodeURIComponent(canonicalId)}?type=tv`);
             const details = response.ok ? await response.json() : null;
             const seasons = Array.isArray(details?.seasons) ? details.seasons : [];
-            const season = seasons.find((row) => Number(row?.season ?? row?.season_number ?? row?.seasonNo) === 1) || seasons[0];
+            const season = (String(canonicalId) === '11436'
+                ? seasons.find((row) => Number(row?.season ?? row?.season_number ?? row?.seasonNo) === 20)
+                : null) || seasons.find((row) => Number(row?.season ?? row?.season_number ?? row?.seasonNo) === 1) || seasons[0];
             const episodes = Array.isArray(season?.episodes) ? season.episodes : [];
             if (season) {
                 params.set('season', String(season.season ?? season.season_number ?? seasons.length));
