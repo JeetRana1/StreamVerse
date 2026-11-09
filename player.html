@@ -536,9 +536,6 @@
             background: #000;
             object-fit: var(--video-fit, contain);
             object-position: center;
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden;
-            transform: translateZ(0);
         }
 
         .plyr {
@@ -578,21 +575,10 @@
             background: #000;
             object-fit: var(--video-fit, contain);
             object-position: center;
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden;
-            transform: translateZ(0);
         }
 
-        /* Chrome on mobile can briefly repaint the contain edges during an HLS
-           rendition switch. Keep the video surface composited and clipped. */
-        @media (pointer: coarse) {
-            .plyr,
-            .plyr__video-wrapper,
-            #player-video {
-                contain: paint;
-                isolation: isolate;
-            }
-        }
+        /* Leave video compositing to the browser. Forced 3D transforms and
+           nested paint containment can interfere with Android video surfaces. */
 
         .control-surface {
             position: fixed;
