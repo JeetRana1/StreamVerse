@@ -18076,6 +18076,10 @@ video.addEventListener('canplay', (event) => {
             let isGesturing = false;
             let gestureType = null;
             let bLevel = 1.0;
+            let surfaceTouchActive = false;
+            let gestureBlockedUntil = 0;
+            let lastSurfaceTouchAt = 0;
+            const gestureControlSelector = 'button, a, input, textarea, select, label, [role="button"], .seek-wrapper, .seek-shell, .control-menu, .panel, .ctrl-btn, .ctrl-icon';
 
             const mobileLandscapeFullscreen = () => {
                 if (!IS_MOBILE_CLIENT) return false;
@@ -18085,6 +18089,9 @@ video.addEventListener('canplay', (event) => {
             };
 
             controlSurface.addEventListener('touchstart', (e) => {
+                surfaceTouchActive = false;
+                lastSurfaceTouchAt = Date.now();
+                if (Date.now() < gestureBlockedUntil || isUiLocked) return;
                 if (e.touches.length > 1) return;
                 if (!mobileLandscapeFullscreen()) {
                     isGesturing = true;
@@ -18094,12 +18101,13 @@ video.addEventListener('canplay', (event) => {
                 // Button taps, especially Android fullscreen taps, must not
                 // become edge volume/brightness gestures if the finger moves
                 // slightly before the native fullscreen transition begins.
-                if (e.target.closest('button, input, select, label, .control-menu, .panel, .ctrl-btn, .ctrl-icon')) {
+                if (e.target.closest(gestureControlSelector)) {
                     isGesturing = true;
                     gestureType = null;
                     return;
                 }
                 const touch = e.touches[0];
+                surfaceTouchActive = true;
                 startX = touch.clientX;
                 startY = touch.clientY;
                 startTime = Date.now();
@@ -18108,7 +18116,7 @@ video.addEventListener('canplay', (event) => {
             }, { passive: true });
 
             controlSurface.addEventListener('touchmove', (e) => {
-                if (isUiLocked || e.touches.length > 1 || !mobileLandscapeFullscreen()) return;
+                if (!surfaceTouchActive || Date.now() < gestureBlockedUntil || isUiLocked || e.touches.length !== 1 || !mobileLandscapeFullscreen()) return;
                 const touch = e.touches[0];
                 const dx = touch.clientX - startX;
                 const dy = startY - touch.clientY;
@@ -18148,6 +18156,7 @@ video.addEventListener('canplay', (event) => {
             }, { passive: false });
 
             const resetTouchGesture = () => {
+                surfaceTouchActive = false;
                 bOverlay.classList.remove('visible');
                 vOverlay.classList.remove('visible');
                 isGesturing = false;
@@ -18155,6 +18164,16 @@ video.addEventListener('canplay', (event) => {
             };
             controlSurface.addEventListener('touchend', resetTouchGesture, { passive: true });
             controlSurface.addEventListener('touchcancel', resetTouchGesture, { passive: true });
+            const cancelTransitionGesture = () => {
+                resetTouchGesture();
+                lastTap = 0;
+                clearTimeout(window.singleTapTimeout);
+                gestureBlockedUntil = Date.now() + 700;
+            };
+            document.addEventListener('fullscreenchange', cancelTransitionGesture);
+            document.addEventListener('webkitfullscreenchange', cancelTransitionGesture);
+            window.addEventListener('orientationchange', cancelTransitionGesture);
+            window.addEventListener('resize', cancelTransitionGesture);
 
 
             // Global blocker: Show controls on any screen interaction when hidden
@@ -18234,6 +18253,8 @@ video.addEventListener('canplay', (event) => {
             // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ADVANCED INTERACTION HANDLER Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             // Handles: Double-tap Skip and Single-tap Hide. Play/pause stays on the play button only.
             function handleSurfaceInteraction(e) {
+                if (Date.now() < gestureBlockedUntil) return;
+                if (e.type === 'mousedown' && Date.now() - lastSurfaceTouchAt < 800) return;
                 // UI Lock bypass
                 const isLockedAction = e.target.closest('#uiLockBtn, #lockFabBtn, #uiWatchPartyBtn, #uiChatBtn, .ui-lock-btn, .ui-watchparty-btn, .ui-chat-btn, #skipSegmentBtn, .skip-segment-btn, #nextEpisodeBtn, .next-episode-btn');
                 if (isLockedAction) return; 
@@ -18294,6 +18315,7 @@ video.addEventListener('canplay', (event) => {
             // but standard phase is fine here since we filter by target closest.
 
             controlSurface.addEventListener('touchstart', (e) => {
+                if (!surfaceTouchActive) return;
                 if (e.touches.length > 1) return;
                 if (e.target.closest('button, input, select, label, .control-menu, .panel, .ctrl-btn, .ctrl-icon')) {
                     isGesturing = true;
@@ -18309,12 +18331,12 @@ video.addEventListener('canplay', (event) => {
             }, { passive: true });
 
             controlSurface.addEventListener('touchmove', (e) => {
-                if (isUiLocked || e.touches.length > 1) return;
+                if (!surfaceTouchActive || Date.now() < gestureBlockedUntil || isUiLocked || e.touches.length !== 1 || !mobileLandscapeFullscreen()) return;
                 const touch = e.touches[0];
                 const dx = touch.clientX - startX;
                 const dy = startY - touch.clientY; 
 
-                if (!isGesturing && Math.abs(dy) > 20 && Math.abs(dy) > Math.abs(dx)) {
+                if (!isGesturing && Date.now() - startTime >= 80 && Math.abs(dy) > 55 && Math.abs(dy) > Math.abs(dx) * 1.25) {
                     isGesturing = true;
                     holdControlsVisible(3000);
                     const third = window.innerWidth / 3;
@@ -18385,6 +18407,7 @@ video.addEventListener('canplay', (event) => {
 
             // PC / Desktop Support
             controlSurface.addEventListener('mousedown', (e) => {
+                if (Date.now() < gestureBlockedUntil || Date.now() - lastSurfaceTouchAt < 800) return;
                 if (e.button !== 0) return;
                 startX = e.clientX;
                 startY = e.clientY;
