@@ -7007,15 +7007,26 @@ if (parsedProvider.includes('hdstream')) {
                        hls.autoLevelCapping = 0;
                        if (compatibleLevels.length) {
                            hls.startLevel = compatibleLevels[0].index;
-                           hls.autoLevelCapping = compatibleLevels[compatibleLevels.length - 1].index;
+                            hls.autoLevelCapping = mobileMain
+                                ? compatibleLevels[0].index
+                                : compatibleLevels[compatibleLevels.length - 1].index;
                        }
-                       const play4uLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
-                       hls.startLoad(play4uLoadTarget);
-                       setTimeout(() => {
-                          if (hls !== hlsInst || !hls.levels?.length) return;
-                           hls.autoLevelCapping = compatibleLevels.length
-                               ? compatibleLevels[compatibleLevels.length - 1].index
-                               : -1;
+                        const play4uLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
+                        hls.startLoad(play4uLoadTarget);
+                        setTimeout(() => {
+                           if (hls !== hlsInst || !hls.levels?.length) return;
+                           if (mobileMain) {
+                               // Android Chrome briefly exposes a black edge when
+                               // Play4u switches decoded dimensions during seeks.
+                               // Keep the stable startup rendition on mobile.
+                               hls.autoLevelCapping = compatibleLevels.length ? compatibleLevels[0].index : 0;
+                               hls.nextLevel = hls.autoLevelCapping;
+                               console.log('[hls] Play4u keeping stable mobile rendition:', hls.levels[hls.autoLevelCapping]?.height || 'unknown');
+                               return;
+                           }
+                            hls.autoLevelCapping = compatibleLevels.length
+                                ? compatibleLevels[compatibleLevels.length - 1].index
+                                : -1;
                           hls.nextLevel = -1;
                           console.log('[hls] Play4u released startup cap; ABR can climb to:', hls.levels[highestLevel]?.height || 'unknown');
                       }, 12000);
