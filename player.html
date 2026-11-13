@@ -5593,6 +5593,7 @@ function getProxiedUrl(url, referer = '') {
         let fillerLookupState = 'idle'; // idle | loading | ready | not_found | fetch_failed
         let animeFillerIndexCache = null;
         let fitIndex = 0;
+        let fitTransitionTimer = null;
         let volumeSliderEl = null;
         let volumeToggleEl = null;
         let volumeBoost = 100; // 100% to 200%
@@ -5629,6 +5630,7 @@ function getProxiedUrl(url, referer = '') {
         let wasPlayingBeforeDragSeek = false;
         let queuedSeekTime = null;
         let seekApplyTimer = null;
+        let seekInteractionBlockedUntil = 0;
         let lastAppliedSeekAt = 0;
         let lastAppliedSeekTarget = null;
         let seekBurstWindowStart = 0;
@@ -5659,6 +5661,25 @@ function getProxiedUrl(url, referer = '') {
         let seekBufferOverlayTimer = null;
         let waitingOverlayTimer    = null; // iOS: debounces spurious 'waiting' events
         let iosArchiveLoaderHold = false;
+
+        function suppressSeekInteractions(duration = 1600) {
+            seekInteractionBlockedUntil = Math.max(
+                seekInteractionBlockedUntil,
+                Date.now() + Math.max(0, Number(duration) || 0),
+            );
+            if (seekApplyTimer) {
+                clearTimeout(seekApplyTimer);
+                seekApplyTimer = null;
+            }
+            queuedSeekTime = null;
+            pendingSeekPercent = null;
+            isSeekDragging = false;
+        }
+
+        function areSeekInteractionsBlocked() {
+            return Date.now() < seekInteractionBlockedUntil;
+        }
+
         window.addEventListener('beforeunload', () => { subtitleBlobUrls = []; });
         const fitModes = [
             { value: 'contain', label: 'Contain', icon: 'fa-up-right-and-down-left-from-center' },
@@ -6729,6 +6750,7 @@ function getProxiedUrl(url, referer = '') {
         }
 
         function requestSeekToTime(targetTime, keepPlaying = true) {
+            if (areSeekInteractionsBlocked()) return;
             if (!video || !isFinite(video.duration)) return;
             const clampedTime = Math.max(0, Math.min(video.duration, Number(targetTime || 0)));
             queuedSeekTime = clampedTime;
@@ -6759,6 +6781,11 @@ function getProxiedUrl(url, referer = '') {
             const delay = elapsed >= minGap ? 0 : (minGap - elapsed);
 
             seekApplyTimer = setTimeout(() => {
+                if (areSeekInteractionsBlocked()) {
+                    queuedSeekTime = null;
+                    seekApplyTimer = null;
+                    return;
+                }
                 if (!video || !isFinite(video.duration) || queuedSeekTime == null) return;
                 const wasPaused = video.paused;
                 const pct = (queuedSeekTime / Math.max(0.001, video.duration)) * 100;
@@ -12980,6 +13007,27 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             fitBtn.innerHTML = `<i class="fa-solid ${mode.icon}"></i>`;
         }
 
+        function applyFitModeWithFrame() {
+            if (fitTransitionTimer) {
+                clearTimeout(fitTransitionTimer);
+                fitTransitionTimer = null;
+            }
+            const captured = typeof captureVideoFrameToOverlay === 'function'
+                ? captureVideoFrameToOverlay(false, fitModes[fitIndex]?.value)
+                : false;
+            applyFitMode();
+            if (!captured) return;
+
+            // Mobile video surfaces can repaint black for a frame when
+            // object-fit changes. Keep the last decoded frame over that repaint.
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                fitTransitionTimer = setTimeout(() => {
+                    fitTransitionTimer = null;
+                    if (!isSourceSwitching) hideTransitionOverlay();
+                }, 90);
+            }));
+        }
+
         function updateLockUi() {
             document.body.classList.toggle('ui-locked', isUiLocked);
             uiLockBtn.classList.toggle('locked', isUiLocked);
@@ -16413,25 +16461,37 @@ video.addEventListener('canplay', (event) => {
             video.addEventListener('play', () => {
                 hidePauseMediaCard();
             });
-            video.addEventListener('ended', () => {
-                if (isCurrentAniKotoStream()) {
-                    if (isSourceSwitching || Date.now() - lastHlsErrorAt < 15000) {
-                        console.warn('[anikoto] Ignoring ended event during HLS recovery');
-                        return;
-                    }
-                    const duration = Number(video.duration);
-                    const currentTime = Number(video.currentTime);
-                    // AniKoto can emit a premature ended event when an HLS
-                    // segment request is interrupted. Do not advance episodes
-                    // unless playback was actually at the end of the media.
-                    if (!Number.isFinite(duration) || duration <= 0 || currentTime < duration - 3) {
-                        console.warn('[anikoto] Ignoring premature ended event', { currentTime, duration });
+            video.addEventListener('ended', (event) => {
+                // A removed video element can finish asynchronously after a
+                // source switch. Never let that stale element advance the route.
+                if (event.currentTarget !== video) return;
+
+                const duration = Number(video.duration);
+                const currentTime = Number(video.currentTime);
+                const endTolerance = Number.isFinite(duration) && duration > 0
+                    ? Math.max(3, Math.min(8, duration * 0.02))
+                    : 0;
+                const reachedMediaEnd = Number.isFinite(duration) && duration > 0
+                    && Number.isFinite(currentTime)
+                    && currentTime >= duration - endTolerance;
+                const recovering = isSourceSwitching || Date.now() - lastHlsErrorAt < 15000;
+
+                // HLS providers can emit ended while a failed segment has
+                // emptied the media timeline. Only a real VOD end may advance.
+                if (!reachedMediaEnd || recovering || userPaused) {
+                    console.warn('[video] Ignoring premature ended event', {
+                        currentTime,
+                        duration,
+                        recovering,
+                        userPaused,
+                    });
+                    if (!userPaused && !recovering && hlsInst) {
                         try {
-                            hlsInst?.startLoad(Math.max(0, currentTime - 0.25));
+                            hlsInst.startLoad(Math.max(0, currentTime - 0.25));
                             Promise.resolve(video.play()).catch(() => {});
                         } catch (_) { }
-                        return;
                     }
+                    return;
                 }
                 syncTimeUI();
                 saveCurrentEpisodeProgress(true);
@@ -17236,7 +17296,7 @@ video.addEventListener('canplay', (event) => {
                 e.stopPropagation();
                 if (wakeControlsIfHidden()) return;
                 fitIndex = (fitIndex + 1) % fitModes.length;
-                applyFitMode();
+                applyFitModeWithFrame();
                 showControlSurface();
             });
 
@@ -17254,6 +17314,7 @@ video.addEventListener('canplay', (event) => {
 
             let fullscreenPointerHandledAt = 0;
             const handleFullscreenButtonPress = async (e) => {
+                suppressSeekInteractions(1800);
                 e.preventDefault();
                 e.stopPropagation();
                 if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
@@ -17503,6 +17564,7 @@ video.addEventListener('canplay', (event) => {
             };
 
             seekWrapper?.addEventListener('pointerdown', (e) => {
+                if (areSeekInteractionsBlocked()) return;
                 if (e.target === seekBar) return;
                 if (!video || !isFinite(video.duration) || video.duration <= 0) return;
                 e.preventDefault();
@@ -17512,6 +17574,7 @@ video.addEventListener('canplay', (event) => {
             });
 
             seekBar.addEventListener('pointerdown', (e) => {
+                if (areSeekInteractionsBlocked()) return;
                 e.stopPropagation();
                 isSeekDragging = true;
                 seekBar.setPointerCapture?.(e.pointerId);
@@ -17521,6 +17584,7 @@ video.addEventListener('canplay', (event) => {
             });
 
             seekBar.addEventListener('input', (e) => {
+                if (areSeekInteractionsBlocked()) return;
                 const percent = parseFloat(e.target.value || '0');
                 seekBar.style.setProperty('--seek-percent', `${percent}%`);
                 // Do not spam network seeks while dragging.
@@ -17544,6 +17608,7 @@ video.addEventListener('canplay', (event) => {
                 const percent = Number.isFinite(pendingSeekPercent) ? pendingSeekPercent : parseFloat(seekBar.value || '0');
                 isSeekDragging = false;
                 pendingSeekPercent = null;
+                if (areSeekInteractionsBlocked()) return;
                 lastDragSeekCommitAt = Date.now();
                 seekToPercent(percent);
                 if (wasPlayingBeforeDragSeek && video) {
@@ -17555,6 +17620,7 @@ video.addEventListener('canplay', (event) => {
             seekBar.addEventListener('pointercancel', commitSeekFromDrag);
             seekBar.addEventListener('click', (e) => {
                 e.stopPropagation();
+                if (areSeekInteractionsBlocked()) return;
                 if (!video || !isFinite(video.duration) || video.duration <= 0) return;
                 if (Date.now() - lastDragSeekCommitAt < 120) return;
                 if (wakeControlsIfHidden()) return;
@@ -17563,6 +17629,7 @@ video.addEventListener('canplay', (event) => {
             seekBar.addEventListener('change', () => {
                 // Keyboard/click commits (non-drag path)
                 if (!isSeekDragging) {
+                    if (areSeekInteractionsBlocked()) return;
                     if (Date.now() - lastDragSeekCommitAt < 280) return;
                     if (wakeControlsIfHidden()) return;
                     const percent = parseFloat(seekBar.value || '0');
@@ -17783,6 +17850,7 @@ video.addEventListener('canplay', (event) => {
             }
 
             function handleSeekPreview(e) {
+                if (areSeekInteractionsBlocked()) return;
                 if (!video || !isFinite(video.duration)) return;
 
                 const rect = seekWrapper.getBoundingClientRect();
@@ -18168,6 +18236,7 @@ video.addEventListener('canplay', (event) => {
             const cancelTransitionGesture = () => {
                 resetTouchGesture();
                 lastTap = 0;
+                suppressSeekInteractions(1800);
                 clearTimeout(window.singleTapTimeout);
                 gestureBlockedUntil = Date.now() + 700;
             };
@@ -24386,7 +24455,7 @@ console.log(`[${provider}] watch request completed`, {
             return /streameeeeee\.site\/embed-1\/v3\/e-1\/[^?]+\?z=$/i.test(url.trim());
         }
 
-        function captureVideoFrameToOverlay(allowBlackFallback = true) {
+        function captureVideoFrameToOverlay(allowBlackFallback = true, fitOverride = null) {
             const overlay = document.getElementById('transition-overlay');
             if (!overlay) return false;
             const canvas = overlay.querySelector('canvas');
@@ -24415,14 +24484,31 @@ console.log(`[${provider}] watch request completed`, {
                     const cAspect = vw / vh;
                     let drawW, drawH, drawX, drawY;
                     // CONTAIN: fit the whole frame inside the canvas, preserve aspect ratio
-                    if (vAspect > cAspect) {
-                        // Video is wider than canvas Ã¢â€ â€™ fit width, letterbox top/bottom
+                    const fitMode = String(fitOverride || getComputedStyle(document.documentElement)
+                        .getPropertyValue('--video-fit') || 'contain').trim();
+                    if (fitMode === 'fill') {
+                        drawW = vw;
+                        drawH = vh;
+                        drawX = 0;
+                        drawY = 0;
+                    } else if (fitMode === 'cover') {
+                        if (vAspect > cAspect) {
+                            drawH = vh;
+                            drawW = vh * vAspect;
+                            drawX = (vw - drawW) / 2;
+                            drawY = 0;
+                        } else {
+                            drawW = vw;
+                            drawH = vw / vAspect;
+                            drawX = 0;
+                            drawY = (vh - drawH) / 2;
+                        }
+                    } else if (vAspect > cAspect) {
                         drawW = vw;
                         drawH = vw / vAspect;
                         drawX = 0;
                         drawY = (vh - drawH) / 2;
                     } else {
-                        // Video is taller than canvas Ã¢â€ â€™ fit height, pillarbox left/right
                         drawH = vh;
                         drawW = vh * vAspect;
                         drawX = (vw - drawW) / 2;

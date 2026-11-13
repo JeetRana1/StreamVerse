@@ -438,7 +438,7 @@ const server = http.createServer((req, res) => {
 });
 
 function listenSite(startPort) {
-    server.listen(startPort, () => {
+    server.listen({ port: startPort, host: '0.0.0.0' }, () => {
         console.log(`Site running at http://localhost:${startPort}`);
         console.log(`LAN test URL: http://${detectedLanIp}:${startPort}`);
         console.log(`API expected at ${SITE_META_API_BASE}`);
