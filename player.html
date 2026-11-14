@@ -11936,12 +11936,14 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             appendSubtitleSettingsMenu();
         }
 
-        function setVolumeBoost(level) {
+        function setVolumeBoost(level, allowAudioContext = true) {
             if (!video) return;
             // Extended: 0 = mute, 100 = normal, 200 = double boost
             volumeBoost = Math.max(0, Math.min(200, level));
 
-            if (volumeBoost !== 100 || IS_IOS || audioEnhancementEnabled) {
+            // Chrome blocks Web Audio until a user gesture. Do not create a
+            // MediaElementSource during stream startup; it can stall HLS video.
+            if (allowAudioContext && (volumeBoost !== 100 || IS_IOS || audioEnhancementEnabled)) {
                 ensureAudioContext();
             }
 
@@ -12183,7 +12185,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             volumeMenu.appendChild(boostRow);
 
             // Initial tick update
-            setTimeout(() => setVolumeBoost(volumeBoost), 0);
+            setTimeout(() => setVolumeBoost(volumeBoost, false), 0);
         }
 
         function updateSeekTrackFill(percent) {
@@ -15031,7 +15033,9 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
         function playWatchPartyChatTick() {
             try {
-                const ctx = ensureAudioContext();
+                // Do not create Web Audio from a remote chat event; Chrome
+                // requires the context to be created after a user gesture.
+                const ctx = audioCtx;
                 if (!ctx) return;
                 const now = ctx.currentTime;
                 const oscillator = ctx.createOscillator();
@@ -16169,8 +16173,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     playerWrap.style.opacity = '1';
                     playerWrap.style.visibility = 'visible';
                 }
-                if (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100) {
-                    ensureAudioContext();
+                if (audioCtx && (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100)) {
                     updateAudioEnhancementChain();
                 }
                 
@@ -16272,8 +16275,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     playerWrap.style.opacity = '1';
                     playerWrap.style.visibility = 'visible';
                 }
-                if (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100) {
-                    ensureAudioContext();
+                if (audioCtx && (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100)) {
                     updateAudioEnhancementChain();
                 }
                 // Stall adaptive recovery: reset timer on active playback
@@ -25442,7 +25444,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             setTimeout(hideOverlay, 6000);
 
             // Volume boost
-            setVolumeBoost(volumeBoost);
+            setVolumeBoost(volumeBoost, false);
 
             const initPlyr = () => {
                 const plyrVideo = video;
