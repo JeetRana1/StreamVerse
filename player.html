@@ -580,6 +580,35 @@
         /* Leave video compositing to the browser. Forced 3D transforms and
            nested paint containment can interfere with Android video surfaces. */
 
+        /* Backdrop sampling over Android hardware video can switch the video
+           between an overlay plane and texture composition as controls fade.
+           Keep that path stable, including menus/toasts created after startup. */
+        html.android-video-layout body *,
+        html.android-video-layout body *::before,
+        html.android-video-layout body *::after,
+        html.android-video-layout #source-panel,
+        html.android-video-layout #audio-panel {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+
+        html.android-video-layout .player-wrap {
+            overflow: hidden;
+        }
+
+        html.android-video-layout #player-video {
+            /* Size the actual video surface, leaving bars to the black parent.
+               Do not change object-fit or add a transformed video ancestor. */
+            inset: auto;
+            left: var(--video-surface-left, 0px);
+            top: var(--video-surface-top, 0px);
+            width: var(--video-surface-width, 100%);
+            height: var(--video-surface-height, 100%);
+            max-width: none;
+            max-height: none;
+            object-fit: fill !important;
+        }
+
         .control-surface {
             position: fixed;
             inset: 0;
@@ -4784,6 +4813,8 @@
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) && !window.MSStream;
         const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         const IS_PWA = (IS_IOS && navigator.standalone) || window.matchMedia('(display-mode: standalone)').matches;
+        const USE_ANDROID_VIDEO_LAYOUT = /Android/i.test(navigator.userAgent) && /Chrome|Chromium/i.test(navigator.userAgent);
+        document.documentElement.classList.toggle('android-video-layout', USE_ANDROID_VIDEO_LAYOUT);
 
         // Prefer selected source first, but always keep a remote/local fallback.
         const API_BASE_CANDIDATES = (() => {
@@ -5594,6 +5625,8 @@ function getProxiedUrl(url, referer = '') {
         let animeFillerIndexCache = null;
         let fitIndex = 0;
         let fitTransitionTimer = null;
+        let videoLayoutFrame = 0;
+        let videoLayoutObserver = null;
         let volumeSliderEl = null;
         let volumeToggleEl = null;
         let volumeBoost = 100; // 100% to 200%
@@ -13001,15 +13034,84 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             await toggleStandardFullscreen();
         }
 
+        function getVideoSurfaceRect(width, height, videoWidth, videoHeight, fit, pixelRatio = 1) {
+            if (!(width > 0 && height > 0 && videoWidth > 0 && videoHeight > 0)) return null;
+            const dpr = Number.isFinite(pixelRatio) && pixelRatio > 0 ? pixelRatio : 1;
+            // Contain stays inside the viewport; fill/cover round outward so a
+            // fractional final device pixel cannot expose a right/bottom seam.
+            const roundBox = fit === 'contain' ? Math.floor : Math.ceil;
+            const boxWidth = Math.max(1, roundBox(width * dpr));
+            const boxHeight = Math.max(1, roundBox(height * dpr));
+            let surfaceWidth = boxWidth;
+            let surfaceHeight = boxHeight;
+            if (fit !== 'fill') {
+                const scale = (fit === 'cover' ? Math.max : Math.min)(boxWidth / videoWidth, boxHeight / videoHeight);
+                const round = fit === 'cover' ? Math.ceil : Math.floor;
+                surfaceWidth = Math.max(1, round(videoWidth * scale));
+                surfaceHeight = Math.max(1, round(videoHeight * scale));
+            }
+            return {
+                left: Math.floor((boxWidth - surfaceWidth) / 2) / dpr,
+                top: Math.floor((boxHeight - surfaceHeight) / 2) / dpr,
+                width: surfaceWidth / dpr,
+                height: surfaceHeight / dpr,
+            };
+        }
+
+        function syncVideoSurfaceLayout() {
+            if (!USE_ANDROID_VIDEO_LAYOUT || !video || !playerWrap) return;
+            const rect = getVideoSurfaceRect(playerWrap.clientWidth, playerWrap.clientHeight,
+                video.videoWidth, video.videoHeight, fitModes[fitIndex].value, window.devicePixelRatio);
+            if (!rect) return;
+            for (const [key, value] of Object.entries(rect)) {
+                const name = `--video-surface-${key}`;
+                const next = `${value}px`;
+                // Repeated metadata/resize events must not invalidate a stable surface.
+                if (video.style.getPropertyValue(name) !== next) video.style.setProperty(name, next);
+            }
+        }
+
+        function scheduleVideoSurfaceLayout() {
+            if (!USE_ANDROID_VIDEO_LAYOUT || videoLayoutFrame) return;
+            videoLayoutFrame = requestAnimationFrame(() => {
+                videoLayoutFrame = 0;
+                syncVideoSurfaceLayout();
+            });
+        }
+
+        function bindVideoSurfaceLayout() {
+            if (!USE_ANDROID_VIDEO_LAYOUT) return;
+            const onMediaResize = (event) => {
+                if (event.currentTarget === video) syncVideoSurfaceLayout();
+            };
+            video.addEventListener('loadedmetadata', onMediaResize);
+            video.addEventListener('resize', onMediaResize); // ABR can change intrinsic dimensions.
+            if (!videoLayoutObserver) {
+                videoLayoutObserver = new ResizeObserver(scheduleVideoSurfaceLayout);
+                videoLayoutObserver.observe(playerWrap);
+                window.addEventListener('resize', scheduleVideoSurfaceLayout);
+                document.addEventListener('fullscreenchange', scheduleVideoSurfaceLayout);
+                document.addEventListener('webkitfullscreenchange', scheduleVideoSurfaceLayout);
+            }
+            syncVideoSurfaceLayout();
+        }
+
         function applyFitMode() {
             const mode = fitModes[fitIndex];
             document.documentElement.style.setProperty('--video-fit', mode.value);
+            syncVideoSurfaceLayout();
             fitBtn.title = mode.label;
             fitBtn.setAttribute('aria-label', `Screen Fit: ${mode.label}`);
             fitBtn.innerHTML = `<i class="fa-solid ${mode.icon}"></i>`;
         }
 
         function applyFitModeWithFrame() {
+            // A canvas readback and full-screen mask add another compositing
+            // transition. Android updates the existing surface bounds directly.
+            if (USE_ANDROID_VIDEO_LAYOUT) {
+                applyFitMode();
+                return;
+            }
             if (fitTransitionTimer) {
                 clearTimeout(fitTransitionTimer);
                 fitTransitionTimer = null;
@@ -16087,6 +16189,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
         function bindVideoEvents() {
             if (!video || video.dataset.customBound === '1') return;
             video.dataset.customBound = '1';
+            bindVideoSurfaceLayout();
             video.addEventListener('error', () => {
                 const err = video.error;
                 let msg = 'Unknown Error';
