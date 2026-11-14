@@ -3814,9 +3814,8 @@
         .bottom-shell .pause-media-card { display: none; }
         .bottom-shell .seek-shell { grid-area: seek; padding: 14px 18px; width: calc(100% - 48px); margin: 0 auto; }
         .bottom-shell .seek-shell { transform: translateY(17px); }
-        .bottom-shell .time-readout { grid-area: time; justify-self: stretch; background: rgba(20, 20, 24, .82); color: #fff; border: 0; border-radius: 4px; box-shadow: 0 0 0 4px rgba(20, 20, 24, .82), 0 2px 8px rgba(0, 0, 0, .45); padding: 0 16px; }
-        .bottom-shell .time-readout .time-divider { color: rgba(255, 255, 255, .8); }
-        .bottom-shell .time-readout { position: relative; left: 32px; width: 96px; min-width: 96px; padding: 0; font-size: 12px; transform: translateY(3px); justify-content: center; align-items: center; white-space: nowrap; }
+        .bottom-shell .time-readout { grid-area: time; justify-self: start; width: max-content; min-width: 136px; max-width: calc(100vw - 34px); min-height: 32px; padding: 6px 12px; background: linear-gradient(135deg, rgba(8, 10, 15, .82), rgba(15, 18, 27, .72)); color: rgba(255, 255, 255, .94); border: 1px solid rgba(255, 255, 255, .13); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255, 255, 255, .06); transform: translateY(3px); justify-content: center; align-items: center; white-space: nowrap; overflow: hidden; }
+        .bottom-shell .time-readout .time-divider { color: rgba(255, 255, 255, .64); }
         .bottom-shell .control-actions.action-row { grid-area: actions; display: flex; align-items: center; justify-content: flex-start; gap: 10px; flex-wrap: wrap; width: 100%; }
         .mobile-aux-right { display: flex; align-items: center; gap: 10px; margin-right: auto; padding: 4px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,.08); background: linear-gradient(180deg, rgba(18,18,22,.58), rgba(14,14,18,.44)); box-shadow: 0 12px 28px rgba(0,0,0,.22); backdrop-filter: blur(14px); pointer-events: none; }
         .mobile-aux-right > button { pointer-events: auto; }
@@ -3863,7 +3862,7 @@
         .seek-wrapper { position: relative; }
         .seek-wrapper .seek-track-fill { position: absolute; left: 0; top: 50%; width: var(--seek-percent, 0%); height: 6px; transform: translateY(-50%); border-radius: 999px; background: linear-gradient(90deg, #e50914, #ff3b47); box-shadow: 0 0 10px rgba(229,9,20,.22); pointer-events: none; z-index: 1; transition: width .35s cubic-bezier(.22,.61,.36,1); }
         .seek-wrapper .seek-bar { z-index: 2; }
-        @media (pointer: coarse) { .action-row { gap: 8px; justify-content: flex-start; } .action-row .mobile-aux-right { margin-right: auto; } .bottom-shell .seek-shell { transform: translateY(24px); padding: 14px 11px; width: calc(100% - 28px); } .bottom-shell .time-readout { left: 17px; width: 83px; min-width: 83px; transform: translateY(6px); } .mobile-aux-right { gap: 6px; } .action-row .ctrl-icon, .action-row .fs-back-btn, .action-row .ui-watchparty-btn, .action-row .ui-chat-btn, .action-row .ui-lock-btn { width: 46px; height: 46px; font-size: 16px; } }
+        @media (pointer: coarse) { .action-row { gap: 8px; justify-content: flex-start; } .action-row .mobile-aux-right { margin-right: auto; } .bottom-shell .seek-shell { transform: translateY(24px); padding: 14px 11px; width: calc(100% - 28px); } .bottom-shell .time-readout { min-width: 142px; max-width: calc(100vw - 34px); transform: translateY(6px); font-size: 13px; } .mobile-aux-right { gap: 6px; } .action-row .ctrl-icon, .action-row .fs-back-btn, .action-row .ui-watchparty-btn, .action-row .ui-chat-btn, .action-row .ui-lock-btn { width: 46px; height: 46px; font-size: 16px; } }
         @media (pointer: coarse) and (orientation: portrait) { .mobile-aux-right .ui-watchparty-btn, .mobile-aux-right .ui-chat-btn, .mobile-aux-right .ui-lock-btn { display: none !important; } .center-play .ctrl-btn.skip-btn { margin: 0 clamp(44px, 15vw, 110px); } .action-row #customServerBtn, .action-row #custom-audio-btn, .action-row #captionsBtn, .action-row #qualityBtn, .action-row #playbackBtn, .action-row #preferencesBtn, .action-row #watchTogetherBtn, .action-row #fitBtn { display: none !important; } }
         @media (pointer: coarse) and (orientation: landscape) { #chatPanel, #watchPartyPanel { right: 40px !important; left: auto !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 50px) !important; } }
         @media (max-width: 600px) { #watchPartyPanel { right: 16px !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px) !important; width: calc(100vw - 32px) !important; } }
@@ -19000,6 +18999,7 @@ video.addEventListener('canplay', (event) => {
                                 1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
                                 2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
                                 3: 'Bonus EP 3 ft. Deepak Kalal, Ravi Gupta, Agu Stanley',
+                                4: 'Bonus EP 4 ft. Ayushmann Khurrana, Suhani Shah, Kullu, Rajat Sood',
                             };
                             episodeTitle = bonusTitles[episodeNo] || episodeTitle;
                         }
@@ -19890,7 +19890,7 @@ video.addEventListener('canplay', (event) => {
                         const hdProviderBase = API_BASE.replace('/meta/tmdb', '/movies/hdstream4u');
                         const hdProviderTitle = String(info?.title || info?.name || currentMediaInfo?.title || currentMediaInfo?.name || '').trim();
                         if (!hdProviderTitle) return;
-                        const hdCacheKey = `streamverse:v3:hds4u:tv:${String(TMDB_ID || '')}:${normalizeTitleForMatch(hdProviderTitle)}`;
+                                const hdCacheKey = `streamverse:v5:hds4u:tv:${String(TMDB_ID || '')}:${normalizeTitleForMatch(hdProviderTitle)}`;
                         let hdCache = null;
                         try {
                             const hdRaw = localStorage.getItem(hdCacheKey);
@@ -19961,7 +19961,7 @@ video.addEventListener('canplay', (event) => {
                             const category = String(episode?.category || '').toLowerCase();
                             const seasonName = String(episode?.seasonName || '').toLowerCase();
                             const title = String(episode?.title || episode?.name || episode?.episodeName || '');
-                            return /netflix[\s\-]*special/.test(category) || /netflix[\s\-]*special/.test(seasonName) || /netflix[\s\-]*special/i.test(title);
+                            return category === 'youtube-exclusive' || /netflix[\s\-]*special/.test(category) || /netflix[\s\-]*special/.test(seasonName) || /netflix[\s\-]*special/i.test(title);
                         };
                         let netflixSpecialSeason = null;
                         let appended = false;
@@ -19989,15 +19989,25 @@ video.addEventListener('canplay', (event) => {
                                     netflixSpecialSeason = { seasonNo: 0, name: 'Netflix Special', episodes: [] };
                                     tvSeasons.push(netflixSpecialSeason);
                                 }
-                                if (pushEpisodeToSeason(netflixSpecialSeason, bonusEpisode)) netflixAppended = true;
+                                const swappedTitle = netflixSpecialSeason.episodes.length === 0
+                                    ? 'Netflix Special EP 1 ft. Varun Dhawan, Medha Shankr, Nishant Tanwar, Sharon Verma'
+                                    : 'Netflix Special Ep 2 ft. Huma Qureshi, Krushna Abhishek, Aashish Solanki, Balraj Ghai';
+                                if (pushEpisodeToSeason(netflixSpecialSeason, bonusEpisode, swappedTitle)) {
+                                    if (netflixSpecialSeason.episodes.length === 2) {
+                                        netflixSpecialSeason.episodes[1].id = 'https://vidaraa.cc/e/FzuyETJy22qaI';
+                                        netflixSpecialSeason.episodes[1].url = 'https://vidaraa.cc/e/FzuyETJy22qaI';
+                                    }
+                                    netflixAppended = true;
+                                }
                                 return;
                             }
                             let bonusTitle = String(bonusEpisode?.title || bonusEpisode?.name || '').trim() || `Bonus EP ${targetSeason.episodes.length + 1}`;
                             if (String(TMDB_ID) === '262838') {
                                 const customBonusTitles = {
                                     1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
-                                    2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
-                                    3: 'Bonus EP 3 ft. Deepak Kalal, Ravi Gupta, Agu Stanley',
+                              2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
+                              3: 'Bonus EP 3 ft. Deepak Kalal, Ravi Gupta, Agu Stanley',
+                              4: 'Bonus EP 4 ft. Ayushmann Khurrana, Suhani Shah, Kullu, Rajat Sood',
                                 };
                                 bonusTitle = customBonusTitles[targetSeason.episodes.length + 1] || bonusTitle;
                             }
@@ -21518,14 +21528,17 @@ video.addEventListener('canplay', (event) => {
                                  ? tmdbTitle
                                   : (providerTitle && !isGenericEpisodeTitle(providerTitle, epNo) ? providerTitle : `Episode ${anikotoVisibleEpisodeNo}`)
                          );
-                     if (String(TMDB_ID) === '262838' && isBonusSeason) {
+                      if (String(TMDB_ID) === '262838' && isBonusSeason) {
                          const bonusTitles = {
                              1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
                              2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
                              3: 'Bonus EP 3 ft. Deepak Kalal, Ravi Gupta, Agu Stanley',
                          };
-                         epTitle = bonusTitles[epNo] || epTitle;
-                     }
+                          epTitle = bonusTitles[epNo] || epTitle;
+                      }
+                      if (String(TMDB_ID) === '262838' && Number(s?.seasonNo || 0) === 2 && epNo === 8) {
+                          epTitle = 'Episode 8 :  ft. MC Stan, Tanmay Bhat, Madhur Virli, Arpit Bala';
+                      }
                     const seriesDescription = String(
                         currentMediaInfo?.overview ||
                         currentMediaInfo?.description ||
@@ -21576,14 +21589,20 @@ video.addEventListener('canplay', (event) => {
                     const isBonusMenuEpisode = Number(s?.seasonNo || 0) <= 0 || /bonus/i.test(String(s?.name || ''));
                     if (String(TMDB_ID) === '262838') {
                         const isNetflixSpecialMenuSeason = /netflix[\s\-]*special/i.test(String(s?.name || ''));
-                        if (isNetflixSpecialMenuSeason && epNo === 1) {
+                        if (Number(s?.seasonNo || 0) === 2 && epNo === 8) {
+                            epThumb = 'https://media.themoviedb.org/t/p/w160_and_h90_face/rkMv0bfDXPZ8DXCxj33SxitlCuN.jpg';
+                        } else if (isNetflixSpecialMenuSeason && epNo === 1) {
                             epThumb = 'https://ia601909.us.archive.org/33/items/i.-g.-l-2-be-2/L-nfspvarun.jpg';
+                        } else if (isNetflixSpecialMenuSeason && epNo === 2) {
+                            epThumb = 'https://i.ytimg.com/vi/3MxFgVg9bWU/sddefault.jpg';
                         } else if (isBonusSeason && epNo === 1) {
                             epThumb = 'https://media.themoviedb.org/t/p/w160_and_h90_face/wC7frShPQxJoZ8QwuhpXC1kRkgg.jpg';
                         } else if (isBonusSeason && epNo === 2) {
                             epThumb = 'https://i.ytimg.com/vi/otawyZaOxvs/maxresdefault.jpg';
                         } else if (isBonusSeason && epNo === 3) {
                             epThumb = 'https://i.ytimg.com/vi/fzyL44FH2fI/hq720.jpg?sqp=-oaymwErCNAFEJQDSFryq4qpAx0IARUAAIhCGAHYAQHiAQoIGBACGAY4AUABuALzGA==&rs=AOn4CLCpei64gNPdqewL4RIYymkLkUYSmQ';
+                        } else if (isBonusSeason && epNo === 4) {
+                            epThumb = 'https://i.ytimg.com/vi/NQ6gWHMvna8/sddefault.jpg';
                         }
                     }
                     const progressKeys = getWatchedKeysForEpisodeIdentity({

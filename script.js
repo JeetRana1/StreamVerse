@@ -3669,7 +3669,15 @@ function normalizeModalTvSeasons(movie, options = {}) {
                 episodes: episodes.map((ep, epIdx) => ({
                     ...ep,
                     episodeNo: getModalEpisodeNumber(ep, epIdx + 1),
-                    image: getModalEpisodeImage(ep, seasonImage) || ep?.image,
+                    title: String(movie?.id || movie?.tmdb_id || movie?.tmdbId || '') === '262838' && seasonNo === 2 && getModalEpisodeNumber(ep, epIdx + 1) === 8
+                        ? 'Episode 8 :  ft. MC Stan, Tanmay Bhat, Madhur Virli, Arpit Bala'
+                        : ep?.title,
+                    name: String(movie?.id || movie?.tmdb_id || movie?.tmdbId || '') === '262838' && seasonNo === 2 && getModalEpisodeNumber(ep, epIdx + 1) === 8
+                        ? 'Episode 8 :  ft. MC Stan, Tanmay Bhat, Madhur Virli, Arpit Bala'
+                        : ep?.name,
+                    image: String(movie?.id || movie?.tmdb_id || movie?.tmdbId || '') === '262838' && seasonNo === 2 && getModalEpisodeNumber(ep, epIdx + 1) === 8
+                        ? 'https://media.themoviedb.org/t/p/w160_and_h90_face/rkMv0bfDXPZ8DXCxj33SxitlCuN.jpg'
+                        : getModalEpisodeImage(ep, seasonImage) || ep?.image,
                 })),
             };
         })
@@ -3762,7 +3770,8 @@ async function fetchModalHdstreamBonusSeason(movie, id) {
         const episodes = Array.isArray(payload?.episodes) ? payload.episodes : [];
         const seen = new Set();
         providerEpisodes = episodes.filter((episode) => {
-            const isBonus = String(episode?.category || '').toLowerCase() === 'bonus' ||
+            const category = String(episode?.category || '').toLowerCase();
+            const isBonus = ['bonus', 'netflix-special', 'youtube-exclusive'].includes(category) ||
                 Number(episode?.seasonNumber || 0) === 0 ||
                 String(episode?.seasonName || '').toLowerCase() === 'bonus' ||
                 /bonus|netflix special|special/i.test(String(episode?.title || episode?.name || episode?.episodeName || ''));
@@ -3784,29 +3793,42 @@ async function fetchModalHdstreamBonusSeason(movie, id) {
         const category = String(episode?.category || '').toLowerCase();
         const seasonName = String(episode?.seasonName || '').toLowerCase();
         const epTitle = String(episode?.title || episode?.name || episode?.episodeName || '');
-        return /netflix[\s\-]*special/.test(category) || /netflix[\s\-]*special/.test(seasonName) || /netflix[\s\-]*special/i.test(epTitle);
+        return category === 'youtube-exclusive' || /netflix[\s\-]*special/.test(category) || /netflix[\s\-]*special/.test(seasonName) || /netflix[\s\-]*special/i.test(epTitle);
     };
     const bonusThumbnails = {
         1: 'https://media.themoviedb.org/t/p/w160_and_h90_face/wC7frShPQxJoZ8QwuhpXC1kRkgg.jpg',
         2: 'https://i.ytimg.com/vi/otawyZaOxvs/maxresdefault.jpg',
         ...(isLatent ? { 3: 'https://i.ytimg.com/vi/fzyL44FH2fI/hq720.jpg?sqp=-oaymwErCNAFEJQDSFryq4qpAx0IARUAAIhCGAHYAQHiAQoIGBACGAY4AUABuALzGA==&rs=AOn4CLCpei64gNPdqewL4RIYymkLkUYSmQ' } : {}),
+        ...(isLatent ? { 4: 'https://i.ytimg.com/vi/NQ6gWHMvna8/sddefault.jpg' } : {}),
     };
     const customBonusTitles = tmdbId === '262838'
         ? {
             1: 'Bonus EP1 ft. Raghav Juyal, Munawar, Niharika NM & Rohan Joshi',
             2: 'Bonus EP2 ft. Badshah, Sourav Joshi, Harssh Limbachiyaa, Rajat Sood',
             3: 'Bonus EP 3 ft. Deepak Kalal, Ravi Gupta, Agu Stanley',
+            4: 'Bonus EP 4 ft. Ayushmann Khurrana, Suhani Shah, Kullu, Rajat Sood',
         }
         : {};
-    const mapEpisodes = (episodes, useCustomTitles, imageOverrides = {}) => episodes.map((episode, index) => {
+    const mapEpisodes = (episodes, useCustomTitles, imageOverrides = {}, seasonName = '') => episodes.map((episode, index) => {
         const epNo = index + 1;
+        const isSwappedYoutubeVideo = String(episode?.category || '').toLowerCase() === 'youtube-exclusive';
+        const isSwappedNetflixVideo = String(episode?.category || '').toLowerCase() === 'netflix-special';
+        const swappedTitle = seasonName === 'Netflix Special' && isLatent
+            ? (index === 0 ? 'Netflix Special EP 1 ft. Varun Dhawan, Medha Shankr, Nishant Tanwar, Sharon Verma' : 'Netflix Special Ep 2 ft. Huma Qureshi, Krushna Abhishek, Aashish Solanki, Balraj Ghai')
+            : isSwappedYoutubeVideo
+                ? 'Netflix Special EP 1 ft. Varun Dhawan, Medha Shankr, Nishant Tanwar, Sharon Verma'
+                : isSwappedNetflixVideo ? 'Netflix Special Ep 2 ft. Huma Qureshi, Krushna Abhishek, Aashish Solanki, Balraj Ghai' : null;
         return {
             ...episode,
             episodeNo: epNo,
-            id: String(episode?.episodeId || episode?.url || episode?.id || '').trim(),
-            url: String(episode?.url || episode?.episodeId || '').trim(),
-            title: (useCustomTitles ? customBonusTitles[epNo] : null) || String(episode?.title || episode?.name || `Bonus EP ${epNo}`).trim(),
-            name: (useCustomTitles ? customBonusTitles[epNo] : null) || String(episode?.title || episode?.name || `Bonus EP ${epNo}`).trim(),
+            id: seasonName === 'Netflix Special' && isLatent && index === 1
+                ? 'https://vidaraa.cc/e/FzuyETJy22qaI'
+                : String(episode?.episodeId || episode?.url || episode?.id || '').trim(),
+            url: seasonName === 'Netflix Special' && isLatent && index === 1
+                ? 'https://vidaraa.cc/e/FzuyETJy22qaI'
+                : String(episode?.url || episode?.episodeId || '').trim(),
+            title: swappedTitle || (useCustomTitles ? customBonusTitles[epNo] : null) || String(episode?.title || episode?.name || `Bonus EP ${epNo}`).trim(),
+            name: swappedTitle || (useCustomTitles ? customBonusTitles[epNo] : null) || String(episode?.title || episode?.name || `Bonus EP ${epNo}`).trim(),
             image: imageOverrides[epNo] || bonusThumbnails[epNo] || getModalEpisodeImage(episode, modalFallbackImage),
         };
     });
@@ -3816,7 +3838,7 @@ async function fetchModalHdstreamBonusSeason(movie, id) {
         seasonTitle: name,
         seasonKey: providerSeasonKey,
         seasonImage: modalFallbackImage,
-        episodes: mapEpisodes(episodes, name === 'Bonus' && isLatent),
+        episodes: mapEpisodes(episodes, name === 'Bonus' && isLatent, {}, name),
     });
 
     if (!isLatent) {
@@ -3831,7 +3853,10 @@ async function fetchModalHdstreamBonusSeason(movie, id) {
         const varunThumb = 'https://ia601909.us.archive.org/33/items/i.-g.-l-2-be-2/L-nfspvarun.jpg';
         seasons.push({
             ...buildSeason('Netflix Special', netflixSpecials),
-            episodes: mapEpisodes(netflixSpecials, false, { 1: varunThumb }),
+            episodes: mapEpisodes(netflixSpecials, false, {
+                1: varunThumb,
+                2: 'https://i.ytimg.com/vi/3MxFgVg9bWU/sddefault.jpg',
+            }, 'Netflix Special'),
         });
     }
     return seasons.length ? seasons : [latentBonusFallback];
