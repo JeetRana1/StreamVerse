@@ -4177,16 +4177,59 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
         providerSelect.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     };
 
-const renderSeason = (seasonNoValue, uid, visibleCount = 50) => {
+    const episodeRanges = new Map();
+    let descendingEpisodes = false;
+const renderSeason = (seasonNoValue, uid) => {
         const seasonNo = Number(seasonNoValue ?? 1);
         const season = findModalSeason(uid, seasonNo);
         if (!season) return;
         syncDropdownSelection(season);
 
         const modalAnimeLike = isModalAnimeLike(movie);
-        const episodesToRender = season.episodes.slice(0, Math.max(1, visibleCount));
+        const rangeKey = String(season._uid || season.seasonNo);
+        const rangeCount = Math.ceil(season.episodes.length / 50);
+        const rangeIndex = Math.min(episodeRanges.get(rangeKey) || 0, Math.max(0, rangeCount - 1));
+        const rangeStart = rangeIndex * 50;
+        let rangeControl = root.querySelector('.modal-episode-ranges');
+        if (!rangeControl) {
+            rangeControl = document.createElement('div');
+            rangeControl.className = 'modal-episode-ranges';
+            rangeControl.setAttribute('role', 'group');
+            rangeControl.setAttribute('aria-label', 'Episode range');
+            list.before(rangeControl);
+        }
+        rangeControl.hidden = rangeCount <= 1;
+        rangeControl.innerHTML = Array.from({ length: rangeCount }, (_, i) => {
+            const first = season.episodes[i * 50];
+            const lastIndex = Math.min((i + 1) * 50, season.episodes.length) - 1;
+            const last = season.episodes[lastIndex];
+            return `<button type="button" class="modal-episode-range" data-range="${i}" aria-pressed="${i === rangeIndex}">${Number(first.episodeNo || i * 50 + 1)}–${Number(last.episodeNo || lastIndex + 1)}</button>`;
+        }).join('');
+        rangeControl.querySelectorAll('button').forEach(button => button.onclick = () => {
+            episodeRanges.set(rangeKey, Number(button.dataset.range));
+            renderSeason(season.seasonNo, season._uid || '');
+            list.scrollTop = 0;
+            rangeControl.querySelector(`[data-range="${button.dataset.range}"]`)?.focus({ preventScroll: true });
+        });
+        let orderButton = root.querySelector('.modal-episode-order');
+        if (!orderButton) {
+            orderButton = document.createElement('button');
+            orderButton.type = 'button';
+            orderButton.className = 'modal-episode-range modal-episode-order';
+            list.before(orderButton);
+        }
+        orderButton.textContent = descendingEpisodes ? '↓ Descending' : '↑ Ascending';
+        orderButton.setAttribute('aria-label', 'Descending episode order');
+        orderButton.setAttribute('aria-pressed', String(descendingEpisodes));
+        orderButton.onclick = () => {
+            descendingEpisodes = !descendingEpisodes;
+            renderSeason(season.seasonNo, season._uid || '');
+            list.scrollTop = 0;
+        };
+        const episodesToRender = season.episodes.slice(rangeStart, rangeStart + 50);
+        if (descendingEpisodes) episodesToRender.reverse();
         list.innerHTML = episodesToRender.map((ep, idx) => {
-            const episodeNo = Number(ep.episodeNo || idx + 1);
+            const episodeNo = Number(ep.episodeNo || rangeStart + idx + 1);
             const episodeId = String(ep.id || ep.episodeId || '').trim();
             const absoluteEpisodeNo = getModalEpisodeAbsoluteNo(seasons, season.seasonNo, episodeNo);
             const activeProviderRaw = selectedProvider === 'tmdb' ? provider : selectedProvider;
@@ -5073,14 +5116,6 @@ async function hydrateGridCard(item, card) {
             hdstreamFound: Boolean(hdstreamDetails),
         });
 
-        if (episodesToRender.length < season.episodes.length) {
-            const more = document.createElement('button');
-            more.type = 'button';
-            more.className = 'modal-episode-load-more';
-            more.textContent = `Load more episodes (${season.episodes.length - episodesToRender.length} remaining)`;
-            more.addEventListener('click', () => renderSeason(season.seasonNo, season._uid || uid || '', episodesToRender.length + 50));
-            list.appendChild(more);
-        }
         const detailsYear = details ? toYearNum(getYear(details)) : 0;
         const detailsIdentityMatches = !!details && isLikelySameTitle(item, details) && (!seedYear || !detailsYear || Math.abs(seedYear - detailsYear) <= 2);
         let poster = details ? getPoster(details) : '';
@@ -6095,7 +6130,7 @@ async function watchNow(id, type, provider = '', animeLike = false) {
     if (resolvedProvider) params.set('provider', String(resolvedProvider));
     if (safeType === 'tv') {
         try {
-            const response = await fetch(`${BASE_URL}/info/${encodeURIComponent(canonicalId)}?type=tv`);
+            const response = await fetch(`${BASE_URL}/info/${encodeURIComponent(canonicalId)}?type=tv`, { signal: AbortSignal.timeout(12000) });
             const details = response.ok ? await response.json() : null;
             const seasons = Array.isArray(details?.seasons) ? details.seasons : [];
             const season = (String(canonicalId) === '11436'
@@ -6124,6 +6159,43 @@ async function watchNow(id, type, provider = '', animeLike = false) {
                     params.set('episode', '1');
                     params.set('seasonTitle', 'Season 2');
                     params.set('episodeId', '262838-s2e1');
+                }
+            }
+            if (!animeLike && (!resolvedProvider || ['hdstream4u', 'play4u'].includes(resolvedProvider))) {
+                const providers = resolvedProvider ? [resolvedProvider] : ['play4u', 'hdstream4u'];
+                const inventories = await Promise.all(providers.map(async source => {
+                    try {
+                        const base = BASE_URL.replace('/meta/tmdb', `/movies/${source}`);
+                        const res = await fetch(`${base}/info?id=${encodeURIComponent(canonicalId)}&type=tv`, { signal: AbortSignal.timeout(15000) });
+                        if (!res.ok) return [];
+                        const data = await res.json();
+                        return (Array.isArray(data.episodes) ? data.episodes : []).map(ep => ({
+                            source,
+                            season: Number(ep.seasonNumber ?? ep.season ?? ep.seasonNo ?? 1),
+                            episode: Number(ep.episodeNumber ?? ep.episode ?? ep.number ?? ep.episodeNo ?? 0),
+                            id: String(ep.episodeId || ep.id || ep.url || ''),
+                            category: String(ep.category || ''),
+                        })).filter(ep => ep.season > 0 && ep.episode > 0 && ep.id && !/bonus|special/.test(ep.category));
+                    } catch (_) { return []; }
+                }));
+                const available = inventories.flat().sort((a, b) => a.season - b.season || a.episode - b.episode);
+                const requestedSeason = Number(params.get('season') || 1);
+                const requestedEpisode = Number(params.get('episode') || 1);
+                // Latent has separate provider/TMDB numbering; retain its resolver.
+                if (canonicalId !== '262838' && available.length && !available.some(ep => ep.season === requestedSeason && ep.episode === requestedEpisode)) {
+                    const next = available.find(ep => ep.season === requestedSeason && ep.episode > requestedEpisode)
+                        || available.find(ep => ep.season > requestedSeason) || available[0];
+                    params.set('unavailableSeason', String(requestedSeason));
+                    if (available.some(ep => ep.season === requestedSeason)) {
+                        params.set('unavailableEpisode', String(requestedEpisode));
+                    }
+                    params.set('season', String(next.season));
+                    params.set('episode', String(next.episode));
+                    params.set('seasonTitle', `Season ${next.season}`);
+                    params.set('episodeId', next.id);
+                    params.set('provider', next.source);
+                    params.set('t', '0');
+                    params.set('resume', '0');
                 }
             }
         } catch (_) {

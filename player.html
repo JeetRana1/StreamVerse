@@ -3863,7 +3863,7 @@
         .seek-wrapper .seek-track-fill { position: absolute; left: 0; top: 50%; width: var(--seek-percent, 0%); height: 6px; transform: translateY(-50%); border-radius: 999px; background: linear-gradient(90deg, #e50914, #ff3b47); box-shadow: 0 0 10px rgba(229,9,20,.22); pointer-events: none; z-index: 1; transition: width .35s cubic-bezier(.22,.61,.36,1); }
         .seek-wrapper .seek-bar { z-index: 2; }
         @media (pointer: coarse) { .action-row { gap: 8px; justify-content: flex-start; } .action-row .mobile-aux-right { margin-right: auto; } .bottom-shell .seek-shell { transform: translateY(24px); padding: 14px 11px; width: calc(100% - 28px); } .bottom-shell .time-readout { min-width: 142px; max-width: calc(100vw - 34px); transform: translateY(6px); font-size: 13px; } .mobile-aux-right { gap: 6px; } .action-row .ctrl-icon, .action-row .fs-back-btn, .action-row .ui-watchparty-btn, .action-row .ui-chat-btn, .action-row .ui-lock-btn { width: 46px; height: 46px; font-size: 16px; } }
-        @media (pointer: coarse) and (orientation: portrait) { .mobile-aux-right .ui-watchparty-btn, .mobile-aux-right .ui-chat-btn, .mobile-aux-right .ui-lock-btn { display: none !important; } .center-play .ctrl-btn.skip-btn { margin: 0 clamp(44px, 15vw, 110px); } .action-row #customServerBtn, .action-row #custom-audio-btn, .action-row #captionsBtn, .action-row #qualityBtn, .action-row #playbackBtn, .action-row #preferencesBtn, .action-row #watchTogetherBtn, .action-row #fitBtn { display: none !important; } }
+         @media (pointer: coarse) and (orientation: portrait) { .mobile-aux-right .ui-watchparty-btn, .mobile-aux-right .ui-chat-btn, .mobile-aux-right .ui-lock-btn { display: none !important; } .center-play .ctrl-btn.skip-btn { margin: 0 clamp(44px, 15vw, 110px); } .action-row #customServerBtn, .action-row #captionsBtn, .action-row #qualityBtn, .action-row #playbackBtn, .action-row #preferencesBtn, .action-row #watchTogetherBtn, .action-row #fitBtn { display: none !important; } .action-row #custom-audio-btn { display: inline-flex !important; } }
         @media (pointer: coarse) and (orientation: landscape) { #chatPanel, #watchPartyPanel { right: 40px !important; left: auto !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 50px) !important; } }
         @media (max-width: 600px) { #watchPartyPanel { right: 16px !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px) !important; width: calc(100vw - 32px) !important; } }
         @media (pointer: coarse) and (max-height: 600px) { #watchPartyPanel { top: auto !important; bottom: 70px !important; max-height: calc(100vh - 82px) !important; overflow: hidden !important; overflow-x: hidden !important; box-sizing: border-box !important; } #watchPartyPanel .watch-party-card { max-height: calc(100vh - 82px) !important; overflow: hidden !important; } #watchPartyPanel .watch-party-stage { max-height: calc(100vh - 170px) !important; overflow-y: auto !important; overflow-x: hidden !important; } #watchPartyPanel .watch-party-public-list { max-height: none !important; overflow: visible !important; } }
@@ -5382,9 +5382,18 @@ function getProxiedUrl(url, referer = '') {
              return shareUrl.toString();
          }
 
+         function getDisplayMediaTitle(value) {
+             let title = String(value || '').trim();
+             if (!title) return 'Unknown Title';
+
+             // Provider metadata sometimes appends its source name to the title.
+             title = title.replace(/\s*(?:[-|:·•]|\bat\b)\s*(?:HDStream4u|HDHub4u|HubStream|Play4u|AnimeSalt|AniKoto|Satoru|JustAnime|FlixHQ)\s*$/i, '').trim();
+             return title || 'Unknown Title';
+         }
+
          async function shareCurrentEpisode() {
              const url = getShareEpisodeUrl();
-             const title = String(currentMediaInfo?.title || currentMediaInfo?.name || document.title || 'StreamVerse').trim();
+             const title = getDisplayMediaTitle(currentMediaInfo?.title || currentMediaInfo?.name || document.title || 'StreamVerse');
              try {
                  if (navigator.share) {
                      await navigator.share({ title, url });
@@ -5742,11 +5751,22 @@ function getProxiedUrl(url, referer = '') {
             document.getElementById('loader-sub').textContent = sub;
             showLoader();
         }
+        let showInitialAvailabilityNotice = true;
         function setPlaybackStatus(title, sub) {
             const titleEl = document.getElementById('loader-title');
             const subEl = document.getElementById('loader-sub');
             if (titleEl) titleEl.textContent = title;
-            if (subEl) subEl.textContent = sub;
+            if (subEl) {
+                const missingSeason = Number(params.get('unavailableSeason'));
+                const missingEpisode = Number(params.get('unavailableEpisode'));
+                const targetSeason = Number(params.get('season'));
+                const targetEpisode = Number(params.get('episode'));
+                const hasNotice = showInitialAvailabilityNotice && missingSeason > 0 && targetSeason > 0 && targetEpisode > 0;
+                const notice = hasNotice
+                    ? `${missingEpisode > 0 ? `Season ${missingSeason}, Episode ${missingEpisode}` : `Season ${missingSeason}`} not listed by providers. Fetching Season ${targetSeason}, Episode ${targetEpisode}…`
+                    : '';
+                subEl.textContent = notice ? `${notice} ${sub || ''}` : (sub || '');
+            }
         }
         function showLoader() {
             loaderRevision += 1;
@@ -5756,6 +5776,7 @@ function getProxiedUrl(url, referer = '') {
         function hideLoader(force = false) {
             if (pendingEpisodeMedia && !force) return;
             if (iosArchiveLoaderHold && !force) return;
+            showInitialAvailabilityNotice = false;
             const revision = loaderRevision;
             loader.style.opacity = '0';
             setTimeout(() => { if (revision === loaderRevision) loader.style.display = 'none'; }, 0);
@@ -5860,7 +5881,7 @@ function getProxiedUrl(url, referer = '') {
 
         function getPauseCardMetadata() {
             const info = currentMediaInfo || {};
-            const title = String(info.title || info.name || document.getElementById('media-title')?.textContent || 'Unknown Title').trim();
+            const title = getDisplayMediaTitle(info.title || info.name || document.getElementById('media-title')?.textContent);
             const description = String(info.overview || info.description || info.plot || info.synopsis || info.tagline || '').trim() || 'Paused';
             return { title, description };
         }
@@ -6337,8 +6358,8 @@ function getProxiedUrl(url, referer = '') {
             // Keep FlixHQ buffers modest. Large audio buffers can preserve decoder drift
             // after seeks/track refreshes, which sounds like robotic/distorted audio.
             const backBufferLength = isThumbnail ? 4 : (isVega ? 30 : (isHdstream || isAniKoto ? 20 : (isFlixHq ? 8 : (isAnimeKai ? (mobileMain ? 6 : 10) : (mobileMain ? 8 : 12)))));
-            const maxBufferLength = isThumbnail ? 12 : (isVega ? 60 : (isHdstream ? 90 : (isAniKoto ? 45 : (isFlixHq ? 18 : (isAnimeKai ? (mobileMain ? 10 : 16) : (mobileMain ? 14 : 20))))));
-            const maxMaxBufferLength = isThumbnail ? 24 : (isVega ? 120 : (isHdstream ? 100 : (isAniKoto ? 90 : (isFlixHq ? 30 : (isAnimeKai ? (mobileMain ? 20 : 28) : (mobileMain ? 28 : 40))))));
+             const maxBufferLength = isThumbnail ? 12 : (isVega ? 60 : (isHdstream ? 180 : (isAniKoto ? 45 : (isFlixHq ? 18 : (isAnimeKai ? (mobileMain ? 10 : 16) : (mobileMain ? 14 : 20))))));
+             const maxMaxBufferLength = isThumbnail ? 24 : (isVega ? 120 : (isHdstream ? 240 : (isAniKoto ? 90 : (isFlixHq ? 30 : (isAnimeKai ? (mobileMain ? 20 : 28) : (mobileMain ? 28 : 40))))));
             const maxBufferSize = isThumbnail
                 ? 6 * 1024 * 1024
                 : (isVega ? 150 * 1000 * 1000 : (isHdstream || isAniKoto ? 60 * 1000 * 1000 : (isFlixHq ? 36 * 1000 * 1000 : (isAnimeKai ? (mobileMain ? 14 * 1000 * 1000 : 22 * 1000 * 1000) : (mobileMain ? 16 * 1000 * 1000 : 28 * 1000 * 1000)))));
@@ -6357,9 +6378,12 @@ function getProxiedUrl(url, referer = '') {
                 backBufferLength: backBufferLength,
                 maxBufferLength: maxBufferLength,
                 maxMaxBufferLength: maxMaxBufferLength,
-                 maxBufferSize: isHdstream && !isThumbnail ? 90 * 1000 * 1000 : maxBufferSize,
-                 startLevel: (isHdstream || isAniKoto) && !isThumbnail ? 0 : undefined,
-                 autoLevelCapping: isHdstream && !isThumbnail ? 0 : undefined,
+                 maxBufferSize: isHdstream && !isThumbnail ? 180 * 1000 * 1000 : maxBufferSize,
+                  abrEwmaDefaultEstimate: isHdstream && !isThumbnail ? 800000 : undefined,
+                  abrBandWidthFactor: isHdstream && !isThumbnail ? 0.7 : undefined,
+                  abrBandWidthUpFactor: isHdstream && !isThumbnail ? 0.5 : undefined,
+                  startLevel: isHdstream && !isThumbnail ? 0 : (isAniKoto && !isThumbnail ? 0 : undefined),
+                  autoLevelCapping: isHdstream && !isThumbnail ? 0 : undefined,
                 audioCodec: undefined,
                 // Only fetch quality levels the player can actually display. This
                 // stops hls.js from probing/downloading the highest-res variant
@@ -7037,18 +7061,13 @@ if (parsedProvider.includes('hdstream')) {
                          // parse time stalls playback before the bandwidth
                          // estimate can adapt. ABR will climb levels once the
                          // estimate proves there is headroom.
-                          hls.startLevel = 0;
                           // HDStream's CDN can report optimistic bandwidth on
                           // the first manifest request and immediately jump to
                           // a large rendition. Hold the lowest level briefly so
                           // the requested/resume position gets a real buffer;
                           // adaptive quality is released after startup.
-                          hls.autoLevelCapping = 0;
                           const initialLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
                            hls.startLoad(initialLoadTarget > 0 ? initialLoadTarget : 0);
-                          setTimeout(() => {
-                              if (hls === hlsInst && hls.levels?.length > 1) hls.autoLevelCapping = -1;
-                          }, 15000);
                      } catch (_) { }
                  }
                    if (String(parsedProvider || '').toLowerCase() === 'play4u' && Array.isArray(hls.levels) && hls.levels.length > 1) {
@@ -7087,9 +7106,10 @@ if (parsedProvider.includes('hdstream')) {
                 if (parsedProvider === 'play4u' && externalSubtitleTracks.length) {
                     // HLS clears TextTrack cues while initializing a new manifest.
                     // Reattach external captions after that initialization finishes.
-                    setTimeout(() => {
-                        if (hls === hlsInst) applyExternalSubtitlesToVideo(video).catch(console.warn);
-                    }, 0);
+                     setTimeout(() => {
+                         if (hls === hlsInst) applyExternalSubtitlesToVideo(video).catch(console.warn);
+                         schedulePlay4uSubtitleRecovery(video);
+                     }, 0);
                 }
                 updateAudioTracks();
                 hideBufferingOverlaySoon(40);
@@ -7183,7 +7203,8 @@ if (parsedProvider.includes('hdstream')) {
                 const levelsCount = hls.levels.length;
                 if (isHdstream && !isThumbnail) {
                     if (hdstreamManualQualityLevel >= 0) return;
-                    if (hls.autoLevelCapping !== -1) hls.autoLevelCapping = -1;
+                    if (hls.autoLevelCapping !== 0) hls.autoLevelCapping = 0;
+                    if (hls.nextLevel !== 0) hls.nextLevel = 0;
                     return;
                 }
                 const lowestSafeCap = Math.max(0, levelsCount - 2);
@@ -7202,16 +7223,16 @@ if (parsedProvider.includes('hdstream')) {
             hls.on(Hls.Events.FRAG_LOADING, (_, data) => {
                 lastFragLoadStartAt = Date.now();
                 lastFragLoadPerfTime = performance.now();
-if (isHdstream && !isThumbnail && hdstreamManualQualityLevel < 0) {
+                 if (isHdstream && !isThumbnail && hdstreamManualQualityLevel < 0) {
                     // Honor the adaptive level cap; only push toward the top
                     // rendition when measured bandwidth has real headroom above
                     // it. Forcing the highest level unconditionally stalls
                     // playback on connections that can't keep up with the top
                     // bitrate (e.g. hubstream CDNs throttling to ~1-2 Mbps).
-                    const topBitrate = Number(hls.levels?.[hls.levels.length - 1]?.bitrate || 0);
-                    if (!isBandwidthConstrained && topBitrate > 0 && lastEstimatedBandwidth > topBitrate * 1.25) {
-                        hls.nextLevel = hls.levels.length - 1;
-                    }
+                    // Keep automatic HDStream playback on the stable lowest
+                    // rendition; manual quality selection can still override it.
+                     if (hls.autoLevelCapping !== 0) hls.autoLevelCapping = 0;
+                     if (hls.nextLevel !== 0) hls.nextLevel = 0;
                 }
                 if (isCurrentHdstreamStream() && data?.frag) {
                     const fragSn = data.frag.sn;
@@ -7255,27 +7276,8 @@ const fragLoadedIsHdstream = String(currentStreamProvider || allSources?.[curren
                 }
 if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsStartupSampleDone && hls.levels.length > 1) {
                     hlsStartupSampleDone = true;
-                    // Only pin HDStream to the highest rendition when measured
-                    // bandwidth proves it can sustain it (1.25x headroom). On
-                    // bandwidth-constrained connections leave ABR + the cap to
-                    // pick a level that the pipe can actually feed.
-                    setTimeout(() => {
-                        if (hls === hlsInst && hls.levels.length > 1) {
-                            const highestLevel = hls.levels.length - 1;
-                            const topBitrate = Number(hls.levels[highestLevel]?.bitrate || 0);
-                            const provenHeadroom =
-                                topBitrate > 0 && lastEstimatedBandwidth > topBitrate * 1.25;
-                            if (!isBandwidthConstrained && provenHeadroom) {
-                                hls.startLevel = highestLevel;
-                                hls.nextLevel = highestLevel;
-                                hls.loadLevel = highestLevel;
-                            }
-                            hls.autoLevelCapping = isBandwidthConstrained
-                                ? Math.max(0, hls.levels.length - 2)
-                                : -1;
-                            console.log('[hls] HDStream startup sample complete; target=' + ((provenHeadroom && !isBandwidthConstrained) ? 'highest' : 'auto/adaptive'));
-                        }
-                    }, 15000);
+                    // Quality is owned by changeQuality and the automatic cap.
+                    // A delayed startup switch must not override a manual choice.
                 }
                 const bw = Number(data?.stats?.bwEstimate || 0);
                 if (!Number.isFinite(bw) || bw <= 0) return;
@@ -11394,6 +11396,21 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             }, 200);
         }
 
+        function schedulePlay4uSubtitleRecovery(videoEl) {
+            if (!videoEl || String(currentStreamProvider || '').toLowerCase() !== 'play4u') return;
+            if (!externalSubtitleTracks.some((track) => String(track?.provider || '').toLowerCase() === 'play4u')) return;
+
+            [350, 1200, 3000].forEach((delay) => {
+                setTimeout(() => {
+                    if (String(currentStreamProvider || '').toLowerCase() !== 'play4u') return;
+                    const attached = videoEl.querySelectorAll('track[data-ext-sub="1"]').length;
+                    if (!attached || !Array.from(videoEl.textTracks || []).some((track) => track.readyState === 2)) {
+                        applyExternalSubtitlesToVideo(videoEl).catch(console.warn);
+                    }
+                }, delay);
+            });
+        }
+
         function mergeSubtitleTrackLists(primary, secondary) {
             const p = Array.isArray(primary) ? primary : [];
             const s = Array.isArray(secondary) ? secondary : [];
@@ -11931,7 +11948,10 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                         const subs = await fetchAnimeSubtitleFallback(true);
                         if (Array.isArray(subs) && subs.length) {
                             setExternalSubtitleTracks(mergeSubtitleTrackLists(externalSubtitleTracks, subs));
-                            if (video) await applyExternalSubtitlesToVideo(video);
+                                  if (video) {
+                                      await applyExternalSubtitlesToVideo(video);
+                                      schedulePlay4uSubtitleRecovery(video);
+                                  }
                         }
                     } catch (_) { }
                     buildCaptionsMenu();
@@ -16461,7 +16481,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                             // already anchored; just surface the buffering state.
                             if (!isCurrentHdstreamStream() && !isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
                             // Drop to lowest quality on confirmed stall
-                            if (!isCurrentAniKotoStream() && hlsInst && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
+                            if (!isCurrentHdstreamStream() && !isCurrentAniKotoStream() && hlsInst && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
                                 stallAdaptiveLowest = true;
                                 hlsInst.nextLevel = 0;
                                 hlsInst.loadLevel = 0;
@@ -16476,9 +16496,9 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 // a real stall when HLS.js is in charge (hlsInst exists).
                 if (!hlsInst) return;
                 showBufferingOverlay();
-                if (!isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
+                if (!isCurrentHdstreamStream() && !isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
                 // Drop to lowest quality on stall
-                if (!isCurrentAniKotoStream() && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
+                if (!isCurrentHdstreamStream() && !isCurrentAniKotoStream() && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
                     stallAdaptiveLowest = true;
                     hlsInst.nextLevel = 0;
                     hlsInst.loadLevel = 0;
@@ -18827,7 +18847,7 @@ video.addEventListener('canplay', (event) => {
                         };
                 }
 
-                const title = info.title || info.name || 'Unknown Title';
+                const title = getDisplayMediaTitle(info.title || info.name);
                 document.title = `Watching: ${title} | StreamVerse`;
                 document.getElementById('media-title').textContent = title;
                 currentCoverUrl = resolveMediaPosterUrl(info, currentCoverUrl || '');
@@ -24552,8 +24572,23 @@ console.log(`[${provider}] watch request completed`, {
                 await Promise.all(fallbackProviders.map(p => processProvider(p)));
             }
 
-            if (allSources.length === 0 && !currentStreamUrl && !(video && video.currentSrc)) {
-                showError(
+             if (allSources.length === 0 && MEDIA_TYPE === 'tv' && !currentStreamUrl && !(video && video.currentSrc)) {
+                 const nextEpisode = getNextEpisodeRef();
+                 if (nextEpisode && watchPartyRole !== 'guest') {
+                     console.warn('[fallback] episode unavailable; trying next episode', {
+                         season: tvSeasons?.[curSeason]?.seasonNo || curSeason + 1,
+                         episode: tvSeasons?.[curSeason]?.episodes?.[curEpisode]?.episode || curEpisode + 1,
+                         nextSeason: tvSeasons?.[nextEpisode.seasonIndex]?.seasonNo || nextEpisode.seasonIndex + 1,
+                         nextEpisode: tvSeasons?.[nextEpisode.seasonIndex]?.episodes?.[nextEpisode.episodeIndex]?.episode || nextEpisode.episodeIndex + 1,
+                     });
+                     setPlaybackStatus('Episode unavailable', 'Trying the next available episode...');
+                     await goToNextEpisode();
+                     return;
+                 }
+             }
+
+             if (allSources.length === 0 && !currentStreamUrl && !(video && video.currentSrc)) {
+                 showError(
                     MEDIA_TYPE === 'tv' ? 'Episode Unavailable' : 'No Streams Found',
                     MEDIA_TYPE === 'tv'
                         ? 'Sorry, this episode is not available right now.'
@@ -26684,11 +26719,22 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
 
         function changeQuality(q) {
             if (!hlsInst) return;
+            q = Number(q);
+            const level = q === 0 ? -1 : hlsInst.levels.findIndex(l => Number(l.height) === q);
+            if (!Number.isFinite(q) || (q !== 0 && level < 0)) return;
             if (isCurrentHdstreamStream()) {
-                hdstreamManualQualityLevel = q === 0 ? -1 : hlsInst.levels.findIndex(l => l.height === q);
+                hdstreamManualQualityLevel = level;
+                stallAdaptiveLowest = false;
+                if (stallRecoveryTimer) clearTimeout(stallRecoveryTimer);
+                stallRecoveryTimer = null;
                 hlsInst.autoLevelCapping = q === 0 ? 0 : -1;
+                const target = q === 0 ? 0 : level;
+                if (hlsInst.currentLevel !== target || hlsInst.loadLevel !== target) {
+                    hlsInst.currentLevel = target;
+                }
+                return;
             }
-            hlsInst.nextLevel = q === 0 ? -1 : hdstreamManualQualityLevel;
+            hlsInst.nextLevel = level;
         }
 
         // -----------------------------------------------------------------------
