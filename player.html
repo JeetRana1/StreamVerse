@@ -17408,13 +17408,19 @@ video.addEventListener('canplay', (event) => {
             preferencesBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (wakeControlsIfHidden()) return;
-                const wasOpen = preferencesMenu.classList.contains('active');
-                closeAllPopups();
-                if (wasOpen) return;
-                buildPreferencesMenu();
-                positionMenuAbove(preferencesMenu, preferencesBtn);
-                preferencesMenu.classList.add('active');
-            });
+                 const wasOpen = preferencesMenu.classList.contains('active');
+                 closeAllPopups();
+                 if (wasOpen) return;
+                 buildPreferencesMenu();
+                 preferencesMenu.classList.add('active');
+                 // Activate before measuring so the first open uses the menu's
+                 // real rendered height instead of the hidden/empty height.
+                 positionMenuAbove(preferencesMenu, preferencesBtn);
+                 requestAnimationFrame(() => {
+                     positionMenuAbove(preferencesMenu, preferencesBtn);
+                     requestAnimationFrame(() => positionMenuAbove(preferencesMenu, preferencesBtn));
+                 });
+             });
 
             fitBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -18783,6 +18789,7 @@ video.addEventListener('canplay', (event) => {
                 const needsTmdbFallback = MEDIA_NAMESPACE === 'tmdb' && (
                     !info ||
                     !String(info.title || info.name || '').trim() ||
+                    !resolveMediaPosterUrl(info, URL_IMAGE || '') ||
                     String(info.title || info.name || '').toLowerCase() === 'unknown' ||
                     (effectiveMediaType === 'tv' && (
                         !Array.isArray(info.seasons) ||

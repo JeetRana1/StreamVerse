@@ -359,6 +359,11 @@ async function fetchJsonWithFallback(urlOrPath, timeoutMs = API_TIMEOUT_MS) {
 const heroContainer = document.getElementById('hero-info');
 const heroSection = document.getElementById('hero-section');
 const trendingGrid = document.getElementById('trending-grid');
+const latestGrid = document.getElementById('latest-grid');
+const latestSection = document.getElementById('latest-section');
+const latestMoreBtn = document.getElementById('latest-more-btn');
+let latestPage = 1;
+let latestItems = [];
 const popularMoviesGrid = document.getElementById('popular-movies-grid');
 const popularTvGrid = document.getElementById('popular-tv-grid');
 const topRatedGrid = document.getElementById('top-rated-grid');
@@ -523,6 +528,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const promises = [
+        fetchPlay4uLatest(),
         fetchTrending(),
         fetchSection('movie', popularMoviesGrid, 'movie'),
         fetchSection('tv', popularTvGrid, 'tv'),
@@ -5148,7 +5154,7 @@ async function hydrateGridCard(item, card) {
         // Hydrate other metadata
         // Only HDStream metadata may update this badge. TMDB titles do not
         // contain the provider's quality markers and would cause flicker.
-        if (hdstreamDetails) {
+        if (hdstreamDetails && !item?.isPlay4uLatest) {
             const providerTitle = String(
                 hdstreamDetails.sourceTitle || hdstreamDetails.providerTitle || hdstreamDetails.title || hdstreamDetails.name || '',
             );
@@ -5156,6 +5162,8 @@ async function hydrateGridCard(item, card) {
             if (qualityBadge) {
                 const quality = /\b(?:4k|web[\s-]*dl)\b/i.test(providerTitle) ? 'HD' : 'Cam';
                 qualityBadge.textContent = quality;
+                qualityBadge.classList.toggle('latest-hd', quality.toUpperCase() === 'HD');
+                qualityBadge.classList.toggle('latest-cam', quality.toUpperCase() !== 'HD');
                 setHdstreamQuality(`${itemType}:${item.id}`, quality);
             }
         } else {
@@ -5225,17 +5233,11 @@ function displayHero(item) {
     const id = getCanonicalTmdbId(item, item.id);
     const provider = getDefaultPlaybackProvider(type, getItemProvider(item), isModalAnimeLike(item));
 
+    // Match the production hero: switch the background directly with no
+    // preload, crossfade, or extra layer delaying the new artwork.
     heroSection.style.backgroundImage = `url('${bg}')`;
     heroSection.classList.add('is-switching');
     setTimeout(() => heroSection.classList.remove('is-switching'), 260);
-
-    // Add Animation Class
-    const heroInfo = heroContainer.querySelector('.hero-info');
-    if (heroInfo) {
-        heroInfo.classList.remove('animate-in');
-        void heroInfo.offsetWidth; // Trigger reflow
-        heroInfo.classList.add('animate-in');
-    }
 
     heroContainer.innerHTML = `
         <div class="hero-info">
@@ -5263,6 +5265,13 @@ function displayHero(item) {
             </div>
         </div>
     `;
+    // Animate the newly-rendered slide. The previous code tried to animate
+    // the old node before replacing heroContainer's contents, so the first
+    // frame appeared to snap instead of easing in.
+    const heroInfo = heroContainer.querySelector('.hero-info');
+    if (heroInfo) {
+        requestAnimationFrame(() => heroInfo.classList.add('animate-in'));
+    }
     const heroInfoBtn = heroContainer.querySelector('.btn-more-info');
     if (heroInfoBtn) {
         heroInfoBtn.addEventListener('mouseenter', () => prefetchDetails(id, type), { once: true });
@@ -5341,8 +5350,9 @@ function updateHeroProgress() {
 
     const elapsed = heroProgressElapsedBeforePause + (heroProgressPausedAt ? 0 : (performance.now() - heroProgressStartedAt));
     const raw = Math.min(1, Math.max(0, elapsed / HERO_ROTATION_MS));
-    const eased = easeOutCubic(raw);
-    activeDot.style.setProperty('--hero-progress', eased.toFixed(4));
+    // Keep the red loader moving at a constant rate. Easing the progress
+    // itself makes it visibly slow down and look frozen near the end.
+    activeDot.style.setProperty('--hero-progress', raw.toFixed(4));
 
     if (raw >= 1) {
         activeDot.style.setProperty('--hero-progress', '1');
@@ -5460,6 +5470,10 @@ function displayGrid(items, container, forcedType = null, options = {}) {
         const ratingProgress = Math.round(ratingNum * 10);
         const detectedType = getType(normalizedItem);
         const type = detectedType || forcedType || 'movie';
+        const qualityLabel = normalizedItem.isPlay4uLatest
+            ? String(normalizedItem.quality || 'HD').toUpperCase()
+            : String(getHdstreamQuality(`${type}:${normalizedItem.id}`) || 'Cam').toUpperCase();
+        const qualityClass = qualityLabel === 'CAM' ? 'latest-cam' : 'latest-hd';
         const id = getCanonicalTmdbId(normalizedItem, normalizedItem.id);
         if (shouldRememberFeaturedKey) {
             homepageFeaturedMediaKeys.add(makeMediaDedupeKey({ ...normalizedItem, media_type: type, type }));
@@ -5505,7 +5519,8 @@ if (watchedItem) {
         card.innerHTML = `
             <img src="${poster}" alt="${title}" loading="lazy"
                  onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Image'">
-            <span class="quality-badge" data-quality-badge>${getHdstreamQuality(`${type}:${normalizedItem.id}`) || 'Cam'}</span>
+            <span class="quality-badge ${qualityClass}" data-quality-badge>${qualityLabel}</span>
+            ${normalizedItem.isNew ? '<span class="new-card-badge">New</span>' : ''}
             <div class="card-rating-ring" style="--rating-progress:${ratingProgress}">
                 <span class="card-rating-ring-value"><i class="fa-solid fa-star"></i> ${rating}</span>
             </div>
@@ -5518,7 +5533,10 @@ if (watchedItem) {
                 </div>
             </div>
         `;
-        card.onclick = () => openDetails(id, type, provider, normalizedItem);
+        // Latest Play4u items use TMDB for the modal metadata, while retaining
+        // Play4u as the preferred playback provider.
+        const modalProvider = normalizedItem.isPlay4uLatest ? '' : provider;
+        card.onclick = () => openDetails(id, type, modalProvider, normalizedItem);
         card.addEventListener('mouseenter', () => prefetchDetails(id, type, provider), { once: true });
         card.addEventListener('touchstart', () => prefetchDetails(id, type, provider), { once: true, passive: true });
         card.addEventListener('pointerdown', () => prefetchDetails(id, type, provider), { once: true, passive: true });
@@ -5652,6 +5670,67 @@ const searchCloseBtn = document.getElementById('search-close-btn');
 function isMobileSearchViewport() {
     return window.matchMedia('(max-width: 768px)').matches;
 }
+
+async function fetchPlay4uLatest(page = 1, append = false) {
+    if (!latestGrid || !latestSection) return false;
+    try {
+        const base = BASE_URL.replace('/meta/tmdb', '/movies/play4u');
+        const data = await fetchJsonWithFallback(`${base}/latest?page=${page}`);
+        const items = Array.isArray(data?.results) ? data.results : [];
+        if (!items.length) return false;
+        latestSection.style.display = '';
+        latestPage = page;
+        latestItems = append
+            ? [...latestItems, ...items.filter((item) => !latestItems.some((existing) => String(existing.id) === String(item.id)))]
+            : items;
+        displayGrid(latestItems, latestGrid, null, { includeUnrated: true });
+        if (latestMoreBtn) {
+            latestMoreBtn.style.display = page < Number(data?.totalPages || page) ? 'inline-flex' : 'none';
+            latestMoreBtn.disabled = false;
+            latestMoreBtn.innerHTML = '<i class="fa-solid fa-plus"></i> View More';
+        }
+        return true;
+    } catch (error) {
+        console.warn('Play4u latest feed unavailable:', error?.message || error);
+        // Never remove already-loaded releases when a later page times out.
+        // The user can retry View More without losing the current category.
+        if (!append && !latestItems.length) latestSection.style.display = 'none';
+        if (latestMoreBtn && append) {
+            latestMoreBtn.disabled = false;
+            latestMoreBtn.innerHTML = '<i class="fa-solid fa-plus"></i> View More';
+        }
+        return false;
+    }
+}
+
+latestMoreBtn?.addEventListener('click', async () => {
+    latestMoreBtn.disabled = true;
+    latestMoreBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading…';
+    const loaded = await fetchPlay4uLatest(latestPage + 1, true);
+    if (!loaded && latestMoreBtn) {
+        latestMoreBtn.disabled = false;
+        latestMoreBtn.innerHTML = '<i class="fa-solid fa-plus"></i> View More';
+    }
+});
+
+// Keep the Play4u latest rail fresh without requiring a full homepage reload.
+// The first page is checked every two minutes; already loaded pages remain visible.
+setInterval(async () => {
+    if (document.hidden || !latestSection || latestSection.style.display === 'none') return;
+    try {
+        const base = BASE_URL.replace('/meta/tmdb', '/movies/play4u');
+        const data = await fetchJsonWithFallback(`${base}/latest?page=1`);
+        const freshItems = Array.isArray(data?.results) ? data.results : [];
+        if (!freshItems.length) return;
+        const existingIds = new Set(latestItems.map((item) => String(item.id)));
+        const newItems = freshItems.filter((item) => !existingIds.has(String(item.id)));
+        if (!newItems.length) return;
+        latestItems = [...newItems, ...latestItems];
+        displayGrid(latestItems, latestGrid, null, { includeUnrated: true });
+    } catch (error) {
+        console.warn('Play4u latest refresh failed:', error?.message || error);
+    }
+}, 120000);
 
 function setSearchExpanded(expanded) {
     if (!searchContainer) return;
@@ -6391,6 +6470,7 @@ async function openDetails(id, type, provider = '', seedItem = null, focusSimila
             if (!movie.image) movie.image = initial.image || initial.poster_path;
             if (!movie.cover) movie.cover = initial.cover || initial.backdrop_path;
             if (!movie.releaseDate) movie.releaseDate = initial.releaseDate || initial.release_date || initial.first_air_date;
+            if (!movie.provider && initial.provider) movie.provider = initial.provider;
         }
 
         renderDetailsModal(movie, canonicalId, type, provider);
