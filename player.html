@@ -23979,9 +23979,9 @@ item.innerHTML = `
             const failReasons = [];
             providerResults = {};
             const applicableArchiveSource = getArchiveFallbackSource(currentArchiveFallback);
-            const providersToRun = (effectiveForcedProvider
+            const providersToRun = [...new Set((effectiveForcedProvider
                 ? [effectiveForcedProvider]
-                : activeProviders).filter((provider) => String(provider).toLowerCase() !== 'archive.org' || applicableArchiveSource);
+                : activeProviders).filter((provider) => String(provider).toLowerCase() !== 'archive.org' || applicableArchiveSource))];
             const archiveExplicitlyRequested = effectiveForcedProvider === 'archive.org';
             let orderedProviders = applicableArchiveSource && (!effectiveForcedProvider || archiveExplicitlyRequested) && !currentIsLikelyAnime
                 ? [...new Set([...providersToRun, 'archive.org'])]
@@ -24202,7 +24202,7 @@ item.innerHTML = `
                     const isNetMirrorProvider = ['flixhq', 'viewvault', 'netmirror'].some(v => String(provider || '').toLowerCase().includes(v));
 
                     if (isAnimeProvider) {
-                        console.time(`[${provider}] episode resolution`);
+                        console.debug(`[${provider}] episode resolution started`);
                         const canonicalAnimeInfo = currentAnimeCanonicalInfo || await getCanonicalAnimeInfo();
                         const canonicalAnimeId = String(canonicalAnimeInfo?.id || currentMediaInfo?.anilistId || '').trim();
                         const rawTitle = (currentIsLikelyAnime && URL_TITLE && provider === 'anikoto')
