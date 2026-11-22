@@ -6419,6 +6419,57 @@ function getProxiedUrl(url, referer = '') {
          let manualQualityLabel = '';
          let play4uAutoRestoreTimer = null;
          let play4uRecoveryQualityActive = false;
+         let play4uFreezeDiagTimer = null;
+         let play4uLastFreezeDiagAt = 0;
+
+         function logPlay4uFreezeDiagnostics(reason, extra = {}) {
+             if (String(currentStreamProvider || '').toLowerCase() !== 'play4u' || !video) return;
+             const now = Date.now();
+             if (now - play4uLastFreezeDiagAt < 250) return;
+             play4uLastFreezeDiagAt = now;
+             const buffered = [];
+             try {
+                 for (let i = 0; i < video.buffered.length; i += 1) {
+                     buffered.push([
+                         Number(video.buffered.start(i).toFixed(2)),
+                         Number(video.buffered.end(i).toFixed(2)),
+                     ]);
+                 }
+             } catch (_) { }
+             const playbackQuality = typeof video.getVideoPlaybackQuality === 'function'
+                 ? video.getVideoPlaybackQuality() : null;
+             console.warn('[play4u-freeze-diagnostic]', {
+                 reason,
+                 ...extra,
+                 currentTime: Number(video.currentTime || 0).toFixed(3),
+                 readyState: video.readyState,
+                 networkState: video.networkState,
+                 paused: video.paused,
+                 seeking: video.seeking,
+                 buffered,
+                 bufferedAhead: getBufferedAheadSeconds(),
+                 hls: hlsInst ? {
+                     currentLevel: hlsInst.currentLevel,
+                     loadLevel: hlsInst.loadLevel,
+                     nextLevel: hlsInst.nextLevel,
+                     autoLevelCapping: hlsInst.autoLevelCapping,
+                     autoLevelEnabled: hlsInst.autoLevelEnabled,
+                     bandwidthEstimate: hlsInst.bandwidthEstimate,
+                     levels: hlsInst.levels?.map((level, index) => ({
+                         index,
+                         height: level?.height,
+                         bitrate: level?.bitrate,
+                         codecs: level?.codecSet || level?.codecs,
+                         audio: level?.attrs?.AUDIO,
+                     })),
+                 } : null,
+                 playbackQuality: playbackQuality ? {
+                     totalVideoFrames: playbackQuality.totalVideoFrames,
+                     droppedVideoFrames: playbackQuality.droppedVideoFrames,
+                     corruptedVideoFrames: playbackQuality.corruptedVideoFrames,
+                 } : null,
+             });
+         }
 
          function enforcePlay4uAutoQuality(hls) {
              if (!hls || String(currentStreamProvider || '').toLowerCase() !== 'play4u' ||
@@ -16821,8 +16872,11 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                      enforcePlay4uAutoQuality(hlsInst);
                      schedulePlay4uAutoRestore();
                  }
-                if (bufferDebugStall) {
-                    console.log('[buffer-debug] PLAYBACK_RECOVERED', {
+                 if (bufferDebugStall) {
+                     logPlay4uFreezeDiagnostics('playback-recovered', {
+                         stallMs: Date.now() - bufferDebugStall.startedAt,
+                     });
+                     console.log('[buffer-debug] PLAYBACK_RECOVERED', {
                         stallMs: Date.now() - bufferDebugStall.startedAt,
                         seekTarget: bufferDebugStall.seekTarget,
                         currentTime: Number(video.currentTime || 0).toFixed(2),
@@ -16925,8 +16979,16 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 if (bufferingRecoveryTimer) clearTimeout(bufferingRecoveryTimer);
                 bufferingRecoveryTimer = setTimeout(() => hideBufferingOverlaySoon(80), 120);
             });
-            video.addEventListener('waiting', () => {
-                if (!bufferDebugStall) {
+             video.addEventListener('waiting', () => {
+                 logPlay4uFreezeDiagnostics('waiting');
+                 if (play4uFreezeDiagTimer) clearTimeout(play4uFreezeDiagTimer);
+                 play4uFreezeDiagTimer = setTimeout(() => {
+                     play4uFreezeDiagTimer = null;
+                     logPlay4uFreezeDiagnostics('waiting-persisted', {
+                         stallDurationMs: bufferDebugStall ? Date.now() - bufferDebugStall.startedAt : null,
+                     });
+                 }, 900);
+                 if (!bufferDebugStall) {
                     bufferDebugStall = {
                         startedAt: Date.now(),
                         seekTarget: bufferDebugSeek?.target ?? null,
@@ -16964,7 +17026,11 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                             // already anchored; just surface the buffering state.
                             if (!isCurrentHdstreamStream() && !isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
                             // Drop to lowest quality on confirmed stall
-                            if (!isCurrentHdstreamStream() && !isCurrentAniKotoStream() && hlsInst && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
+                             if (!isCurrentHdstreamStream() &&
+                                 !isCurrentAniKotoStream() &&
+                                 String(currentStreamProvider || '').toLowerCase() !== 'play4u' &&
+                                 hlsInst && Array.isArray(hlsInst.levels) &&
+                                 hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
                                 stallAdaptiveLowest = true;
                                 hlsInst.nextLevel = 0;
                                 hlsInst.loadLevel = 0;
@@ -16981,7 +17047,16 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 showBufferingOverlay();
                 if (!isCurrentHdstreamStream() && !isSeekRecoveryInFlight()) kickHlsLoadNearCurrentTime();
                 // Drop to lowest quality on stall
-                if (!isCurrentHdstreamStream() && !isCurrentAniKotoStream() && Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 && !stallAdaptiveLowest) {
+                // Play4u's 1080p rendition is the selected playback target.
+                // The generic stall handler used to drop every non-HDStream
+                // source to level 0, including Play4u, as soon as a normal
+                // HLS waiting event fired. Audio could continue while the
+                // decoder caught up with the forced low-rendition switch.
+                if (!isCurrentHdstreamStream() &&
+                    !isCurrentAniKotoStream() &&
+                    String(currentStreamProvider || '').toLowerCase() !== 'play4u' &&
+                    Array.isArray(hlsInst.levels) && hlsInst.levels.length > 1 &&
+                    !stallAdaptiveLowest) {
                     stallAdaptiveLowest = true;
                     hlsInst.nextLevel = 0;
                     hlsInst.loadLevel = 0;

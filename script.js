@@ -6344,7 +6344,13 @@ async function watchNow(id, type, provider = '', animeLike = false) {
                 // availability check. Avoid blocking Watch Now on a duplicate
                 // provider inventory request when a provider was already
                 // selected by the card.
-                if (!animeLike && !resolvedProvider) {
+                // Run the availability check even when the card already chose
+                // Play4u. Previously this block was skipped for an explicitly
+                // selected provider, so TV pages whose first TMDB season was
+                // missing on Play4u opened S1E1 and showed "episode
+                // unavailable" instead of redirecting to the provider's first
+                // available season.
+                if (!animeLike) {
                 const providers = resolvedProvider ? [resolvedProvider] : ['play4u', 'hdstream4u'];
                 const inventories = await Promise.all(providers.map(async source => {
                     try {
