@@ -3750,11 +3750,64 @@
             justify-content: center;
         }
 
+        .transition-overlay::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: linear-gradient(to bottom, rgba(0, 0, 0, .4), rgba(0, 0, 0, .94)), var(--transition-poster);
+            background-size: cover;
+            background-position: center;
+            filter: blur(2px);
+            transform: scale(1.03);
+            opacity: .9;
+        }
+
+        .transition-overlay:not(.episode-loading)::before {
+            display: none;
+        }
+
+        .transition-loading-info {
+            position: absolute;
+            left: 50%;
+            bottom: 16%;
+            z-index: 3;
+            width: min(90vw, 620px);
+            transform: translateX(-50%);
+            text-align: center;
+            color: #fff;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, .9);
+        }
+
+        .transition-loading-info strong,
+        .transition-loading-info span {
+            display: block;
+        }
+
+        .transition-loading-info strong {
+            font-size: clamp(1.1rem, 2vw, 1.65rem);
+            font-weight: 800;
+        }
+
+        .transition-loading-info span {
+            margin-top: .4rem;
+            color: rgba(255, 255, 255, .72);
+            font-size: .85rem;
+        }
+
+        .transition-overlay:not(.episode-loading) .transition-loading-info {
+            display: none;
+        }
+
         .transition-overlay canvas {
             position: absolute;
             inset: 0;
+            z-index: 1;
             width: 100%;
             height: 100%;
+        }
+
+        .transition-overlay.episode-loading canvas {
+            display: none;
         }
 
         /* Seek buffering mode: keep video visible, show spinner only */
@@ -4494,6 +4547,10 @@
     </div>
     <div id="transition-overlay" class="transition-overlay">
         <canvas></canvas>
+        <div class="transition-loading-info">
+            <strong id="transition-loading-title">Loading episode...</strong>
+            <span id="transition-loading-meta">Preparing playback</span>
+        </div>
         <div class="transition-spinner">
             <div class="transition-spinner-ring"></div>
         </div>
@@ -5691,6 +5748,7 @@ function getProxiedUrl(url, referer = '') {
         let currentStreamReferer = null;
         let startT = 0; // Global start time for continue watching resume
         let currentStreamProvider = '';
+        let preferredEpisodeProvider = '';
         let skipInitialCanplaySeekOnce = false;
         let hlsFragErrorBurst = 0;
         let hlsSessionIsFragile = false;
@@ -5702,6 +5760,7 @@ function getProxiedUrl(url, referer = '') {
         let seekBufferOverlayTimer = null;
         let waitingOverlayTimer    = null; // iOS: debounces spurious 'waiting' events
         let iosArchiveLoaderHold = false;
+        let manifestStartupRecoveryTimer = null;
 
         function suppressSeekInteractions(duration = 1600) {
             seekInteractionBlockedUntil = Math.max(
@@ -6107,7 +6166,10 @@ function getProxiedUrl(url, referer = '') {
                 }
             }
 
-            return audioCtx;
+             if (audioCtx.state === 'suspended') {
+                 audioCtx.resume().catch(() => { });
+             }
+             return audioCtx;
         }
 
         function updateAudioEnhancementChain() {
@@ -6125,7 +6187,9 @@ function getProxiedUrl(url, referer = '') {
                 night: { highPass: 70, lowShelf: -2.5, bass: -1.5, presence: 5.8, air: -1.5, width: 0.03, delay: 0.004, compression: 6.0, output: 0.96 },
             };
             const profile = profiles[audioEnhancementProfile] || profiles.cinema;
-            const outputGain = Math.max(0, Math.min(2, volumeBoost / 100));
+             // Keep 100% at a strong, usable listening level while leaving
+             // the extra-volume slider available for additional headroom.
+             const outputGain = Math.max(0, Math.min(2, (volumeBoost / 100) * (enabled ? 1.75 : 1)));
 
             try {
                 connectAudioEnhancementGraph(enabled);
@@ -6170,7 +6234,8 @@ function getProxiedUrl(url, referer = '') {
                 if (audioWidthGainRightNode) {
                     audioWidthGainRightNode.gain.value = enabled ? profile.width * 0.9 : 0;
                 }
-                    gainNode.gain.value = enabled ? Math.min(1.85, outputGain * profile.output) : outputGain;
+                 gainNode.gain.value = enabled ? Math.min(1.85, outputGain * profile.output) : outputGain;
+                 if (audioCtx?.state === 'suspended') audioCtx.resume().catch(() => { });
             } catch (e) {
                 console.warn('Audio enhancement update failed:', e);
             }
@@ -6285,6 +6350,11 @@ function getProxiedUrl(url, referer = '') {
                 ) : 0;
                 if (Number.isFinite(absoluteEpisodeNo) && absoluteEpisodeNo > 0) u.searchParams.set('absoluteEpisode', String(absoluteEpisodeNo));
                 else u.searchParams.delete('absoluteEpisode');
+                // This notice describes the original missing request only.
+                // Do not carry it into later episode navigation, otherwise
+                // every next episode looks like another fallback load.
+                u.searchParams.delete('unavailableSeason');
+                u.searchParams.delete('unavailableEpisode');
             }
             if (FORCED_PROVIDER) u.searchParams.set('provider', FORCED_PROVIDER);
             else u.searchParams.delete('provider');
@@ -6331,7 +6401,10 @@ function getProxiedUrl(url, referer = '') {
         // Stall-based adaptive quality
         let stallAdaptiveLowest = false;
         let stallRecoveryTimer = null;
-        let hdstreamManualQualityLevel = -1;
+         let hdstreamManualQualityLevel = -1;
+        let play4uManualQualityLevel = -1;
+        let manualQualityHeight = 0;
+        let manualQualityLabel = '';
 
         function estimateNetworkQuality() {
             // Simple heuristic: if bandwidth is consistently low, flag as constrained
@@ -6575,7 +6648,9 @@ function getProxiedUrl(url, referer = '') {
                      // adaptive quality after it has had time to arrive.
                      if (isHdstreamJump && isLargeJump) {
                          setTemporaryRecoveryQuality(12000);
-                     } else if (!isHdstreamJump && !isCurrentAniKotoStream()) {
+                      } else if (!isHdstreamJump && !isCurrentAniKotoStream()
+                          && String(currentStreamProvider || '').toLowerCase() !== 'play4u'
+                          && manualQualityHeight <= 0 && play4uManualQualityLevel < 0) {
                          hlsInst.currentLevel = 0;
                          hlsInst.loadLevel = 0;
                         
@@ -6651,23 +6726,72 @@ function getProxiedUrl(url, referer = '') {
 
         function setTemporaryRecoveryQuality(ms = 4500) {
             if (!hlsInst || !Array.isArray(hlsInst.levels) || hlsInst.levels.length === 0) return;
-            // AniKoto's error handler selects a surviving rendition. Keep that
-            // selection (including manual quality) across seeks and skips.
-            if (isCurrentAniKotoStream()) return;
-            try {
-                hlsInst.autoLevelCapping = 0;
-                hlsInst.loadLevel = 0;
-                hlsInst.nextLevel = 0;
+            if (manualQualityHeight > 0 || play4uManualQualityLevel >= 0) return;
+             // AniKoto's error handler selects a surviving rendition. Keep that
+             // selection (including manual quality) across seeks and skips.
+             if (isCurrentAniKotoStream()) return;
+             const isPlay4u = String(currentStreamProvider || '').toLowerCase() === 'play4u';
+             try {
+                 // Play4u seeks do not need the emergency 360p downgrade.
+                 // Keep the currently playing rendition while the target
+                 // segment loads; the recovery timer below can still restore
+                 // the preferred 1080p/5.1 level if ABR lowered it.
+                 if (!isPlay4u) {
+                     hlsInst.autoLevelCapping = 0;
+                     hlsInst.loadLevel = 0;
+                     hlsInst.nextLevel = 0;
+                 }
             } catch (_) { }
 
             if (recoveryQualityTimer) clearTimeout(recoveryQualityTimer);
-            const recoveryHls = hlsInst;
-            recoveryQualityTimer = setTimeout(() => {
-                if (hlsInst !== recoveryHls) return;
-                try {
-                    hlsInst.nextLevel = -1;
-                    hlsInst.autoLevelCapping = -1;
-                } catch (_) { }
+             const recoveryHls = hlsInst;
+             recoveryQualityTimer = setTimeout(() => {
+                 if (hlsInst !== recoveryHls) return;
+                 try {
+                     const isPlay4u = String(currentStreamProvider || '').toLowerCase() === 'play4u';
+                     const play4uLevels = isPlay4u
+                         ? hlsInst.levels.map((level, index) => ({ level, index }))
+                             .filter(({ level }) =>
+                                 String(level?.attrs?.AUDIO || '').toLowerCase() === 'aac51' &&
+                                 !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
+                         : [];
+                      const stableAvcLevels = isPlay4u
+                          ? hlsInst.levels.map((level, index) => ({ level, index }))
+                              .filter(({ level }) =>
+                                  !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
+                          : [];
+                      const restore = play4uLevels.at(-1)?.index
+                          ?? stableAvcLevels.at(-1)?.index
+                          ?? -1;
+                     if (restore >= 0) {
+                         // After a seek, leave the emergency 360p rendition
+                         // and return to Play4u's highest stable 5.1 AVC level.
+                         hlsInst.autoLevelCapping = restore;
+                         hlsInst.loadLevel = restore;
+                         hlsInst.nextLevel = restore;
+                         hlsInst.currentLevel = restore;
+                         hlsInst.startLoad(Math.max(0, Number(video?.currentTime || 0)));
+                         setTimeout(() => {
+                             if (hlsInst !== recoveryHls) return;
+                             try {
+                                 // A large seek can leave hls.js' loadLevel
+                                 // pinned to the emergency rendition even
+                                 // after the cap is released.
+                                 if (manualQualityHeight <= 0 && play4uManualQualityLevel < 0) {
+                                     hlsInst.autoLevelCapping = restore;
+                                     hlsInst.loadLevel = restore;
+                                     hlsInst.nextLevel = restore;
+                                     hlsInst.currentLevel = restore;
+                                     hlsInst.startLoad(Math.max(0, Number(video?.currentTime || 0)));
+                                 }
+                                 svApplyPreferredAudioToHls(hlsInst);
+                             } catch (_) { }
+                         }, 250);
+                     } else {
+                         hlsInst.nextLevel = -1;
+                         hlsInst.autoLevelCapping = -1;
+                     }
+                 } catch (_) { }
                 recoveryQualityTimer = null;
             }, ms);
         }
@@ -6791,7 +6915,7 @@ function getProxiedUrl(url, referer = '') {
                         Promise.resolve(video.play()).catch(() => { });
                     }
                 }
-            }, clampedTarget, true);
+            }, clampedTarget, true, currentIdx, reason === 'skip');
             return true;
         }
 
@@ -7045,6 +7169,15 @@ function getProxiedUrl(url, referer = '') {
                 if (hls !== hlsInst) return;
                 console.log('MANIFEST_PARSED - audio tracks:', hls.audioTracks?.length || 0);
                 setPlaybackStatus('Stream found', 'Manifest loaded, preparing video');
+                if (manifestStartupRecoveryTimer) clearTimeout(manifestStartupRecoveryTimer);
+                const startupHls = hls;
+                manifestStartupRecoveryTimer = setTimeout(() => {
+                    if (hlsInst !== startupHls || !video || video.readyState >= 2) return;
+                    try {
+                        startupHls.startLoad(Math.max(0, Number(video.currentTime || startTime || 0)));
+                        Promise.resolve(video.play()).catch(() => { });
+                    } catch (_) { }
+                }, 8000);
                 const parsedProvider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
                 hlsFragErrorBurst = 0;
                 hlsSessionIsFragile = false;
@@ -7071,30 +7204,118 @@ if (parsedProvider.includes('hdstream')) {
                      } catch (_) { }
                  }
                    if (String(parsedProvider || '').toLowerCase() === 'play4u' && Array.isArray(hls.levels) && hls.levels.length > 1) {
-                       const compatibleLevels = hls.levels
-                           .map((level, index) => ({ level, index }))
-                           .filter(({ level }) => !/\b(?:hev1|hvc1|vp9|av01)\b/i.test(String(level?.codecSet || level?.codecs || '')));
-                       const highestLevel = hls.levels.reduce(
-                          (best, level, index) => Number(level?.height || 0) > Number(hls.levels[best]?.height || 0) ? index : best,
-                          0,
-                      );
+                        const canPlayHevc = Boolean(
+                            video?.canPlayType?.('video/mp4; codecs="hvc1.1.6.L123.B0"') &&
+                            window.MediaSource?.isTypeSupported?.('video/mp4; codecs="hvc1.1.6.L123.B0"'),
+                        );
+                         const hasPlay4uSurroundLevels = hls.levels.some((level) =>
+                             String(level?.attrs?.AUDIO || '').toLowerCase() === 'aac51'
+                         );
+                         const compatibleLevels = hls.levels
+                             .map((level, index) => ({ level, index }))
+                             .filter(({ level }) => {
+                                 const codecs = String(level?.codecSet || level?.codecs || '');
+                                 if (!canPlayHevc && /\b(?:hev1|hvc1)\b/i.test(codecs)) return false;
+                                 if (hasPlay4uSurroundLevels &&
+                                     String(level?.attrs?.AUDIO || '').toLowerCase() !== 'aac51') return false;
+                                 return !/\b(?:vp9|av01)\b/i.test(codecs);
+                             });
+                        if (hasPlay4uSurroundLevels && !hls.__svPlay4uSurroundLock) {
+                            hls.__svPlay4uSurroundLock = true;
+                            hls.on(Hls.Events.LEVEL_SWITCHING, (_event, data) => {
+                                const requested = Number(data?.level);
+                                const requestedLevel = hls.levels?.[requested];
+                                if (String(requestedLevel?.attrs?.AUDIO || '').toLowerCase() === 'aac51') return;
+                                const sameHeightSurround = compatibleLevels.findLast(({ level }) =>
+                                    Number(level?.height || 0) === Number(requestedLevel?.height || 0)
+                                );
+                                if (sameHeightSurround) hls.nextLevel = sameHeightSurround.index;
+                            });
+                        }
+                       const highestLevel = compatibleLevels.length
+                           ? compatibleLevels[compatibleLevels.length - 1].index
+                           : 0;
+                       // Play4u publishes every video rendition twice: once
+                       // with stereo AAC and once with the aac51 group. Start
+                       // on the 5.1 variant when it exists; otherwise HLS.js
+                       // locks the whole session onto the stereo group and the
+                       // 5.1 tracks never appear in the audio selector.
+                       const preferredStartup = compatibleLevels
+                           .filter(({ level }) =>
+                               String(level?.attrs?.AUDIO || '').toLowerCase() === 'aac51' &&
+                               !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
+                           .at(-1)
+                           || compatibleLevels
+                                .filter(({ level }) => String(level?.attrs?.AUDIO || '').toLowerCase() === 'aac51')
+                                .at(-1)
+                            || compatibleLevels
+                                .filter(({ level }) =>
+                                    !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
+                                .at(-1)
+                            || compatibleLevels.at(-1);
                       // Warm up on the smallest rendition, then release hls.js
                       // back to ABR. Pinning currentLevel here disables the
                       // automatic climb and can leave playback at the startup level.
-                       hls.startLevel = 0;
-                       hls.autoLevelCapping = 0;
+                        hls.startLevel = preferredStartup?.index ?? 0;
+                        hls.autoLevelCapping = compatibleLevels[compatibleLevels.length - 1]?.index ?? 0;
                        if (compatibleLevels.length) {
-                           hls.startLevel = compatibleLevels[0].index;
-                            hls.autoLevelCapping = compatibleLevels[compatibleLevels.length - 1].index;
+                            const requestedLabel = manualQualityHeight > 0
+                                ? (manualQualityHeight >= 795 && manualQualityHeight <= 1050 ? '1080p'
+                                    : manualQualityHeight >= 525 && manualQualityHeight <= 550 ? '720p'
+                                        : manualQualityHeight >= 295 && manualQualityHeight <= 315 ? '420p'
+                                            : `${manualQualityHeight}p`)
+                                : '';
+                            const requested = requestedLabel
+                                ? compatibleLevels.filter(({ level }) => {
+                                    const h = Number(level?.height || 0);
+                                    const label = h >= 795 && h <= 1050 ? '1080p'
+                                        : h >= 525 && h <= 550 ? '720p'
+                                            : h >= 295 && h <= 315 ? '420p' : `${h}p`;
+                                    return label === requestedLabel;
+                                }).at(-1)
+                                : null;
+                            hls.startLevel = requested?.index ?? compatibleLevels[compatibleLevels.length - 1].index;
+                            hls.autoLevelCapping = requested?.index ?? compatibleLevels[compatibleLevels.length - 1].index;
                        }
-                        const play4uLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
-                        hls.startLoad(play4uLoadTarget);
-                        setTimeout(() => {
-                           if (hls !== hlsInst || !hls.levels?.length) return;
-                            hls.autoLevelCapping = compatibleLevels.length
-                                ? compatibleLevels[compatibleLevels.length - 1].index
-                                : -1;
-                          hls.nextLevel = -1;
+                          const play4uLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
+                          // hls.js may already have selected level 0 by the
+                          // time MANIFEST_PARSED fires. Set loadLevel before
+                          // and after startLoad so the first media request
+                          // uses the best compatible 5.1 rendition instead
+                          // of silently starting on stereo 360p.
+                          if (manualQualityHeight <= 0 && preferredStartup?.index >= 0) {
+                              hls.loadLevel = preferredStartup.index;
+                          }
+                          hls.startLoad(play4uLoadTarget);
+                          if (manualQualityHeight <= 0 && preferredStartup?.index >= 0) {
+                              hls.currentLevel = preferredStartup.index;
+                              hls.loadLevel = preferredStartup.index;
+                              hls.nextLevel = preferredStartup.index;
+                          }
+                         const startupLevel = manualQualityHeight > 0
+                             ? hls.levels.findIndex((level) => {
+                                 const height = Number(level?.height || 0);
+                                 const label = height >= 795 && height <= 1050 ? 1080
+                                     : height >= 525 && height <= 550 ? 720
+                                         : height >= 295 && height <= 315 ? 420 : height;
+                                 return label === manualQualityHeight;
+                             })
+                             : compatibleLevels[compatibleLevels.length - 1]?.index;
+                          if (manualQualityHeight > 0 && Number.isInteger(startupLevel) && startupLevel >= 0) {
+                              hls.loadLevel = startupLevel;
+                              hls.nextLevel = startupLevel;
+                          } else if (preferredStartup?.index >= 0) {
+                              hls.loadLevel = preferredStartup.index;
+                          }
+                         setTimeout(() => {
+                            if (hls !== hlsInst || !hls.levels?.length) return;
+                             if (play4uManualQualityLevel >= 0) return;
+                             hls.autoLevelCapping = compatibleLevels.length
+                                 ? preferredStartup?.index ?? compatibleLevels[compatibleLevels.length - 1].index
+                                 : -1;
+                           hls.nextLevel = play4uManualQualityLevel >= 0
+                               ? play4uManualQualityLevel
+                               : (preferredStartup?.index ?? -1);
                           console.log('[hls] Play4u released startup cap; ABR can climb to:', hls.levels[highestLevel]?.height || 'unknown');
                       }, 12000);
                       console.log('[hls] Play4u starting at low quality for adaptive warm-up');
@@ -7427,13 +7648,20 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     consecutiveBufferErrors += 1;
                     if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
                         try {
-                            hls.autoLevelCapping = 0;
-                            hls.nextLevel = 0;
-                            hls.loadLevel = 0;
+                            const isPlay4uBufferError = String(currentStreamProvider || '').toLowerCase() === 'play4u';
+                            const recoveryLevel = isPlay4uBufferError
+                                ? hls.levels.map((level, index) => ({ level, index }))
+                                    .filter(({ level }) =>
+                                        !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
+                                    .at(-1)?.index ?? 0
+                                : 0;
+                            hls.autoLevelCapping = recoveryLevel;
+                            hls.nextLevel = recoveryLevel;
+                            hls.loadLevel = recoveryLevel;
                             hls.stopLoad();
                             hls.startLoad(Math.max(0, Number(video?.currentTime || 0) - 0.25));
                             hls.recoverMediaError();
-                            console.warn('[hls] bufferAppendError: retrying lowest quality rendition');
+                            console.warn(`[hls] bufferAppendError: retrying level ${recoveryLevel}`);
                         } catch (_) { }
                     }
                     if (consecutiveBufferErrors >= 4 && typeof onErrorFallback === 'function') {
@@ -7721,6 +7949,12 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
                         const currentProvider = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase();
                         const hasHdstreamFallback = allSources?.some((source) => String(source?.provider || '').toLowerCase() === 'hdstream4u');
+                        const hasPlay4uFallback = allSources?.some((source) => String(source?.provider || '').toLowerCase() === 'play4u');
+                        if (isFragParsing && currentProvider === 'hdstream4u' && hasPlay4uFallback && typeof onErrorFallback === 'function') {
+                            console.warn('[hls] HDStream video decode failed; switching to Play4u fallback.');
+                            onErrorFallback('fatal_media_error');
+                            return;
+                        }
                         if (isFragParsing && currentProvider === 'play4u' && hasHdstreamFallback && typeof onErrorFallback === 'function') {
                             console.warn('[hls] Play4u media codec is unsupported; switching to HDStream fallback.');
                             onErrorFallback('fatal_media_error');
@@ -7933,7 +8167,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             });
         }
 
-        function svSwitchHlsSourceSilent(url, referer, onReady, explicitTargetTime = null, forceRebuild = false, sourceIdx = currentIdx) {
+        function svSwitchHlsSourceSilent(url, referer, onReady, explicitTargetTime = null, forceRebuild = false, sourceIdx = currentIdx, suppressOverlay = false) {
             if (!video) return;
             const savedTime = video.currentTime;
             const targetTime = Math.max(0, Number(
@@ -7949,7 +8183,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 Promise.resolve(video.play()).catch(() => { });
             };
 
-            captureVideoFrameToOverlay();
+            if (!suppressOverlay) captureVideoFrameToOverlay();
 
             // ENHANCED: Check if we're switching to the same provider for audio track switching
             // Do not reuse if we are forcing a full rebuild (e.g., recovering from fatal pipeline crash)
@@ -7972,6 +8206,9 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     hlsInst.startLoad(Math.max(0, targetTime - 0.8));
                 } catch (_) { }
             } else {
+                play4uManualQualityLevel = -1;
+                manualQualityHeight = 0;
+                manualQualityLabel = '';
                 hlsInst = svCreateHlsInstance(targetTime, false, currentStreamProvider);
                 svAttachHlsListeners(hlsInst, targetTime, onReady, null, false);
                 hlsInst.loadSource(proxiedStreamUrl(url, referer, currentStreamProvider, sourceOrigin, true, sourceCookieHeader));
@@ -13170,20 +13407,24 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             updateNextEpisodeButton(false);
         }
 
-        function buildQualityMenuItems() {
-            qualityMenu.innerHTML = '';
-            const formatQualityLabel = (height) => {
-                const h = Number(height) || 0;
-                let tier = '';
-                if (h >= 2160) tier = 'UHD';
-                else if (h >= 1440) tier = 'QHD';
-                else if (h >= 1080) tier = 'FHD';
-                else if (h >= 720) tier = 'HD';
-                else if (h > 0) tier = 'SD';
-                return tier ? `${h}p (${tier})` : `${h}p`;
-            };
+         function getQualityDisplayLabel(height, level = null) {
+             const h = Number(height) || 0;
+             const standard = h >= 2160 ? 2160
+                 : h >= 1440 ? 1440
+                     : (h >= 795 && h <= 1050) ? 1080
+                         : (h >= 525 && h <= 550) ? 720
+                             : (h >= 295 && h <= 315) ? 420 : h;
+              const codecs = String(level?.codecSet || level?.codecs || '').toLowerCase();
+             const isHevc = /\b(?:hev1|hvc1)\b/.test(codecs);
+             if (isHevc && h >= 900 && h <= 1050) return `${standard}p IMAX HEVC`;
+             if (isHevc) return `${standard}p HEVC`;
+             return `${standard}p`;
+         }
 
-            const isAuto = !hlsInst || hlsInst.autoLevelEnabled !== false;
+         function buildQualityMenuItems() {
+             qualityMenu.innerHTML = '';
+
+             const isAuto = !hlsInst || (manualQualityHeight <= 0 && hlsInst.autoLevelEnabled !== false);
 
             const autoItem = document.createElement('div');
             autoItem.className = `menu-item ${isAuto ? 'selected' : ''}`;
@@ -13197,26 +13438,50 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             qualityMenu.appendChild(autoItem);
 
             if (!hlsInst || !Array.isArray(hlsInst.levels) || hlsInst.levels.length === 0) return;
-            const heights = [...new Set(hlsInst.levels.map((l) => l.height).filter(Boolean))].sort((a, b) => a - b);
+             const qualityOptions = new Map();
+             const play4uHasSurround = String(currentStreamProvider || '').toLowerCase() === 'play4u' &&
+                 hlsInst.levels.some(level => String(level?.attrs?.AUDIO || '').toLowerCase() === 'aac51');
+             hlsInst.levels.forEach((level, index) => {
+                 const height = Number(level?.height || 0);
+                 if (!height) return;
+                 if (play4uHasSurround &&
+                     String(level?.attrs?.AUDIO || '').toLowerCase() !== 'aac51') return;
+                 const label = getQualityDisplayLabel(height, level);
+                 // Play4u's regular 1080p HEVC rendition duplicates the
+                 // normal 1080p encode. Keep the distinct IMAX HEVC option,
+                 // but do not show the redundant non-IMAX HEVC entry.
+                 if (label === '1080p HEVC') return;
+                 // Keep AVC 1080p, HEVC 1080p, and IMAX HEVC separate. They
+                 // are different Play4u encodes, not duplicate resolutions.
+                 const previous = qualityOptions.get(label);
+                 if (!previous || height > previous.height) qualityOptions.set(label, { height, index });
+             });
 
             // If nextLevel is set, use it. Otherwise fallback to currentLevel (if manual)
-            const activeIndex = hlsInst.nextLevel !== -1 && hlsInst.nextLevel !== undefined
-                ? hlsInst.nextLevel
-                : hlsInst.currentLevel;
+             const activeIndex = hlsInst.nextLevel !== -1 && hlsInst.nextLevel !== undefined
+                 ? hlsInst.nextLevel
+                 : hlsInst.currentLevel;
+             const selectedQualityLabel = manualQualityLabel || (manualQualityHeight > 0
+                 ? getQualityDisplayLabel(manualQualityHeight)
+                 : (activeIndex >= 0
+                     ? getQualityDisplayLabel(hlsInst.levels[activeIndex]?.height, hlsInst.levels[activeIndex])
+                     : ''));
 
-            heights.forEach((h) => {
-                const isSelected = !isAuto && activeIndex >= 0 && hlsInst.levels[activeIndex]?.height === h;
-                const item = document.createElement('div');
-                item.className = `menu-item ${isSelected ? 'selected' : ''}`;
-                item.textContent = formatQualityLabel(h);
-                item.onclick = () => {
-                    if (watchPartyRole === 'guest' && !watchPartyApplyingControl) return watchPartyToast('Only the host can control quality');
-                    changeQuality(h);
-                    buildQualityMenuItems();
-                    watchPartyEmitHostControl('quality', { height: h });
-                };
-                qualityMenu.appendChild(item);
-            });
+             [...qualityOptions.entries()]
+                 .sort(([, a], [, b]) => a.height - b.height)
+                 .forEach(([label, option]) => {
+                 const isSelected = !isAuto && label === selectedQualityLabel;
+                 const item = document.createElement('div');
+                 item.className = `menu-item ${isSelected ? 'selected' : ''}`;
+                 item.textContent = label;
+                 item.onclick = () => {
+                     if (watchPartyRole === 'guest' && !watchPartyApplyingControl) return watchPartyToast('Only the host can control quality');
+                     changeQuality(option.height, option.index);
+                     buildQualityMenuItems();
+                     watchPartyEmitHostControl('quality', { height: option.height });
+                 };
+                 qualityMenu.appendChild(item);
+             });
         }
 
         // User preferences Ã¢â‚¬â€ persisted across sessions
@@ -16253,16 +16518,13 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     renderSubtitleOverlayFromTrack(null);
                 }
 
-                // Self-healing overlay hide for iOS native HLS:
-                // If the video is clearly playing (time is advancing, not paused)
-                // but the buffering overlay is still visible, force it away.
-                // This catches cases where 'canplay'/'playing' fired before
-                // initPlyr() set up Plyr's event listeners.
-                if (!hlsInst && IS_IOS) {
+                // If playback is advancing but a source/episode overlay is
+                // still visible, remove it. Some HLS streams begin audio
+                // before the normal `playing` event fires for the video track.
+                if (!video.paused && video.currentTime > 0) {
                     const overlay = document.getElementById('transition-overlay');
-                    if (overlay && overlay.classList.contains('active') && !video.paused && video.currentTime > 0) {
-                        hideTransitionOverlay();
-                    }
+                    if (overlay?.classList.contains('active')) hideTransitionOverlay();
+                    hideLoader();
                 }
 
                 // Stall adaptive quality recovery: if we dropped to lowest due to stall
@@ -16335,9 +16597,40 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             video.addEventListener('play', () => {
                 if (enforceWatchPartyPauseHold()) return;
                 if (!_iosNativePlayerActive) silenceNativeTracks();
+                if (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100) {
+                    ensureAudioContext();
+                    updateAudioEnhancementChain();
+                }
             });
             video.addEventListener('playing', (event) => {
                 if (event.currentTarget !== video) return;
+                if (String(currentStreamProvider || '').toLowerCase() === 'play4u' && manualQualityHeight <= 0 && hlsInst) {
+                    try {
+                        hlsInst.autoLevelCapping = -1;
+                        const playableLevels = hlsInst.levels
+                            .map((level, index) => ({ level, index }))
+                            .filter(({ level }) => {
+                                const codecs = String(level?.codecSet || level?.codecs || '');
+                                const hevcSupported = Boolean(
+                                    video?.canPlayType?.('video/mp4; codecs="hvc1.1.6.L123.B0"') &&
+                                    window.MediaSource?.isTypeSupported?.('video/mp4; codecs="hvc1.1.6.L123.B0"'),
+                                );
+                                return (hevcSupported || !/\b(?:hev1|hvc1)\b/i.test(codecs))
+                                    && !/\b(?:vp9|av01)\b/i.test(codecs);
+                            });
+                        const highestPlayable = playableLevels.reduce(
+                            (best, item) => Number(item.level?.height || 0) > Number(hlsInst.levels[best]?.height || 0)
+                                ? item.index : best,
+                            playableLevels[0]?.index ?? -1,
+                        );
+                        // Leave Auto under ABR control. Forcing currentLevel
+                        // during playback can freeze the video buffer while
+                        // audio continues.
+                        if (highestPlayable >= 0 && hlsInst.autoLevelEnabled === false && manualQualityHeight > 0) {
+                            hlsInst.nextLevel = highestPlayable;
+                        }
+                    } catch (_) { }
+                }
                 if (bufferDebugStall) {
                     console.log('[buffer-debug] PLAYBACK_RECOVERED', {
                         stallMs: Date.now() - bufferDebugStall.startedAt,
@@ -16943,7 +17236,7 @@ video.addEventListener('canplay', (event) => {
                 return;
             }
 
-            const currentHlsTrack = hlsInst ? hlsInst.audioTrack : -1;
+             const currentHlsTrack = hlsInst ? hlsInst.audioTrack : -1;
             const isOnSatoru = currentAudioSource === 'satoru';
 
             audioPanel.innerHTML = '<div class="panel-label">Audio Track</div>';
@@ -16970,7 +17263,9 @@ video.addEventListener('canplay', (event) => {
 
             if (showPlayerTracks) {
                 hlsTracks.forEach((track) => {
-                    let label = track.name || track.lang || 'Default';
+                     let label = track.name || track.lang || 'Default';
+                     const channels = Number(track.channels || track.channelCount || 0);
+                     if (channels >= 6 && !/\b5\.1\b/i.test(label)) label += ' (5.1)';
                     const isGeneric = label.toLowerCase() === 'default' || label.toLowerCase() === 'und' || label.toLowerCase() === 'auto';
                     
                     // Skip generic 'auto'/'und' tracks if we have virtual tracks from Vegamovies/Satoru
@@ -18819,6 +19114,20 @@ video.addEventListener('canplay', (event) => {
                     }
                 }
 
+                // Provider metadata can be episode-scoped (for example
+                // "Show S07E01: Episode Title — Play4u"). Keep that metadata
+                // for playback, but never let it replace the canonical TMDB
+                // title shown in the player header.
+                if (MEDIA_NAMESPACE === 'tmdb' && /\bS\d{1,2}E\d{1,3}\b|(?:Play4u|HDStream4u|HubStream)\s*$/i.test(String(info?.title || info?.name || ''))) {
+                    try {
+                        const canonical = await fetchJsonWithRetry(`${API_BASE}/info/${encodeURIComponent(TMDB_ID)}?type=${encodeURIComponent(effectiveMediaType)}`, 10000, 15000);
+                        const canonicalPayload = canonical?.data || canonical;
+                        const canonicalTitle = String(canonicalPayload?.title || canonicalPayload?.name || '').trim();
+                        if (canonicalTitle && !/\bS\d{1,2}E\d{1,3}\b/i.test(canonicalTitle)) {
+                            info = { ...info, title: canonicalTitle, name: canonicalTitle };
+                        }
+                    } catch (_) { }
+                }
                 effectiveMediaType = resolveMediaTypeFromInfo(info, effectiveMediaType);
                 if (URL_TITLE && String(FORCED_PROVIDER || '').toLowerCase() === 'anikoto') {
                     info = { ...info, title: URL_TITLE, name: URL_TITLE };
@@ -18942,10 +19251,29 @@ video.addEventListener('canplay', (event) => {
         //  TV SERIES
         // ----------------------------------------------------------------------------------------------------
         async function initTv(info) {
-            setLoader('Loading series...', 'Building episode list');
+            setLoader('Loading episode...', 'Preparing playback');
             tvSeasons = buildTvSeasonsFromInfo(info);
             providerSeasonCatalog = new Map();
             activeMenuProvider = '';
+            const catalogCacheKey = `sv_tv_catalog:${TMDB_ID}:${String(FORCED_PROVIDER || 'auto').toLowerCase()}`;
+            let cachedCatalog = null;
+            try {
+                const rawCatalog = sessionStorage.getItem(catalogCacheKey);
+                const parsedCatalog = rawCatalog ? JSON.parse(rawCatalog) : null;
+                if (Array.isArray(parsedCatalog) && parsedCatalog.some((season) => Array.isArray(season?.episodes) && season.episodes.length)) {
+                    cachedCatalog = parsedCatalog;
+                    tvSeasons = parsedCatalog;
+                    activeMenuProvider = String(FORCED_PROVIDER || parsedCatalog.find((season) => season?.provider)?.provider || '').trim().toLowerCase();
+                    buildEpPanel();
+                    epBtn.style.display = 'flex';
+                    if (customEpisodeBtn) customEpisodeBtn.style.display = 'inline-flex';
+                    showPlyrEpBtn = true;
+                    setLoader('Loading episode...', 'Restored episode list');
+                    const cachedPosition = getInitialTvPositionFromUrl(tvSeasons);
+                    await playTvEp(cachedPosition.seasonIndex, cachedPosition.episodeIndex, null, { initial: true });
+                    return;
+                }
+            } catch (_) { }
 
             const preferredYear = getPreferredMediaYear();
             const animeSeriesTitle = normalizeAnimeSearchQuery(
@@ -20060,6 +20388,12 @@ video.addEventListener('canplay', (event) => {
             }
 
             buildEpPanel();
+            // Persist as soon as the usable provider catalog is ready so the
+            // next refresh can restore it before the slower filler/metadata
+            // lookups complete.
+            try {
+                sessionStorage.setItem(catalogCacheKey, JSON.stringify(tvSeasons));
+            } catch (_) { }
             epBtn.style.display = 'flex';
             if (customEpisodeBtn) customEpisodeBtn.style.display = 'inline-flex';
             // Mark episode button for showing in Plyr control bar
@@ -20090,6 +20424,9 @@ video.addEventListener('canplay', (event) => {
                 fillerLookupState = 'not_found';
             }
             const initialPos = getInitialTvPositionFromUrl(tvSeasons);
+            try {
+                sessionStorage.setItem(catalogCacheKey, JSON.stringify(tvSeasons));
+            } catch (_) { }
             console.log('[initTv] initial episode position:', {
                 urlSeason: URL_SEASON || null,
                 urlEpisode: URL_EPISODE || null,
@@ -20884,14 +21221,17 @@ video.addEventListener('canplay', (event) => {
             const metaEl = document.getElementById('media-meta');
             if (!metaEl) return;
             const hint = activeEpisodeSelectionHint || null;
-            if (hint?.seasonTitle || hint?.episodeNo || hint?.title) {
+            const hintTitle = String(hint?.title || '').trim();
+            const hintEpisodeNo = Number(hint?.episodeNo || 0);
+            const hintHasUsefulTitle = hintTitle && !isGenericEpisodeTitle(hintTitle, hintEpisodeNo);
+            if ((hint?.seasonTitle || hint?.episodeNo || hint?.title) && hintHasUsefulTitle) {
                 const seasonTitle = String(hint?.seasonTitle || (hint?.seasonNo ? `Season ${hint.seasonNo}` : '')).trim();
                 const epNo = Number(hint?.episodeNo || 0);
                 const isAniKoto = String(hint?.provider || activeMenuProvider || '').trim().toLowerCase() === 'anikoto';
                 const hintSeason = tvSeasons?.find?.((season) => Number(season?.seasonNo || 0) === Number(hint?.seasonNo || URL_SEASON || 0));
                 const isAniKotoPart = isAniKoto && /^part\s+\d+$/i.test(String(hintSeason?.name || '').trim());
                 const visibleEpNo = isAniKotoPart ? ((Number(hint?.seasonNo || URL_SEASON || 1) - 1) * 50) + epNo : epNo;
-                const rawEpTitle = String(hint?.title || '').trim();
+                const rawEpTitle = hintTitle;
                 const epTitle = isAniKoto && isGenericEpisodeTitle(rawEpTitle, epNo) ? `Episode ${visibleEpNo}` : rawEpTitle;
                 metaEl.textContent = epTitle
                     ? `${seasonTitle || 'Season'} - Episode ${visibleEpNo || ''}: ${epTitle}`.trim()
@@ -21710,7 +22050,7 @@ item.innerHTML = `
                         event.stopPropagation();
                         toggleEpisodeSeenForKeys(progressKeys, item);
                     });
-                    item.onclick = () => {
+                    item.onclick = async () => {
                         const menuProvider = String(
                             getActiveEpisodeMenuProvider() ||
                             activeMenuProvider ||
@@ -21775,8 +22115,15 @@ item.innerHTML = `
                              selectedUrl.searchParams.delete('t');
                              selectedUrl.searchParams.set('resume', '0');
                          }
-                         epPanel.classList.remove('open');
-                        window.location.href = selectedUrl.toString();
+                          epPanel.classList.remove('open');
+                          if (!selectedEntryIsMovie) {
+                              // Keep episode navigation in the existing player.
+                              // Reloading the page rebuilt the entire season list
+                              // and showed the fallback loader again.
+                              await playTvEp(target.seasonIndex, target.episodeIndex, selectedEpisodeResumeTime);
+                              return;
+                          }
+                         window.location.href = selectedUrl.toString();
                         return;
                     };
                     scrollRoot.appendChild(item);
@@ -22330,6 +22677,9 @@ item.innerHTML = `
 
         function performSkipJump(type, manual = false) {
             if (!video || !type || !isFinite(video.duration)) return;
+            // Skipping within the current video should never present the
+            // episode/source transition loader.
+            hideTransitionOverlay();
 
             const preservedSegment = _skipActiveSegment && _skipActiveType === type ? { ..._skipActiveSegment } : null;
             _clearSkipCountdown();
@@ -22563,6 +22913,41 @@ item.innerHTML = `
             console.log('[playTvEp] stack:', new Error().stack?.split('\n').slice(2,6).join(' -> '));
             saveCurrentEpisodeProgress(true);
             if (!initial) inAppEpisodeNavigation = true;
+            if (!initial) {
+                // A provider chosen for the previous episode must not lock
+                // the next episode to that provider. The next episode may be
+                // available on Play4u even when the previous one used
+                // HDStream4u.
+                FORCED_PROVIDER = '';
+                const preferredProvider = String(preferredEpisodeProvider || currentStreamProvider || '').trim().toLowerCase();
+                const movieProviders = [...MOVIE_PROVIDERS];
+                activeProviders = currentIsLikelyAnime
+                    ? [...ANIME_PROVIDERS]
+                    : (preferredProvider && movieProviders.includes(preferredProvider)
+                        ? [preferredProvider, ...movieProviders.filter((provider) => provider !== preferredProvider)]
+                        : movieProviders);
+                activeMenuProvider = '';
+            }
+            if (!initial && video) {
+                // Stop the previous episode completely before resolving the
+                // next source. Otherwise its HLS audio can keep playing
+                // underneath the new episode while the new video is loading.
+                try { video.pause(); } catch (_) { }
+                if (hlsInst) {
+                    try {
+                        hlsInst.stopLoad();
+                        hlsInst.detachMedia();
+                        hlsInst.destroy();
+                    } catch (_) { }
+                    hlsInst = null;
+                }
+                try {
+                    video.removeAttribute('src');
+                    video.load();
+                } catch (_) { }
+                currentStreamUrl = '';
+                currentStreamReferer = null;
+            }
             curSeason = si; curEpisode = ei;
             pendingEpisodeStartTime = Number.isFinite(startTime) ? Number(startTime) : null;
             if (Number.isFinite(startTime)) URL_TIME = Math.max(0, Number(startTime));
@@ -22584,6 +22969,30 @@ item.innerHTML = `
             const season = tvSeasons[si];
             const ep = (season?.episodes || [])[ei];
             if (!ep) return;
+            const episodeTitle = String(ep?.title || ep?.name || ep?.episodeName || `Episode ${ep?.episode || ei + 1}`).trim();
+            const episodeNumber = Number(ep?.episode || ep?.number || ep?.episodeNum || ei + 1);
+            const episodeImage = getEpisodeThumbnailUrl(ep);
+            if (episodeImage) {
+                loader.style.backgroundImage = `url('${episodeImage}')`;
+            } else if (currentCoverUrl) {
+                loader.style.backgroundImage = `url('${currentCoverUrl}')`;
+            }
+            const transitionOverlay = document.getElementById('transition-overlay');
+            if (transitionOverlay) {
+                transitionOverlay.classList.add('episode-loading');
+                const transitionTitle = transitionOverlay.querySelector('#transition-loading-title');
+                const transitionMeta = transitionOverlay.querySelector('#transition-loading-meta');
+                if (transitionTitle) transitionTitle.textContent = episodeTitle;
+                if (transitionMeta) transitionMeta.textContent = `${season?.name || `Season ${si + 1}`} · Episode ${episodeNumber} · Preparing playback`;
+                const transitionPoster = episodeImage || currentCoverUrl || '';
+                if (transitionPoster) {
+                    transitionOverlay.style.setProperty('--transition-poster', `url("${transitionPoster.replace(/"/g, '\\"')}")`);
+                }
+            }
+            setLoader(
+                `Loading ${episodeTitle}`,
+                `${season?.name || `Season ${si + 1}`} · Episode ${episodeNumber} · Preparing playback`,
+            );
             resetAnimeSkipState();
             updateNextEpisodeButton(false);
 
@@ -24236,10 +24645,18 @@ item.innerHTML = `
                         return [];
                     };
 window.__animeWatchFetchStartAt = performance.now();
-                    for (const watchUrl of watchCandidates) {
+                    const requestCandidates = provider === 'play4u'
+                        ? [...watchCandidates, ...watchCandidates]
+                        : watchCandidates;
+                    let watchAttempt = 0;
+                    for (const watchUrl of requestCandidates) {
                         try {
+                            watchAttempt += 1;
+                            if (provider === 'play4u' && watchAttempt > 1) {
+                                await new Promise((resolve) => setTimeout(resolve, 350));
+                            }
                             const watchStartedAt = performance.now();
-                            console.log(`[${provider}] watch request started`, watchUrl);
+                            console.log(`[${provider}] watch request started (attempt ${watchAttempt})`, watchUrl);
                             const { res: watchRes } = await fetchJsonWithApiFallback(watchUrl, {
                                 signal: AbortSignal.timeout(
                                     isAnimeProvider
@@ -24506,21 +24923,24 @@ console.log(`[${provider}] watch request completed`, {
                 }
             } else if (!effectiveForcedProvider && (shouldPreferPlay4uFirst || shouldPreferHdstreamFirst)) {
                 // Start the preferred provider first; the other provider is the fallback.
-                // start fallback providers in parallel so the UI doesn't stall.
                 const primaryProvider = shouldPreferPlay4uFirst ? 'play4u' : 'hdstream4u';
-                let primaryDone = false;
                 const primaryPromise = processProvider(primaryProvider)
-                    .catch((e) => console.warn(`[${primaryProvider}] background error:`, e?.message || e))
-                    .finally(() => { primaryDone = true; });
+                    .catch((e) => console.warn(`[${primaryProvider}] background error:`, e?.message || e));
                 // Give the primary a brief head start, then overlap fallback
                 // extraction instead of waiting through all search/info retries.
-                await Promise.race([primaryPromise, Promise.resolve()]);
+                // Keep Play4u authoritative: do not begin HDStream extraction
+                // until the primary provider has finished resolving.
+                await primaryPromise;
 
                 if (allSources.length === 0) {
                     const fallbackProviders = orderedProviders.filter((p) => p !== primaryProvider);
                     await Promise.all(fallbackProviders.map((p) => processProvider(p)));
-                    if (!primaryDone) await primaryPromise;
-                } else if (!primaryDone) {
+                } else if (primaryProvider === 'play4u') {
+                    // Play4u is authoritative for movies/TV. Once it returns
+                    // a source, do not even extract HDStream in the
+                    // background: its later result can trigger source
+                    // replacement during seeks or recovery.
+                } else {
                     const backgroundProviders = orderedProviders.filter((p) => p !== primaryProvider);
                     Promise.all(backgroundProviders.map((p) => processProvider(p))).catch((err) => {
                         console.warn('[background providers] failed:', err?.message || err);
@@ -24587,8 +25007,9 @@ console.log(`[${provider}] watch request completed`, {
                          episode: tvSeasons?.[curSeason]?.episodes?.[curEpisode]?.episode || curEpisode + 1,
                          nextSeason: tvSeasons?.[nextEpisode.seasonIndex]?.seasonNo || nextEpisode.seasonIndex + 1,
                          nextEpisode: tvSeasons?.[nextEpisode.seasonIndex]?.episodes?.[nextEpisode.episodeIndex]?.episode || nextEpisode.episodeIndex + 1,
-                     });
-                     setPlaybackStatus('Episode unavailable', 'Trying the next available episode...');
+                      });
+                      showInitialAvailabilityNotice = false;
+                      setPlaybackStatus('Episode unavailable', 'Trying the next available episode...');
                      await goToNextEpisode();
                      return;
                  }
@@ -24746,6 +25167,7 @@ console.log(`[${provider}] watch request completed`, {
             if (!overlay) return;
             overlay.classList.remove('active');
             overlay.classList.remove('buffering-lite');
+            overlay.classList.remove('episode-loading');
         }
 
 
@@ -25283,6 +25705,14 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             };
             const failoverToNextSource = (reason = 'unknown') => {
                 if (isStaleSourceContext()) return false;
+                // Play4u is authoritative once it has produced a source.
+                // HDStream4u may still be extracted in the background, but it
+                // must never replace an active Play4u session after a
+                // temporary proxy/CDN failure.
+                if (String(sourceProvider || '').toLowerCase() === 'play4u') {
+                    console.warn(`[stream-failover] Play4u retained; refusing fallback (${reason})`);
+                    return false;
+                }
                 if (nextSourceFallbackUsed) return false;
                 const reasonText = String(reason || '').toLowerCase();
                 const shouldPreferNonHlsFallback =
@@ -25496,6 +25926,12 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             currentStreamUrl = String(url || '');
             currentStreamReferer = referer || null;
             currentStreamProvider = sourceProvider;
+            // Quality state belongs to the current HLS instance. Never carry
+            // a previous episode/source's manual level into a new manifest.
+            manualQualityHeight = 0;
+            play4uManualQualityLevel = -1;
+            manualQualityLabel = '';
+            preferredEpisodeProvider = sourceProvider;
 
             if (playerWrap) {
                 playerWrap.style.opacity = '0';
@@ -25575,6 +26011,13 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                 video.crossOrigin = 'anonymous';
             }
             if (video) { video.volume = savedVolume; video.muted = savedMuted; } // Restore volume across switches
+            if (video && (audioEnhancementEnabled || Number(volumeBoost || 100) !== 100)) {
+                // A source switch creates a new media element. Rebuild the
+                // Web Audio connection immediately instead of waiting for the
+                // user to toggle Cinema Audio.
+                ensureAudioContext();
+                updateAudioEnhancementChain();
+            }
             if (controlSurface) controlSurface.style.display = '';
 
             // Reset playback rate on every source switch so providers do not inherit
@@ -25619,6 +26062,7 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     ? [...new Set(hlsInst.levels.map(l => l.height).filter(Boolean))]
                     : [];
                 const maxH = qualities.length ? Math.max(...qualities) : 720;
+                let ignoreInitialQualityChange = true;
 
                 plyr = new Plyr(video, {
                     blankVideo: 'data:video/mp4;base64,AAAAHGZ0eXBtcDQyAAAAAG1wNDJpc29tYXZjMQAAADpmcmVlAAAAAG1kYXQ=',
@@ -25645,10 +26089,19 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                     ],
                     captions: { active: false, update: true, language: 'auto' },
                     quality: qualities.length
-                        ? { default: maxH, options: [0, ...qualities], forced: true, onChange: changeQuality }
+                        ? {
+                            default: maxH,
+                            options: [0, ...qualities],
+                            forced: true,
+                            onChange: (quality) => {
+                                if (ignoreInitialQualityChange) return;
+                                changeQuality(quality);
+                            },
+                        }
                         : {},
                     speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
                 });
+                ignoreInitialQualityChange = false;
                 bindVideoEvents();
                 syncTimeUI();
                 updateMuteIcon();
@@ -26034,8 +26487,8 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                         try { hlsInst?.startLoad(-1); } catch (_) {}
                         setTimeout(() => {
                             if (hlsStartupHasProgress || isStaleSourceContext()) return;
-                            const switched = failoverToNextSource('hls_startup_retry_timeout');
-                            if (!switched) recoverSameSourceWithDirectFallback('hls_startup_retry_timeout');
+                             const switched = failoverToNextSource('hls_startup_retry_timeout');
+                             if (!switched) recoverSameSourceWithDirectFallback('hls_startup_retry_timeout');
                         }, 5000);
                         return;
                     }
@@ -26724,11 +27177,60 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
             }, true);
         }
 
-        function changeQuality(q) {
-            if (!hlsInst) return;
-            q = Number(q);
-            const level = q === 0 ? -1 : hlsInst.levels.findIndex(l => Number(l.height) === q);
+         function changeQuality(q, requestedIndex = -1) {
+             if (!hlsInst) return;
+             q = Number(q);
+             const requestedPlay4uLevel = Number.isInteger(Number(requestedIndex)) && Number(requestedIndex) >= 0
+                 ? Number(requestedIndex) : -1;
+             const level = q === 0 ? -1
+                 : requestedPlay4uLevel >= 0
+                     ? (String(currentStreamProvider || '').toLowerCase() === 'play4u' &&
+                         String(hlsInst.levels[requestedPlay4uLevel]?.attrs?.AUDIO || '').toLowerCase() !== 'aac51'
+                         ? hlsInst.levels.findIndex(l =>
+                             Number(l.height) === q &&
+                             String(l?.attrs?.AUDIO || '').toLowerCase() === 'aac51')
+                         : requestedPlay4uLevel)
+                     : hlsInst.levels.findIndex(l =>
+                         Number(l.height) === q &&
+                         (String(currentStreamProvider || '').toLowerCase() !== 'play4u' ||
+                             String(l?.attrs?.AUDIO || '').toLowerCase() === 'aac51'));
             if (!Number.isFinite(q) || (q !== 0 && level < 0)) return;
+            if (String(currentStreamProvider || '').toLowerCase() === 'play4u') {
+                play4uManualQualityLevel = level;
+                 if (q === 0) {
+                     play4uManualQualityLevel = -1;
+                     manualQualityHeight = 0;
+                     manualQualityLabel = '';
+                    hlsInst.autoLevelCapping = -1;
+                    hlsInst.nextLevel = -1;
+                    return;
+                }
+                 manualQualityHeight = q >= 2160 ? 2160
+                    : q >= 1440 ? 1440
+                            : (q >= 795 && q <= 1050) ? 1080
+                            : (q >= 525 && q <= 550) ? 720
+                                : (q >= 295 && q <= 315) ? 420
+                                     : q;
+                 manualQualityLabel = getQualityDisplayLabel(
+                     hlsInst.levels[level]?.height || q,
+                     hlsInst.levels[level],
+                 );
+                 hlsInst.autoLevelCapping = level;
+                 hlsInst.loadLevel = level;
+                 hlsInst.nextLevel = level;
+                 // A manual choice must take effect immediately. Setting only
+                 // nextLevel lets the ABR controller overwrite it with level 0
+                 // while the old fragment is still buffered.
+                 hlsInst.currentLevel = level;
+                const resumeAt = Math.max(0, Number(video?.currentTime || 0));
+                try {
+                    hlsInst.startLoad(resumeAt);
+                    video.currentTime = resumeAt;
+                    if (!video.paused) video.play().catch(() => { });
+                } catch (_) { }
+                return;
+            }
+            manualQualityHeight = q;
             if (isCurrentHdstreamStream()) {
                 hdstreamManualQualityLevel = level;
                 stallAdaptiveLowest = false;

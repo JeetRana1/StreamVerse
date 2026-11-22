@@ -482,7 +482,7 @@ header.scrolled {
 
 .search-bar.search-expanded .search-close-btn,
 .search-bar.mobile-search-expanded .search-close-btn {
-    display: inline-flex;
+    display: none;
     align-items: center;
     justify-content: center;
     opacity: 1;
@@ -1612,13 +1612,18 @@ header.scrolled {
     border: 1px solid rgba(255, 255, 255, 0.7);
     background: rgba(10, 10, 10, 0.45);
     color: transparent;
-    display: inline-flex;
+    display: none;
     align-items: center;
     justify-content: center;
     z-index: 30;
     cursor: pointer;
     transition: var(--transition);
     backdrop-filter: blur(6px);
+}
+
+/* Only show checkboxes while the section is actively selecting. */
+#continue-watching-section.continue-selection-active .continue-select-toggle {
+    display: inline-flex !important;
 }
 
 .continue-select-toggle i {

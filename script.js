@@ -942,21 +942,29 @@ function initContinueWatchingControls() {
         if (!continueSelectedKeys.size) return;
         const items = getContinueWatchingItems();
         const removed = items.filter((item) => continueSelectedKeys.has(getContinueItemKey(item)));
-        window.StreamVerseStorage.removeTitles(removed);
-        notifyContinueWatchingRemoved(removed);
+        // Switch out of selection mode before storage notifications fire.
+        // The storage event can refresh the section synchronously; doing this
+        // first prevents the old circular selection controls being left on
+        // the cards by the render-signature fast path.
         continueSelectionMode = false;
         continueSelectedKeys = new Set();
+        continueRenderSignature = '';
+        clearContinueSelectionVisuals();
+        window.StreamVerseStorage.removeTitles(removed);
+        notifyContinueWatchingRemoved(removed);
         loadContinueWatching();
     });
 
     if (continueClearAllBtn) {
         continueClearAllBtn.addEventListener('click', () => {
             const removed = getContinueWatchingItems();
+            continueSelectionMode = false;
+            continueSelectedKeys = new Set();
+            continueRenderSignature = '';
+            clearContinueSelectionVisuals();
             window.StreamVerseStorage.removeTitles(removed);
             notifyContinueWatchingRemoved(removed);
             localStorage.removeItem('sv_continue_watching');
-            continueSelectionMode = false;
-            continueSelectedKeys = new Set();
             loadContinueWatching();
         });
     }
@@ -979,6 +987,14 @@ function updateContinueWatchingControls(totalCount = 0) {
     continueClearConfirmBtn.disabled = selectedCount === 0;
     continueClearConfirmBtn.style.opacity = selectedCount === 0 ? '0.55' : '1';
     continueClearConfirmBtn.style.cursor = selectedCount === 0 ? 'not-allowed' : 'pointer';
+}
+
+function clearContinueSelectionVisuals() {
+    continueWatchingSection?.classList.remove('continue-selection-active');
+    continueWatchingGrid?.querySelectorAll('.continue-select-toggle').forEach((toggle) => toggle.remove());
+    continueWatchingGrid?.querySelectorAll('.continue-card.selection-mode, .continue-card.selected').forEach((card) => {
+        card.classList.remove('selection-mode', 'selected');
+    });
 }
 
 function toggleContinueSelection(item) {
@@ -5602,15 +5618,38 @@ async function triggerSearch(immediate = false) {
     try {
         const tmdbId = /^\d+$/.test(q) ? q : '';
         if (tmdbId) {
-            const details = await Promise.allSettled([
-                fetchJsonWithFallback(`/info/${encodeURIComponent(tmdbId)}?type=movie`, 9000),
-                fetchJsonWithFallback(`/info/${encodeURIComponent(tmdbId)}?type=tv`, 9000)
+            // Numeric input can be either a TMDB id or a title such as
+            // "1917", "300", or "418". Resolve the id and run normal title
+            // search in parallel instead of returning early from the id path.
+            const [details, titlePages] = await Promise.all([
+                Promise.allSettled([
+                    fetchJsonWithFallback(`/info/${encodeURIComponent(tmdbId)}?type=movie`, 9000),
+                    fetchJsonWithFallback(`/info/${encodeURIComponent(tmdbId)}?type=tv`, 9000)
+                ]),
+                Promise.allSettled(
+                    Array.from({ length: 5 }, (_, index) =>
+                        fetchJsonWithFallback(`/${encodeURIComponent(q)}?page=${index + 1}`, 9000)
+                    )
+                ),
             ]);
             if (version !== searchVersion) return;
             const directResults = details
                 .filter((entry) => entry.status === 'fulfilled' && entry.value?.id)
                 .map((entry) => entry.value);
-            displaySearchResults(dedupeSearchResults(directResults), q);
+            const titleResults = titlePages.flatMap((entry) =>
+                entry.status === 'fulfilled' ? (entry.value?.results || []) : []
+            );
+            const numericTitlePattern = new RegExp(`(^|[^0-9])${tmdbId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^0-9]|$)`, 'i');
+            const relevantTitleResults = titleResults.filter((result) =>
+                numericTitlePattern.test(String(result?.title || result?.name || ''))
+            );
+            const mergedResults = dedupeSearchResults([
+                ...directResults,
+                ...relevantTitleResults,
+            ]).filter((result) =>
+                (result.type || result.media_type || '').toLowerCase() !== 'person'
+            );
+            displaySearchResults(sortSearchResultsByQuery(mergedResults, q), q);
             return;
         }
 
@@ -5678,14 +5717,24 @@ async function fetchPlay4uLatest(page = 1, append = false) {
         const data = await fetchJsonWithFallback(`${base}/latest?page=${page}`);
         const items = Array.isArray(data?.results) ? data.results : [];
         if (!items.length) return false;
+        const totalPages = Number(data?.totalPages || page);
+        const newItems = append
+            ? items.filter((item) => !latestItems.some((existing) => String(existing.id) === String(item.id)))
+            : items;
+        // Some Play4u cache nodes occasionally return the previous page
+        // again. Skip that duplicate page automatically so View More still
+        // produces visible results instead of appearing unresponsive.
+        if (append && !newItems.length && page < totalPages) {
+            return fetchPlay4uLatest(page + 1, true);
+        }
         latestSection.style.display = '';
         latestPage = page;
         latestItems = append
-            ? [...latestItems, ...items.filter((item) => !latestItems.some((existing) => String(existing.id) === String(item.id)))]
+            ? [...latestItems, ...newItems]
             : items;
         displayGrid(latestItems, latestGrid, null, { includeUnrated: true });
         if (latestMoreBtn) {
-            latestMoreBtn.style.display = page < Number(data?.totalPages || page) ? 'inline-flex' : 'none';
+            latestMoreBtn.style.display = page < totalPages ? 'inline-flex' : 'none';
             latestMoreBtn.disabled = false;
             latestMoreBtn.innerHTML = '<i class="fa-solid fa-plus"></i> View More';
         }
