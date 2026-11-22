@@ -6356,7 +6356,14 @@ function getProxiedUrl(url, referer = '') {
                 u.searchParams.delete('unavailableSeason');
                 u.searchParams.delete('unavailableEpisode');
             }
-            if (FORCED_PROVIDER) u.searchParams.set('provider', FORCED_PROVIDER);
+            // Keep the provider that actually resolved the current episode in
+            // the URL. In particular, Play4u can be detected as anime and
+            // would otherwise be replaced by Anikoto after a page reload.
+            const urlProvider = String(
+                FORCED_PROVIDER ||
+                (MEDIA_TYPE === 'tv' ? (preferredEpisodeProvider || currentStreamProvider) : '')
+            ).trim().toLowerCase();
+            if (urlProvider) u.searchParams.set('provider', urlProvider);
             else u.searchParams.delete('provider');
 
             const audioVal = preferredAudioToken || preferredSourceLabelMatch || (currentIsLikelyAnime ? readSavedAnimeAudioMode() : '');
