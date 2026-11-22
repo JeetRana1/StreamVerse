@@ -7328,7 +7328,15 @@ if (parsedProvider.includes('hdstream')) {
                                   : highestCompatible;
                             hls.nextLevel = play4uManualQualityLevel >= 0
                                 ? play4uManualQualityLevel
-                                : -1;
+                                : highestCompatible;
+                            if (play4uManualQualityLevel < 0 && highestCompatible >= 0) {
+                                // Auto should not remain parked on the
+                                // startup rendition after the manifest has
+                                // buffered. Ask hls.js to try the highest
+                                // compatible rendition; normal ABR/error
+                                // handling can still step down if needed.
+                                hls.loadLevel = highestCompatible;
+                            }
                           console.log('[hls] Play4u released startup cap; ABR can climb to:', hls.levels[highestLevel]?.height || 'unknown');
                       }, 12000);
                       console.log('[hls] Play4u starting at low quality for adaptive warm-up');
