@@ -4779,6 +4779,10 @@
         // loader inject the current token into each request.
         const MEDIA_PROXY_TOKEN_REFRESH_MARGIN_MS = 90000;
         async function ensureMediaProxyToken(force = false) {
+            // The local API/media proxy does not use the production edge
+            // token. Requesting it during local playback only produces a
+            // misleading 503 when the optional token route is not running.
+            if (effectiveApiSource === 'local') return '';
             const now = Date.now();
             if (!force && MEDIA_PROXY_TOKEN && now < MEDIA_PROXY_TOKEN_EXPIRES_AT) return MEDIA_PROXY_TOKEN;
             const apiUrl = String(activeApiBase || API_BASE || '').replace(/\/meta\/tmdb\/?$/i, '') + '/media-proxy/token';
@@ -5560,7 +5564,8 @@ function getProxiedUrl(url, referer = '') {
         let userPaused = false;     // true when the user explicitly paused; suppresses auto-resume recovery
 
         let tvSeasons = [];
-        let providerSeasonCatalog = new Map();
+         let providerSeasonCatalog = new Map();
+         let play4uUnavailableEpisode = false;
         const tmdbSeasonEpisodeDetailCache = new Map();
         const tmdbSeasonEpisodeDetailPromises = new Map();
         let activeMenuProvider = '';
@@ -5667,7 +5672,7 @@ function getProxiedUrl(url, referer = '') {
             // hdstream4u now uses the server-side fast path (~1s); 60s still covers the worst-case Playwright fallback race.
             hdstream4u: { watch: 60000, metaInfo: 12000 },
             // Do not let an unavailable Play4u mirror delay the HDStream fallback.
-            play4u: { watch: 30000, metaInfo: 30000, animeSearch: 30000, animeInfo: 15000 },
+            play4u: { watch: 16000, metaInfo: 12000, animeSearch: 12000, animeInfo: 12000 },
         };
         const getProviderTimeout = (provider, key, fallbackMs) => {
             const raw = PROVIDER_TIMEOUT_OVERRIDES?.[provider]?.[key];
@@ -6409,9 +6414,57 @@ function getProxiedUrl(url, referer = '') {
         let stallAdaptiveLowest = false;
         let stallRecoveryTimer = null;
          let hdstreamManualQualityLevel = -1;
-        let play4uManualQualityLevel = -1;
-        let manualQualityHeight = 0;
-        let manualQualityLabel = '';
+         let play4uManualQualityLevel = -1;
+         let manualQualityHeight = 0;
+         let manualQualityLabel = '';
+         let play4uAutoRestoreTimer = null;
+         let play4uRecoveryQualityActive = false;
+
+         function enforcePlay4uAutoQuality(hls) {
+             if (!hls || String(currentStreamProvider || '').toLowerCase() !== 'play4u' ||
+                 manualQualityHeight > 0 || play4uManualQualityLevel >= 0 ||
+                 play4uRecoveryQualityActive || !Array.isArray(hls.levels)) return;
+             const playable = hls.levels
+                 .map((level, index) => ({ level, index }))
+                 .filter(({ level }) =>
+                     !/\b(?:hev1|hvc1|vp9|av01)\b/i.test(String(level?.codecSet || level?.codecs || '')));
+             const highest = playable.at(-1)?.index ?? -1;
+              if (highest < 0) return;
+              try {
+                  hls.autoLevelCapping = highest;
+                  // Keep ABR in control and let the next fragment boundary
+                  // perform the upgrade. Assigning currentLevel here flushes
+                  // the video buffer immediately; audio can then continue
+                  // while the decoder waits for a new video keyframe.
+                  hls.loadLevel = highest;
+                  hls.nextLevel = highest;
+              } catch (_) { }
+          }
+
+         function schedulePlay4uAutoRestore() {
+             if (play4uAutoRestoreTimer) clearTimeout(play4uAutoRestoreTimer);
+             if (String(currentStreamProvider || '').toLowerCase() !== 'play4u' ||
+                 manualQualityHeight > 0 || play4uManualQualityLevel >= 0) return;
+             const restoreHls = hlsInst;
+             play4uAutoRestoreTimer = setTimeout(() => {
+                 play4uAutoRestoreTimer = null;
+                 if (hlsInst !== restoreHls || !video || video.paused ||
+                     manualQualityHeight > 0 || play4uManualQualityLevel >= 0 ||
+                     !Array.isArray(restoreHls?.levels)) return;
+                 play4uRecoveryQualityActive = false;
+                 const playable = restoreHls.levels
+                     .map((level, index) => ({ level, index }))
+                     .filter(({ level }) =>
+                         !/\b(?:hev1|hvc1|vp9|av01)\b/i.test(String(level?.codecSet || level?.codecs || '')));
+                 const highest = playable.at(-1)?.index ?? -1;
+                 if (highest < 0) return;
+                 try {
+                     enforcePlay4uAutoQuality(restoreHls);
+                     restoreHls.startLoad(Math.max(0, Number(video.currentTime || 0)));
+                     console.log('[hls] Play4u Auto restored highest level after playback resumed:', highest);
+                 } catch (_) { }
+             }, 1800);
+         }
 
         function estimateNetworkQuality() {
             // Simple heuristic: if bandwidth is consistently low, flag as constrained
@@ -6776,8 +6829,7 @@ function getProxiedUrl(url, referer = '') {
                          hlsInst.autoLevelCapping = restore;
                          hlsInst.loadLevel = restore;
                          hlsInst.nextLevel = restore;
-                         hlsInst.currentLevel = restore;
-                         hlsInst.startLoad(Math.max(0, Number(video?.currentTime || 0)));
+                          hlsInst.startLoad(Math.max(0, Number(video?.currentTime || 0)));
                          setTimeout(() => {
                              if (hlsInst !== recoveryHls) return;
                              try {
@@ -6788,8 +6840,7 @@ function getProxiedUrl(url, referer = '') {
                                      hlsInst.autoLevelCapping = restore;
                                      hlsInst.loadLevel = restore;
                                      hlsInst.nextLevel = restore;
-                                     hlsInst.currentLevel = restore;
-                                     hlsInst.startLoad(Math.max(0, Number(video?.currentTime || 0)));
+                                      hlsInst.startLoad(Math.max(0, Number(video?.currentTime || 0)));
                                  }
                                  svApplyPreferredAudioToHls(hlsInst);
                              } catch (_) { }
@@ -7121,8 +7172,9 @@ function getProxiedUrl(url, referer = '') {
             }
         }
 
-        function svAttachHlsListeners(hls, startTime, onParsedAction, onErrorFallback, isThumbnail = false) {
-            const isHdstream = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase().includes('hdstream');
+         function svAttachHlsListeners(hls, startTime, onParsedAction, onErrorFallback, isThumbnail = false) {
+             const isHdstream = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase().includes('hdstream');
+             const isPlay4u = String(currentStreamProvider || allSources?.[currentIdx]?.provider || '').toLowerCase() === 'play4u';
             const anikotoLevelFailures = new Map();
             let fatalRecoveryTimer = null;
             let fragParseBurstCount = 0;
@@ -7251,14 +7303,14 @@ if (parsedProvider.includes('hdstream')) {
                            .filter(({ level }) =>
                                String(level?.attrs?.AUDIO || '').toLowerCase() === 'aac51' &&
                                !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
-                           .at(-1)
+                             .at(-1)
                            || compatibleLevels
                                 .filter(({ level }) => String(level?.attrs?.AUDIO || '').toLowerCase() === 'aac51')
-                                .at(-1)
+                                  .at(-1)
                             || compatibleLevels
                                 .filter(({ level }) =>
                                     !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
-                                .at(-1)
+                                  .at(-1)
                             || compatibleLevels.at(-1);
                       // Warm up on the smallest rendition, then release hls.js
                       // back to ABR. Pinning currentLevel here disables the
@@ -7294,11 +7346,15 @@ if (parsedProvider.includes('hdstream')) {
                               hls.loadLevel = preferredStartup.index;
                           }
                           hls.startLoad(play4uLoadTarget);
-                          if (manualQualityHeight <= 0 && preferredStartup?.index >= 0) {
-                              hls.currentLevel = preferredStartup.index;
-                              hls.loadLevel = preferredStartup.index;
-                              hls.nextLevel = preferredStartup.index;
-                          }
+                           if (manualQualityHeight <= 0 && preferredStartup?.index >= 0) {
+                               // Let hls.js finish the currently loading
+                               // fragment before changing rendition. Forcing
+                               // currentLevel here can flush the video buffer
+                               // while audio continues, producing a frozen
+                               // frame during Play4u startup.
+                               hls.loadLevel = preferredStartup.index;
+                               hls.nextLevel = preferredStartup.index;
+                           }
                          const startupLevel = manualQualityHeight > 0
                              ? hls.levels.findIndex((level) => {
                                  const height = Number(level?.height || 0);
@@ -7440,10 +7496,24 @@ if (parsedProvider.includes('hdstream')) {
                 }
                 return 0;
             };
-            const applyAdaptiveLevelCap = () => {
-                if (!hls || !Array.isArray(hls.levels) || hls.levels.length < 2) return;
-                const levelsCount = hls.levels.length;
-                if (isHdstream && !isThumbnail) {
+             const applyAdaptiveLevelCap = () => {
+                 if (!hls || !Array.isArray(hls.levels) || hls.levels.length < 2) return;
+                 const levelsCount = hls.levels.length;
+                 if (isPlay4u && !isThumbnail &&
+                     manualQualityHeight <= 0 && play4uManualQualityLevel < 0 &&
+                     !play4uRecoveryQualityActive) {
+                     const highestPlayable = hls.levels.reduce((best, level, index) => {
+                         const codecs = String(level?.codecSet || level?.codecs || '');
+                         return /\b(?:hev1|hvc1|vp9|av01)\b/i.test(codecs) ? best : index;
+                     }, -1);
+                     if (highestPlayable >= 0) {
+                         hls.autoLevelCapping = highestPlayable;
+                         hls.loadLevel = highestPlayable;
+                         hls.nextLevel = highestPlayable;
+                     }
+                     return;
+                 }
+                 if (isHdstream && !isThumbnail) {
                     if (hdstreamManualQualityLevel >= 0) return;
                     if (hls.autoLevelCapping !== 0) hls.autoLevelCapping = 0;
                     if (hls.nextLevel !== 0) hls.nextLevel = 0;
@@ -7490,6 +7560,9 @@ if (parsedProvider.includes('hdstream')) {
                         stallMs: bufferDebugStall ? Date.now() - bufferDebugStall.startedAt : 0,
                     });
                 }
+            });
+            hls.on(Hls.Events.FRAG_BUFFERED, () => {
+                if (video && !video.paused) enforcePlay4uAutoQuality(hls);
             });
 
             hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
@@ -7673,16 +7746,36 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                             const recoveryLevel = isPlay4uBufferError
                                 ? hls.levels.map((level, index) => ({ level, index }))
                                     .filter(({ level }) =>
-                                        !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
-                                    .at(-1)?.index ?? 0
+                                        !/\b(?:hev1|hvc1|vp9|av01)\b/i.test(String(level?.codecSet || level?.codecs || '')))
+                                    .at(0)?.index ?? 0
                                 : 0;
+                            if (isPlay4uBufferError) play4uRecoveryQualityActive = true;
                             hls.autoLevelCapping = recoveryLevel;
                             hls.nextLevel = recoveryLevel;
                             hls.loadLevel = recoveryLevel;
                             hls.stopLoad();
                             hls.startLoad(Math.max(0, Number(video?.currentTime || 0) - 0.25));
                             hls.recoverMediaError();
-                            console.warn(`[hls] bufferAppendError: retrying level ${recoveryLevel}`);
+                             console.warn(`[hls] bufferAppendError: retrying level ${recoveryLevel}`);
+                             if (isPlay4uBufferError) {
+                                 const recoveryInstance = hls;
+                                 setTimeout(() => {
+                                     if (hlsInst !== recoveryInstance || manualQualityHeight > 0 ||
+                                         play4uManualQualityLevel >= 0 || !hls.levels?.length) return;
+                                     try {
+                                         const highest = hls.levels.reduce((best, level, index) =>
+                                             /\b(?:hev1|hvc1|vp9|av01)\b/i.test(String(level?.codecSet || level?.codecs || ''))
+                                                 ? best : index, -1);
+                                         if (highest >= 0) {
+                                             play4uRecoveryQualityActive = false;
+                                             hls.autoLevelCapping = highest;
+                                             hls.loadLevel = highest;
+                                             hls.nextLevel = highest;
+                                             hls.startLoad(Math.max(0, Number(video?.currentTime || 0)));
+                                         }
+                                     } catch (_) { }
+                                 }, 5000);
+                             }
                         } catch (_) { }
                     }
                     if (consecutiveBufferErrors >= 4 && typeof onErrorFallback === 'function') {
@@ -7701,13 +7794,26 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                         console.warn('[hls] bufferFullError Ã¢â‚¬â€œ flushing back-buffer and reducing quality');
                         try {
                             // Drop to lowest quality so new fragments are tiny
-                            if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
-                                hls.autoLevelCapping = 0;
-                                hls.nextLevel = 0;
-                                hls.loadLevel = 0;
-                                setTimeout(() => {
-                                    try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { }
-                                }, 3000);
+                             if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
+                                 if (String(currentStreamProvider || '').toLowerCase() === 'play4u') play4uRecoveryQualityActive = true;
+                                 hls.autoLevelCapping = 0;
+                                 hls.nextLevel = 0;
+                                 hls.loadLevel = 0;
+                                 setTimeout(() => {
+                                     try {
+                                         if (String(currentStreamProvider || '').toLowerCase() === 'play4u' &&
+                                             manualQualityHeight <= 0 && play4uManualQualityLevel < 0) {
+                                              play4uRecoveryQualityActive = false;
+                                              const highest = hls.levels.length - 1;
+                                             hls.autoLevelCapping = highest;
+                                             hls.loadLevel = highest;
+                                             hls.nextLevel = highest;
+                                         } else {
+                                             hls.autoLevelCapping = -1;
+                                             hls.nextLevel = -1;
+                                         }
+                                     } catch (_) { }
+                                 }, 3000);
                             }
                             hls.stopLoad();
                             hls.startLoad(video ? Math.max(0, video.currentTime - 0.5) : 0);
@@ -8141,18 +8247,48 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                             // up the next fragment load, but do NOT abort the current one.
                             console.warn('[hls-watchdog] Stall persists on slow CDN, dropping quality...');
                             try {
-                                if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
-                                    hls.autoLevelCapping = 0; hls.nextLevel = 0;
-                                    setTimeout(() => { try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { } }, 4000);
+                                 if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
+                                     if (String(currentStreamProvider || '').toLowerCase() === 'play4u') play4uRecoveryQualityActive = true;
+                                     hls.autoLevelCapping = 0; hls.nextLevel = 0;
+                                     setTimeout(() => {
+                                         try {
+                                              if (String(currentStreamProvider || '').toLowerCase() === 'play4u' &&
+                                                  manualQualityHeight <= 0 && play4uManualQualityLevel < 0) {
+                                                  play4uRecoveryQualityActive = false;
+                                                  const highest = hls.levels.length - 1;
+                                                 hls.autoLevelCapping = highest;
+                                                 hls.loadLevel = highest;
+                                                 hls.nextLevel = highest;
+                                             } else {
+                                                 hls.autoLevelCapping = -1;
+                                                 hls.nextLevel = -1;
+                                             }
+                                         } catch (_) { }
+                                     }, 4000);
                                 }
                             } catch (_) { }
                         } else {
                             // Second check: try quality drop + reload
                             console.warn('[hls-watchdog] Stall persists, dropping quality...');
                             try {
-                                if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
-                                    hls.autoLevelCapping = 0; hls.nextLevel = 0;
-                                    setTimeout(() => { try { hls.autoLevelCapping = -1; hls.nextLevel = -1; } catch (_) { } }, 4000);
+                                 if (!isCurrentAniKotoStream() && hls.levels && hls.levels.length > 1) {
+                                     if (String(currentStreamProvider || '').toLowerCase() === 'play4u') play4uRecoveryQualityActive = true;
+                                     hls.autoLevelCapping = 0; hls.nextLevel = 0;
+                                     setTimeout(() => {
+                                         try {
+                                              if (String(currentStreamProvider || '').toLowerCase() === 'play4u' &&
+                                                  manualQualityHeight <= 0 && play4uManualQualityLevel < 0) {
+                                                  play4uRecoveryQualityActive = false;
+                                                  const highest = hls.levels.length - 1;
+                                                 hls.autoLevelCapping = highest;
+                                                 hls.loadLevel = highest;
+                                                 hls.nextLevel = highest;
+                                             } else {
+                                                 hls.autoLevelCapping = -1;
+                                                 hls.nextLevel = -1;
+                                             }
+                                         } catch (_) { }
+                                     }, 4000);
                                 }
                                 hls.stopLoad();
                                 hls.startLoad(Math.max(0, (video.currentTime || 0) - 0.5));
@@ -9331,7 +9467,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
         function goBackToHome() {
             try {
-                const rawReturnState = sessionStorage.getItem('streamverse_playback_return');
+                const rawReturnState = ANIME_MODE ? '' : sessionStorage.getItem('streamverse_playback_return');
                 if (rawReturnState) {
                     const returnState = JSON.parse(rawReturnState);
                     const returnUrl = new URL(String(returnState?.url || ''), window.location.href);
@@ -9341,7 +9477,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     }
                 }
             } catch (_) { }
-            const homeUrl = new URL(ANIME_MODE ? '../anime.html' : 'index.html', window.location.href);
+            const homeUrl = new URL('index.html', window.location.href);
             window.location.href = homeUrl.toString();
         }
 
@@ -10350,9 +10486,13 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 // that share a common word (e.g. "House of the Dragon" vs "Dragon Goes
                 // House-Hunting") get misclassified as anime.
                 const strongIsSubstring = best.bestQuality.contains;
+                // AniList title matches alone are not sufficient: common
+                // names can match an unrelated anime (for example a
+                // live-action movie named "Naughty"). Require TMDB animation
+                // or Japanese-origin metadata before accepting a non-exact
+                // catalog match.
                 if (best.bestQuality.strong && (
                     hasSoftAnimeMetadata ||
-                    (strongIsSubstring && yearClose) ||
                     (hasJapaneseAnimationMetadata && yearClose)
                 )) return true;
 
@@ -10495,17 +10635,45 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             const movieProviderBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
             if (provider === 'play4u' && TMDB_ID) {
                 const { res } = await fetchJsonWithApiFallback(`${movieProviderBase}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(mediaType)}`, {
-                    signal: AbortSignal.timeout(30000),
+                    signal: AbortSignal.timeout(12000),
                 });
                 if (res.ok) {
                     const info = await res.json();
                     const imdbId = String(info.imdbId || '').match(/^tt\d+$/)?.[0];
                     if (imdbId && String(info.tmdbId) === String(TMDB_ID)) {
-                        // Series landing pages show only the currently selected
-                        // season. Resolve the requested episode, never an array index.
-                        const episodeId = mediaType === 'tv'
-                            ? `https://play4u.org/series/${imdbId}/s-${String(safeNo(seasonNo)).padStart(2, '0')}/ep-${String(safeNo(episodeNo)).padStart(2, '0')}`
-                            : info.episodeId || info.id;
+                        let episodeId = info.episodeId || info.id;
+                        if (mediaType === 'tv') {
+                            const wantedSeason = safeNo(seasonNo);
+                            const wantedEpisode = safeNo(episodeNo);
+                            const episodes = Array.isArray(info.episodes) ? info.episodes : [];
+                            const parsePlay4uEpisode = (episode) => {
+                                const raw = String(
+                                    episode?.id || episode?.episodeId || episode?.url || '',
+                                );
+                                const match = raw.match(/\/s-0*(\d+)\/ep-0*(\d+)/i);
+                                return match
+                                    ? { season: Number(match[1]), episode: Number(match[2]) }
+                                    : { season: 0, episode: 0 };
+                            };
+                            const exactEpisode = episodes.find((episode) => {
+                                const parsed = parsePlay4uEpisode(episode);
+                                return parsed.season === wantedSeason && parsed.episode === wantedEpisode;
+                            });
+                            // Never synthesize a URL for a season absent from
+                            // Play4u. That previously redirected Season 7
+                            // requests to Season 1 Episode 1.
+                            if (!exactEpisode) {
+                                play4uUnavailableEpisode = true;
+                                providerEpisodeIdCache.set(cacheKey, { info, episodeId: null });
+                                console.warn('[play4u] requested episode is unavailable:', {
+                                    season: wantedSeason,
+                                    episode: wantedEpisode,
+                                    available: [...new Set(episodes.map((episode) => parsePlay4uEpisode(episode).season).filter(Boolean))],
+                                });
+                                return { info, episodeId: null };
+                            }
+                            episodeId = exactEpisode.id || exactEpisode.episodeId || exactEpisode.url || null;
+                        }
                         providerEpisodeIdCache.set(cacheKey, { info, episodeId });
                         return { info, episodeId };
                     }
@@ -16622,9 +16790,9 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     updateAudioEnhancementChain();
                 }
             });
-            video.addEventListener('playing', (event) => {
-                if (event.currentTarget !== video) return;
-                if (String(currentStreamProvider || '').toLowerCase() === 'play4u' && manualQualityHeight <= 0 && hlsInst) {
+             video.addEventListener('playing', (event) => {
+                 if (event.currentTarget !== video) return;
+                 if (String(currentStreamProvider || '').toLowerCase() === 'play4u' && manualQualityHeight <= 0 && hlsInst) {
                     try {
                         hlsInst.autoLevelCapping = -1;
                         const playableLevels = hlsInst.levels
@@ -16646,11 +16814,13 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                         // Leave Auto under ABR control. Forcing currentLevel
                         // during playback can freeze the video buffer while
                         // audio continues.
-                        if (highestPlayable >= 0 && hlsInst.autoLevelEnabled === false && manualQualityHeight > 0) {
-                            hlsInst.nextLevel = highestPlayable;
-                        }
-                    } catch (_) { }
-                }
+                         if (highestPlayable >= 0 && hlsInst.autoLevelEnabled === false && manualQualityHeight > 0) {
+                             hlsInst.nextLevel = highestPlayable;
+                         }
+                     } catch (_) { }
+                     enforcePlay4uAutoQuality(hlsInst);
+                     schedulePlay4uAutoRestore();
+                 }
                 if (bufferDebugStall) {
                     console.log('[buffer-debug] PLAYBACK_RECOVERED', {
                         stallMs: Date.now() - bufferDebugStall.startedAt,
@@ -19058,12 +19228,17 @@ video.addEventListener('canplay', (event) => {
                         if (String(animeInfo?.id) !== String(TMDB_ID)) animeInfo = null;
                     } catch (_) { }
                 }
+                // TMDB metadata is authoritative for provider classification. Do
+                // not classify from an old provider-enriched cache entry: those
+                // entries can retain animation/anime fields after the catalog
+                // record has changed (or after a previous provider lookup).
+                // Anime detection must therefore run on a fresh TMDB response.
                 let info = MEDIA_NAMESPACE === 'anilist'
                     ? { ...(animeInfo || {}), id: TMDB_ID, anilistId: TMDB_ID,
                         title: URL_TITLE || getAnimeTitleText(animeInfo?.title) || 'Anime',
                         name: URL_TITLE || getAnimeTitleText(animeInfo?.title) || 'Anime',
                         image: URL_IMAGE || animeInfo?.image || '', type: MEDIA_TYPE, media_type: MEDIA_TYPE, genres: ['Animation'], original_language: 'ja' }
-                    : readCachedMediaInfo();
+                    : null;
                 if (info) {
                     // Verify cached info matches current TMDB_ID to prevent cross-contamination
                     if (String(info.id || info.tmdbId || '').trim() !== String(TMDB_ID).trim()) {
@@ -19225,11 +19400,22 @@ video.addEventListener('canplay', (event) => {
                     (info.type || '').toLowerCase().includes('tv') ||
                     (info.type || '').toLowerCase().includes('series');
 
-                const isLikelyAnime = ANIME_MODE || await detectLikelyAnimeMedia(info) || (
-                    effectiveMediaType === 'movie' &&
-                    Boolean(URL_EPISODE_ID) &&
-                    /(?:anime|movie|ova|ona|special)/i.test(`${URL_EPISODE_ID} ${info?.title || info?.name || ''}`)
-                );
+                // An episode-shaped ID is not proof of anime. Play4u and
+                // other catalogs use "movie"/"special" IDs for ordinary
+                // movies too, so relying on that string was causing random
+                // TMDB movies to enter the anime provider path.
+                const detectedAnime = await detectLikelyAnimeMedia(info);
+                const isLikelyAnime = ANIME_MODE || detectedAnime;
+                console.log('[anime-detection]', {
+                    title: getAnimeTitleText(info?.title || info?.name),
+                    mediaType: effectiveMediaType,
+                    explicitAnimeMode: ANIME_MODE,
+                    detectedAnime,
+                    genres: info?.genres,
+                    originalLanguage: info?.original_language || info?.originalLanguage,
+                    originCountry: info?.origin_country || info?.originCountry,
+                    tmdbId: TMDB_ID,
+                });
                 currentIsLikelyAnime = isLikelyAnime;
                 aniSkipFetchStatus = 'none';
                 resetAnimeSkipState();
@@ -23080,6 +23266,7 @@ item.innerHTML = `
             console.log('fetchSources: Using detected anime status:', currentIsLikelyAnime);
 
             allSources.length = 0;
+            play4uUnavailableEpisode = false;
             activeFlixhqServerName = '';
             satoruAudioSources = [];
             currentAudioSource = 'anikoto';
@@ -24221,6 +24408,16 @@ item.innerHTML = `
 
             const processProvider = async (provider) => {
                 const normalizedProvider = String(provider || '').toLowerCase();
+                if (effectiveForcedProvider === 'play4u' && normalizedProvider !== 'play4u') {
+                    chipState(provider, 'failed');
+                    console.log(`[providers] Skipping ${provider}; Play4u is explicitly forced for this player.`);
+                    return;
+                }
+                if (play4uUnavailableEpisode && normalizedProvider === 'hdstream4u') {
+                    chipState(provider, 'failed');
+                    console.log('[providers] Skipping HDStream4u after Play4u confirmed the requested season/episode is unavailable.');
+                    return;
+                }
                 // Archive is a static fallback, not a searchable extraction API.
                 if (normalizedProvider === 'archive.org') {
                     if (applicableArchiveSource) addArchiveFallbackForCurrentMovie();
@@ -24976,9 +25173,9 @@ console.log(`[${provider}] watch request completed`, {
                 // until the primary provider has finished resolving.
                 await primaryPromise;
 
-                if (allSources.length === 0) {
-                    const fallbackProviders = orderedProviders.filter((p) => p !== primaryProvider);
-                    await Promise.all(fallbackProviders.map((p) => processProvider(p)));
+                 if (allSources.length === 0 && !(play4uUnavailableEpisode && effectiveForcedProvider === 'play4u')) {
+                     const fallbackProviders = orderedProviders.filter((p) => p !== primaryProvider);
+                     await Promise.all(fallbackProviders.map((p) => processProvider(p)));
                 } else if (primaryProvider === 'play4u') {
                     // Play4u is authoritative for movies/TV. Once it returns
                     // a source, do not even extract HDStream in the
@@ -24995,7 +25192,7 @@ console.log(`[${provider}] watch request completed`, {
                 // Many TV shows (e.g. Doraemon, Shinchan) are anime but aren't
                 // detected as such from TMDB metadata alone. If hdstream can't
                 // find the episode, anime providers often can.
-                if (allSources.length === 0 && MEDIA_TYPE === 'tv') {
+                 if (allSources.length === 0 && MEDIA_TYPE === 'tv' && !play4uUnavailableEpisode) {
                     console.log('[fallback] hdstream4u failed for TV — trying anime providers:', ANIME_PROVIDERS);
                     const animeFallbacks = ANIME_PROVIDERS.filter((p) => !orderedProviders.includes(p));
                     animeFallbacks.forEach((p) => {
@@ -25016,7 +25213,7 @@ console.log(`[${provider}] watch request completed`, {
             }
 
             // Same anime fallback for the parallel execution path
-            if (allSources.length === 0 && MEDIA_TYPE === 'tv' && !currentIsLikelyAnime) {
+             if (allSources.length === 0 && MEDIA_TYPE === 'tv' && !currentIsLikelyAnime && !play4uUnavailableEpisode) {
                 console.log('[fallback] all providers failed for TV — trying anime providers:', ANIME_PROVIDERS);
                 const animeFallbacks = ANIME_PROVIDERS.filter((p) => !orderedProviders.includes(p));
                 animeFallbacks.forEach((p) => {
@@ -25033,7 +25230,8 @@ console.log(`[${provider}] watch request completed`, {
                 await Promise.all(animeFallbacks.map((p) => processProvider(p)));
             }
             
-            if (wasForced && !ANIME_MODE && allSources.length === 0) {
+             if (wasForced && !ANIME_MODE && allSources.length === 0 &&
+                 !(play4uUnavailableEpisode && effectiveForcedProvider === 'play4u')) {
                 console.log('Forced provider failed. Falling back to all providers.');
                 const fallbackProviders = activeProviders.filter(p => p !== effectiveForcedProvider &&
                     (String(p).toLowerCase() !== 'archive.org' || applicableArchiveSource));
@@ -25044,7 +25242,7 @@ console.log(`[${provider}] watch request completed`, {
             }
 
              if (allSources.length === 0 && MEDIA_TYPE === 'tv' && !currentStreamUrl && !(video && video.currentSrc)) {
-                 const nextEpisode = getNextEpisodeRef();
+                  const nextEpisode = play4uUnavailableEpisode ? null : getNextEpisodeRef();
                  if (nextEpisode && watchPartyRole !== 'guest') {
                      console.warn('[fallback] episode unavailable; trying next episode', {
                          season: tvSeasons?.[curSeason]?.seasonNo || curSeason + 1,
@@ -27270,10 +27468,10 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                  hlsInst.autoLevelCapping = level;
                  hlsInst.loadLevel = level;
                  hlsInst.nextLevel = level;
-                 // A manual choice must take effect immediately. Setting only
-                 // nextLevel lets the ABR controller overwrite it with level 0
-                 // while the old fragment is still buffered.
-                 hlsInst.currentLevel = level;
+                  // Switch at the next fragment boundary. Setting currentLevel
+                  // immediately can flush the video buffer while the audio
+                  // pipeline continues, which looks like a frozen frame.
+                  hlsInst.nextLevel = level;
                 const resumeAt = Math.max(0, Number(video?.currentTime || 0));
                 try {
                     hlsInst.startLoad(resumeAt);

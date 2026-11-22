@@ -286,11 +286,12 @@ function writeCache(key, data) {
     }
 }
 
-async function fetchJson(url, timeoutMs = API_TIMEOUT_MS) {
+async function fetchJson(url, timeoutMs = API_TIMEOUT_MS, externalSignal = null) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const res = await fetch(url, { signal: controller.signal });
+        const signal = externalSignal || controller.signal;
+        const res = await fetch(url, { signal });
         if (!res.ok) {
             const err = new Error(`HTTP ${res.status}`);
             err.status = res.status;
@@ -326,10 +327,10 @@ async function fetchJson(url, timeoutMs = API_TIMEOUT_MS) {
         clearTimeout(timer);
     }
 }
-async function fetchJsonWithFallback(urlOrPath, timeoutMs = API_TIMEOUT_MS) {
+async function fetchJsonWithFallback(urlOrPath, timeoutMs = API_TIMEOUT_MS, externalSignal = null) {
     let fullUrl = urlOrPath.startsWith('http') ? urlOrPath : `${BASE_URL}${urlOrPath}`;
     try {
-        return await fetchJson(fullUrl, timeoutMs);
+        return await fetchJson(fullUrl, timeoutMs, externalSignal);
     } catch (err) {
         if (getCurrentApiSource() === 'prod' && FALLBACK_API) {
             console.warn(`Primary API failed, trying fallback: ${urlOrPath}`);
@@ -345,7 +346,7 @@ async function fetchJsonWithFallback(urlOrPath, timeoutMs = API_TIMEOUT_MS) {
                     : urlOrPath;
             }
             try {
-                return await fetchJson(fallbackUrl, timeoutMs + 3000);
+                return await fetchJson(fallbackUrl, timeoutMs + 3000, externalSignal);
             } catch (fallbackErr) {
                 console.error('Fallback API also failed:', fallbackErr);
                 throw err; // Throw original error if fallback also fails
@@ -364,6 +365,8 @@ const latestSection = document.getElementById('latest-section');
 const latestMoreBtn = document.getElementById('latest-more-btn');
 let latestPage = 1;
 let latestItems = [];
+let latestLoadInFlight = false;
+let latestLoadController = null;
 const popularMoviesGrid = document.getElementById('popular-movies-grid');
 const popularTvGrid = document.getElementById('popular-tv-grid');
 const topRatedGrid = document.getElementById('top-rated-grid');
@@ -5553,9 +5556,15 @@ if (watchedItem) {
         // Play4u as the preferred playback provider.
         const modalProvider = normalizedItem.isPlay4uLatest ? '' : provider;
         card.onclick = () => openDetails(id, type, modalProvider, normalizedItem);
-        card.addEventListener('mouseenter', () => prefetchDetails(id, type, provider), { once: true });
-        card.addEventListener('touchstart', () => prefetchDetails(id, type, provider), { once: true, passive: true });
-        card.addEventListener('pointerdown', () => prefetchDetails(id, type, provider), { once: true, passive: true });
+        // Play4u cards already contain the release metadata needed to render
+        // the card and open the player. Do not prefetch every card's /info
+        // endpoint on hover/touch; that creates a burst of 429s and slows the
+        // homepage. Other providers retain the lightweight prefetch behavior.
+        if (String(provider || '').toLowerCase() !== 'play4u') {
+            card.addEventListener('mouseenter', () => prefetchDetails(id, type, provider), { once: true });
+            card.addEventListener('touchstart', () => prefetchDetails(id, type, provider), { once: true, passive: true });
+            card.addEventListener('pointerdown', () => prefetchDetails(id, type, provider), { once: true, passive: true });
+        }
 
         container.appendChild(card);
         if (container !== trendingGrid && container !== popularTvGrid) {
@@ -5710,11 +5719,11 @@ function isMobileSearchViewport() {
     return window.matchMedia('(max-width: 768px)').matches;
 }
 
-async function fetchPlay4uLatest(page = 1, append = false) {
+async function fetchPlay4uLatest(page = 1, append = false, signal = null) {
     if (!latestGrid || !latestSection) return false;
     try {
         const base = BASE_URL.replace('/meta/tmdb', '/movies/play4u');
-        const data = await fetchJsonWithFallback(`${base}/latest?page=${page}`);
+        const data = await fetchJsonWithFallback(`${base}/latest?page=${page}`, API_TIMEOUT_MS, signal);
         const items = Array.isArray(data?.results) ? data.results : [];
         if (!items.length) return false;
         const totalPages = Number(data?.totalPages || page);
@@ -5725,7 +5734,7 @@ async function fetchPlay4uLatest(page = 1, append = false) {
         // again. Skip that duplicate page automatically so View More still
         // produces visible results instead of appearing unresponsive.
         if (append && !newItems.length && page < totalPages) {
-            return fetchPlay4uLatest(page + 1, true);
+            return fetchPlay4uLatest(page + 1, true, signal);
         }
         latestSection.style.display = '';
         latestPage = page;
@@ -5753,12 +5762,54 @@ async function fetchPlay4uLatest(page = 1, append = false) {
 }
 
 latestMoreBtn?.addEventListener('click', async () => {
+    if (latestLoadInFlight) return;
+    const requestedPage = latestPage + 1;
+    const beforeCount = latestItems.length;
+    console.log('[latest:view-more] click', {
+        requestedPage,
+        beforeCount,
+        visibleCards: latestGrid?.querySelectorAll('.movie-card')?.length || 0,
+    });
+    latestLoadInFlight = true;
+    const controller = new AbortController();
+    latestLoadController = controller;
     latestMoreBtn.disabled = true;
     latestMoreBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading…';
-    const loaded = await fetchPlay4uLatest(latestPage + 1, true);
-    if (!loaded && latestMoreBtn) {
-        latestMoreBtn.disabled = false;
-        latestMoreBtn.innerHTML = '<i class="fa-solid fa-plus"></i> View More';
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    try {
+        const loadNextPage = () => fetchPlay4uLatest(latestPage + 1, true, controller.signal);
+        let loaded = await loadNextPage();
+        // Play4u's latest endpoint can briefly return an empty/transient
+        // response even though the page exists. Retry once instead of making
+        // the button flash and silently do nothing.
+        console.log('[latest:view-more] result', {
+            requestedPage,
+            loaded,
+            page: latestPage,
+            beforeCount,
+            afterCount: latestItems.length,
+            addedCards: latestItems.length - beforeCount,
+            visibleCards: latestGrid?.querySelectorAll('.movie-card')?.length || 0,
+            buttonVisible: latestMoreBtn ? getComputedStyle(latestMoreBtn).display !== 'none' : false,
+        });
+        if (!loaded && latestMoreBtn) {
+            latestMoreBtn.disabled = false;
+            latestMoreBtn.innerHTML = '<i class="fa-solid fa-plus"></i> View More';
+        }
+    } finally {
+        clearTimeout(timeoutId);
+        if (latestLoadController === controller) latestLoadController = null;
+        latestLoadInFlight = false;
+        if (latestMoreBtn?.disabled) {
+            latestMoreBtn.disabled = false;
+            latestMoreBtn.innerHTML = '<i class="fa-solid fa-plus"></i> View More';
+        }
+        console.log('[latest:view-more] settled', {
+            page: latestPage,
+            cardCount: latestItems.length,
+            visibleCards: latestGrid?.querySelectorAll('.movie-card')?.length || 0,
+            inFlight: latestLoadInFlight,
+        });
     }
 });
 
@@ -6289,7 +6340,11 @@ async function watchNow(id, type, provider = '', animeLike = false) {
                     params.set('episodeId', '262838-s2e1');
                 }
             }
-            if (!animeLike && (!resolvedProvider || ['hdstream4u', 'play4u'].includes(resolvedProvider))) {
+                // The player performs the authoritative provider/episode
+                // availability check. Avoid blocking Watch Now on a duplicate
+                // provider inventory request when a provider was already
+                // selected by the card.
+                if (!animeLike && !resolvedProvider) {
                 const providers = resolvedProvider ? [resolvedProvider] : ['play4u', 'hdstream4u'];
                 const inventories = await Promise.all(providers.map(async source => {
                     try {
