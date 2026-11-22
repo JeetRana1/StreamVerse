@@ -22921,10 +22921,15 @@ item.innerHTML = `
                 FORCED_PROVIDER = '';
                 const preferredProvider = String(preferredEpisodeProvider || currentStreamProvider || '').trim().toLowerCase();
                 const movieProviders = [...MOVIE_PROVIDERS];
+                const preferredMovieProvider = preferredProvider && movieProviders.includes(preferredProvider)
+                    ? preferredProvider
+                    : '';
                 activeProviders = currentIsLikelyAnime
-                    ? [...ANIME_PROVIDERS]
-                    : (preferredProvider && movieProviders.includes(preferredProvider)
-                        ? [preferredProvider, ...movieProviders.filter((provider) => provider !== preferredProvider)]
+                    ? (preferredMovieProvider
+                        ? [preferredMovieProvider, ...ANIME_PROVIDERS.filter((provider) => provider !== preferredMovieProvider)]
+                        : [...ANIME_PROVIDERS])
+                    : (preferredMovieProvider
+                        ? [preferredMovieProvider, ...movieProviders.filter((provider) => provider !== preferredMovieProvider)]
                         : movieProviders);
                 activeMenuProvider = '';
             }
