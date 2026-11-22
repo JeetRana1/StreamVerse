@@ -7317,12 +7317,18 @@ if (parsedProvider.includes('hdstream')) {
                          setTimeout(() => {
                             if (hls !== hlsInst || !hls.levels?.length) return;
                              if (play4uManualQualityLevel >= 0) return;
-                             hls.autoLevelCapping = compatibleLevels.length
-                                 ? preferredStartup?.index ?? compatibleLevels[compatibleLevels.length - 1].index
-                                 : -1;
-                           hls.nextLevel = play4uManualQualityLevel >= 0
-                               ? play4uManualQualityLevel
-                               : (preferredStartup?.index ?? -1);
+                              // Startup uses a stable rendition, but Auto must
+                              // be allowed to climb to the highest compatible
+                              // level. The old code capped Auto at
+                              // preferredStartup, which made 1080p appear
+                              // selected while playback stayed low quality.
+                              const highestCompatible = compatibleLevels.at(-1)?.index ?? -1;
+                              hls.autoLevelCapping = play4uManualQualityLevel >= 0
+                                  ? play4uManualQualityLevel
+                                  : highestCompatible;
+                            hls.nextLevel = play4uManualQualityLevel >= 0
+                                ? play4uManualQualityLevel
+                                : -1;
                           console.log('[hls] Play4u released startup cap; ABR can climb to:', hls.levels[highestLevel]?.height || 'unknown');
                       }, 12000);
                       console.log('[hls] Play4u starting at low quality for adaptive warm-up');
@@ -13423,8 +13429,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                              : (h >= 295 && h <= 315) ? 420 : h;
               const codecs = String(level?.codecSet || level?.codecs || '').toLowerCase();
              const isHevc = /\b(?:hev1|hvc1)\b/.test(codecs);
-             if (isHevc && h >= 900 && h <= 1050) return `${standard}p IMAX HEVC`;
-             if (isHevc) return `${standard}p HEVC`;
+              if (isHevc) return `${standard}p HEVC`;
              return `${standard}p`;
          }
 
@@ -13454,10 +13459,10 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                  if (play4uHasSurround &&
                      String(level?.attrs?.AUDIO || '').toLowerCase() !== 'aac51') return;
                  const label = getQualityDisplayLabel(height, level);
-                 // Play4u's regular 1080p HEVC rendition duplicates the
-                 // normal 1080p encode. Keep the distinct IMAX HEVC option,
-                 // but do not show the redundant non-IMAX HEVC entry.
-                 if (label === '1080p HEVC') return;
+                  // Play4u's regular 1080p HEVC rendition duplicates the
+                  // normal 1080p encode. Do not expose HEVC variants in the
+                  // quality menu; AVC is the stable selectable rendition.
+                  if (label === '1080p HEVC') return;
                  // Keep AVC 1080p, HEVC 1080p, and IMAX HEVC separate. They
                  // are different Play4u encodes, not duplicate resolutions.
                  const previous = qualityOptions.get(label);
@@ -27192,20 +27197,23 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
          function changeQuality(q, requestedIndex = -1) {
              if (!hlsInst) return;
              q = Number(q);
+             const isPlay4uStream = String(currentStreamProvider || '').toLowerCase() === 'play4u';
+             const play4uHasSurround = isPlay4uStream &&
+                 hlsInst.levels.some((l) => String(l?.attrs?.AUDIO || '').toLowerCase() === 'aac51');
              const requestedPlay4uLevel = Number.isInteger(Number(requestedIndex)) && Number(requestedIndex) >= 0
                  ? Number(requestedIndex) : -1;
              const level = q === 0 ? -1
                  : requestedPlay4uLevel >= 0
-                     ? (String(currentStreamProvider || '').toLowerCase() === 'play4u' &&
-                         String(hlsInst.levels[requestedPlay4uLevel]?.attrs?.AUDIO || '').toLowerCase() !== 'aac51'
-                         ? hlsInst.levels.findIndex(l =>
-                             Number(l.height) === q &&
-                             String(l?.attrs?.AUDIO || '').toLowerCase() === 'aac51')
-                         : requestedPlay4uLevel)
-                     : hlsInst.levels.findIndex(l =>
-                         Number(l.height) === q &&
-                         (String(currentStreamProvider || '').toLowerCase() !== 'play4u' ||
-                             String(l?.attrs?.AUDIO || '').toLowerCase() === 'aac51'));
+                     ? (play4uHasSurround &&
+                          String(hlsInst.levels[requestedPlay4uLevel]?.attrs?.AUDIO || '').toLowerCase() !== 'aac51'
+                          ? hlsInst.levels.findIndex(l =>
+                              Number(l.height) === q &&
+                              String(l?.attrs?.AUDIO || '').toLowerCase() === 'aac51')
+                          : requestedPlay4uLevel)
+                      : hlsInst.levels.findIndex(l =>
+                          Number(l.height) === q &&
+                          (!play4uHasSurround ||
+                              String(l?.attrs?.AUDIO || '').toLowerCase() === 'aac51'));
             if (!Number.isFinite(q) || (q !== 0 && level < 0)) return;
             if (String(currentStreamProvider || '').toLowerCase() === 'play4u') {
                 play4uManualQualityLevel = level;
@@ -27213,8 +27221,13 @@ if (cookieHeader) params.set('cookie', String(cookieHeader));
                      play4uManualQualityLevel = -1;
                      manualQualityHeight = 0;
                      manualQualityLabel = '';
-                    hlsInst.autoLevelCapping = -1;
-                    hlsInst.nextLevel = -1;
+                     hlsInst.autoLevelCapping = -1;
+                     hlsInst.loadLevel = -1;
+                     hlsInst.nextLevel = -1;
+                     hlsInst.currentLevel = -1;
+                     try {
+                         hlsInst.startLoad(Math.max(0, Number(video?.currentTime || 0)));
+                     } catch (_) { }
                     return;
                 }
                  manualQualityHeight = q >= 2160 ? 2160
