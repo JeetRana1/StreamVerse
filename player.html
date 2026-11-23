@@ -17463,6 +17463,13 @@ video.addEventListener('canplay', (event) => {
         // tapping the video/backdrop area.
         document.addEventListener('pointerdown', e => {
             const target = e.target;
+            if (epPanel.classList.contains('open') &&
+                !epPanel.contains(target) &&
+                target !== epBtn &&
+                target !== customEpisodeBtn &&
+                !customEpisodeBtn?.contains(target)) {
+                epPanel.classList.remove('open');
+            }
             if (audioPanel.classList.contains('open') &&
                 !audioPanel.contains(target) &&
                 target !== audioBtn &&
