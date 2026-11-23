@@ -4750,9 +4750,9 @@ body.trailer-open {
 
 .updates-header-btn { width: 42px; height: 42px; border: 1px solid rgba(229,9,20,.45); border-radius: 50%; background: rgba(229,9,20,.12); color: #ff7180; cursor: pointer; }
 .updates-header-btn:hover { background: rgba(229,9,20,.28); transform: translateY(-1px); }
-.updates-modal { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 20px; background: rgba(2,3,6,.82); backdrop-filter: blur(12px); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+.updates-modal { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 20px; background: rgba(2,3,6,.78); backdrop-filter: blur(18px) saturate(135%); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
 .updates-modal.active { opacity: 1; pointer-events: auto; }
-.updates-modal-card { position: relative; width: min(590px, 100%); padding: 34px 36px 30px; border: 1px solid rgba(229,9,20,.42); border-radius: 20px; background: radial-gradient(circle at 100% 0, rgba(229,9,20,.16), transparent 34%), linear-gradient(145deg, #17191f, #0d0e12 72%); box-shadow: 0 30px 100px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.04) inset; color: #f4f5f7; font-family: inherit; }
+.updates-modal-card { position: relative; width: min(590px, 100%); padding: 34px 36px 30px; overflow: hidden; border: 1px solid rgba(255,255,255,.2); border-radius: 24px; background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.045) 48%, rgba(229,9,20,.08)), radial-gradient(circle at 100% 0, rgba(255,255,255,.16), transparent 32%); box-shadow: 0 30px 100px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.08) inset, 0 8px 35px rgba(255,255,255,.04) inset; backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); color: #f4f5f7; font-family: inherit; }
 .updates-modal-close { position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; background: rgba(255,255,255,.06); color: #c9cbd2; cursor: pointer; transition: .2s ease; }
 .updates-modal-close:hover { border-color: rgba(229,9,20,.7); background: rgba(229,9,20,.18); color: #fff; }
 .updates-kicker { color: #ff5360; font-size: .72rem; font-weight: 800; letter-spacing: .16em; }
