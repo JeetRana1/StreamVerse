@@ -1935,10 +1935,21 @@ mangaSpotlightLayout?.addEventListener('click', (e) => {
 
 document.getElementById('cache-clear-btn')?.addEventListener('click', async () => {
   try {
-    await window.StreamVerseStorage.clearCache();
-    window.location.reload();
+    const removed = await window.StreamVerseStorage.clearCache();
+    const button = document.getElementById('cache-clear-btn');
+    button?.classList.add('cleared');
+    if (button) {
+      button.title = `Cleared ${removed} cached item${removed === 1 ? '' : 's'}`;
+      button.innerHTML = '<i class="fa-solid fa-check"></i><span>Cleared</span>';
+    }
+    window.StreamVerseAuth?.notify?.(
+      `Cache cleared${removed ? ` — removed ${removed} item${removed === 1 ? '' : 's'}` : ''}.`,
+      'success',
+    );
+    window.setTimeout(() => window.location.reload(), 900);
   } catch (error) {
     console.warn('Unable to clear all cache:', error);
+    window.StreamVerseAuth?.notify?.('Unable to clear all cache. Please retry.', 'error');
   }
 });
 

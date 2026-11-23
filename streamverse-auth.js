@@ -151,17 +151,19 @@
             notice = document.createElement('div');
             notice.id = 'streamverse-sync-notice';
             notice.className = 'sv-sync-notice';
-            notice.style.cssText = 'position:fixed;top:24px;right:24px;z-index:11000;display:flex;align-items:center;gap:10px;padding:13px 17px;border:1px solid rgba(106,226,166,.4);border-radius:14px;background:rgba(10,11,15,.9);backdrop-filter:blur(18px);color:#b8f5d0;box-shadow:0 14px 35px rgba(0,0,0,.35);font:600 13px Segoe UI,system-ui,sans-serif;opacity:0;transform:translateY(-8px);transition:.25s ease;';
+            notice.style.cssText = 'position:fixed;top:115px;right:34px;z-index:11000;display:flex;align-items:center;gap:11px;min-width:220px;padding:14px 18px;border:1px solid rgba(255,255,255,.24);border-radius:17px;background:linear-gradient(135deg,rgba(255,255,255,.16),rgba(106,226,166,.08) 55%,rgba(10,11,15,.28));backdrop-filter:blur(24px) saturate(155%);-webkit-backdrop-filter:blur(24px) saturate(155%);color:#d7ffe5;box-shadow:0 18px 45px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.2),inset 0 -1px 0 rgba(106,226,166,.12);font:650 13px Segoe UI,system-ui,sans-serif;letter-spacing:.01em;opacity:0;transform:translateY(-8px) scale(.98);transition:opacity .25s ease,transform .25s ease;';
             document.body.appendChild(notice);
         }
         const isError = tone === 'error';
         notice.style.borderColor = isError ? 'rgba(255,93,89,.58)' : 'rgba(106,226,166,.4)';
-        notice.style.background = isError ? 'rgba(65,18,23,.94)' : 'rgba(10,11,15,.9)';
-        notice.style.color = isError ? '#ffaaa5' : '#b8f5d0';
+        notice.style.background = isError
+            ? 'linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,93,89,.18),rgba(65,18,23,.38))'
+            : 'linear-gradient(135deg,rgba(255,255,255,.16),rgba(106,226,166,.1),rgba(10,11,15,.28))';
+        notice.style.color = isError ? '#ffd0cc' : '#d7ffe5';
         notice.innerHTML = `<i class="fa-solid ${isError ? 'fa-right-from-bracket' : 'fa-circle-check'}"></i> ${escapeHtml(message)}`;
-        requestAnimationFrame(() => { notice.style.opacity = '1'; notice.style.transform = 'translateY(0)'; });
+        requestAnimationFrame(() => { notice.style.opacity = '1'; notice.style.transform = 'translateY(0) scale(1)'; });
         clearTimeout(notice._hideTimer);
-        notice._hideTimer = setTimeout(() => { notice.style.opacity = '0'; notice.style.transform = 'translateY(-8px)'; }, 3200);
+        notice._hideTimer = setTimeout(() => { notice.style.opacity = '0'; notice.style.transform = 'translateY(-8px) scale(.98)'; }, 3200);
     }
 
     function ensureMergeModalStyles() {
@@ -221,7 +223,7 @@
           .sv-merge-retry-button { display: grid; width: 42px; height: 42px; margin-right: 8px; place-items: center; border: 1px solid rgba(255,93,89,.58); border-radius: 14px; background: rgba(255,54,61,.16); color: #ffaaa5; cursor: pointer; box-shadow: 0 8px 20px rgba(190,24,45,.18), inset 0 1px rgba(255,255,255,.14); transition: .25s ease; }
           .sv-merge-retry-button:hover { transform: translateY(-2px); border-color: #ff7771; background: rgba(255,70,76,.29); color: #fff; }
           .sv-sync-notice { max-width: min(360px, calc(100vw - 32px)); }
-          @media (max-width: 600px) { .sv-sync-notice { top: 16px !important; right: 12px !important; left: 12px !important; justify-content: center; max-width: none; text-align: center; } }
+           @media (max-width: 600px) { .sv-sync-notice { top: 105px !important; right: 16px !important; left: auto !important; justify-content: flex-start; max-width: calc(100vw - 32px); text-align: left; } }
           @media (max-width: 520px) { .sv-merge-copy { padding: 22px 20px 2px; } .sv-merge-copy h2 { font-size: 22px; } .sv-merge-scroll { padding-bottom: 82px; } .sv-merge-list { grid-template-columns: repeat(3, minmax(80px, 1fr)); gap: 12px 8px; padding: 18px 20px 24px; } .sv-merge-item { padding: 6px; border-radius: 12px; } .sv-merge-modal > .sv-merge-actions { right: 20px; bottom: 20px; } .sv-merge-actions button { flex: 1; padding: 0 10px; } }
         `;
         document.head.appendChild(style);

@@ -5435,8 +5435,7 @@ body.watch-party-home-open {
         gap: 0.5rem;
     }
 
-    .api-switcher.dev-visible,
-    .cache-clear-btn {
+    .api-switcher.dev-visible {
         display: none;
     }
 

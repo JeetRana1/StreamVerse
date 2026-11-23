@@ -542,7 +542,11 @@ async function clearOldAppCache() {
         cacheClearBtn.innerHTML = '<i class="fa-solid fa-check"></i><span>Cleared</span>';
     }
 
-    window.location.reload();
+    window.StreamVerseAuth?.notify?.(
+        `Cache cleared${removed ? ` — removed ${removed} item${removed === 1 ? '' : 's'}` : ''}.`,
+        'success',
+    );
+    window.setTimeout(() => window.location.reload(), 900);
 }
 
 function isTmdbImageUrl(value) {
