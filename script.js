@@ -1387,6 +1387,32 @@ async function fetchDetails(id, type, provider = '') {
 
         if (!data) throw lastError || new Error('Failed to fetch details');
 
+        // Play4u cards can carry an IMDb id for newly indexed shows before
+        // TMDB search has indexed them. Resolve that IMDb id through Play4u,
+        // which already maps it to the canonical TMDB id, then reload the
+        // richer TMDB metadata instead of displaying "Unknown".
+        if (!provider && /^tt\d+$/i.test(String(id || '').trim())) {
+            const looksUnknown = !data.title && !data.name || String(data.title || data.name || '').trim().toLowerCase() === 'unknown';
+            if (looksUnknown || !Array.isArray(data.episodes) || data.episodes.length === 0) {
+                try {
+                    const metadataType = String(type || '').toLowerCase() === 'tv' ? 'tv' : 'movie';
+                    const play4uUrl = `${BASE_URL.replace('/meta/tmdb', '/movies/play4u')}/info?id=${encodeURIComponent(String(id).trim())}&type=${metadataType}`;
+                    const play4uData = await fetchJsonWithFallback(play4uUrl, 12000);
+                    const resolvedTmdbId = play4uData?.tmdbId || play4uData?.tmdb_id;
+                    if (resolvedTmdbId) {
+                        const tmdbData = await fetchJsonWithFallback(
+                            `${BASE_URL}/info/${encodeURIComponent(String(resolvedTmdbId))}?type=${metadataType}`,
+                            12000,
+                        );
+                        if (tmdbData) {
+                            data = tmdbData;
+                            id = String(resolvedTmdbId);
+                        }
+                    }
+                } catch (_) { /* retain the original response as a fallback */ }
+            }
+        }
+
         const movie = normalizeDetailPayload(data, id);
         writeDetailCache(id, type, provider, movie);
         return movie;
