@@ -5558,13 +5558,14 @@ if (watchedItem) {
         `;
         // Latest Play4u items use TMDB for the modal metadata, while retaining
         // Play4u as the preferred playback provider.
-        const hasModalTmdbId = Boolean(normalizedItem.tmdbId || normalizedItem.tmdb_id);
-        const modalProvider = normalizedItem.isPlay4uLatest && hasModalTmdbId ? '' : provider;
+        const modalMetadataId = normalizedItem.tmdbId || normalizedItem.tmdb_id || normalizedItem.imdbId || normalizedItem.imdb_id;
+        const hasModalMetadataId = Boolean(modalMetadataId);
+        const modalProvider = normalizedItem.isPlay4uLatest && hasModalMetadataId ? '' : provider;
         // Play4u latest cards use TMDB metadata, but their `id` is the
         // provider URL. Never send that URL to /meta/tmdb/info/: use the
         // enriched TMDB id when available.
-        const modalId = normalizedItem.isPlay4uLatest && hasModalTmdbId
-            ? (normalizedItem.tmdbId || normalizedItem.tmdb_id || normalizedItem.id)
+        const modalId = normalizedItem.isPlay4uLatest && hasModalMetadataId
+            ? modalMetadataId
             : id;
         card.onclick = () => openDetails(modalId, type, modalProvider, normalizedItem);
         // Play4u cards already contain the release metadata needed to render
