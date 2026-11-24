@@ -5558,8 +5558,15 @@ if (watchedItem) {
         `;
         // Latest Play4u items use TMDB for the modal metadata, while retaining
         // Play4u as the preferred playback provider.
-        const modalProvider = normalizedItem.isPlay4uLatest ? '' : provider;
-        card.onclick = () => openDetails(id, type, modalProvider, normalizedItem);
+        const hasModalTmdbId = Boolean(normalizedItem.tmdbId || normalizedItem.tmdb_id);
+        const modalProvider = normalizedItem.isPlay4uLatest && hasModalTmdbId ? '' : provider;
+        // Play4u latest cards use TMDB metadata, but their `id` is the
+        // provider URL. Never send that URL to /meta/tmdb/info/: use the
+        // enriched TMDB id when available.
+        const modalId = normalizedItem.isPlay4uLatest && hasModalTmdbId
+            ? (normalizedItem.tmdbId || normalizedItem.tmdb_id || normalizedItem.id)
+            : id;
+        card.onclick = () => openDetails(modalId, type, modalProvider, normalizedItem);
         // Play4u cards already contain the release metadata needed to render
         // the card and open the player. Do not prefetch every card's /info
         // endpoint on hover/touch; that creates a burst of 429s and slows the
