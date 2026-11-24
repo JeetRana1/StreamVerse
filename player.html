@@ -19337,6 +19337,25 @@ video.addEventListener('canplay', (event) => {
                 showError('Unknown catalog', 'This older history entry has no recoverable catalog ID. Open the title from its catalog to resume safely.');
                 return;
             }
+            // Play4u may launch new titles with an IMDb id before TMDB has
+            // indexed them. Resolve the canonical TMDB id before the player
+            // starts its provider fan-out; otherwise every fallback provider
+            // receives the IMDb id and returns noisy 404s.
+            if (String(FORCED_PROVIDER || '').toLowerCase() === 'play4u' && /^tt\d+$/i.test(String(TMDB_ID).trim())) {
+                try {
+                    const resolveUrl = `${API_BASE.replace('/meta/tmdb', '/movies/play4u')}/info?id=${encodeURIComponent(TMDB_ID)}&type=${encodeURIComponent(MEDIA_TYPE)}`;
+                    const resolved = await fetch(resolveUrl, { signal: AbortSignal.timeout(12000) });
+                    const payload = resolved.ok ? await resolved.json() : null;
+                    const canonicalId = payload?.tmdbId || payload?.tmdb_id;
+                    if (canonicalId && String(canonicalId) !== String(TMDB_ID)) {
+                        const next = new URL(location.href);
+                        next.searchParams.set('id', String(canonicalId));
+                        next.searchParams.set('db', 'tmdb');
+                        location.replace(next.toString());
+                        return;
+                    }
+                } catch (_) { /* continue with the original provider id */ }
+            }
             window.StreamVerseStorage.enrichHistory([playbackIdentity]).then(([mapped]) => {
                 if (mapped?.workMapping) playbackIdentity.workMapping = mapped.workMapping;
             }).catch(() => {});
