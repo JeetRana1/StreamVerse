@@ -5051,6 +5051,11 @@ function getProxiedUrl(url, referer = '') {
             if (isVidkingStream) return 'https://www.vidking.net/';
             if (/hubstream\.(?:art|pw|cc|ink|foo|boo)/i.test(rawUrl)) return 'https://hubstream.art/';
             if (/uprising\.best\//i.test(rawUrl)) return 'https://play4u.org/';
+            // Play4u currently serves its HLS/range assets from GothamNet.
+            // The CDN rejects FlixHQ's referer, which can happen when the
+            // shared fallback source normalizer is invoked with flixhq as the
+            // active provider.
+            if (/gothamnet\.vip\/range\//i.test(rawUrl)) return 'https://play4u.org/';
             const isFlixhqStream = providerName === 'flixhq' || /sb\d|mooncarpet|hydrogen|nightspeedster/i.test(rawUrl);
             if (isFlixhqStream) return 'https://flixhq.one/';
             return headerReferer || '';
@@ -6487,8 +6492,25 @@ function getProxiedUrl(url, referer = '') {
                   // perform the upgrade. Assigning currentLevel here flushes
                   // the video buffer immediately; audio can then continue
                   // while the decoder waits for a new video keyframe.
-                  hls.loadLevel = highest;
-                  hls.nextLevel = highest;
+                   if (!hls.autoLevelEnabled) hls.loadLevel = -1;
+                   // Suggest one sustainable step for the next fragment without
+                   // switching the current buffer or disabling automatic fallback.
+                   const current = hls.levels[hls.currentLevel];
+                   const bandwidth = Number(hls.bandwidthEstimate || 0);
+                   if (!video?.seeking && getBufferedAheadSeconds() >= 12 && current &&
+                       Date.now() - Number(hls.__svAutoStepAt || 0) >= 8000) {
+                       const next = playable
+                           .filter(({ level }) =>
+                               Number(level.height) > Number(current.height) &&
+                               String(level.videoCodec || '').split('.')[0] === String(current.videoCodec || '').split('.')[0] &&
+                               String(level.attrs?.AUDIO || '') === String(current.attrs?.AUDIO || ''))
+                           .sort((a, b) => Number(a.level.height) - Number(b.level.height))[0];
+                       const bitrate = Number(next?.level.maxBitrate || next?.level.bitrate || 0);
+                       if (next && bitrate > 0 && bandwidth > bitrate * 1.4) {
+                           hls.nextAutoLevel = next.index;
+                           hls.__svAutoStepAt = Date.now();
+                       }
+                   }
               } catch (_) { }
           }
 
@@ -6511,7 +6533,6 @@ function getProxiedUrl(url, referer = '') {
                  if (highest < 0) return;
                  try {
                      enforcePlay4uAutoQuality(restoreHls);
-                     restoreHls.startLoad(Math.max(0, Number(video.currentTime || 0)));
                      console.log('[hls] Play4u Auto restored highest level after playback resumed:', highest);
                  } catch (_) { }
              }, 1800);
@@ -6560,12 +6581,16 @@ function getProxiedUrl(url, referer = '') {
                 enableWorker: !isThumbnail && !isFlixHq,
                 lowLatencyMode: false,
                 backBufferLength: backBufferLength,
-                maxBufferLength: maxBufferLength,
-                maxMaxBufferLength: maxMaxBufferLength,
+                 maxBufferLength: isPlay4u && !isThumbnail
+                     ? (mobileMain ? 24 : 36)
+                     : maxBufferLength,
+                 maxMaxBufferLength: isPlay4u && !isThumbnail
+                     ? (mobileMain ? 48 : 72)
+                     : maxMaxBufferLength,
                  maxBufferSize: isHdstream && !isThumbnail ? 180 * 1000 * 1000 : maxBufferSize,
-                  abrEwmaDefaultEstimate: isHdstream && !isThumbnail ? 800000 : undefined,
-                  abrBandWidthFactor: isHdstream && !isThumbnail ? 0.7 : undefined,
-                  abrBandWidthUpFactor: isHdstream && !isThumbnail ? 0.5 : undefined,
+                   abrEwmaDefaultEstimate: isHdstream && !isThumbnail ? 800000 : Hls.DefaultConfig.abrEwmaDefaultEstimate,
+                   abrBandWidthFactor: isHdstream && !isThumbnail ? 0.7 : Hls.DefaultConfig.abrBandWidthFactor,
+                   abrBandWidthUpFactor: isHdstream && !isThumbnail ? 0.5 : Hls.DefaultConfig.abrBandWidthUpFactor,
                   startLevel: isHdstream && !isThumbnail ? 0 : (isAniKoto && !isThumbnail ? 0 : undefined),
                   autoLevelCapping: isHdstream && !isThumbnail ? 0 : undefined,
                 audioCodec: undefined,
@@ -6722,6 +6747,10 @@ function getProxiedUrl(url, referer = '') {
 
         function tuneHlsForJump(targetTime, jumpDistance = 0, reason = 'seek') {
             if (!hlsInst || !video) return;
+            // HLS.js handles media seeking itself, including cancelling stale
+            // fragments. Restarting both loaders here interrupts audio/video
+            // appends, especially during repeated skips.
+            if (String(currentStreamProvider || '').toLowerCase() === 'play4u') return;
 
             const clampedTarget = Math.max(0, Number(targetTime || 0));
             const isLargeJump = jumpDistance > 15;
@@ -6842,6 +6871,7 @@ function getProxiedUrl(url, referer = '') {
              // selection (including manual quality) across seeks and skips.
              if (isCurrentAniKotoStream()) return;
              const isPlay4u = String(currentStreamProvider || '').toLowerCase() === 'play4u';
+             if (isPlay4u) return;
              try {
                  // Play4u seeks do not need the emergency 360p downgrade.
                  // Keep the currently playing rendition while the target
@@ -7354,15 +7384,15 @@ if (parsedProvider.includes('hdstream')) {
                            .filter(({ level }) =>
                                String(level?.attrs?.AUDIO || '').toLowerCase() === 'aac51' &&
                                !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
-                             .at(-1)
+                              .find(Boolean)
                            || compatibleLevels
                                 .filter(({ level }) => String(level?.attrs?.AUDIO || '').toLowerCase() === 'aac51')
-                                  .at(-1)
+                                   .find(Boolean)
                             || compatibleLevels
                                 .filter(({ level }) =>
                                     !/\b(?:hev1|hvc1)\b/i.test(String(level?.codecSet || level?.codecs || '')))
-                                  .at(-1)
-                            || compatibleLevels.at(-1);
+                                   .find(Boolean)
+                             || compatibleLevels[0];
                       // Warm up on the smallest rendition, then release hls.js
                       // back to ABR. Pinning currentLevel here disables the
                       // automatic climb and can leave playback at the startup level.
@@ -7384,7 +7414,7 @@ if (parsedProvider.includes('hdstream')) {
                                     return label === requestedLabel;
                                 }).at(-1)
                                 : null;
-                            hls.startLevel = requested?.index ?? compatibleLevels[compatibleLevels.length - 1].index;
+                             hls.startLevel = requested?.index ?? preferredStartup?.index ?? compatibleLevels[0].index;
                             hls.autoLevelCapping = requested?.index ?? compatibleLevels[compatibleLevels.length - 1].index;
                        }
                           const play4uLoadTarget = Math.max(0, Number(initialSeekTime || startTime || 0));
@@ -7433,16 +7463,13 @@ if (parsedProvider.includes('hdstream')) {
                               hls.autoLevelCapping = play4uManualQualityLevel >= 0
                                   ? play4uManualQualityLevel
                                   : highestCompatible;
-                            hls.nextLevel = play4uManualQualityLevel >= 0
-                                ? play4uManualQualityLevel
-                                : highestCompatible;
                             if (play4uManualQualityLevel < 0 && highestCompatible >= 0) {
                                 // Auto should not remain parked on the
                                 // startup rendition after the manifest has
                                 // buffered. Ask hls.js to try the highest
                                 // compatible rendition; normal ABR/error
                                 // handling can still step down if needed.
-                                hls.loadLevel = highestCompatible;
+                                 enforcePlay4uAutoQuality(hls);
                             }
                           console.log('[hls] Play4u released startup cap; ABR can climb to:', hls.levels[highestLevel]?.height || 'unknown');
                       }, 12000);
@@ -7559,8 +7586,7 @@ if (parsedProvider.includes('hdstream')) {
                      }, -1);
                      if (highestPlayable >= 0) {
                          hls.autoLevelCapping = highestPlayable;
-                         hls.loadLevel = highestPlayable;
-                         hls.nextLevel = highestPlayable;
+                          enforcePlay4uAutoQuality(hls);
                      }
                      return;
                  }
@@ -10680,7 +10706,12 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             ].join('|');
             if (providerEpisodeIdCache.has(cacheKey)) {
                 const cached = providerEpisodeIdCache.get(cacheKey);
-                return { info: cached?.info || null, episodeId: cached?.episodeId || null };
+                return {
+                    info: cached?.info || null,
+                    episodeId: cached?.episodeId || null,
+                    resolvedSeasonNo: cached?.resolvedSeasonNo || 0,
+                    resolvedEpisodeNo: cached?.resolvedEpisodeNo || 0,
+                };
             }
 
             const movieProviderBase = API_BASE.replace('/meta/tmdb', `/movies/${provider}`);
@@ -10697,6 +10728,10 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                             const wantedSeason = safeNo(seasonNo);
                             const wantedEpisode = safeNo(episodeNo);
                             const episodes = Array.isArray(info.episodes) ? info.episodes : [];
+                            // Play4u's /s-XX/ep-01 URL is a real playable
+                            // episode even when its title is formatted as
+                            // "S01 - Season 1". Do not discard it.
+                            const playableEpisodes = episodes;
                             const parsePlay4uEpisode = (episode) => {
                                 const raw = String(
                                     episode?.id || episode?.episodeId || episode?.url || '',
@@ -10706,24 +10741,54 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                                     ? { season: Number(match[1]), episode: Number(match[2]) }
                                     : { season: 0, episode: 0 };
                             };
-                            const exactEpisode = episodes.find((episode) => {
+                            const exactEpisode = playableEpisodes.find((episode) => {
                                 const parsed = parsePlay4uEpisode(episode);
                                 return parsed.season === wantedSeason && parsed.episode === wantedEpisode;
                             });
-                            // Never synthesize a URL for a season absent from
-                            // Play4u. That previously redirected Season 7
-                            // requests to Season 1 Episode 1.
+                            // If the requested TMDB season/episode is not
+                            // present, use the first real Play4u episode from
+                            // the next available season instead of returning
+                            // "No episode ID found" and leaving the player
+                            // unusable. This matters for shows such as You,
+                            // where Play4u exposes a season marker plus the
+                            // actual episodes from a later season.
                             if (!exactEpisode) {
-                                play4uUnavailableEpisode = true;
-                                providerEpisodeIdCache.set(cacheKey, { info, episodeId: null });
+                                const fallbackEpisode = playableEpisodes
+                                    .map((episode) => ({ episode, parsed: parsePlay4uEpisode(episode) }))
+                                    .filter(({ parsed }) => parsed.season > wantedSeason || (parsed.season === wantedSeason && parsed.episode > wantedEpisode))
+                                    .sort((a, b) => a.parsed.season - b.parsed.season || a.parsed.episode - b.parsed.episode)[0]
+                                    ?.episode || episodes[0];
+                                episodeId = fallbackEpisode?.id || fallbackEpisode?.episodeId || fallbackEpisode?.url || null;
+                                if (!episodeId) {
+                                    play4uUnavailableEpisode = true;
+                                    providerEpisodeIdCache.set(cacheKey, { info, episodeId: null });
+                                    return { info, episodeId: null };
+                                }
                                 console.warn('[play4u] requested episode is unavailable:', {
                                     season: wantedSeason,
                                     episode: wantedEpisode,
                                     available: [...new Set(episodes.map((episode) => parsePlay4uEpisode(episode).season).filter(Boolean))],
+                                    fallbackEpisodeId: episodeId,
                                 });
-                                return { info, episodeId: null };
+                                const fallbackParsed = fallbackEpisode
+                                    ? parsePlay4uEpisode(fallbackEpisode)
+                                    : { season: 0, episode: 0 };
+                                providerEpisodeIdCache.set(cacheKey, {
+                                    info,
+                                    episodeId,
+                                    resolvedSeasonNo: fallbackParsed.season,
+                                    resolvedEpisodeNo: fallbackParsed.episode,
+                                });
+                                return {
+                                    info,
+                                    episodeId,
+                                    resolvedSeasonNo: fallbackParsed.season,
+                                    resolvedEpisodeNo: fallbackParsed.episode,
+                                };
                             }
-                            episodeId = exactEpisode.id || exactEpisode.episodeId || exactEpisode.url || null;
+                            if (exactEpisode) {
+                                episodeId = exactEpisode.id || exactEpisode.episodeId || exactEpisode.url || null;
+                            }
                         }
                         providerEpisodeIdCache.set(cacheKey, { info, episodeId });
                         return { info, episodeId };
@@ -22589,10 +22654,14 @@ item.innerHTML = `
             const hintAbsoluteEpisodeNo = Number(hint?.absoluteEpisodeNo || 0);
             const activeSeason = tvSeasons?.[Number(si || 0)] || null;
             const activeEpisode = activeSeason?.episodes?.[Number(ei || 0)] || null;
-            const currentEpisodeId = String(activeEpisode?.id || activeEpisode?.providerEpisodeId || hintEpisodeId || bootEpisodeId).trim().toLowerCase();
+            const currentEpisodeId = String(hintEpisodeId || activeEpisode?.id || activeEpisode?.providerEpisodeId || bootEpisodeId).trim().toLowerCase();
             const episodeRows = Array.from(epPanel.querySelectorAll('.ep-item'));
             // Select an exact ID before numeric fallbacks can claim a duplicate season-zero row.
-            const exactRow = currentEpisodeId && episodeRows.find((el) => String(el.dataset.episodeId || '').trim().toLowerCase() === currentEpisodeId);
+            const exactRow = (currentEpisodeId && episodeRows.find((el) => String(el.dataset.episodeId || '').trim().toLowerCase() === currentEpisodeId))
+                || (hint && hintSeasonNo > 0 && hintEpisodeNo > 0 && episodeRows.find((el) =>
+                    Number(el.dataset.seasonNo) === hintSeasonNo &&
+                    Number(el.dataset.episodeNo) === hintEpisodeNo &&
+                    (!hintProvider || !el.dataset.provider || el.dataset.provider === hintProvider)));
             const activeSeasonNoRaw = Number(activeSeason?.seasonNo || activeSeason?.season || activeSeason?.number || 0);
             const activeEpisodeNoRaw = Number(activeEpisode?.episode || activeEpisode?.number || activeEpisode?.episodeNum || 0);
             const activeSeasonNo = Number.isFinite(activeSeasonNoRaw) && activeSeasonNoRaw > 0
@@ -23487,7 +23556,9 @@ item.innerHTML = `
                 }
             }
             const hintedProvider = String(selectionHint?.provider || '').trim().toLowerCase();
-            if (selectionHint && currentIsLikelyAnime) {
+            // Menu selections carry the actual season number even when the
+            // visible provider catalog has been compacted to a single season.
+            if (selectionHint && (currentIsLikelyAnime || inAppEpisodeNavigation)) {
                 const hintSeasonNo = Number(selectionHint?.seasonNo || 0);
                 const hintEpisodeNo = Number(selectionHint?.episodeNo || 0);
                 if (Number.isFinite(hintSeasonNo) && hintSeasonNo > 0) selectedSeasonNo = hintSeasonNo;
@@ -24739,16 +24810,20 @@ item.innerHTML = `
                             const flixhqSelectedEpisodeId = String(selectionHint?.episodeId || bootEpisodeId || selectedEpisode?.id || '').trim();
                             const canUseSelectedEpisodeId = isLikelyFlixhqProviderEpisodeId(flixhqSelectedEpisodeId);
                             if (effectiveMediaType === 'movie' || !canUseSelectedEpisodeId) {
-                                const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, effectiveMediaType, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
-                                provEpisodeId = resolved?.episodeId;
+                             const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, effectiveMediaType, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
+                             if (resolved?.resolvedSeasonNo > 0) selectedSeasonNo = resolved.resolvedSeasonNo;
+                             if (resolved?.resolvedEpisodeNo > 0) selectedEpisodeNo = resolved.resolvedEpisodeNo;
+                             provEpisodeId = resolved?.episodeId;
                                 if (resolved?.info) info = resolved.info;
                             } else if (effectiveMediaType === 'tv' && canUseSelectedEpisodeId) {
                                 provEpisodeId = flixhqSelectedEpisodeId;
                             }
                         }
                         if (!provEpisodeId && !isFlixhqProvider && !isVegamoviesProvider && provider !== 'hdstream4u') {
-                            const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, effectiveMediaType, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
-                            provEpisodeId = resolved?.episodeId;
+                             const resolved = await resolveMovieProviderEpisodeIdBySearch(provider, effectiveMediaType, currentMediaInfo?.title || currentMediaInfo?.name || '', selectedSeasonNo, selectedEpisodeNo);
+                             if (resolved?.resolvedSeasonNo > 0) selectedSeasonNo = resolved.resolvedSeasonNo;
+                             if (resolved?.resolvedEpisodeNo > 0) selectedEpisodeNo = resolved.resolvedEpisodeNo;
+                             provEpisodeId = resolved?.episodeId;
                             if (resolved?.info) info = resolved.info;
                         }
                         if (!provEpisodeId && !isFlixhqProvider && !isVegamoviesProvider && provider !== 'hdstream4u') {

@@ -6311,6 +6311,23 @@ async function watchNow(id, type, provider = '', animeLike = false) {
     }
 
     if (resolvedProvider) params.set('provider', String(resolvedProvider));
+    // Do not block homepage navigation on TMDB plus provider inventory
+    // requests. The player already performs the authoritative resolution and
+    // can show its loading state immediately. Keeping this redirect
+    // synchronous makes Watch Now feel instant instead of waiting on two
+    // sequential network calls.
+    if (safeType === 'tv') {
+        params.set('season', canonicalId === '11436' ? '20' : '1');
+        params.set('episode', '1');
+        params.set('seasonTitle', canonicalId === '11436' ? 'Season 20' : 'Season 1');
+        if (canonicalId === '11436') {
+            params.set('episodeId', '11436-s20e1');
+        }
+        params.set('resume', '0');
+        savePlaybackReturnState();
+        window.location.href = `/player?${params.toString()}`;
+        return;
+    }
     if (safeType === 'tv') {
         try {
             const response = await fetch(`${BASE_URL}/info/${encodeURIComponent(canonicalId)}?type=tv`, { signal: AbortSignal.timeout(12000) });
@@ -6368,7 +6385,13 @@ async function watchNow(id, type, provider = '', animeLike = false) {
                             episode: Number(ep.episodeNumber ?? ep.episode ?? ep.number ?? ep.episodeNo ?? 0),
                             id: String(ep.episodeId || ep.id || ep.url || ''),
                             category: String(ep.category || ''),
-                        })).filter(ep => ep.season > 0 && ep.episode > 0 && ep.id && !/bonus|special/.test(ep.category));
+                            title: String(ep.title || ep.name || ''),
+                        })).filter(ep =>
+                            ep.season > 0 &&
+                            ep.episode > 0 &&
+                            ep.id &&
+                            !/bonus|special/.test(ep.category)
+                        );
                     } catch (_) { return []; }
                 }));
                 const available = inventories.flat().sort((a, b) => a.season - b.season || a.episode - b.episode);
