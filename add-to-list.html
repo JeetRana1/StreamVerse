@@ -21,6 +21,7 @@
         #watchlist-grid { margin-top: 28px; }
         .watchlist-back-btn { border: 1px solid rgba(255,255,255,.18); border-radius: 10px; padding: 9px 12px; background: rgba(255,255,255,.07); color: #fff; cursor: pointer; font: inherit; }
         .watchlist-back-btn:hover { border-color: rgba(229,9,20,.7); background: rgba(229,9,20,.16); }
+        .watchlist-type-badge { top: 44px; right: 10px; }
         .empty-watchlist {
             text-align: center;
             padding: 100px 20px;
@@ -143,7 +144,11 @@
             grid.innerHTML = watchlist.map(item => `
                 <div class="movie-card" onclick="openDetails('${item.id}', '${item.type}', '${item.provider || ''}')">
                     <img src="${item.poster}" alt="${item.title}" loading="lazy" onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Poster'">
-                    <span class="quality-badge">HD</span>
+                    <span class="quality-badge latest-hd">HD</span>
+                    <span class="season-episode-badge type-label-badge watchlist-type-badge">
+                        <i class="fa-solid ${item.type === 'tv' ? 'fa-tv' : 'fa-film'}"></i>
+                        <span>${item.type === 'tv' ? 'TV' : 'Movie'}</span>
+                    </span>
                     <div class="movie-card-info">
                         <h3 class="movie-card-title">${item.title}</h3>
                         <div class="movie-card-meta">

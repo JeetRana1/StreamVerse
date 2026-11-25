@@ -164,7 +164,7 @@
             <!-- Continue Watching Section -->
             <section class="row-section" id="continue-watching-section" style="display: none;">
                 <div class="section-title-row">
-                    <h2 class="section-title">Continue Watching</h2>
+                    <h2 class="section-title"><i class="fa-solid fa-clock-rotate-left continue-section-icon" aria-hidden="true"></i>Continue Watching</h2>
                     <div class="continue-actions" id="continue-actions">
                         <button type="button" class="continue-action-btn" id="continue-clear-toggle"><i class="fa-solid fa-trash-can"></i> Clear</button>
                         <button type="button" class="continue-action-btn continue-action-btn-danger" id="continue-clear-confirm" style="display:none;"><i class="fa-solid fa-trash-can"></i> Clear Selected</button>
@@ -180,7 +180,7 @@
             <!-- Latest on Play4u -->
             <section class="row-section" id="latest-section" style="display: none;">
                 <div class="section-title-row">
-                    <h2 class="section-title"><span class="new-section-mark"><i class="fa-solid fa-bolt"></i> New</span> Latest Releases</h2>
+                    <h2 class="section-title"><span class="new-section-mark"><i class="fa-solid fa-bolt"></i> New</span><span class="section-heading-label"><i class="fa-solid fa-clock-rotate-left"></i>Latest Releases</span></h2>
                 </div>
                 <div class="movie-grid" id="latest-grid"></div>
                 <div class="latest-actions">
@@ -192,7 +192,7 @@
 
             <!-- Trending Now -->
             <section class="row-section" id="trending-section">
-                <h2 class="section-title">Trending Now</h2>
+                <h2 class="section-title"><i class="fa-solid fa-fire section-heading-icon"></i>Trending Now</h2>
                 <div class="movie-grid" id="trending-grid">
                     <!-- Skeletons -->
                     <div class="skeleton-card"></div>
@@ -205,25 +205,25 @@
 
             <!-- Popular Movies -->
             <section class="row-section" id="popular-movies-section">
-                <h2 class="section-title">Popular Movies</h2>
+                <h2 class="section-title"><i class="fa-solid fa-film section-heading-icon"></i>Popular Movies</h2>
                 <div class="movie-grid" id="popular-movies-grid"></div>
             </section>
 
             <!-- Popular TV Shows -->
             <section class="row-section" id="popular-tv-section">
-                <h2 class="section-title">Popular TV Shows</h2>
+                <h2 class="section-title"><i class="fa-solid fa-tv section-heading-icon"></i>Popular TV Shows</h2>
                 <div class="movie-grid" id="popular-tv-grid"></div>
             </section>
 
             <!-- Top Rated -->
             <section class="row-section" id="top-rated-section">
-                <h2 class="section-title">Top Rated Movies</h2>
+                <h2 class="section-title"><i class="fa-solid fa-star section-heading-icon"></i>Top Rated Movies</h2>
                 <div class="movie-grid" id="top-rated-grid"></div>
             </section>
 
             <!-- All Movies / TV -->
              <section class="row-section" id="all-media-section">
-                 <div class="section-title-row category-title-row"><h2 class="section-title">All Movies / TV</h2><button type="button" class="genre-filter-btn" id="genre-filter-btn" aria-expanded="false" aria-controls="genre-filter-panel" title="Filter by genre"><i class="fa-solid fa-sliders"></i><span>Genre</span></button></div>
+                 <div class="section-title-row category-title-row"><h2 class="section-title"><i class="fa-solid fa-layer-group section-heading-icon"></i>All Movies / TV</h2><button type="button" class="genre-filter-btn" id="genre-filter-btn" aria-expanded="false" aria-controls="genre-filter-panel" title="Filter by genre"><i class="fa-solid fa-sliders"></i><span>Genre</span></button></div>
                 <div class="movie-grid" id="all-media-grid">
                     <div class="skeleton-card"></div>
                     <div class="skeleton-card"></div>
@@ -232,8 +232,8 @@
                     <div class="skeleton-card"></div>
                     <div class="skeleton-card"></div>
                 </div>
-                <div class="all-media-actions">
-                    <button type="button" class="continue-action-btn" id="all-media-more-btn" style="display:none;">Load More</button>
+                    <div class="all-media-actions">
+                    <button type="button" class="latest-more-btn" id="all-media-more-btn" style="display:none;"><i class="fa-solid fa-plus"></i> Load More</button>
                 </div>
             </section>
         </div>
@@ -292,7 +292,7 @@
     <script src="/streamverse-storage.js"></script>
     <script src="/streamverse-auth.js"></script>
     <script src="/config.js"></script>
-    <script src="script.js?v=3.28"></script>
+    <script src="script.js?v=3.32"></script>
     
 </body>
 

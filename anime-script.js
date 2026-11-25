@@ -1167,7 +1167,7 @@ function createContinueWatchingCard(item) {
             ${typeBadge}
         </div>
         <div class="audio-badge">
-            <span class="audio-dot"></span>
+            <i class="fa-solid fa-language audio-icon" aria-hidden="true"></i>
             ${audioLabel}
         </div>
         <div class="continue-play-overlay">

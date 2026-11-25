@@ -455,6 +455,7 @@ let hydrationObserver = null;
 let continueSelectionMode = false;
 let continueSelectedKeys = new Set();
 let continueRenderSignature = '';
+let continueWatchingExpanded = false;
 const homepageFeaturedMediaKeys = new Set();
 let activeGenreFilterId = null;
 let activeGenreFilterIds = [];
@@ -839,9 +840,19 @@ function writeDetailCache(id, type, provider = '', data) {
 }
 
 // ------------------ CONTINUE WATCHING -------------------------------------
-function loadContinueWatching() {
+let continueWatchingLoadVersion = 0;
+async function loadContinueWatching() {
     if (!continueWatchingGrid || !continueWatchingSection) return;
-    window.StreamVerseStorage.refreshHistory().catch(() => {});
+    const loadVersion = ++continueWatchingLoadVersion;
+    // Refresh the shared history before reading localStorage. Rendering the
+    // stale snapshot first can leave only the "Show more" tile visible while
+    // the refreshed cards are being merged on startup/refresh.
+    try {
+        await window.StreamVerseStorage.refreshHistory();
+    } catch (_) {
+        // Local history remains usable when the remote refresh is unavailable.
+    }
+    if (loadVersion !== continueWatchingLoadVersion) return;
     applyContinueGridLayout();
 
     const raw = localStorage.getItem('sv_continue_watching');
@@ -1026,8 +1037,12 @@ function renderContinueWatching(items) {
     continueWatchingSection.style.display = 'block';
 
     const maxInitialCards = 6;
-    const initialItems = continueSelectionMode ? items.slice() : items.slice(0, maxInitialCards);
-    const remainingItems = continueSelectionMode ? [] : items.slice(maxInitialCards);
+    const initialItems = continueSelectionMode || continueWatchingExpanded
+        ? items.slice()
+        : items.slice(0, maxInitialCards);
+    const remainingItems = continueSelectionMode || continueWatchingExpanded
+        ? []
+        : items.slice(maxInitialCards);
 
     // Render initial cards
     initialItems.forEach(item => {
@@ -1035,29 +1050,37 @@ function renderContinueWatching(items) {
         continueWatchingGrid.appendChild(card);
     });
 
-    // Add "more..." button if there are more items
+    // Add a toggle tile when the list can be expanded or collapsed.
     if (remainingItems.length > 0) {
         const moreButton = document.createElement('div');
         moreButton.className = 'continue-more-button';
         moreButton.innerHTML = `
             <div class="more-button-content">
-                <i class="fa-solid fa-plus"></i>
+                <i class="fa-solid fa-layer-group"></i>
                 <span>Show ${remainingItems.length} more</span>
             </div>
         `;
 
         moreButton.onclick = () => {
-            // Remove the button
-            moreButton.remove();
-
-            // Add remaining cards
-            remainingItems.forEach(item => {
-                const card = createContinueWatchingCard(item);
-                continueWatchingGrid.appendChild(card);
-            });
+            continueWatchingExpanded = true;
+            renderContinueWatching(items);
         };
 
         continueWatchingGrid.appendChild(moreButton);
+    } else if (!continueSelectionMode && continueWatchingExpanded && items.length > maxInitialCards) {
+        const lessButton = document.createElement('div');
+        lessButton.className = 'continue-more-button continue-less-button';
+        lessButton.innerHTML = `
+            <div class="more-button-content">
+                <i class="fa-solid fa-angles-up"></i>
+                <span>Show less</span>
+            </div>
+        `;
+        lessButton.onclick = () => {
+            continueWatchingExpanded = false;
+            renderContinueWatching(items);
+        };
+        continueWatchingGrid.appendChild(lessButton);
     }
 }
 
@@ -1226,13 +1249,13 @@ const { seasonNo, isSpecial, specialName } = resolveContinueSeasonInfo(item);
         ? (isSpecial ? ` - ${specialName}` : ` - S${seasonNo}E${episodeNo}`)
         : '';
     const seasonEpisodeBadge = item.type === 'tv'
-        ? (isSpecial
-            ? `<span class="season-episode-badge">Special EP${episodeNo}</span>`
-            : `<span class="season-episode-badge">S${seasonNo}E${episodeNo}</span>`)
+            ? (isSpecial
+                ? `<span class="season-episode-badge"><i class="fa-solid fa-list-ol"></i><span>Special EP${episodeNo}</span></span>`
+                : `<span class="season-episode-badge"><i class="fa-solid fa-list-ol"></i><span>S${seasonNo}E${episodeNo}</span></span>`)
         : '';
     const typeBadge = item.type === 'tv'
-        ? '<span class="meta-pill-left"><i class="fa-solid fa-tv"></i><span>TV</span></span>'
-        : '<span class="meta-pill-left"><i class="fa-solid fa-film"></i><span>Movie</span></span>';
+        ? '<span class="season-episode-badge type-label-badge"><i class="fa-solid fa-tv"></i><span>TV</span></span>'
+        : '<span class="season-episode-badge type-label-badge"><i class="fa-solid fa-film"></i><span>Movie</span></span>';
 
     card.innerHTML = `
         <img class="continue-card-poster" src="${imgUrl(item.poster)}" alt="${item.title}" loading="lazy"
@@ -1242,8 +1265,8 @@ const { seasonNo, isSpecial, specialName } = resolveContinueSeasonInfo(item);
         <div class="movie-card-meta-left">
             ${typeBadge}
         </div>
-        <div class="audio-badge">
-            <span class="audio-dot"></span>
+        <div class="quality-badge latest-audio audio-badge">
+            <i class="fa-solid fa-language audio-icon" aria-hidden="true"></i>
             ${audioLabel}
         </div>
         <div class="continue-play-overlay">
@@ -4967,7 +4990,9 @@ function renderAllMediaSection() {
         const canReveal = allMediaState.visibleCount < allMediaState.items.length;
         allMediaMoreBtn.style.display = (canReveal || allMediaState.hasMore) ? 'inline-flex' : 'none';
         allMediaMoreBtn.disabled = allMediaState.loading;
-        allMediaMoreBtn.textContent = allMediaState.loading ? 'Loading...' : 'Load More';
+        allMediaMoreBtn.innerHTML = allMediaState.loading
+            ? '<i class="fa-solid fa-spinner fa-spin"></i> Loading…'
+            : '<i class="fa-solid fa-plus"></i> Load More';
     }
 }
 
@@ -5543,8 +5568,8 @@ if (watchedItem) {
                                 const seasonNo = seasonInfo.seasonNo;
                                 const episodeNo = Number(watchedItem.episodeNo || watchedItem.episode || 1);
                                 seasonEpisodeBadge = seasonInfo.isSpecial
-                                    ? `<span class="season-episode-badge">Special EP${episodeNo}</span>`
-                                    : `<span class="season-episode-badge">S${seasonNo}E${episodeNo}</span>`;
+                                    ? `<span class="season-episode-badge"><i class="fa-solid fa-list-ol"></i><span>Special EP${episodeNo}</span></span>`
+                                    : `<span class="season-episode-badge"><i class="fa-solid fa-list-ol"></i><span>S${seasonNo}E${episodeNo}</span></span>`;
                             } else {
                                 seasonEpisodeBadge = `<span class="season-episode-badge type-label-badge"><i class="fa-solid fa-tv"></i><span>TV</span></span>`;
                             }
@@ -5569,7 +5594,13 @@ if (watchedItem) {
             <img src="${poster}" alt="${title}" loading="lazy"
                  onerror="this.src='https://placehold.co/300x450/1a1a2e/e50914?text=No+Image'">
             <span class="quality-badge ${qualityClass}" data-quality-badge>${qualityLabel}</span>
-            ${normalizedItem.isNew ? '<span class="new-card-badge">New</span>' : ''}
+            ${normalizedItem.isNew ? `<span class="new-card-badge">${
+                normalizedItem.latestLabel
+                    ? String(normalizedItem.latestLabel).replace(/[&<>"']/g, (char) => ({
+                        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+                    }[char]))
+                    : 'New'
+            }</span>` : ''}
             <div class="card-rating-ring" style="--rating-progress:${ratingProgress}">
                 <span class="card-rating-ring-value"><i class="fa-solid fa-star"></i> ${rating}</span>
             </div>
@@ -5757,13 +5788,29 @@ function isMobileSearchViewport() {
     return window.matchMedia('(max-width: 768px)').matches;
 }
 
-async function fetchPlay4uLatest(page = 1, append = false, signal = null) {
+async function fetchPlay4uLatest(page = 1, append = false, signal = null, retry = 0) {
     if (!latestGrid || !latestSection) return false;
     try {
         const base = BASE_URL.replace('/meta/tmdb', '/movies/play4u');
-        const data = await fetchJsonWithFallback(`${base}/latest?page=${page}`, API_TIMEOUT_MS, signal);
-        const items = Array.isArray(data?.results) ? data.results : [];
-        if (!items.length) return false;
+        const cacheBust = retry > 0 ? `&retry=${retry}` : '';
+        const data = await fetchJsonWithFallback(`${base}/latest?page=${page}${cacheBust}`, API_TIMEOUT_MS, signal);
+        const items = Array.isArray(data?.results)
+            ? data.results
+            : (Array.isArray(data?.data?.results) ? data.data.results : []);
+        if (!items.length && retry < 1) {
+            // Play4u occasionally returns an empty page while its latest feed
+            // is rebuilding. Retry once so refreshes do not leave an empty
+            // Latest Releases rail with only the View More button.
+            return fetchPlay4uLatest(page, append, signal, retry + 1);
+        }
+        if (!items.length) {
+            if (!append) {
+                latestGrid.innerHTML = '';
+                latestSection.style.display = 'none';
+                if (latestMoreBtn) latestMoreBtn.style.display = 'none';
+            }
+            return false;
+        }
         const totalPages = Number(data?.totalPages || page);
         const newItems = append
             ? items.filter((item) => !latestItems.some((existing) => String(existing.id) === String(item.id)))
@@ -5775,6 +5822,9 @@ async function fetchPlay4uLatest(page = 1, append = false, signal = null) {
             return fetchPlay4uLatest(page + 1, true, signal);
         }
         latestSection.style.display = '';
+        latestGrid.style.display = 'grid';
+        latestGrid.style.visibility = 'visible';
+        latestGrid.style.opacity = '1';
         latestPage = page;
         latestItems = append
             ? [...latestItems, ...newItems]

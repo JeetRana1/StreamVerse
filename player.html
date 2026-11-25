@@ -5617,6 +5617,7 @@ function getProxiedUrl(url, referer = '') {
         let controlsHideTimer;
         let isUiLocked = false;
         let animeSkipSegments = { intro: null, outro: null };
+        let providerSkipSegments = [];
         let skippedSegments = { intro: false, outro: false };
         let hasApiSkipSegments = false;
         const HDSTREAM_FALLBACK_INTRO_SECONDS = 60; // hdstream movies: first ~1 min is the studio intro
@@ -7006,8 +7007,16 @@ function getProxiedUrl(url, referer = '') {
                 jumpRecoveryTimer = null;
             }
 
+            // Skips should be immediate. Restarting/tuning HLS before the seek
+            // can abort XHRLoader while it is replacing a fragment.
+            if (reason === 'skip') {
+                forceVideoSeek(clampedTarget);
+                pendingJumpTarget = null;
+                return;
+            }
+
             // ENHANCED: More aggressive HLS tuning for better responsiveness
-            if (!targetAlreadyBuffered && (reason === 'skip' || jumpDistance > 20)) {
+            if (!targetAlreadyBuffered && jumpDistance > 20) {
                 tuneHlsForJump(clampedTarget, jumpDistance, reason);
             } else if (!targetAlreadyBuffered && jumpDistance > 5) {
                 tuneHlsForJump(clampedTarget, jumpDistance, reason);
@@ -13046,6 +13055,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             hasProviderSkipSegments = false;
             aniSkipFetchStatus = 'none';
             animeSkipSegments = { intro: null, outro: null };
+            providerSkipSegments = [];
             skippedSegments = { intro: false, outro: false };
             hasApiSkipSegments = false;
             _lastSkipUiTime = 0;
@@ -13075,9 +13085,34 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
         function applySourceSkipSegments(source) {
             resetAnimeSkipState();
-            hasProviderSkipSegments = source?.provider === 'anikoto' && applyApiSkipSegments(source);
+            hasProviderSkipSegments = applyProviderSkipSegments(source?.skipSegments) ||
+                (source?.provider === 'anikoto' && applyApiSkipSegments(source));
             updateSkipSegmentButton();
             if (!hasProviderSkipSegments && currentIsLikelyAnime) fetchAniSkipSegmentsForCurrentEpisode();
+        }
+
+        function applyProviderSkipSegments(rawSegments) {
+            if (!Array.isArray(rawSegments)) return false;
+            providerSkipSegments = rawSegments
+                .map((segment) => {
+                    const start = Number(segment?.start);
+                    const rawEnd = segment?.end == null ? null : Number(segment.end);
+                    const normalized = Number.isFinite(start) && (rawEnd == null || (Number.isFinite(rawEnd) && rawEnd > start))
+                        ? { start, end: rawEnd }
+                        : null;
+                    const type = String(segment?.type || '').toLowerCase();
+                    return normalized && ['recap', 'intro', 'credits', 'outro'].includes(type)
+                        ? { ...normalized, type }
+                        : null;
+                })
+                .filter(Boolean);
+            if (!providerSkipSegments.length) return false;
+            providerSkipSegments.forEach((segment) => {
+                if (!skippedSegments[segment.type]) skippedSegments[segment.type] = false;
+            });
+            hasApiSkipSegments = true;
+            updateSkipMarkers();
+            return true;
         }
 
         function applyApiSkipSegments(payload) {
@@ -13118,6 +13153,10 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
             const dur = video.duration;
             const segments = [];
+            providerSkipSegments.forEach((segment) => segments.push({
+                ...segment,
+                end: segment.end == null ? dur : segment.end,
+            }));
             if (animeSkipSegments.intro) segments.push({ ...animeSkipSegments.intro, type: 'intro' });
             if (animeSkipSegments.outro) segments.push({ ...animeSkipSegments.outro, type: 'outro' });
             if (fallbackIntro) segments.push({ ...fallbackIntro, type: 'intro' });
@@ -13358,6 +13397,15 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
         function getActiveSkipSegment(nowSec) {
             if (!Number.isFinite(nowSec)) return null;
+            const providerSegment = providerSkipSegments.find((segment) =>
+                nowSec >= segment.start && (segment.end == null || nowSec < segment.end)
+            );
+            if (providerSegment) {
+                return {
+                    ...providerSegment,
+                    end: providerSegment.end == null ? Number(video?.duration || nowSec) : providerSegment.end,
+                };
+            }
             const intro = animeSkipSegments.intro || getHdstreamFallbackIntro();
             if (intro && nowSec >= intro.start && nowSec < intro.end) {
                 return { type: 'intro', start: intro.start, end: intro.end };
@@ -13367,6 +13415,11 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 return { type: 'outro', start: outro.start, end: outro.end };
             }
             return null;
+        }
+
+        function getSkipSegmentLabel(type) {
+            const labels = { intro: 'Skip Intro', recap: 'Skip Recap', credits: 'Skip Credits', outro: 'Skip Outro' };
+            return labels[String(type || '').toLowerCase()] || 'Skip Segment';
         }
 
         function updateSkipSegmentButton() {
@@ -13401,8 +13454,8 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     _clearSkipCountdown();
                     _skipBtnWasVisible = false;
                 } else {
-                    const icon = _skipActiveType === 'intro' ? 'fa-forward' : 'fa-forward-step';
-                    skipSegmentBtn.innerHTML = `<i class="fa-solid ${icon}"></i><span>${_skipActiveType === 'intro' ? 'Skip Intro' : 'Skip Outro'}</span>`;
+                    const icon = _skipActiveType === 'intro' || _skipActiveType === 'recap' ? 'fa-forward' : 'fa-forward-step';
+                    skipSegmentBtn.innerHTML = `<i class="fa-solid ${icon}"></i><span>${getSkipSegmentLabel(_skipActiveType)}</span>`;
                     skipSegmentBtn.dataset.segmentType = _skipActiveType;
                     skipSegmentBtn.style.display = 'inline-flex';
                     return;
@@ -13433,8 +13486,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 return;
             }
 
-            const alreadySkipped = (active.type === 'intro' && skippedSegments.intro) ||
-                (active.type === 'outro' && skippedSegments.outro);
+            const alreadySkipped = skippedSegments[active.type] === true;
 
             if (alreadySkipped) {
                 if (skipSegmentBtn) skipSegmentBtn.style.display = 'none';
@@ -13450,8 +13502,8 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             }
 
             if (skipSegmentBtn) {
-                const icon = active.type === 'intro' ? 'fa-forward' : 'fa-forward-step';
-                skipSegmentBtn.innerHTML = `<i class="fa-solid ${icon}"></i><span>${active.type === 'intro' ? 'Skip Intro' : 'Skip Outro'}</span>`;
+                const icon = active.type === 'intro' || active.type === 'recap' ? 'fa-forward' : 'fa-forward-step';
+                skipSegmentBtn.innerHTML = `<i class="fa-solid ${icon}"></i><span>${getSkipSegmentLabel(active.type)}</span>`;
                 skipSegmentBtn.dataset.segmentType = active.type;
                 skipSegmentBtn.style.display = 'inline-flex';
             }
@@ -13814,6 +13866,8 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
         let autoEpisodeEnabled = localStorage.getItem('pref_autoEpisode') !== 'false';
         let autoSkipIntroEnabled = localStorage.getItem('pref_autoSkipIntro') === 'true';
         let autoSkipOutroEnabled = localStorage.getItem('pref_autoSkipOutro') === 'true';
+        let autoSkipRecapEnabled = localStorage.getItem('pref_autoSkipRecap') === 'true';
+        let autoSkipCreditsEnabled = localStorage.getItem('pref_autoSkipCredits') === 'true';
         const subtitleColorOptions = ['#ffffff', '#ffd84d', '#ff7a7a', '#6ee7ff', '#9cff6e', '#d7b3ff'];
         const defaultSubtitleSettings = {
             color: '#ffffff',
@@ -14069,6 +14123,44 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 watchPartyEmitHostControl('autoSkipOutro', { enabled: autoSkipOutroEnabled });
             });
             preferencesMenu.appendChild(outroRow);
+
+            // Auto Skip Recap toggle row
+            const recapRow = document.createElement('label');
+            recapRow.className = 'menu-toggle-row';
+            recapRow.style.display = 'flex';
+            recapRow.innerHTML = `
+                <span class="menu-toggle-label">Auto Skip Recap</span>
+                <div class="menu-toggle-switch">
+                    <input type="checkbox" ${autoSkipRecapEnabled ? 'checked' : ''}>
+                    <span class="menu-toggle-track"></span>
+                    <span class="menu-toggle-thumb"></span>
+                </div>
+            `;
+            recapRow.querySelector('input').addEventListener('change', (e) => {
+                autoSkipRecapEnabled = e.target.checked;
+                localStorage.setItem('pref_autoSkipRecap', autoSkipRecapEnabled ? 'true' : 'false');
+                updateSkipSegmentButton();
+            });
+            preferencesMenu.appendChild(recapRow);
+
+            // Auto Skip Credits toggle row
+            const creditsRow = document.createElement('label');
+            creditsRow.className = 'menu-toggle-row';
+            creditsRow.style.display = 'flex';
+            creditsRow.innerHTML = `
+                <span class="menu-toggle-label">Auto Skip Credits</span>
+                <div class="menu-toggle-switch">
+                    <input type="checkbox" ${autoSkipCreditsEnabled ? 'checked' : ''}>
+                    <span class="menu-toggle-track"></span>
+                    <span class="menu-toggle-thumb"></span>
+                </div>
+            `;
+            creditsRow.querySelector('input').addEventListener('change', (e) => {
+                autoSkipCreditsEnabled = e.target.checked;
+                localStorage.setItem('pref_autoSkipCredits', autoSkipCreditsEnabled ? 'true' : 'false');
+                updateSkipSegmentButton();
+            });
+            preferencesMenu.appendChild(creditsRow);
         }
 
         const WATCH_PARTY_DRIFT_TOLERANCE = 1.0;
@@ -22470,9 +22562,12 @@ item.innerHTML = `
                             item.dataset.provider ||
                             '',
                         ).trim().toLowerCase();
-                        const target = currentIsLikelyAnime && menuProvider !== 'animekai'
-                                ? resolveGlobalEpisodeIndices(s, ep, si, ei, true)
-                                : { seasonIndex: si, episodeIndex: ei };
+                        // Episode-menu seasons can be sorted or hydrated differently
+                        // from the canonical tvSeasons array. Always resolve the
+                        // provider episode back to the canonical indices; using
+                        // {si, ei} directly can send normal TV navigation to an
+                        // empty/wrong season (notably when moving to episode 3).
+                        const target = resolveGlobalEpisodeIndices(s, ep, si, ei, true);
                         const isBonusEpisode = isBonusSeason || /bonus/i.test(String(epTitle || ep?.title || ep?.name || ep?.episodeName || ep?.episode_name || ''));
                         const hintEpisodeNoRaw = Number(ep?.episode || ep?.number || ep?.episodeNum || displayEpNo);
                         const hintSeasonNoRaw = Number(s?.seasonNo || 0);
@@ -23114,8 +23209,7 @@ item.innerHTML = `
             // fire recovery during the normal buffer-refill window after a skip.
             lastUserSeekAt = Date.now();
 
-            if (type === 'intro') skippedSegments.intro = true;
-            if (type === 'outro') skippedSegments.outro = true;
+            skippedSegments[type] = true;
 
             const target = Math.max(0, segment.end + 0.3);
 
@@ -23129,9 +23223,6 @@ item.innerHTML = `
             }
 
             const jumpDistance = Math.abs(target - (video.currentTime || 0));
-
-            // Use gentler quality tuning for the skip operation
-            tuneHlsForJump(target, jumpDistance, 'skip');
 
             if (hlsInst && hlsSessionIsFragile) {
                 console.log(`[Skip] HLS session is fragile, hot-reloading stream for ${type} skip.`);
@@ -23208,7 +23299,10 @@ item.innerHTML = `
                 _clearSkipCountdown();
 
                 if (finalType && finalSegment) {
-                    const shouldAuto = (finalType === 'intro' && autoSkipIntroEnabled) || (finalType === 'outro' && autoSkipOutroEnabled);
+                    const shouldAuto = (finalType === 'intro' && autoSkipIntroEnabled) ||
+                        (finalType === 'outro' && autoSkipOutroEnabled) ||
+                        (finalType === 'recap' && autoSkipRecapEnabled) ||
+                        (finalType === 'credits' && autoSkipCreditsEnabled);
                     if (shouldAuto) {
                         _skipActiveType = finalType;
                         _skipActiveSegment = finalSegment;
@@ -23224,7 +23318,9 @@ item.innerHTML = `
             const active = getActiveSkipSegment(video.currentTime);
             if (!active) return;
             const shouldAuto = (active.type === 'intro' && autoSkipIntroEnabled) ||
-                (active.type === 'outro' && autoSkipOutroEnabled);
+                (active.type === 'outro' && autoSkipOutroEnabled) ||
+                (active.type === 'recap' && autoSkipRecapEnabled) ||
+                (active.type === 'credits' && autoSkipCreditsEnabled);
 
             if (!shouldAuto) return;
 
@@ -25240,9 +25336,12 @@ console.log(`[${provider}] watch request completed`, {
                              label: `${providerPrefix}${audioModeLabel ? ` - ${audioModeLabel}` : ''}${serverLabel ? ` - ${serverLabel}` : ''} - ${qualityLabel}${timingLabel}`,
                             audioLabel: isAnimeAudioProvider ? (isDub ? 'Dubbed' : 'Subbed') : (isDub ? 'Dubbed' : (/\bsub/i.test(String(qualityLabel || '')) ? 'Subbed' : qualityLabel)),
                             url: src.url,
-                            isM3U8,
-                            isEmbed,
-                            ...(provider === 'anikoto' ? { intro: normalizeSegmentWindow(src.intro), outro: normalizeSegmentWindow(src.outro) } : {}),
+                             isM3U8,
+                             isEmbed,
+                             skipSegments: Array.isArray(src.skipSegments)
+                                 ? src.skipSegments
+                                 : (Array.isArray(data?.skipSegments) ? data.skipSegments : []),
+                             ...(provider === 'anikoto' ? { intro: normalizeSegmentWindow(src.intro), outro: normalizeSegmentWindow(src.outro) } : {}),
                             referer: normalizeStreamReferer(provider, src, data.headers?.Referer || null),
                             origin: src.origin || data.headers?.Origin || null,
                             cookieHeader: src.cookieHeader || data.headers?.Cookie || null,
