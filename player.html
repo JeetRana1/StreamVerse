@@ -6607,7 +6607,11 @@ function getProxiedUrl(url, referer = '') {
                  maxBufferHole: isThumbnail ? 0.1 : (isVega ? 0.08 : ((isHdstream || isAniKoto || isAnimeKai) ? 0.6 : 0.3)),
                 startFragPrefetch: !isThumbnail && !isAnimeKai && !isFlixHq,
                 testBandwidth: !isThumbnail,
-                progressive: !isFlixHq,
+                // Play4u's signed range CDN occasionally aborts FetchLoader
+                // requests while the tab is buffering. XhrLoader gives us
+                // stable timeout/retry behavior and still receives the
+                // retokened URL through xhrSetup below.
+                progressive: !isFlixHq && !isPlay4u,
                 // Aggressive recovery for skips and stalls
                 nudgeMaxRetries: isVega ? 15 : (isFlixHq ? 3 : (isHdstream ? 9 : 5)),
                 nudgeOffset: isVega ? 0.1 : (isFlixHq ? 0.04 : 0.1),
@@ -6618,14 +6622,14 @@ function getProxiedUrl(url, referer = '') {
                 // Fast, bounded retries: with server-side segment retry + cache,
                 // most transient CDN 500s resolve within the first attempt. A short
                 // client retry delay avoids multi-second stalls when one slips through.
-                fragLoadingMaxRetry: isHdstream ? 8 : 6,
-                fragLoadingRetryDelay: isHdstream ? 350 : 1000,
-                fragLoadingMaxRetryTimeout: isHdstream ? 60000 : 64000,
+                 fragLoadingMaxRetry: isHdstream ? 8 : (isPlay4u ? 8 : 6),
+                 fragLoadingRetryDelay: isHdstream ? 350 : (isPlay4u ? 500 : 1000),
+                 fragLoadingMaxRetryTimeout: isHdstream || isPlay4u ? 60000 : 64000,
                 // The acek CDN behind hdstream4u is slow/flaky: segments can take
                 // 7-23s to download. Defaults abort fragments at 20s, which fires
                 // fragLoadTimeOut on slow-but-fine segments and drains the buffer.
                 // Give slow segments room to finish instead of killing them early.
-                 fragLoadingTimeOut: isThumbnail ? 10000 : (isHdstream || isAniKoto ? 45000 : 20000),
+                  fragLoadingTimeOut: isThumbnail ? 10000 : (isHdstream || isAniKoto || isPlay4u ? 45000 : 20000),
                   manifestLoadingTimeOut: isThumbnail ? 8000 : (isHdstream || isAniKoto ? 60000 : 15000),
                   levelLoadingTimeOut: isThumbnail ? 5000 : (isHdstream || isAniKoto ? 40000 : 8000),
                 // Media-proxy tokens rotate; inject the current one so manifest,
@@ -11527,7 +11531,25 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
             if (String(sub?.provider || '').toLowerCase() === 'play4u') {
                 const parsed = new URL(rawSrc);
-                return `${getProxyGatewayOrigin()}/proxy/hls/${parsed.host}${parsed.pathname}${parsed.search}${parsed.search ? '&' : '?'}subtitle=1&referer=${encodeURIComponent(sub?.referer || 'https://play4u.org/')}`;
+                const subtitleUrl = `${getProxyGatewayOrigin()}/proxy/hls/${parsed.host}${parsed.pathname}${parsed.search}${parsed.search ? '&' : '?'}subtitle=1&referer=${encodeURIComponent(sub?.referer || 'https://play4u.org/')}`;
+                // Do not attach the API URL directly to a <track>. Some
+                // production Chromium builds reject cross-origin track
+                // navigation from a MediaSource/blob video with "Unsafe
+                // attempt to load URL". Convert it to a local blob instead.
+                try {
+                    const response = await fetch(subtitleUrl, { cache: 'no-store' });
+                    if (response.ok) {
+                        const text = await response.text();
+                        if (/^\s*WEBVTT\b/i.test(text)) {
+                            const blob = new Blob([text], { type: 'text/vtt' });
+                            const blobUrl = URL.createObjectURL(blob);
+                            if (!window._activeSubtitleBlobs) window._activeSubtitleBlobs = [];
+                            window._activeSubtitleBlobs.push(blobUrl);
+                            return blobUrl;
+                        }
+                    }
+                } catch (_) { /* use the CORS URL as a final fallback */ }
+                return subtitleUrl;
             }
 
             // Prefer the existing subtitle proxy when the provider needs conversion or request headers.
