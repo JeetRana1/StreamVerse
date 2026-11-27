@@ -3948,7 +3948,7 @@ function isModalAnimeLike(movie = {}) {
         movie.provider,
         ...(Array.isArray(movie.genres) ? movie.genres : String(movie.genres || '').split(',')),
     ].join(' ').toLowerCase();
-    return /\banime\b|animesalt|satoru|justanime|animekai/.test(text);
+    return /\banime\b|animesalt|satoru|justanime|animekai|anikoto/.test(text);
 }
 
 function getModalEpisodeProviderOptions(movie = {}, provider = '') {
@@ -4896,6 +4896,28 @@ function renderDetailsModal(movie, id, type, provider = '') {
 }
 
 // ------------------ FETCH TRENDING -----------------------------------------
+async function hydrateHeroArtwork(items) {
+    const candidates = Array.isArray(items) ? items.slice(0, 5) : [];
+    const hydrated = await Promise.all(candidates.map(async (item) => {
+        const id = getCanonicalTmdbId(item, item?.id);
+        if (!id) return item;
+        try {
+            const type = getType(item);
+            const details = await fetchJsonWithFallback(`/info/${encodeURIComponent(id)}?type=${type}`);
+            const backdrop = details?.cover || details?.backdrop_path || details?.backdropPath;
+            const poster = details?.image || details?.poster_path || details?.posterPath;
+            return {
+                ...item,
+                ...(backdrop ? { tmdbBackdrop: backdrop, cover: backdrop } : {}),
+                ...(poster ? { tmdbPoster: poster, image: poster } : {}),
+            };
+        } catch (_) {
+            return item;
+        }
+    }));
+    return hydrated;
+}
+
 async function fetchTrending() {
     const cacheKey = 'trending:all:day';
     try {
@@ -4904,7 +4926,7 @@ async function fetchTrending() {
             const cachedItems = (cached.results || [])
                 .filter(item => hasUsableMediaId(item) && hasPositiveRating(item))
                 .slice(0, 12);
-            heroItems = cachedItems.slice(0, 5);
+            heroItems = await hydrateHeroArtwork(cachedItems);
             if (heroItems.length && typeof displayHero === 'function') {
                 displayHero(heroItems[0]);
                 startHeroRotation();
@@ -4920,7 +4942,7 @@ async function fetchTrending() {
             .slice(0, 12);
         if (!items.length) return true;
 
-        heroItems = items.slice(0, 5);
+        heroItems = await hydrateHeroArtwork(items);
         if (heroItems.length) {
             displayHero(heroItems[0]);
             startHeroRotation();

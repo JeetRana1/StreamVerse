@@ -5237,7 +5237,7 @@ function getProxiedUrl(url, referer = '') {
         // Provider pools - automatically selected based on anime detection
         // ANIME_PROVIDERS: Specialized anime providers (used exclusively for anime content)
         const ANIME_PROVIDERS = ['anikoto'];
-        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = ['animesalt'];
+        const ANIME_SUBTITLE_FALLBACK_PROVIDERS = [];
         const REMOVED_PROVIDER_MAP = {
             satoru: 'anikoto',
             justanime: 'anikoto',
@@ -5254,7 +5254,8 @@ function getProxiedUrl(url, referer = '') {
         const URL_TITLE = String(params.get('title') || '').trim();
         const URL_IMAGE = String(params.get('image') || '').trim();
         const MEDIA_NAMESPACE = params.get('db') || (params.get('anime') === '1' ? 'anilist' : 'tmdb');
-        const ANIME_MODE = MEDIA_NAMESPACE === 'anilist' || params.get('anime') === '1';
+        const ANIME_MODE = MEDIA_NAMESPACE === 'anilist' ||
+            params.get('anime') === '1';
         const rawType = (params.get('type') || 'movie').toLowerCase();
         const MEDIA_TYPE = (rawType === 'undefined' || !rawType) ? 'movie' : rawType;
         let effectiveMediaType = MEDIA_TYPE;
@@ -5623,7 +5624,7 @@ function getProxiedUrl(url, referer = '') {
         const HDSTREAM_FALLBACK_INTRO_SECONDS = 60; // hdstream movies: first ~1 min is the studio intro
         let lastSuccessfulProvider = '';
         let satoruAudioSources = []; // background-fetched satoru sources used as virtual audio tracks
-        let currentAudioSource = 'animesalt'; // active stream provider for virtual/audio switching
+        let currentAudioSource = 'anikoto'; // active stream provider for virtual/audio switching
         let activeSatoruTrackIndex = -1; // -1 means none, or index in satoruAudioSources
         const ANIME_PROVIDER_INFO_CACHE_TTL_MS = 30 * 60 * 1000;
         const animeProviderInfoCache = new Map();
@@ -7536,7 +7537,13 @@ if (parsedProvider.includes('hdstream')) {
                 try {
                     const tracks = hls.subtitleTracks || [];
                     if (tracks.length && hls.subtitleTrack === -1) {
-                        const preferred = tracks.find((t) => /en|eng|english/i.test(String(t?.lang || '') + ' ' + String(t?.name || '')));
+                        const isAniKoto = String(
+                            currentStreamProvider || allSources?.[currentIdx]?.provider || '',
+                        ).toLowerCase() === 'anikoto';
+                        const preferred = tracks.find((t) => {
+                            const text = String(t?.lang || '') + ' ' + String(t?.name || '');
+                            return /en|eng|english/i.test(text) && (!isAniKoto || !/forced/i.test(text));
+                        }) || tracks.find((t) => /en|eng|english/i.test(String(t?.lang || '') + ' ' + String(t?.name || '')));
                         hls.subtitleTrack = (preferred || tracks[0]).id;
                     }
                     setTimeout(() => {
@@ -7780,20 +7787,51 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     }
                 }
                 const isFlixHqStream = isCurrentFlixHqStream();
-                 const isAudioPipelineIssue =
-                     detailText.includes('audio') ||
-                    d?.details === Hls.ErrorDetails.AUDIO_TRACK_LOAD_ERROR ||
+                  const isAudioPipelineIssue =
+                      detailText.includes('audio') ||
+                     d?.details === Hls.ErrorDetails.AUDIO_TRACK_LOAD_ERROR ||
                     d?.details === Hls.ErrorDetails.AUDIO_TRACK_LOAD_TIMEOUT ||
                     d?.details === Hls.ErrorDetails.AUDIO_TRACK_PARSING_ERROR ||
-                     d?.details === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR;
-                 const isSubtitleTrackIssue =
+                      d?.details === Hls.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR;
+                  const isSubtitleTrackIssue =
                      detailText.includes('subtitletrackloaderror') ||
                      detailText.includes('subtitletrackloadtimeout') ||
                      detailText.includes('subtitletrackparsingerror') ||
                      d?.details === Hls.ErrorDetails.SUBTITLE_TRACK_LOAD_ERROR ||
                      d?.details === Hls.ErrorDetails.SUBTITLE_TRACK_LOAD_TIMEOUT ||
-                     d?.details === Hls.ErrorDetails.SUBTITLE_TRACK_PARSING_ERROR;
-                 const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000;
+                      d?.details === Hls.ErrorDetails.SUBTITLE_TRACK_PARSING_ERROR;
+                  // AniKoto CDN paths can expire between source extraction and
+                  // the first rendition/audio playlist request. A 404/410 on
+                  // either playlist must fail over to the next mirror; trying
+                  // to recover the same HLS instance leaves the player stuck
+                  // with no audio.
+                  if (
+                      !isThumbnail &&
+                      isCurrentAniKotoStream() &&
+                      [404, 410].includes(Number(d?.response?.code)) &&
+                      (isLevelLoad || isAudioPipelineIssue) &&
+                      typeof onErrorFallback === 'function'
+                  ) {
+                      console.warn('[anikoto] CDN playlist/audio unavailable; switching mirror');
+                      onErrorFallback('anikoto_cdn_unavailable');
+                      return;
+                  }
+                  // Some proxy/CDN failures arrive from hls.js without the
+                  // upstream status code. A fatal playlist/audio error is
+                  // still unrecoverable on this AniKoto mirror, so fail over
+                  // instead of leaving the startup overlay spinning forever.
+                  if (
+                      !isThumbnail &&
+                      isCurrentAniKotoStream() &&
+                      d?.fatal &&
+                      (isLevelLoad || isAudioPipelineIssue) &&
+                      typeof onErrorFallback === 'function'
+                  ) {
+                      console.warn('[anikoto] Fatal playlist/audio error; switching mirror');
+                      onErrorFallback('anikoto_fatal_playlist_error');
+                      return;
+                  }
+                  const inRapidSeekMode = Date.now() < rapidSeekModeUntil || (Date.now() - lastUserSeekAt) < 8000;
 
                  if (isSubtitleTrackIssue) {
                      console.warn('[hls] Subtitle track failed; keeping video playback alive.');
@@ -9557,7 +9595,14 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
 
         function goBackToHome() {
             try {
-                const rawReturnState = ANIME_MODE ? '' : sessionStorage.getItem('streamverse_playback_return');
+                const referrer = new URL(document.referrer || '', window.location.href);
+                if (referrer.origin === window.location.origin && /\/anime\.html$/i.test(referrer.pathname)) {
+                    window.location.href = `${referrer.pathname}${referrer.search}`;
+                    return;
+                }
+            } catch (_) { }
+            try {
+                const rawReturnState = sessionStorage.getItem('streamverse_playback_return');
                 if (rawReturnState) {
                     const returnState = JSON.parse(rawReturnState);
                     const returnUrl = new URL(String(returnState?.url || ''), window.location.href);
@@ -9566,7 +9611,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                         return;
                     }
                 }
-            } catch (_) { }
+                } catch (_) { }
             const homeUrl = new URL('index.html', window.location.href);
             window.location.href = homeUrl.toString();
         }
@@ -10457,31 +10502,6 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
             const hasStrongNonAnimeTitle = /\b(?:got\s+(?:talent|latent)|big\s+brother|masterchef|love\s+island|survivor|invincible|obsession)\b/i.test(titleLower);
             if (hasStrongNonAnimeTitle) return false;
 
-            // AnimeSalt is also an authoritative anime catalog. Use it when
-            // AniList/MAL metadata does not identify a title, including newer
-            // anime and animated titles that have sparse TMDB metadata.
-            // Do not use a title-only AnimeSalt match for ordinary movies or
-            // TV. Common titles can collide with AnimeSalt entries (for
-            // example, a live-action horror movie named "Obsession").
-            if (genreNames.includes('animation')) {
-                try {
-                    const animeSaltUrl = `${API_BASE.replace('/meta/tmdb', '/anime/animesalt')}/${encodeURIComponent(title)}?type=${encodeURIComponent(MEDIA_TYPE)}`;
-                    const { res: animeSaltRes } = await fetchJsonWithApiFallback(animeSaltUrl, {
-                        signal: AbortSignal.timeout(5000),
-                    });
-                    if (animeSaltRes.ok) {
-                        const animeSaltRows = getAnimeSearchResults(await animeSaltRes.json());
-                        const hasStrongAnimeSaltMatch = animeSaltRows.some((row) =>
-                            getAnimeResultTitleTexts(row).some((candidateTitle) =>
-                                getTitleMatchQuality(candidateTitle, title).strong,
-                            ),
-                        );
-                        if (hasStrongAnimeSaltMatch) return true;
-                    }
-                } catch (_) {
-                    // Continue with the broader metadata fallback below.
-                }
-            }
 
             // Prevent reality, talk, variety, and documentary programs from
             // entering the anime-only provider path when AniList returns a
@@ -11576,6 +11596,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 if (!isZipSubtitle && (
                     subtitleProvider === 'hdstream4u' ||
                     subtitleProvider === 'flixhq' ||
+                    subtitleProvider === 'anikoto' ||
                     subtitleProvider === 'animesalt' ||
                     /(^|\.)qqqcdn\.cloud$/i.test(subtitleHost) ||
                     /(^|\.)swiftstream\.top$/i.test(subtitleHost) ||
@@ -11741,7 +11762,11 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                      return proxied;
                 }
 
-                if (subtitleBlobCache.has(lower)) {
+                // AniKoto tracks must stay on the backend VTT URL. Reusing a
+                // cached Blob here leaves stale blob: URLs behind after an
+                // audio/source switch.
+                const isAniKotoSubtitle = String(sub?.provider || '').toLowerCase() === 'anikoto';
+                if (!isAniKotoSubtitle && subtitleBlobCache.has(lower)) {
                     const cachedVtt = subtitleBlobCache.get(lower);
                     return cachedVtt ? toVttBlobUrl(cachedVtt) : '';
                 }
@@ -11955,9 +11980,10 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                  if (String(TMDB_ID || '') === '838209' && tracks.length) {
                      bestIdx = tracks.findIndex((track) => /english|archive/i.test(`${track.label} ${track.language || ''}`));
                 }
-                if (bestIdx === -1 && preferredLabel && tracks.length && !/^(unknown|off|)$/i.test(String(preferredLabel).trim())) {
-                    bestIdx = tracks.findIndex(t => t.label === preferredLabel);
-                }
+                 const ignoreForcedPreference = currentProvider === 'anikoto' && /forced/i.test(String(preferredLabel || ''));
+                 if (bestIdx === -1 && preferredLabel && !ignoreForcedPreference && tracks.length && !/^(unknown|off|)$/i.test(String(preferredLabel).trim())) {
+                     bestIdx = tracks.findIndex(t => t.label === preferredLabel);
+                 }
 
                 if (bestIdx === -1) {
                     bestIdx = getDefaultEnglishSubtitleIndex();
@@ -12362,6 +12388,24 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     label.includes('english')
                 );
             };
+            const currentProvider = String(
+                currentStreamProvider || allSources?.[currentIdx]?.provider || '',
+            ).toLowerCase();
+            if (currentProvider === 'anikoto') {
+                // AniKoto commonly exposes both "English (Forced)" and the
+                // full "English" subtitle. Forced captions are only partial
+                // signs/dialogue, so prefer the full English track by default.
+                const fullEnglishIdx = tracks.findIndex((track) => {
+                    const label = String(track.label || '').toLowerCase();
+                    const language = String(track.language || '').toLowerCase();
+                    return (
+                        (language === 'en' || language === 'eng' || language.startsWith('en-') || label.includes('english')) &&
+                        !label.includes('forced') &&
+                        !label.includes('default')
+                    );
+                });
+                if (fullEnglishIdx >= 0) return fullEnglishIdx;
+            }
             const englishIdx = tracks.findIndex(isEnglishLike);
             if (englishIdx >= 0) return englishIdx;
             const unknownIdx = tracks.findIndex((track) => {
@@ -12878,8 +12922,12 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 ? episodeNoRaw
                 : (Number(curEpisode || 0) + 1);
             const hint = activeEpisodeSelectionHint ? activeEpisodeSelectionHint : null;
-            const continueSeasonNo = hint?.seasonNo != null && Number(hint.seasonNo) >= 0 ? Number(hint.seasonNo) : seasonNo;
-            const continueEpisodeNo = Number(hint?.episodeNo || 0) > 0 ? Number(hint.episodeNo) : episodeNo;
+            const continueSeasonNo = hint?.seasonNo != null && Number(hint.seasonNo) >= 0
+                ? Number(hint.seasonNo)
+                : (URL_SEASON > 0 ? URL_SEASON : seasonNo);
+            const continueEpisodeNo = Number(hint?.episodeNo || 0) > 0
+                ? Number(hint.episodeNo)
+                : (URL_EPISODE > 0 ? URL_EPISODE : episodeNo);
             const continueAbsoluteEpisodeNo = Number(hint?.absoluteEpisodeNo || 0);
 
             // Capture the active display label for virtual audio tracks (e.g. Vegamovies Hindi/Tamil)
@@ -12905,10 +12953,10 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                 episodeIndex: Number(curEpisode || 0),
                 seasonTitle: String(hint?.seasonTitle || seasonRef?.name || '').trim(),
                 seasonKey: String(hint?.providerAnimeId || seasonRef?.providerAnimeId || '').trim(),
-                episodeId: String(hint?.episodeId || episodeRef?.id || '').trim(),
+                episodeId: String(hint?.episodeId || URL_EPISODE_ID || episodeRef?.id || '').trim(),
                 absoluteEpisodeNo: Number.isFinite(continueAbsoluteEpisodeNo) && continueAbsoluteEpisodeNo > 0 ? continueAbsoluteEpisodeNo : null,
-                audio: preferredAudioToken || '',
-                audioLabel: activeVegaLabel || preferredAudioToken || ''
+                audio: preferredAudioToken || (ANIME_MODE ? readSavedAnimeAudioMode() : ''),
+                audioLabel: activeVegaLabel || preferredAudioToken || (ANIME_MODE ? readSavedAnimeAudioMode() : '')
             };
 
             let list = [];
@@ -13333,8 +13381,10 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                     for (const id of candidateIds) {
                         if (failedAny.has(id)) continue;
                         const u2 = `https://api.aniskip.com/v2/skip-times/${id}/${episodeNum}?types=op&types=ed&episodeLength=${encodeURIComponent(episodeLength)}`;
-                        const u1 = `https://api.aniskip.com/v1/skip-times/${id}/${episodeNum}?types=op&types=ed`;
-                        const skipUrls = [u2, u1, getProxiedUrl(u2), getProxiedUrl(u1)];
+                        // v2 is the supported AniSkip endpoint. Trying v1 and
+                        // multiple proxy variants after a missing record only
+                        // creates noisy failed requests and delays playback.
+                        const skipUrls = [u2, getProxiedUrl(u2)];
 
                         for (const url of skipUrls) {
                             try {
@@ -13343,8 +13393,10 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                                     signal: AbortSignal.timeout(6000),
                                 });
                                 if (!isCurrent()) return;
-                                if (skipRes.status === 404) {
+                                if (skipRes.status === 404 || skipRes.status === 410) {
                                     failedAny.add(id);
+                                    // A missing AniSkip record is definitive for
+                                    // this ID; do not retry alternate routes.
                                     break;
                                 }
                                 if (skipRes.status === 502 || skipRes.status === 500) {
@@ -13356,7 +13408,7 @@ if (fragLoadedIsHdstream && data?.frag?.type === 'main' && !isThumbnail && !hlsS
                                 if (!isCurrent()) return;
                                 const parsed = parseAniSkipResults(skipJson);
                                 if (parsed.intro || parsed.outro) {
-                                    console.log(`[aniskip] Ã¢Å“â€ Found segments via ${url.includes('v1') ? 'v1' : 'v2'} API for ID ${id}`);
+                                    console.log(`[aniskip] Found segments via v2 API for ID ${id}`);
                                     animeSkipCache.set(cacheKey, parsed);
                                     applyApiSkipSegments(parsed);
                                     updateSkipSegmentButton();
@@ -17337,6 +17389,32 @@ video.addEventListener('canplay', (event) => {
                     && currentTime >= duration - endTolerance;
                 const recovering = isSourceSwitching || Date.now() - lastHlsErrorAt < 15000;
 
+                // A failed AniKoto CDN segment can make HLS expose a tiny
+                // partial timeline and emit "ended". Treat that as a source
+                // failure, not a completed episode, and try the next mirror.
+                if (
+                    reachedMediaEnd &&
+                    duration > 0 &&
+                    duration < 30 &&
+                    !userPaused &&
+                    String(currentStreamProvider || '').toLowerCase() === 'anikoto' &&
+                    Array.isArray(allSources) &&
+                    allSources.slice(currentIdx + 1).some((source) => String(source?.provider || '').toLowerCase() === 'anikoto')
+                ) {
+                    const nextSourceIndex = allSources.findIndex(
+                        (source, index) => index > currentIdx && String(source?.provider || '').toLowerCase() === 'anikoto',
+                    );
+                    if (nextSourceIndex >= 0) {
+                        console.warn('[anikoto] Premature short stream ended; switching mirror', {
+                            duration,
+                            from: currentIdx,
+                            to: nextSourceIndex,
+                        });
+                        playSource(nextSourceIndex, 0);
+                        return;
+                    }
+                }
+
                 // HLS providers can emit ended while a failed segment has
                 // emptied the media timeline. Only a real VOD end may advance.
                 if (!reachedMediaEnd || recovering || userPaused) {
@@ -17729,10 +17807,17 @@ video.addEventListener('canplay', (event) => {
             };
 
             // Decide whether to show the native/hls tracks menu
-            const showPlayerTracks = !isOnSatoru || !hlsInst;
+            // AniKoto exposes Japanese/English HLS tracks inside every mirror,
+            // but the actual user choices are the provider-level Subbed and
+            // Dubbed sources. Showing both layers creates four confusing rows
+            // and lets the raw HLS track switch bypass source selection.
+            const activeProviderName = String(
+                currentStreamProvider || allSources?.[currentIdx]?.provider || '',
+            ).toLowerCase();
+            const showPlayerTracks = activeProviderName !== 'anikoto' && (!isOnSatoru || !hlsInst);
 
             if (showPlayerTracks) {
-                hlsTracks.forEach((track) => {
+                hlsTracks.forEach((track, trackIndex) => {
                      let label = track.name || track.lang || 'Default';
                      const channels = Number(track.channels || track.channelCount || 0);
                      if (channels >= 6 && !/\b5\.1\b/i.test(label)) label += ' (5.1)';
@@ -17742,14 +17827,37 @@ video.addEventListener('canplay', (event) => {
                     if (isGeneric && hasSatoruSources) return;
 
                     if (isGeneric) label = 'Japanese';
-                    const isActive = track.id === currentHlsTrack;
+                    const isActive = trackIndex === currentHlsTrack;
                     addItem(label, isActive, () => {
                         if (hlsInst) {
-                            hlsInst.audioTrack = track.id;
+                            const resumeAt = Math.max(
+                                0,
+                                Number(video?.currentTime || 0),
+                                Number(plyr?.currentTime || 0),
+                                Number(lastKnownPlaybackTime || 0),
+                            );
+                            const wasPlaying = !video?.paused;
+                            audioSwitchInFlightUntil = Date.now() + 9000;
+                            hlsFragErrorBurst = 0;
+                            hlsSessionIsFragile = false;
+                            pendingJumpTarget = resumeAt;
+                            hlsInst.audioTrack = trackIndex;
                             rememberAudioPreference(track);
+                            if (video && Number.isFinite(resumeAt) && resumeAt > 0) {
+                                const restoreAudioPosition = () => {
+                                    try {
+                                        if (Math.abs(video.currentTime - resumeAt) > 1.25) {
+                                            video.currentTime = resumeAt;
+                                        }
+                                        if (wasPlaying) video.play?.().catch(() => {});
+                                    } catch (_) {}
+                                };
+                                video.addEventListener('canplay', restoreAudioPosition, { once: true });
+                                setTimeout(restoreAudioPosition, 350);
+                            }
                             updateAudioTracks();
                         }
-                    }, { kind: 'hls', trackId: track.id, name: track.name || '', lang: track.lang || track.language || '' });
+                    }, { kind: 'hls', trackId: trackIndex, name: track.name || '', lang: track.lang || track.language || '' });
                 });
 
                 // iOS Safari native AudioTrackList (when HLS.js is not used)
@@ -17851,6 +17959,16 @@ video.addEventListener('canplay', (event) => {
                         currentAudioSource = providerName;
                         preferredAudioToken = cleanLabel.toLowerCase();
                         preferredSourceLabelMatch = preferredAudioToken;
+                        if (providerName === 'anikoto') {
+                            saveAnimeAudioMode(src.isDub ? 'dubbed' : 'subbed');
+                            // Keep the URL preference aligned with the
+                            // provider-level source choice. The HLS playlist
+                            // itself may expose Japanese/English renditions,
+                            // but switching AniKoto audio means switching to
+                            // this complete Dub/Sub source.
+                            preferredAudioToken = src.isDub ? 'dubbed' : 'subbed';
+                            preferredSourceLabelMatch = preferredAudioToken;
+                        }
                         rememberProviderPreference(providerName);
                         if (typeof selectSource === 'function') {
                             selectSource(idx, resumeAt);
@@ -19765,7 +19883,7 @@ video.addEventListener('canplay', (event) => {
             try {
                 const rawCatalog = sessionStorage.getItem(catalogCacheKey);
                 const parsedCatalog = rawCatalog ? JSON.parse(rawCatalog) : null;
-                if (Array.isArray(parsedCatalog) && parsedCatalog.some((season) => Array.isArray(season?.episodes) && season.episodes.length)) {
+                if (MEDIA_NAMESPACE !== 'anilist' && Array.isArray(parsedCatalog) && parsedCatalog.some((season) => Array.isArray(season?.episodes) && season.episodes.length)) {
                     cachedCatalog = parsedCatalog;
                     tvSeasons = parsedCatalog;
                     activeMenuProvider = String(FORCED_PROVIDER || parsedCatalog.find((season) => season?.provider)?.provider || '').trim().toLowerCase();
@@ -20106,6 +20224,14 @@ video.addEventListener('canplay', (event) => {
                     }
 
                     let bestResult = null;
+                    // The anime modal already supplies the exact AniKoto
+                    // episode identifier. Prefer its series slug over a
+                    // title search, which can select an unrelated TMDB
+                    // season or similarly named show.
+                    if (providerName === 'anikoto' && URL_EPISODE_ID) {
+                        const directAnimeId = String(URL_EPISODE_ID).split('$episode$')[0].trim();
+                        if (directAnimeId) bestResult = { id: directAnimeId, title: animeSeriesTitle };
+                    }
                     if (providerName === 'animesalt') {
                         try {
                             const animesaltSlug = await findAnimesaltSeriesSlug(
@@ -25276,9 +25402,16 @@ console.log(`[${provider}] watch request completed`, {
                         const hostScore = (source) => {
                             try {
                                 const host = new URL(String(source?.url || '')).hostname.toLowerCase();
-                                 return host.includes('megap') ? 0 : (host.includes('vidtub') ? 1 : 2);
+                                 // AniKoto mirrors are not equally reliable. The
+                                 // megap/shiora edge frequently fails while
+                                 // loading audio playlists, so prefer the
+                                 // fetch/nexabloom and imgnex mirrors first.
+                                 if (host.includes('nexabloom')) return 0;
+                                 if (host.includes('imgnex')) return 1;
+                                 if (host.includes('megap')) return 2;
+                                 return host.includes('vidtub') ? 3 : 4;
                             } catch (_) {
-                                return 2;
+                                return 4;
                             }
                         };
                         return hostScore(a) - hostScore(b);
@@ -25913,9 +26046,11 @@ console.log(`[${provider}] watch request completed`, {
             if (!automaticFallback && (src.isDub || label.includes('dubbed'))) {
                 preferredSourceLabelMatch = 'dubbed';
                 preferredAudioToken = 'dubbed';
+                if (ANIME_MODE && src.provider === 'anikoto') saveAnimeAudioMode('dubbed');
             } else if (!automaticFallback && (src.isSub || label.includes('subbed'))) {
                 preferredSourceLabelMatch = 'subbed';
                 preferredAudioToken = 'subbed';
+                if (ANIME_MODE && src.provider === 'anikoto') saveAnimeAudioMode('subbed');
             }
 
             // Also remember the provider preference

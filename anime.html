@@ -7,7 +7,7 @@
     <title>Anime on StreamVerse | Trending Series and Favorites</title>
     <meta name="description"
         content="Discover trending anime, fan favorites, and genre collections on StreamVerse.">
-  <link rel="stylesheet" href="style.css?v=2.9">
+  <link rel="stylesheet" href="style.css?v=3.0">
   <link rel="stylesheet" href="episode-rating.css?v=6">
   <style>
     .anime-page { background: #08090d; }
@@ -42,8 +42,35 @@
     .anime-catalog { padding-bottom: 40px; }
     .anime-section { margin: 0 0 clamp(58px, 7vw, 90px); }
     .anime-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
-    .anime-section-heading h2 { margin: 0; font-family: 'Outfit', sans-serif; font-size: clamp(1.65rem, 3vw, 2.35rem); letter-spacing: -.025em; }
+    .anime-section-heading h2 { margin: 0; padding-left: 1rem; position: relative; display: flex; align-items: center; gap: .5rem; font-family: 'Outfit', sans-serif; font-size: clamp(1.65rem, 3vw, 2.35rem); letter-spacing: -.025em; white-space: nowrap; }
+    .anime-section-heading h2::before { content: ''; position: absolute; left: 0; top: 50%; width: 4px; height: 1.5rem; transform: translateY(-50%); background: var(--primary); border-radius: 2px; }
+    .anime-section-heading .section-heading-icon { font-size: .72em; color: #a5b4fc; filter: drop-shadow(0 0 6px rgba(129,140,248,.28)); }
+    #trending-section .section-heading-icon { color: #fb923c; }
+    #anime-upcoming-section .section-heading-icon { color: #a78bfa; }
+    .anime-categories-section:nth-of-type(1) .section-heading-icon { color: #f87171; }
+    .anime-categories-section:nth-of-type(2) .section-heading-icon { color: #60a5fa; }
+    .anime-categories-section:nth-of-type(3) .section-heading-icon { color: #facc15; }
+    .anime-categories-section:nth-of-type(4) .section-heading-icon { color: #c084fc; }
+    .anime-categories-section:nth-of-type(5) .section-heading-icon { color: #f9a8d4; }
     .anime-section-heading p { margin: 7px 0 0; color: rgba(255,255,255,.48); font-size: .9rem; }
+    .anime-page .modal-episodes-section { margin-top: 1.35rem; padding: 1.25rem 1.35rem; gap: 16px; overflow: visible; }
+    .anime-page .modal-episodes-head { align-items: center; gap: 16px; }
+    .anime-page .modal-episodes-controls { flex: 0 1 auto; }
+    .anime-page .modal-season-dropdown { min-width: 190px; }
+    .anime-page .modal-season-menu { width: min(280px, 68vw); }
+    .anime-page .modal-episodes-list { margin-top: 2px; padding-right: 14px; margin-right: -4px; }
+    .anime-page .modal-episode-item { min-height: 92px; }
+    .anime-page .modal-episode-ranges { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 2px; }
+    .anime-page .modal-episode-range { min-width: 72px; min-height: 34px; padding: 0 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(255,255,255,.05); color: rgba(255,255,255,.78); font: inherit; font-size: .78rem; font-weight: 800; cursor: pointer; transition: .18s ease; }
+    .anime-page .modal-episode-range:hover, .anime-page .modal-episode-range.selected { border-color: rgba(229,9,20,.7); background: rgba(229,9,20,.2); color: #fff; }
+    .anime-page .modal-episode-sort { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 8px 15px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(255,255,255,.06); color: #d5d8e4; font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer; transition: var(--transition); white-space: nowrap; }
+    .anime-page .modal-episode-sort:hover { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.3); color: #fff; }
+    .anime-page .modal-episode-sort i { color: #ff6b6b; font-size: .9rem; }
+    @media (max-width: 640px) {
+        .anime-page .modal-episodes-head { align-items: stretch; flex-direction: column; }
+        .anime-page .modal-episodes-controls, .anime-page .modal-season-dropdown { width: 100%; }
+        .anime-page .modal-season-menu { width: 100%; }
+    }
     .anime-section-count { flex: 0 0 auto; color: rgba(255,255,255,.4); font-size: .76rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
     #trending-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 30px 16px; align-items: start; }
 .anime-category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 30px 16px; align-items: start; }
@@ -74,6 +101,7 @@
     .anime-card:hover .anime-poster img { transform: scale(1.055); filter: saturate(1.08); }
     .anime-card:hover .anime-poster::after { opacity: .85; }
     .anime-badge-row { position: absolute; inset: 10px 10px auto; z-index: 2; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .anime-badge-row .type-label-badge { position: absolute; top: 0; right: 0; }
     .anime-badge { min-height: 24px; padding: 0 8px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; background: rgba(8,9,13,.7); color: #fff; backdrop-filter: blur(10px); font-size: .66rem; font-weight: 800; text-transform: uppercase; }
     .anime-rating { color: #ffd166; }
     .anime-play-cue { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 3; display: flex; align-items: center; justify-content: space-between; color: #fff; opacity: 0; transform: translateY(8px); transition: .24s ease; }
@@ -89,12 +117,12 @@
     .anime-status { grid-column: 1 / -1; min-height: 180px; display: grid; place-items: center; border: 1px dashed rgba(255,255,255,.11); border-radius: 20px; color: rgba(255,255,255,.52); text-align: center; }
     .anime-status-inner i { display: block; margin-bottom: 12px; color: #ff5965; font-size: 1.5rem; }
 .anime-load-more-wrap { display: flex; justify-content: center; padding: 36px 0 0; }
-    #anime-load-more, .anime-category-load-more { min-width: 190px; min-height: 48px; border: 1px solid rgba(255,255,255,.13); border-radius: 999px; padding: 0 22px; background: rgba(255,255,255,.055); color: #fff; font: inherit; font-weight: 800; cursor: pointer; transition: .2s ease; }
-    #anime-load-more:hover, .anime-category-load-more:hover { border-color: rgba(255,89,101,.55); background: rgba(229,9,20,.14); transform: translateY(-2px); }
-    #anime-load-more:disabled, .anime-category-load-more:disabled { opacity: .55; cursor: wait; transform: none; }
+    #anime-load-more, #anime-upcoming-load-more, .anime-category-load-more { min-width: 190px; min-height: 48px; border: 1px solid rgba(255,255,255,.13); border-radius: 999px; padding: 0 22px; background: rgba(255,255,255,.055); color: #fff; font: inherit; font-weight: 800; cursor: pointer; transition: .2s ease; }
+    #anime-load-more:hover, #anime-upcoming-load-more:hover, .anime-category-load-more:hover { border-color: rgba(255,89,101,.55); background: rgba(229,9,20,.14); transform: translateY(-2px); }
+    #anime-load-more:disabled, #anime-upcoming-load-more:disabled, .anime-category-load-more:disabled { opacity: .55; cursor: wait; transform: none; }
     .anime-section:has(.anime-category-load-more[hidden]) .anime-load-more-wrap { display: none; }
     .anime-categories-section { content-visibility: auto; contain-intrinsic-size: 420px; }
-    .anime-search-mode .anime-categories-section, .anime-search-mode .anime-spotlight { display: none; }
+    .anime-search-mode .anime-categories-section, .anime-search-mode .anime-spotlight, .anime-search-mode .anime-upcoming-section { display: none; }
     @media (hover: none) { .anime-play-cue { opacity: 1; transform: none; } }
 @media (max-width: 820px) { .anime-hero { min-height: auto; padding-top: 126px; } .anime-hero-layout { grid-template-columns: 1fr; } .anime-queue { display: none; } .anime-hero h1 { max-width: 620px; } .anime-spotlight-layout { top: 0; transform: translateY(-210px); grid-template-columns: 1fr; width: 100%; box-sizing: border-box; padding: 0 18px; } .anime-spotlight-copy { top: 0; width: 100%; min-height: 0; padding-top: 34px; } .anime-spotlight-copy h2 { max-width: 100%; font-size: clamp(1.85rem, 8vw, 2.7rem); line-height: 1.04; } .anime-spotlight-copy p { max-width: 100%; margin-bottom: 1.4rem; } .anime-spotlight-kicker { align-self: flex-start; } .anime-spotlight-poster { display: none; } .anime-spotlight-copy .hero-btns { flex-wrap: wrap; gap: 10px; } }
     @media (max-width: 600px) { .anime-hero { padding: 112px 0 52px; } .anime-hero h1 { font-size: clamp(3rem, 16vw, 4.5rem); } .anime-hero-copy { margin-top: 20px; font-size: .94rem; } .anime-category-list { margin-top: 28px; } .anime-section-heading { align-items: start; } .anime-section-count { display: none; } #trending-grid, .anime-category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; } .anime-poster { border-radius: 14px; } .anime-card-title { font-size: .86rem; } .anime-play-cue span { display: none; } .anime-skeleton { min-height: 260px; } .anime-spotlight { min-height: 100svh; height: 100svh; } .anime-spotlight-copy p { -webkit-line-clamp: 2; } }
@@ -215,7 +243,7 @@
         <div id="content-rows" class="container anime-catalog">
             <section class="anime-section" id="continue-watching-section" style="display:none; margin-top:32px;">
                 <div class="anime-section-heading">
-                    <div><h2>Continue watching</h2><p>Pick up where you left off in your anime.</p></div>
+                    <div><h2><i class="fa-solid fa-clock-rotate-left section-heading-icon" style="color:#f9a8d4"></i>Continue watching</h2><p>Pick up where you left off in your anime.</p></div>
                     <div class="continue-actions" id="continue-actions">
                         <button type="button" class="continue-action-btn" id="continue-clear-toggle"><i class="fa-solid fa-trash-can"></i> Clear</button>
                         <button type="button" class="continue-action-btn continue-action-btn-danger" id="continue-clear-confirm" style="display:none;"><i class="fa-solid fa-trash-can"></i> Clear Selected</button>
@@ -227,18 +255,25 @@
             </section>
             <section class="anime-section" id="trending-section">
                 <div class="anime-section-heading">
-                    <div><h2 id="catalog-title">Trending now</h2><p id="catalog-subtitle">Fresh picks from across the anime world.</p></div>
+                    <div><h2 id="catalog-title"><i class="fa-solid fa-fire section-heading-icon"></i>Trending now</h2><p id="catalog-subtitle">Fresh picks from across the anime world.</p></div>
                     <span class="anime-section-count" id="anime-result-count">Updating catalog</span>
                 </div>
                 <div id="trending-grid" aria-live="polite"></div>
                 <div class="anime-load-more-wrap"><button type="button" id="anime-load-more">Load more anime</button></div>
             </section>
-
-            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Action essentials</h2><p>High stakes, sharp fights, no quiet episodes.</p></div><span class="anime-section-count" data-category-count="Action"></span></div><div class="anime-category-grid" data-category-grid="Action"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Action">Load more</button></div></section>
-            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Adventure calls</h2><p>New worlds and long journeys.</p></div><span class="anime-section-count" data-category-count="Adventure"></span></div><div class="anime-category-grid" data-category-grid="Adventure"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Adventure">Load more</button></div></section>
-            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Comedy break</h2><p>Smart chaos and easy rewatches.</p></div><span class="anime-section-count" data-category-count="Comedy"></span></div><div class="anime-category-grid" data-category-grid="Comedy"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Comedy">Load more</button></div></section>
-            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Fantasy realms</h2><p>Magic, myths, and impossible worlds.</p></div><span class="anime-section-count" data-category-count="Fantasy"></span></div><div class="anime-category-grid" data-category-grid="Fantasy"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Fantasy">Load more</button></div></section>
-            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2>Romance picks</h2><p>Slow burns, first loves, and complicated hearts.</p></div><span class="anime-section-count" data-category-count="Romance"></span></div><div class="anime-category-grid" data-category-grid="Romance"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Romance">Load more</button></div></section>
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2><i class="fa-solid fa-hand-fist section-heading-icon"></i>Action essentials</h2><p>High stakes, sharp fights, no quiet episodes.</p></div><span class="anime-section-count" data-category-count="Action"></span></div><div class="anime-category-grid" data-category-grid="Action"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Action">Load more</button></div></section>
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2><i class="fa-solid fa-compass section-heading-icon"></i>Adventure calls</h2><p>New worlds and long journeys.</p></div><span class="anime-section-count" data-category-count="Adventure"></span></div><div class="anime-category-grid" data-category-grid="Adventure"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Adventure">Load more</button></div></section>
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2><i class="fa-solid fa-face-laugh-beam section-heading-icon"></i>Comedy break</h2><p>Smart chaos and easy rewatches.</p></div><span class="anime-section-count" data-category-count="Comedy"></span></div><div class="anime-category-grid" data-category-grid="Comedy"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Comedy">Load more</button></div></section>
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2><i class="fa-solid fa-wand-magic-sparkles section-heading-icon"></i>Fantasy realms</h2><p>Magic, myths, and impossible worlds.</p></div><span class="anime-section-count" data-category-count="Fantasy"></span></div><div class="anime-category-grid" data-category-grid="Fantasy"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Fantasy">Load more</button></div></section>
+            <section class="anime-section anime-categories-section"><div class="anime-section-heading"><div><h2><i class="fa-solid fa-heart section-heading-icon"></i>Romance picks</h2><p>Slow burns, first loves, and complicated hearts.</p></div><span class="anime-section-count" data-category-count="Romance"></span></div><div class="anime-category-grid" data-category-grid="Romance"></div><div class="anime-load-more-wrap"><button type="button" class="anime-category-load-more" data-category-load-more="Romance">Load more</button></div></section>
+            <section class="anime-section anime-upcoming-section" id="anime-upcoming-section">
+                <div class="anime-section-heading">
+                    <div><h2 id="anime-upcoming-title"><i class="fa-solid fa-calendar-days section-heading-icon"></i>Coming next season</h2><p>Upcoming anime pulled directly from AniList.</p></div>
+                    <span class="anime-section-count" id="anime-upcoming-count">Loading</span>
+                </div>
+                <div id="anime-upcoming-grid" class="anime-category-grid" aria-live="polite"></div>
+                <div class="anime-load-more-wrap"><button type="button" id="anime-upcoming-load-more">Load more upcoming</button></div>
+            </section>
         </div>
     </main>
 
@@ -295,7 +330,7 @@
     <script src="/streamverse-storage.js"></script>
     <script src="/streamverse-auth.js"></script>
     <script src="/config.js"></script>
-    <script src="anime-script.js?v=2"></script>
+    <script src="anime-script.js?v=31"></script>
     
 </body>
 

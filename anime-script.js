@@ -820,7 +820,7 @@ function loadContinueWatching() {
         const validItems = Array.isArray(items)
             ? items.filter((item) => item && String(item.id || '').trim() && String(item.type || '').trim() && (
                 item.anime === true || String(item.db || '').toLowerCase() === 'anilist' ||
-                /^(anikoto|animesalt)$/i.test(String(item.provider || item.sourceProvider || ''))
+                /^anikoto$/i.test(String(item.provider || item.sourceProvider || ''))
             ))
             : [];
 
@@ -955,12 +955,14 @@ function renderContinueWatching(items) {
     if (!Array.isArray(items) || items.length === 0) {
         continueWatchingGrid.innerHTML = '';
         continueWatchingSection.style.display = 'none';
+        continueWatchingSection.dataset.hasContent = 'false';
         updateContinueWatchingControls(0);
         return;
     }
 
     continueWatchingGrid.innerHTML = '';
     continueWatchingSection.style.display = 'block';
+    continueWatchingSection.dataset.hasContent = 'true';
 
     const maxInitialCards = 6;
     const initialItems = continueSelectionMode ? items.slice() : items.slice(0, maxInitialCards);
@@ -3578,7 +3580,7 @@ function normalizeModalTvSeasons(movie, options = {}) {
                     title: `Episode ${idx + 1}`,
                 }));
             }
-            const seasonImage = getModalEpisodeImage(season);
+            const seasonImage = isModalAnimeLike(movie) ? '' : getModalEpisodeImage(season);
 
             return {
                 seasonNo,
@@ -3652,7 +3654,6 @@ function getModalEpisodeProviderOptions(movie = {}, provider = '') {
     ].forEach((value) => addProvider(value));
 
     if (isModalAnimeLike(movie)) {
-        addProvider('animesalt', 'AnimeSalt');
         addProvider('anikoto', 'AniKoto');
     }
 
@@ -3707,7 +3708,11 @@ function readModalContinueWatchingEntry(id, type) {
         const items = raw ? JSON.parse(raw) : [];
         if (!Array.isArray(items)) return null;
         return items.find((row) =>
-            window.StreamVerseStorage.sameWork(row, { id, type, namespace: 'tmdb' })
+            window.StreamVerseStorage.sameWork(row, { id, type, namespace: 'tmdb' }) ||
+            (String(row?.id) === String(id) && (
+                String(row?.db || row?.namespace || '').toLowerCase() === 'anilist' ||
+                row?.anime === true
+            ))
         ) || null;
     } catch (_) {
         return null;
@@ -3756,9 +3761,14 @@ function buildModalTvEpisodesSection(movie, id, type, provider = '') {
     if (String(type).toLowerCase() !== 'tv') return '';
     const seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false });
     if (!seasons.length) return '';
-    const selectedSeason = seasons.find((season) => Number(season.seasonNo) === 1) || seasons[0];
-    const providerOptions = getModalEpisodeProviderOptions(movie, provider);
-    const showProviderDropdown = providerOptions.length > 1 && isModalAnimeLike(movie);
+    const title = getTitle(movie);
+    const titleSeasonMatch = title.match(/\b(?:season|series)\s*(\d+)\b|\b(\d+)(?:st|nd|rd|th)\s+season\b/i);
+    const titleSeason = Number(movie.preferredSeasonNo || titleSeasonMatch?.[1] || titleSeasonMatch?.[2] || 0);
+    const selectedSeason = seasons.find((season) => Number(season.seasonNo) === titleSeason)
+        || seasons.find((season) => Number(season.seasonNo) === 1)
+        || seasons[0];
+    const providerOptions = isModalAnimeLike(movie) ? [] : getModalEpisodeProviderOptions(movie, provider);
+    const showProviderDropdown = providerOptions.length > 1;
 
     return `
         <div class="modal-episodes-section" id="modal-tv-episodes"
@@ -3818,6 +3828,7 @@ function buildModalTvEpisodesSection(movie, id, type, provider = '') {
                     </div>
                 </div>
             </div>
+            <div id="modal-episode-ranges" class="modal-episode-ranges" hidden></div>
             <div id="modal-episodes-list" class="modal-episodes-list"></div>
         </div>
     `;
@@ -3834,16 +3845,66 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
     const providerCurrentLabel = providerSelect?.querySelector('.modal-season-current');
     const providerMenu = document.getElementById('modal-provider-menu');
     const list = document.getElementById('modal-episodes-list');
+    const ranges = document.getElementById('modal-episode-ranges');
     if (!root || !dropdown || !select || !menu || !list) return;
 
-    let selectedProvider = 'tmdb';
+    let selectedProvider = isModalAnimeLike(movie) ? String(provider || 'anikoto').toLowerCase() : 'tmdb';
     let seasons = normalizeModalTvSeasons(movie, { preferProviderEpisodes: false });
     if (!seasons.length) return;
     const apiSource = getCurrentApiSource();
     const state = readModalEpisodeState(id, type);
     const continueEntry = readModalContinueWatchingEntry(id, type);
-    const modalFallbackImage = getCover(movie) || getPoster(movie) || getModalEpisodeImage(movie);
-    let selectedSeasonNo = Number(seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo || seasons[0]?.seasonNo || 1);
+    const resumeEpisodeNo = Number(continueEntry?.episodeNo || continueEntry?.episode || 0);
+    const modalFallbackImage = isModalAnimeLike(movie)
+        ? (movie.image || '')
+        : (getCover(movie) || getPoster(movie) || getModalEpisodeImage(movie));
+    const preferredSeasonNo = Number(movie.preferredSeasonNo || 0);
+    let selectedSeasonNo = Number(
+        seasons.find((season) => Number(season.seasonNo) === preferredSeasonNo)?.seasonNo
+        || seasons.find((season) => Number(season.seasonNo) === 1)?.seasonNo
+        || seasons[0]?.seasonNo
+        || 1
+    );
+    let selectedRangeStart = 0;
+    if (resumeEpisodeNo > 0) selectedRangeStart = Math.floor((resumeEpisodeNo - 1) / 50) * 50;
+    let episodeAscending = resumeEpisodeNo <= 0 || resumeEpisodeNo - selectedRangeStart <= 25;
+
+    const renderEpisodeRanges = (season) => {
+        if (!ranges) return;
+        const sortButton = `<button type="button" class="modal-episode-sort" data-episode-sort title="Toggle episode order" aria-pressed="${episodeAscending ? 'true' : 'false'}"><i class="fa-solid ${episodeAscending ? 'fa-arrow-up-wide-short' : 'fa-arrow-down-wide-short'}" data-episode-sort-icon></i><span data-episode-sort-label>${episodeAscending ? 'Oldest first' : 'Newest first'}</span></button>`;
+        const count = Array.isArray(season?.episodes) ? season.episodes.length : 0;
+        if (count <= 100) {
+            ranges.hidden = false;
+            ranges.innerHTML = sortButton;
+            ranges.querySelector('[data-episode-sort]')?.addEventListener('click', () => {
+                episodeAscending = !episodeAscending;
+                renderEpisodeRanges(season);
+                renderSeason(selectedSeasonNo);
+            });
+            selectedRangeStart = 0;
+            return;
+        }
+        const chunkSize = 50;
+        const starts = Array.from({ length: Math.ceil(count / chunkSize) }, (_, index) => index * chunkSize);
+        if (!starts.includes(selectedRangeStart)) selectedRangeStart = starts[0];
+        ranges.hidden = false;
+        ranges.innerHTML = sortButton + starts.map((start) => {
+            const end = Math.min(count, start + chunkSize);
+            return `<button type="button" class="modal-episode-range${start === selectedRangeStart ? ' selected' : ''}" data-episode-range="${start}">${start + 1}-${end}</button>`;
+        }).join('');
+        ranges.querySelector('[data-episode-sort]')?.addEventListener('click', () => {
+            episodeAscending = !episodeAscending;
+            renderEpisodeRanges(season);
+            renderSeason(selectedSeasonNo);
+        });
+        ranges.querySelectorAll('[data-episode-range]').forEach((button) => {
+            button.addEventListener('click', () => {
+                selectedRangeStart = Number(button.dataset.episodeRange || 0);
+                renderEpisodeRanges(season);
+                renderSeason(selectedSeasonNo);
+            });
+        });
+    };
 
     const setDropdownOpen = (isOpen) => {
         dropdown.classList.toggle('open', isOpen);
@@ -3902,14 +3963,20 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
         const season = seasons.find((row) => Number(row.seasonNo) === seasonNo) || seasons[0];
         if (!season) return;
         syncDropdownSelection(season);
+        renderEpisodeRanges(season);
 
         const modalAnimeLike = isModalAnimeLike(movie);
-        list.innerHTML = season.episodes.map((ep, idx) => {
-            const episodeNo = Number(ep.episodeNo || idx + 1);
+        const visibleEpisodes = season.episodes
+            .slice(selectedRangeStart, selectedRangeStart + 50)
+            .sort((a, b) => (episodeAscending ? 1 : -1) * (Number(a.episodeNo || a.number || 0) - Number(b.episodeNo || b.number || 0)));
+        list.innerHTML = visibleEpisodes.map((ep, idx) => {
+            const episodeNo = Number(ep.episodeNo || selectedRangeStart + idx + 1);
             const episodeId = String(ep.id || ep.episodeId || '').trim();
             const absoluteEpisodeNo = getModalEpisodeAbsoluteNo(seasons, season.seasonNo, episodeNo);
             const activeProviderRaw = selectedProvider === 'tmdb' ? provider : selectedProvider;
-            const activeProvider = modalAnimeLike && String(activeProviderRaw || '').trim().toLowerCase() !== 'animesalt'
+            const activeProviderName = String(activeProviderRaw || '').trim().toLowerCase();
+            const activeProvider = modalAnimeLike &&
+                !['animesalt', 'anikoto'].includes(activeProviderName)
                 ? ''
                 : activeProviderRaw;
             const keys = getModalEpisodeKeys({
@@ -3931,6 +3998,8 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
             const safeSeasonTitle = `Season ${season.seasonNo}`;
 
             const params = new URLSearchParams();
+            params.set('db', 'anilist');
+            params.set('anime', '1');
             params.set('id', String(id || ''));
             params.set('type', 'tv');
             params.set('apiSource', String(apiSource || ''));
@@ -3942,7 +4011,7 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
                 params.set('provider', String(activeProvider));
             } else if (provider) {
                 const fallbackProvider = String(provider || '').trim().toLowerCase();
-                if (!modalAnimeLike || fallbackProvider === 'animesalt') {
+                if (!modalAnimeLike || ['animesalt', 'anikoto'].includes(fallbackProvider)) {
                     params.set('provider', String(provider));
                 }
             }
@@ -3983,7 +4052,9 @@ function initModalTvEpisodes(movie, id, type, provider = '') {
             });
         });
 
-        if (!season._modalHydrated && !season._modalHydrating) {
+        // AniKoto is authoritative for anime episodes. Never hydrate these
+        // rows through the shared TMDB episode-details fallback.
+        if (!isModalAnimeLike(movie) && !season._modalHydrated && !season._modalHydrating) {
             season._modalHydrating = true;
             hydrateModalSeasonEpisodeDetails(id, season).then((changed) => {
                 season._modalHydrating = false;
@@ -5587,8 +5658,12 @@ async function watchNow(id, type, provider = '', animeLike = false) {
     const savePlaybackReturnState = () => {
         try {
             const savedScrollY = Number(window.storedScrollPosition);
+            const returnUrl = new URL(window.location.href);
+            if (returnUrl.pathname.endsWith('/anime.html')) {
+                returnUrl.searchParams.delete('animeDetail');
+            }
             sessionStorage.setItem('streamverse_playback_return', JSON.stringify({
-                url: window.location.href,
+                url: returnUrl.toString(),
                 searchQuery: String(searchInput?.value || '').trim(),
                 scrollY: Math.max(0, Math.round(Number.isFinite(savedScrollY) ? savedScrollY : (window.scrollY || 0))),
             }));
@@ -6734,6 +6809,10 @@ if (location.pathname.endsWith('/anime.html')) {
         const catalogTitle = document.getElementById('catalog-title');
         const catalogSubtitle = document.getElementById('catalog-subtitle');
         const resultCount = document.getElementById('anime-result-count');
+        const upcomingSection = document.getElementById('anime-upcoming-section');
+        const upcomingGrid = document.getElementById('anime-upcoming-grid');
+        const upcomingCount = document.getElementById('anime-upcoming-count');
+        const upcomingLoadMore = document.getElementById('anime-upcoming-load-more');
         if (!grid) return;
         document.querySelectorAll('.api-switcher, .genre-filter-btn').forEach((element) => element.style.setProperty('display', 'none', 'important'));
 
@@ -6741,6 +6820,174 @@ if (location.pathname.endsWith('/anime.html')) {
             ? (item.title.english || item.title.romaji || item.title.userPreferred || item.title.native || 'Untitled')
             : (item.title || item.name || 'Untitled');
         const imageOf = (item) => item.coverImage?.extraLarge || item.coverImage?.large || item.image || item.cover || '';
+        const modalImageOf = (item) => {
+            const source = String(item.coverImage?.extraLarge || item.coverImage?.large || item.image || item.cover || '');
+            // AniList exposes extraLarge through the GraphQL field, but its
+            // CDN URL still commonly uses the /cover/large/ path. Do not
+            // rewrite the CDN path because /cover/extra_large/ is not a
+            // public AniList asset path.
+            return source;
+        };
+        const fetchAniListArtwork = async (item) => {
+            const id = Number(item?.id);
+            if (!Number.isInteger(id) || id <= 0) return {};
+            try {
+                const response = await fetch('https://graphql.anilist.co', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                    body: JSON.stringify({
+                        query: 'query($id:Int){Media(id:$id,type:ANIME){coverImage{large extraLarge} bannerImage}}',
+                        variables: { id },
+                    }),
+                    signal: AbortSignal.timeout(7000),
+                });
+                if (!response.ok) return {};
+                const media = (await response.json())?.data?.Media;
+                return media ? { coverImage: media.coverImage, bannerImage: media.bannerImage } : {};
+            } catch (_) {
+                return {};
+            }
+        };
+        let animeTmdbMapPromise;
+        const fetchMappedTmdbId = async (anilistId, type) => {
+            if (!anilistId) return '';
+            try {
+                animeTmdbMapPromise ||= fetch('https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-mini.json')
+                    .then((response) => response.ok ? response.json() : [])
+                    .catch(() => []);
+                const rows = await animeTmdbMapPromise;
+                const row = Array.isArray(rows) ? rows.find((entry) => String(entry?.anilist_id) === String(anilistId)) : null;
+                const mapping = row?.themoviedb_id;
+                const season = row?.season;
+                return {
+                    id: String(type) === 'movie' ? String(mapping?.movie || '') : String(mapping?.tv || ''),
+                    season: String(type) === 'movie' ? 0 : Number(season?.tmdb || 0),
+                };
+            } catch (_) {
+                return '';
+            }
+        };
+        const fetchTmdbArtwork = async (item) => {
+            const title = titleOf(item);
+            if (!title) return {};
+            const normalizeTitle = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+            try {
+                const tmdbBase = String(BASE_URL || '').replace(/\/+$/, '');
+                const mediaType = String(item.type || item.format || '').toLowerCase() === 'movie' ? 'movie' : 'tv';
+                const mapped = await fetchMappedTmdbId(item.id, mediaType);
+                if (mapped.id) {
+                    const mappedId = mapped.id;
+                    const details = await fetchJson(`${tmdbBase}/info/${encodeURIComponent(mappedId)}?type=${mediaType}`, undefined, 9000);
+                    return {
+                        tmdbBackdrop: details?.cover || details?.backdrop_path || '',
+                        tmdbMapped: true,
+                        tmdbSeason: mapped.season,
+                    };
+                }
+                const seasonMatch = title.match(/\b(?:season|series)\s*(\d+)\b|\b(\d+)(?:st|nd|rd|th)\s+season\b/i);
+                const searchTitles = [title];
+                if (seasonMatch) {
+                    const baseTitle = title.replace(/\s*(?:season|series)\s*\d+\b|\s*\b\d+(?:st|nd|rd|th)\s+season\b/i, '').trim();
+                    if (baseTitle) searchTitles.push(baseTitle);
+                }
+                let match;
+                for (const searchTitle of searchTitles) {
+                    const search = await fetchJson(`${tmdbBase}/${encodeURIComponent(searchTitle)}`, undefined, 9000);
+                    const wanted = normalizeTitle(searchTitle);
+                    const searchRows = rowsOf(search);
+                    match = searchRows.find((row) => normalizeTitle(row?.title || row?.name) === wanted) || searchRows[0];
+                    if (match?.id) break;
+                }
+                if (!match?.id) return {};
+                const details = await fetchJson(`${tmdbBase}/info/${encodeURIComponent(match.id)}?type=${mediaType}`, undefined, 9000);
+                const backdrop = details?.cover || details?.backdrop_path || match.cover || match.backdrop || '';
+                return backdrop ? { tmdbBackdrop: backdrop } : {};
+            } catch (_) {
+                return {};
+            }
+        };
+        const fetchTmdbSeasons = async (item, tmdbId) => {
+            if (!tmdbId || String(item.type || item.format || '').toLowerCase() === 'movie') return [];
+            try {
+                const details = await fetchJson(`${String(BASE_URL || '').replace(/\/+$/, '')}/info/${encodeURIComponent(tmdbId)}?type=tv`);
+                const seasons = (Array.isArray(details?.seasons) ? details.seasons : [])
+                    .filter((season) => Number(season?.season || season?.season_number) > 0)
+                    .filter((season) => !item.tmdbMapped || !Number(item.tmdbSeason) ||
+                        Number(season.season || season.season_number) === Number(item.tmdbSeason));
+                return Promise.all(seasons.map(async (season) => {
+                    const seasonNo = Number(season.season || season.season_number);
+                    try {
+                        const data = await fetchJson(`${String(BASE_URL || '').replace(/\/+$/, '')}/info/${encodeURIComponent(tmdbId)}?type=tv&season=${seasonNo}&details=true`, undefined, 12000);
+                        return {
+                            season: seasonNo,
+                            name: season.name || `Season ${seasonNo}`,
+                            episodes: (Array.isArray(data?.episodes) ? data.episodes : []).map((episode) => ({
+                                number: episode.episode_number,
+                                title: episode.name || `Episode ${episode.episode_number}`,
+                                image: episode.still_path ? `https://image.tmdb.org/t/p/w300${episode.still_path}` : '',
+                            })),
+                        };
+                    } catch (_) {
+                        return { season: seasonNo, name: season.name || `Season ${seasonNo}`, episodes: [] };
+                    }
+                }));
+            } catch (_) {
+                return [];
+            }
+        };
+        const fetchAnikotoSeasons = async (item) => {
+            const title = titleOf(item);
+            if (!title || String(item.type || item.format || '').toLowerCase() === 'movie') return [];
+            try {
+                const base = String(apiBase || '').replace(/\/+$/, '');
+                const search = await fetchJson(`${base}/anime/anikoto/${encodeURIComponent(title)}`, undefined, 12000);
+                const wanted = String(title).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                const match = rowsOf(search).find((row) =>
+                    String(row?.title || row?.name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() === wanted
+                );
+                if (!match?.id) return [];
+                const info = await fetchJson(`${base}/anime/anikoto/info?id=${encodeURIComponent(match.id)}`, undefined, 15000);
+                const titleMatch = title.match(/\b(?:season|series)\s*(\d+)\b|\b(\d+)(?:st|nd|rd|th)\s+season\b/i);
+                const requestedSeason = Number(titleMatch?.[1] || titleMatch?.[2] || 1);
+                const baseTitle = title.replace(/\s*(?:season|series)\s*\d+\b|\s*\b\d+(?:st|nd|rd|th)\s+season\b/i, '').trim();
+                const normalizedBase = baseTitle.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                const related = Array.isArray(info?.relatedAnime) ? info.relatedAnime : [];
+                const candidates = [match, ...related].filter((row, index, rows) => {
+                    const rowTitle = String(row?.title || row?.name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                    const rowType = String(row?.type || row?.format || '').toLowerCase();
+                    return row?.id && rows.findIndex((entry) => String(entry.id) === String(row.id)) === index &&
+                        !rowType.includes('movie') && !rowType.includes('special') &&
+                        (rowTitle === normalizedBase || rowTitle.startsWith(`${normalizedBase} `) || normalizedBase.startsWith(`${rowTitle} `));
+                }).slice(0, 12);
+                const seasons = [];
+                for (const candidate of candidates) {
+                    let candidateInfo = candidate.id === match.id ? info : null;
+                    if (!candidateInfo) {
+                        try {
+                            candidateInfo = await fetchJson(`${base}/anime/anikoto/info?id=${encodeURIComponent(candidate.id)}`, undefined, 15000);
+                        } catch (_) { continue; }
+                    }
+                    const providerEpisodes = Array.isArray(candidateInfo?.episodes) ? candidateInfo.episodes : [];
+                    if (!providerEpisodes.length) continue;
+                    const candidateTitle = String(candidateInfo.title || candidate.title || '');
+                    const candidateSeasonMatch = candidateTitle.match(/\b(?:season|series)\s*(\d+)\b|\b(\d+)(?:st|nd|rd|th)\s+season\b/i);
+                    const seasonNo = Number(candidateSeasonMatch?.[1] || candidateSeasonMatch?.[2] || (candidate.id === match.id ? requestedSeason : seasons.length + 1));
+                    seasons.push({
+                        season: seasonNo,
+                        name: `Season ${seasonNo}`,
+                        episodes: providerEpisodes.map((episode) => ({
+                            id: episode.id,
+                            number: episode.number || episode.episode,
+                            title: episode.title || `Episode ${episode.number || episode.episode}`,
+                            image: '',
+                        })),
+                    });
+                }
+                return seasons.sort((a, b) => a.season - b.season);
+            } catch (_) {
+                return [];
+            }
+        };
         const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         const playUrl = (item) => {
             const title = titleOf(item);
@@ -6756,6 +7003,10 @@ if (location.pathname.endsWith('/anime.html')) {
                 db: 'anilist', anime: '1', type: String(item.type || item.format || '').toLowerCase() === 'movie' ? 'movie' : 'tv', provider: 'anikoto', title, image: imageOf(item),
                 id: String(item.id || ''), apiSource: getCurrentApiSource(), season: String(seasonNo), episode: '1', seasonTitle,
             });
+            try {
+                const savedAudio = String(localStorage.getItem('streamverse_anime_audio_mode') || '').toLowerCase();
+                if (savedAudio === 'subbed' || savedAudio === 'dubbed') params.set('audio', savedAudio);
+            } catch (_) { }
             return `/player?${params.toString()}`;
         };
         const categories = ['Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Sports', 'Supernatural', 'Thriller'];
@@ -6821,28 +7072,37 @@ if (location.pathname.endsWith('/anime.html')) {
                 const params = new URL(url, location.origin).searchParams;
                 const type = params.get('type');
                 const episodes = Array.isArray(item.episodes) ? item.episodes : [];
-                const movie = { ...item, title: escapeHtml(titleOf(item)), image: imageOf(item),
-                    cover: item.bannerImage || item.cover || imageOf(item),
+                const seasons = Array.isArray(item.seasons) ? item.seasons : [];
+                const movie = { ...item, title: escapeHtml(titleOf(item)), image: modalImageOf(item),
+                    provider: 'anikoto', anime: true,
+                    // Never let catalog/TMDB episode seasons leak into the anime modal
+                    // before AniKoto has supplied its authoritative episode list.
+                    seasons: item.__anikotoSeasonsLoaded === true ? seasons : [],
+                    cover: item.tmdbBackdrop || item.cover || item.bannerImage || modalImageOf(item),
                     description: escapeHtml(String(item.description || item.overview || 'No overview available.').replace(/<[^>]*>/g, '')),
                     genres: (Array.isArray(item.genres) ? item.genres : []).map(escapeHtml),
                     totalEpisodes: item.totalEpisodes || episodes.length,
                 };
-                const episodesHtml = type === 'tv' && episodes.length ? `<div class="modal-episodes-section">
-                    <div class="modal-episodes-head"><h3 class="modal-episodes-title">Episodes</h3></div>
-                    <div class="modal-episodes-list">${episodes.map((ep, index) => {
-                        const episodeUrl = new URL(url, location.origin);
-                        episodeUrl.searchParams.set('episode', String(ep.number || ep.episode || index + 1));
-                        return `<button type="button" class="modal-episode-item" data-anime-watch="${escapeHtml(episodeUrl.pathname + episodeUrl.search)}">
-                            <div class="modal-episode-thumb"><img src="${escapeHtml(ep.image || imageOf(item))}" alt="" loading="lazy"></div>
-                            <div class="modal-episode-copy"><div class="modal-episode-row"><span class="modal-episode-number">E${escapeHtml(ep.number || ep.episode || index + 1)}</span><strong>${escapeHtml(ep.title || `Episode ${index + 1}`)}</strong></div></div>
-                            <i class="fa-solid fa-play modal-episode-play"></i></button>`;
-                    }).join('')}</div></div>` : '';
+                const episodesHtml = type === 'tv' && seasons.length
+                    ? buildModalTvEpisodesSection(movie, id, type, 'anikoto')
+                    : '';
                 renderDetailsModal(movie, id, type, 'anikoto', { episodesHtml, onRender() {
+                    const saveAnimeReturnState = () => {
+                        try {
+                            const returnUrl = new URL(location.href);
+                            returnUrl.searchParams.delete('animeDetail');
+                            sessionStorage.setItem('streamverse_playback_return', JSON.stringify({
+                                url: returnUrl.toString(),
+                                searchQuery: String(searchInput?.value || '').trim(),
+                                scrollY: Math.max(0, Math.round(Number(window.storedScrollPosition) || window.scrollY || 0)),
+                            }));
+                        } catch (_) { }
+                    };
                     const watch = modalBody.querySelector('.btn-watch-now');
                     watch.removeAttribute('onclick');
-                    watch.onclick = () => { location.href = url; };
+                    watch.onclick = () => { saveAnimeReturnState(); location.href = url; };
                     modalBody.querySelectorAll('[data-anime-watch]').forEach(button => {
-                        button.onclick = () => { location.href = button.dataset.animeWatch; };
+                        button.onclick = () => { saveAnimeReturnState(); location.href = button.dataset.animeWatch; };
                     });
                     const listButton = document.getElementById('modal-watchlist-btn');
                     listButton.removeAttribute('onclick');
@@ -6873,13 +7133,27 @@ if (location.pathname.endsWith('/anime.html')) {
                     const recommendations = rowsOf(item.recommendations).filter(row => String(row.id) !== id);
                     const related = recommendations.length ? recommendations : [...animeItems.values()].filter(row => String(row.id) !== id && (row.genres || []).some(genre => (item.genres || []).includes(genre)));
                     similar.innerHTML = related.slice(0, 6).map(row => cardHtml(row)).join('') || '<div class="no-similar">No similar anime found</div>';
-                } });
+                    initModalTvEpisodes(movie, id, type, 'anikoto');
+                 } });
             };
             render(seed);
             modalBody.scrollTop = 0;
             try {
                 const details = await fetchJson(`${apiBase}/meta/anilist/info/${encodeURIComponent(id)}`);
-                render({ ...seed, ...details, id });
+                const merged = { ...seed, ...details, id };
+                const [artwork, tmdbArtwork] = await Promise.all([
+                    fetchAniListArtwork(merged),
+                    fetchTmdbArtwork(merged),
+                ]);
+                const anikotoSeasons = await fetchAnikotoSeasons(merged);
+                render({
+                    ...merged,
+                    ...artwork,
+                    ...tmdbArtwork,
+                    seasons: anikotoSeasons,
+                    __anikotoSeasonsLoaded: true,
+                    image: merged.image,
+                });
             } catch (_) { /* The catalog-backed popup remains usable offline. */ }
         };
         document.addEventListener('click', event => {
@@ -6899,11 +7173,15 @@ if (location.pathname.endsWith('/anime.html')) {
             const type = String(item.type || item.format || 'TV').toUpperCase();
             const status = String(item.status || '').toLowerCase();
             const statusLabel = status.includes('ongoing') || status.includes('releasing') ? 'Airing' : type;
+            const isMovie = type === 'MOVIE' || type === 'SPECIAL';
+            const typeBadge = `<span class="season-episode-badge type-label-badge"><i class="fa-solid fa-${isMovie ? 'film' : 'tv'}"></i><span>${isMovie ? 'Movie' : 'TV'}</span></span>`;
+            const ratingProgress = Math.max(0, Math.min(100, rating * 10));
             return `<article class="anime-card">
                 <a class="anime-card-link" data-anime-id="${escapeHtml(item.id)}" href="?animeDetail=${encodeURIComponent(item.id)}" aria-label="Details for ${escapeHtml(title)}">
                     <div class="anime-poster">
                         <img src="${escapeHtml(imageOf(item))}" alt="${escapeHtml(title)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async"${eager ? ' fetchpriority="high"' : ''} onerror="this.style.display='none'">
-                        <div class="anime-badge-row"><span class="anime-badge">${escapeHtml(statusLabel)}</span>${rating ? `<span class="anime-badge anime-rating"><i class="fa-solid fa-star"></i>${Math.round(rating) / 10}</span>` : ''}</div>
+                        <div class="anime-badge-row">${typeBadge}${statusLabel === 'Airing' ? '<span class="anime-badge">Airing</span>' : ''}</div>
+                        ${rating ? `<div class="card-rating-ring" style="--rating-progress:${ratingProgress}"><span class="card-rating-ring-value"><i class="fa-solid fa-star"></i> ${Math.round(rating) / 10}</span></div>` : ''}
                         <div class="anime-play-cue"><span>More info</span><i class="fa-solid fa-circle-info"></i></div>
                     </div>
                     <div class="anime-card-info"><h3 class="anime-card-title">${escapeHtml(title)}</h3><div class="anime-card-meta">${year ? `<span>${escapeHtml(year)}</span>` : ''}${episodes ? `<span>${episodes} eps</span>` : `<span>${escapeHtml(type)}</span>`}</div></div>
@@ -6916,6 +7194,59 @@ if (location.pathname.endsWith('/anime.html')) {
             else grid.innerHTML = html || '<div class="anime-status"><div class="anime-status-inner"><i class="fa-regular fa-face-meh"></i>No anime found. Try another title.</div></div>';
             if (resultCount) resultCount.textContent = `${grid.querySelectorAll('.anime-card').length} titles`;
 };
+
+        const getNextSeason = () => {
+            const now = new Date();
+            const month = now.getUTCMonth() + 1;
+            const year = now.getUTCFullYear() + (month >= 10 ? 1 : 0);
+            const season = month <= 3 ? 'WINTER' : month <= 6 ? 'SPRING' : month <= 9 ? 'SUMMER' : 'FALL';
+            const next = season === 'WINTER' ? 'SPRING' : season === 'SPRING' ? 'SUMMER' : season === 'SUMMER' ? 'FALL' : 'WINTER';
+            return { year: month >= 10 ? year : now.getUTCFullYear(), season: next };
+        };
+        let upcomingPage = 1;
+        let upcomingHasNextPage = true;
+        let upcomingLoading = false;
+        const loadUpcomingAnime = async (append = false) => {
+            if (!upcomingGrid) return;
+            if (upcomingLoading || (append && !upcomingHasNextPage)) return;
+            const next = getNextSeason();
+            try {
+                upcomingLoading = true;
+                if (upcomingLoadMore) {
+                    upcomingLoadMore.disabled = true;
+                    upcomingLoadMore.textContent = 'Loading…';
+                }
+                const page = append ? upcomingPage + 1 : 1;
+                const url = `${apiBase}/meta/anilist/advanced-search?status=NOT_YET_RELEASED&season=${next.season}&year=${next.year}&sort=POPULARITY_DESC&page=${page}&perPage=12`;
+                const payload = await fetchJson(url, undefined, 15000);
+                const rows = uniqueRows(rowsOf(payload)).filter((item) => item?.id && imageOf(item));
+                if (!rows.length) {
+                    if (!append) upcomingSection?.setAttribute('hidden', '');
+                    upcomingHasNextPage = false;
+                    return;
+                }
+                upcomingPage = page;
+                upcomingHasNextPage = Boolean(payload?.hasNextPage ?? payload?.pageInfo?.hasNextPage ?? page < Number(payload?.totalPages || 1));
+                upcomingSection?.removeAttribute('hidden');
+                const seasonLabel = `${next.season[0]}${next.season.slice(1).toLowerCase()} ${next.year}`;
+                const title = document.getElementById('anime-upcoming-title');
+                if (title) title.innerHTML = `<i class="fa-solid fa-calendar-days section-heading-icon"></i>Coming ${seasonLabel}`;
+                const cards = rows.map((item, index) => cardHtml(item, !append && index < 4)).join('');
+                if (append) upcomingGrid.insertAdjacentHTML('beforeend', cards);
+                else upcomingGrid.innerHTML = cards;
+                if (upcomingCount) upcomingCount.textContent = `${upcomingGrid.querySelectorAll('.anime-card').length} titles`;
+                if (upcomingLoadMore) upcomingLoadMore.style.display = upcomingHasNextPage ? '' : 'none';
+            } catch (_) {
+                if (!append) upcomingSection?.setAttribute('hidden', '');
+            } finally {
+                upcomingLoading = false;
+                if (upcomingLoadMore) {
+                    upcomingLoadMore.disabled = false;
+                    upcomingLoadMore.textContent = 'Load more upcoming';
+                }
+            }
+        };
+        upcomingLoadMore?.addEventListener('click', () => loadUpcomingAnime(true));
 
         // Auto spotlight: featured banner built from the current #1 trending title.
         const spotlightSection = document.getElementById('anime-spotlight');
@@ -6938,7 +7269,7 @@ if (location.pathname.endsWith('/anime.html')) {
             if (!spotlightSection || !spotlightLayout || !spotlightItems.length) return;
             spotlightIndex = ((Math.trunc(index) % spotlightItems.length) + spotlightItems.length) % spotlightItems.length;
             const item = spotlightItems[spotlightIndex];
-            const backdrop = item.bannerImage || item.coverImage?.extraLarge || item.cover || item.image || '';
+            const backdrop = item.tmdbBackdrop || item.cover || item.bannerImage || item.coverImage?.extraLarge || item.image || '';
             const title = titleOf(item);
             const year = String(item.releaseDate || item.startDate?.year || '').slice(0, 4);
             const episodes = Number(item.totalEpisodes || item.episodes || 0);
@@ -7012,7 +7343,22 @@ if (location.pathname.endsWith('/anime.html')) {
             let candidates = rows.filter((row) => String(row.cover || row.bannerImage || '').trim());
             if (!candidates.length) candidates = rows;
             spotlightItems = candidates.slice(0, 5);
-            renderSpotlightRow(0);
+            // The catalog endpoint often only includes a medium banner. Fetch
+            // AniList's native artwork fields for the hero in the background.
+            const artworkRows = await Promise.all(spotlightItems.map(async (item) => {
+                const [aniListArtwork, tmdbArtwork] = await Promise.all([
+                    fetchAniListArtwork(item),
+                    fetchTmdbArtwork(item),
+                ]);
+                return { ...aniListArtwork, ...tmdbArtwork };
+            }));
+            spotlightItems = spotlightItems.map((item, index) => ({
+                ...item,
+                ...artworkRows[index],
+                image: item.image,
+                cover: artworkRows[index].tmdbBackdrop || item.cover,
+            }));
+            renderSpotlightRow(spotlightIndex);
             startSpotlightRotation();
         };
 
@@ -7111,7 +7457,15 @@ const categoryState = new Map();
         const setCatalogMode = (query = '', genre = '') => {
             activeQuery = query || genre;
             document.body.classList.toggle('anime-search-mode', Boolean(activeQuery));
-            if (catalogTitle) catalogTitle.textContent = query ? `Results for “${query}”` : (genre ? `${genre} anime` : 'Trending now');
+            if (continueWatchingSection) {
+                continueWatchingSection.style.display = query
+                    ? 'none'
+                    : (continueWatchingSection.dataset.hasContent === 'true' ? 'block' : 'none');
+            }
+            if (catalogTitle) {
+                const headingIcon = query ? 'fa-magnifying-glass' : (genre ? 'fa-layer-group' : 'fa-fire');
+                catalogTitle.innerHTML = `<i class="fa-solid ${headingIcon} section-heading-icon"></i>${query ? `Results for “${escapeHtml(query)}”` : (genre ? `${escapeHtml(genre)} anime` : 'Trending now')}`;
+            }
             if (catalogSubtitle) catalogSubtitle.textContent = query ? 'Titles matching your search.' : (genre ? `A focused collection of ${genre.toLowerCase()} series.` : 'Fresh picks from across the anime world.');
             if (loadMoreButton) loadMoreButton.hidden = Boolean(activeQuery);
         };
@@ -7227,6 +7581,7 @@ const initialUrlParams = new URLSearchParams(window.location.search);
         }
         observeCategoryRows();
         loadSpotlight();
+        loadUpcomingAnime();
 
         if (initialSearchQuery.length >= 2) {
             if (searchInput) searchInput.value = initialSearchQuery;
